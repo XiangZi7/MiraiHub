@@ -1,0 +1,294 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   设计令牌 —— 所有值自动映射为 CSS 变量与 Tailwind 工具类
+   例：--color-card → bg-card / text-card / border-card
+   ========================================================================== */
+@theme {
+  /* ---------- 字体（均已本地内置，见 main.ts 的 @fontsource 引入） ---------- */
+  --font-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  --font-mono:
+    'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Cascadia Code',
+    'Menlo', 'Consolas', monospace;
+
+  /* ---------- 表面层级（半透明，靠 backdrop-filter 透出系统 acrylic） ----------
+     alpha 由深到浅递减：越"靠上"的层越亮、越不透明 */
+  --color-canvas: oklch(9% 0.006 285); /* 非 Tauri 环境的兜底桌面色 */
+  --color-window: oklch(16% 0.009 285 / 0.72); /* 窗口主体 */
+  --color-panel: oklch(19% 0.01 285 / 0.55); /* 侧栏 / 次级面板 */
+  --color-card: oklch(26% 0.012 285 / 0.4); /* 卡片 */
+  --color-raised: oklch(32% 0.014 285 / 0.55); /* 悬浮 / 选中态 */
+  --color-hover: oklch(36% 0.016 285 / 0.5); /* 交互 hover */
+  --color-terminal: oklch(11% 0.007 285 / 0.76); /* 终端底色 */
+
+  /* ---------- 描边：白色低透明度，比实心灰更像玻璃边缘 ---------- */
+  --color-line: oklch(100% 0 0 / 0.07);
+  --color-line-soft: oklch(100% 0 0 / 0.045);
+  --color-line-strong: oklch(100% 0 0 / 0.14);
+
+  /* ---------- 文本层级 ---------- */
+  --color-txt: oklch(94% 0.003 285); /* 主文本 */
+  --color-txt-2: oklch(73% 0.008 285); /* 次文本 */
+  --color-txt-3: oklch(56% 0.012 285); /* 弱文本 */
+  --color-txt-4: oklch(43% 0.012 285); /* 占位 / 禁用 */
+
+  /* ---------- 语义强调色 ---------- */
+  --color-accent: oklch(84% 0.18 148); /* 主强调：在线绿 */
+  --color-accent-deep: oklch(72% 0.19 150);
+  --color-violet: oklch(75% 0.15 295);
+  --color-indigo: oklch(70% 0.15 278);
+  --color-blue: oklch(74% 0.14 250);
+  --color-cyan: oklch(80% 0.13 200);
+  --color-pink: oklch(74% 0.17 350);
+  --color-amber: oklch(83% 0.16 85);
+  --color-orange: oklch(76% 0.16 55);
+  --color-danger: oklch(64% 0.21 27);
+
+  /* ---------- 交通灯 ---------- */
+  --color-tl-red: oklch(68% 0.19 25);
+  --color-tl-yellow: oklch(82% 0.15 82);
+  --color-tl-green: oklch(76% 0.19 145);
+
+  /* ---------- 终端语法色 ---------- */
+  --color-term-fg: oklch(88% 0.005 285);
+  --color-term-green: oklch(84% 0.18 148);
+  --color-term-blue: oklch(76% 0.13 245);
+  --color-term-cyan: oklch(82% 0.12 195);
+  --color-term-dim: oklch(60% 0.01 285);
+
+  /* ---------- 圆角 ----------
+     --radius-win 只服务于窗口内的浮层（命令面板等）；
+     窗口外壳本身是直角，交给系统窗口边界，避免圆角外露出原生直角 */
+  --radius-win: 12px;
+  --radius-card: 10px;
+
+  /* ---------- 阴影 ----------
+     每层都带一道 inset 顶部高光，这是玻璃"厚度"的来源。
+     窗口外阴影不再自绘，由系统负责（tauri.conf.json 的 shadow: true） */
+  --shadow-win: inset 0 1px 0 rgb(255 255 255 / 0.1);
+  --shadow-pop:
+    0 24px 56px -12px rgb(0 0 0 / 0.66), 0 0 0 1px rgb(255 255 255 / 0.07),
+    inset 0 1px 0 rgb(255 255 255 / 0.09);
+  --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+
+/* ==========================================================================
+   基础层
+   ========================================================================== */
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    /* 透明，让 Tauri 的系统 acrylic 透上来 */
+    background-color: transparent;
+    color: var(--color-txt);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* 无边框窗口：禁掉整页选中与右键菜单带来的"网页感" */
+    user-select: none;
+    overflow: hidden;
+  }
+
+  /* 浏览器里直接预览时没有系统 acrylic，给一层桌面渐变兜底，
+     这样开发态也能看出玻璃透叠效果。Tauri 内由 main.ts 加 .is-tauri 关掉 */
+  html:not(.is-tauri) {
+    background:
+      radial-gradient(
+        60% 50% at 18% 8%,
+        color-mix(in oklch, var(--color-violet) 26%, transparent) 0%,
+        transparent 62%
+      ),
+      radial-gradient(
+        55% 48% at 88% 92%,
+        color-mix(in oklch, var(--color-indigo) 22%, transparent) 0%,
+        transparent 60%
+      ),
+      var(--color-canvas);
+  }
+
+  /* 文本类元素恢复可选中 */
+  input,
+  textarea,
+  pre,
+  code {
+    user-select: text;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklch, var(--color-accent) 30%, transparent);
+    color: var(--color-txt);
+  }
+}
+
+/* ==========================================================================
+   组件层 —— 复用度最高的样式收敛在此
+   ========================================================================== */
+@layer components {
+  /* 窗口外壳 —— 唯一承担 backdrop-filter 的层，内部靠半透明色分层。
+     直角：无装饰窗口在系统层面就是直角，CSS 再切圆角只会露出原生底色 */
+  .win {
+    @apply relative flex flex-col overflow-hidden bg-window;
+    box-shadow: var(--shadow-win);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+  }
+
+  /* 窗口标题栏 */
+  .win-bar {
+    @apply flex h-11 shrink-0 items-center gap-3 border-b border-line-soft px-4;
+  }
+
+  /* 卡片 */
+  .card,
+  .card-action {
+    @apply rounded-card border border-line-soft bg-card;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* 可交互卡片 */
+  .card-action {
+    @apply cursor-pointer transition-colors duration-150 hover:border-line-strong hover:bg-raised;
+  }
+
+  /* 图标按钮 */
+  .icon-btn {
+    @apply inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md
+           text-txt-3 transition-colors duration-150 hover:bg-hover hover:text-txt;
+  }
+
+  /* 主按钮 */
+  .btn,
+  .btn-primary {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-line
+           bg-card px-3 py-1.5 text-xs font-medium text-txt-2 transition-colors duration-150
+           hover:border-line-strong hover:bg-raised hover:text-txt;
+  }
+
+  .btn-primary {
+    @apply border-transparent bg-accent-deep text-black hover:bg-accent hover:text-black;
+  }
+
+  /* 输入框 */
+  .field {
+    @apply flex h-8 items-center gap-2 rounded-lg border border-line bg-panel px-2.5
+           text-txt-2 transition-colors duration-150 focus-within:border-line-strong;
+  }
+
+  .field input {
+    @apply w-full bg-transparent text-xs text-txt outline-none placeholder:text-txt-4;
+  }
+
+  /* 侧栏导航项 */
+  .nav-item {
+    @apply flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[13px] text-txt-2
+           transition-colors duration-150 hover:bg-hover hover:text-txt;
+  }
+
+  .nav-item-active {
+    @apply bg-raised text-txt;
+  }
+
+  /* 分组标题 */
+  .group-label {
+    @apply px-2.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-txt-4;
+  }
+
+  /* 快捷键标签 */
+  .kbd {
+    @apply inline-flex items-center gap-0.5 font-mono text-[10.5px] text-txt-4;
+  }
+
+  /* 列表行 */
+  .row-item {
+    @apply flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5
+           transition-colors duration-150 hover:bg-hover;
+  }
+}
+
+/* ==========================================================================
+   工具类
+   ========================================================================== */
+
+/* 细滚动条 */
+@utility scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--color-line);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-line-strong);
+  }
+}
+
+/* 隐藏滚动条 */
+@utility scroll-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 状态点辉光 */
+@utility glow {
+  box-shadow: 0 0 8px 0 currentColor;
+}
+
+/* 窗口顶部环境光 —— 玻璃上的一层冷暖光晕，让顶部不至于死黑 */
+@utility ambient {
+  &::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: 260px;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        90% 100% at 22% 0%,
+        color-mix(in oklch, var(--color-violet) 20%, transparent) 0%,
+        transparent 68%
+      ),
+      radial-gradient(
+        80% 100% at 82% 0%,
+        color-mix(in oklch, var(--color-indigo) 15%, transparent) 0%,
+        transparent 65%
+      );
+  }
+}
+
+/* 浮层玻璃 —— 命令面板一类脱离窗口壳的元素自己承担模糊 */
+@utility glass {
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+}
