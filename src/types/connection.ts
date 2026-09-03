@@ -89,7 +89,7 @@ export interface SavedConnection {
   /** 备注 */
   description: string
   /** 侧栏展示的短标签，可配置多个 */
-  tags: string[]
+  tags: readonly string[]
   /** 标签徽章与标签页下划线颜色 */
   tagColor: ConnectionTagColor
   /** 创建时间，Unix 毫秒 */

@@ -3,6 +3,7 @@ import type { RecentFilter, SessionKind } from '@/types'
 /** 会话类型 → 图标、徽章文案与配色，与终端 / 数据库 / 文件三处入口的色系保持一致 */
 export const SESSION_KIND_META: Record<SessionKind, { label: string, icon: string, tone: string }> = {
   ssh: { label: 'SSH', icon: 'lucide:square-terminal', tone: 'text-accent' },
+  local: { label: 'LOCAL', icon: 'lucide:terminal', tone: 'text-violet' },
   database: { label: 'DB', icon: 'lucide:database', tone: 'text-pink' },
   sftp: { label: 'SFTP', icon: 'mirai:folder', tone: 'text-blue' },
 }
@@ -11,6 +12,7 @@ export const SESSION_KIND_META: Record<SessionKind, { label: string, icon: strin
 export const RECENT_FILTERS: RecentFilter[] = [
   { id: 'all', label: 'All' },
   { id: 'ssh', label: 'SSH' },
+  { id: 'local', label: 'Local' },
   { id: 'database', label: 'Database' },
 ]
 

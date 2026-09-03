@@ -39,14 +39,14 @@ store.subscribe(() => void refresh())
 
 void refresh()
 
-/** SSH 连接 */
+/** 服务器终端（SSH 与本地 PTY 共用侧栏分组） */
 const sshConnections = computed(() =>
-  state.items.filter(item => item.kind === 'ssh'),
+  state.items.filter(item => item.kind === 'ssh' || item.kind === 'local'),
 )
 
 /** 数据库连接 */
 const databaseConnections = computed(() =>
-  state.items.filter(item => item.kind !== 'ssh'),
+  state.items.filter(item => item.kind === 'mysql' || item.kind === 'postgresql'),
 )
 
 /**

@@ -92,16 +92,22 @@ async fn path_suggestions(session: &SshSession, token: &str, cwd: &str) -> Vec<S
         return Vec::new();
     };
 
-    let prefix_lower = prefix.to_locale_lowercase();
+    let prefix_lower = prefix.to_lowercase();
     let mut entries = listing
         .entries
         .into_iter()
-        .filter(|entry| entry.name.to_locale_lowercase().starts_with(&prefix_lower))
+        .filter(|entry| entry.name.to_lowercase().starts_with(&prefix_lower))
         .collect::<Vec<_>>();
 
     entries.sort_by(|a, b| {
-        let a_rank = matches!(a.kind, files::FileKind::Directory | files::FileKind::Symlink);
-        let b_rank = matches!(b.kind, files::FileKind::Directory | files::FileKind::Symlink);
+        let a_rank = matches!(
+            a.kind,
+            files::FileKind::Directory | files::FileKind::Symlink
+        );
+        let b_rank = matches!(
+            b.kind,
+            files::FileKind::Directory | files::FileKind::Symlink
+        );
         b_rank.cmp(&a_rank).then_with(|| a.name.cmp(&b.name))
     });
 
@@ -130,7 +136,7 @@ async fn path_suggestions(session: &SshSession, token: &str, cwd: &str) -> Vec<S
 }
 
 fn current_token(line: &str) -> &str {
-    if line.ends_with(char::is_whitespace) {
+    if line.trim_end().len() != line.len() {
         return "";
     }
 
@@ -145,7 +151,7 @@ fn looks_like_path(token: &str) -> bool {
 
 fn split_path_token(token: &str) -> (&str, &str) {
     match token.rsplit_once('/') {
-        Some((directory, prefix)) => {
+        Some((_directory, prefix)) => {
             let directory_end = token.len() - prefix.len();
             (&token[..directory_end], prefix)
         }
@@ -250,4 +256,3 @@ mod tests {
         assert_eq!(directory_target("/var/", "/root"), "/var");
     }
 }
-

@@ -8,6 +8,7 @@ use tauri::{AppHandle, State};
 
 use crate::error::AppResult;
 
+use super::completion::{self, ShellSuggestion};
 use super::files::DirectoryListing;
 use super::manager::SessionManager;
 use super::models::{
@@ -15,7 +16,6 @@ use super::models::{
 };
 use super::stats::SystemStats;
 use super::{events, files, keys, stats};
-use super::completion::{self, ShellSuggestion};
 
 /// 建立连接，返回会话 id。
 #[tauri::command]

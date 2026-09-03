@@ -14,6 +14,7 @@
 pub mod app;
 pub mod error;
 pub mod ipc;
+pub mod local_terminal;
 pub mod platform;
 pub mod ssh;
 

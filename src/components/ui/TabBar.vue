@@ -12,6 +12,8 @@ export interface TabItem {
   icon?: string
   /** 左侧状态点色调 */
   dot?: 'accent' | 'amber' | 'txt-3'
+  /** 激活下划线颜色；连接标签可跟随用户选择的标签色。 */
+  accent?: string
   /** 是否可关闭 */
   closable?: boolean
 }
@@ -40,10 +42,11 @@ const active = defineModel<string>('active', { required: true })
       role="tab"
       tabindex="0"
       :aria-selected="active === tab.id"
+      :style="active === tab.id ? { borderBottomColor: tab.accent || 'var(--color-accent)' } : undefined"
       :class="cn(
         'group flex h-full shrink-0 cursor-pointer items-center gap-2 rounded-t-lg border-b-2 px-3 text-xs transition-colors duration-150',
         active === tab.id
-          ? 'border-accent bg-card text-txt'
+          ? 'border-transparent bg-card text-txt'
           : 'border-transparent text-txt-3 hover:bg-panel hover:text-txt-2',
       )"
       @click="active = tab.id"

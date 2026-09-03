@@ -63,6 +63,9 @@ pub async fn list_directory(session: &SshSession, path: &str) -> SshResult<Direc
     // 其余路径一律引号包裹，见 shell::quote 的说明。
     let quoted = if target == "~" {
         "~".to_owned()
+    } else if let Some(relative) = target.strip_prefix("~/") {
+        // 只让固定的 `$HOME` 展开，后面的用户路径仍按字面量转义。
+        format!("$HOME/{}", quote(relative))
     } else {
         quote(target)
     };

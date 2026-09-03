@@ -5,8 +5,10 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSshTerminal } from '@/composables/useSshTerminal'
+import { useSshShellCompletion } from '@/composables/useSshShellCompletion'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
+import TerminalSuggestions from './TerminalSuggestions.vue'
 
 const props = defineProps<{
   /**
@@ -32,7 +34,21 @@ const emit = defineEmits<{
 
 const containerRef = useTemplateRef<HTMLElement>('terminal')
 
-const { status, sessionId, mount, connect, resize } = useSshTerminal()
+const {
+  term,
+  status,
+  sessionId,
+  inputLine,
+  mount,
+  connect,
+  resize,
+  sendInput,
+  setInputInterceptor,
+  setSubmitHandler,
+} = useSshTerminal()
+
+const completionEnabled = computed(() => status.value === 'connected')
+const completion = useSshShellCompletion({ sessionId, inputLine, enabled: completionEnabled })
 
 // xterm 是否已挂到容器上。挂载只做一次，重连复用同一个实例。
 // 用普通变量而非响应式：模板不读它，只是 watch 内部的一次性标记
@@ -115,6 +131,52 @@ async function reconnect(): Promise<void> {
     startupCommand: props.startupCommand,
   }).catch(() => {})
 }
+
+function currentToken(line: string): string {
+  return line.match(/\S+$/)?.[0] ?? ''
+}
+
+function acceptSuggestion(item = completion.activeSuggestion.value): void {
+  if (!item)
+    return
+
+  const token = currentToken(inputLine.value)
+  if (!item.value.toLocaleLowerCase().startsWith(token.toLocaleLowerCase()))
+    return
+
+  const suffix = item.value.slice(token.length)
+    + (item.kind === 'directory' ? '' : ' ')
+  sendInput(suffix)
+  completion.close()
+  term.value?.focus()
+}
+
+function interceptTerminalInput(data: string): boolean {
+  if (!completion.open.value)
+    return false
+
+  if (data === '\t') {
+    acceptSuggestion()
+    return true
+  }
+  if (data === '\x1b[A') {
+    completion.move(-1)
+    return true
+  }
+  if (data === '\x1b[B') {
+    completion.move(1)
+    return true
+  }
+  if (data === '\x1b') {
+    completion.close()
+    return true
+  }
+
+  return false
+}
+
+setInputInterceptor(interceptTerminalInput)
+setSubmitHandler(line => void completion.trackSubmittedCommand(line))
 </script>
 
 <template>
@@ -153,6 +215,16 @@ async function reconnect(): Promise<void> {
       >
         {{ connectingText }}
       </p>
+      <Transition name="terminal-completion">
+        <TerminalSuggestions
+          v-if="completion.open.value"
+          :items="completion.suggestions.value"
+          :active-index="completion.activeIndex.value"
+          :loading="completion.loading.value"
+          @hover="completion.activeIndex.value = $event"
+          @select="acceptSuggestion"
+        />
+      </Transition>
     </div>
 
     <!-- 还没选服务器 -->
@@ -190,5 +262,23 @@ async function reconnect(): Promise<void> {
 
 :deep(.xterm-viewport)::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.terminal-completion-enter-active,
+.terminal-completion-leave-active {
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.terminal-completion-enter-from,
+.terminal-completion-leave-to {
+  transform: translateY(4px);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-completion-enter-active,
+  .terminal-completion-leave-active {
+    transition: none;
+  }
 }
 </style>

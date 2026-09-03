@@ -22,6 +22,9 @@ interface TerminalConnectOptions {
   startupCommand?: string
 }
 
+type InputInterceptor = (data: string) => boolean
+type SubmitHandler = (line: string) => void
+
 export function useSshTerminal() {
   // xterm 实例不参与响应式：它内部持有大量 DOM 与缓冲区，
   // 被 Vue 深度代理会显著拖慢渲染
@@ -36,15 +39,19 @@ export function useSshTerminal() {
     status: 'disconnected' as SshSessionStatus,
     // 连接失败或异常断开的原因
     error: '',
+    // 当前 shell 提示符后由用户输入的文本，仅用于前端补全，不写入历史。
+    inputLine: '',
   })
 
-  const { sessionId, status, error } = toRefs(state)
+  const { sessionId, status, error, inputLine } = toRefs(state)
 
   // 事件订阅的取消函数，断开时逐个调用
   let unlisteners: UnlistenFn[] = []
   // 连接是多段异步流程。关闭标签或改配置时递增序号，让尚未返回的旧流程自行回收。
   let operation = 0
   let disposed = false
+  let inputInterceptor: InputInterceptor | undefined
+  let submitHandler: SubmitHandler | undefined
 
   /**
    * 挂载 xterm 到容器。
@@ -74,8 +81,17 @@ export function useSshTerminal() {
     // 用户输入直接转发给远端。未连接时丢弃：
     // 否则在断开的终端里敲字会攒下一堆无处可去的 invoke
     terminal.onData((data) => {
-      if (state.status === 'connected' && state.sessionId)
-        void ssh.writeToShell(state.sessionId, data).catch(handleWriteError)
+      // vim/top 等切到 alternate buffer 后，按键属于应用本身，不做 shell 补全。
+      if (terminal.buffer.active.type === 'alternate') {
+        state.inputLine = ''
+        sendInput(data)
+        return
+      }
+
+      if (inputInterceptor?.(data))
+        return
+
+      sendInput(data)
     })
   }
 
@@ -96,6 +112,7 @@ export function useSshTerminal() {
     const currentOperation = ++operation
     state.status = 'connecting'
     state.error = ''
+    state.inputLine = ''
 
     let id = ''
 
@@ -217,6 +234,7 @@ export function useSshTerminal() {
 
     await cleanup()
     state.status = 'disconnected'
+    state.inputLine = ''
 
     if (id)
       await discardSession(id)
@@ -250,6 +268,56 @@ export function useSshTerminal() {
     term.value?.writeln(`\r\n\x1b[31m发送失败：${state.error}\x1b[0m`)
   }
 
+  /** 统一发送用户输入，并同步维护一份轻量的当前行镜像供补全使用。 */
+  function sendInput(data: string): void {
+    if (state.status !== 'connected' || !state.sessionId)
+      return
+
+    trackInput(data)
+    void ssh.writeToShell(state.sessionId, data).catch(handleWriteError)
+  }
+
+  function trackInput(data: string): void {
+    if (data === '\r' || data === '\n') {
+      const submitted = state.inputLine
+      state.inputLine = ''
+      submitHandler?.(submitted)
+      return
+    }
+
+    if (data === '\x7f' || data === '\b') {
+      state.inputLine = [...state.inputLine].slice(0, -1).join('')
+      return
+    }
+
+    if (data === '\x15') {
+      state.inputLine = ''
+      return
+    }
+
+    if (data === '\x17') {
+      state.inputLine = state.inputLine.replace(/\S+\s*$/, '')
+      return
+    }
+
+    // 历史、Home/End、光标左右移动后无法可靠镜像 readline 的行状态，暂时关闭本轮补全。
+    if (data.startsWith('\x1b')) {
+      state.inputLine = ''
+      return
+    }
+
+    if (![...data].some(character => character < ' ' || character === '\x7f'))
+      state.inputLine += data
+  }
+
+  function setInputInterceptor(handler?: InputInterceptor): void {
+    inputInterceptor = handler
+  }
+
+  function setSubmitHandler(handler?: SubmitHandler): void {
+    submitHandler = handler
+  }
+
   // 组件卸载时必须清理：xterm 持有 DOM 引用，事件订阅握着 Tauri 侧的回调，
   // 漏掉任何一个都会在反复开关标签页时累积泄漏
   onBeforeUnmount(() => {
@@ -263,9 +331,13 @@ export function useSshTerminal() {
     sessionId,
     status,
     error,
+    inputLine,
     mount,
     connect,
     disconnect,
     resize,
+    sendInput,
+    setInputInterceptor,
+    setSubmitHandler,
   }
 }

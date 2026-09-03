@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, reactive, toRaw } from 'vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
+import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { useConnections } from '@/composables/useConnections'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { NAV_ITEMS } from '@/constants/workspace'
 import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
+import type { ContextMenuItem } from '@/types/context-menu'
 import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
 import { openConnectionWindow, openSettingsWindow } from '@/utils/window'
@@ -38,7 +40,16 @@ const { tabs, activeId } = useWorkspaceTabs()
 const state = reactive({
   pendingConnection: null as SavedConnection | null,
   pendingGroup: null as ConnectionGroupView | null,
+  addMenuOpen: false,
+  addMenuX: 0,
+  addMenuY: 0,
 })
+
+const addMenuItems: ContextMenuItem[] = [
+  { id: 'ssh', label: 'SSH Connection', icon: 'lucide:server' },
+  { id: 'local', label: 'Local Terminal', icon: 'lucide:square-terminal' },
+  { id: 'database', label: 'Database Connection', icon: 'lucide:database', separatorBefore: true },
+]
 
 /**
  * 项目树跟随主视图切换。
@@ -73,8 +84,25 @@ function addConnection(): void {
   openConnectionWindow(active.value === 'databases' ? 'database' : 'ssh')
 }
 
+function openAddMenu(event: MouseEvent): void {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  state.addMenuX = rect.left
+  state.addMenuY = rect.top - 112
+  state.addMenuOpen = true
+}
+
+function selectConnectionKind(kind: string): void {
+  if (kind === 'ssh' || kind === 'local' || kind === 'database')
+    openConnectionWindow(kind)
+}
+
 function editConnection(connection: SavedConnection): void {
-  openConnectionWindow('ssh', connection.id)
+  openConnectionWindow(
+    connection.kind === 'local'
+      ? 'local'
+      : connection.kind === 'ssh' ? 'ssh' : 'database',
+    connection.id,
+  )
 }
 
 async function moveConnection(connectionId: string, groupName: string): Promise<void> {
@@ -90,6 +118,8 @@ async function duplicateConnection(connection: SavedConnection): Promise<void> {
     username: connection.username,
     group: connection.group,
     description: connection.description,
+    tags: [...connection.tags],
+    tagColor: connection.tagColor,
     settings: structuredClone(toRaw(connection.settings)),
   })
 }
@@ -186,7 +216,7 @@ async function confirmRemoval(): Promise<void> {
         type="button"
         :class="['btn', collapsed ? 'size-7 px-0' : 'flex-1']"
         :title="collapsed ? 'Add Connection' : undefined"
-        @click="addConnection"
+        @click="openAddMenu"
       >
         <AppIcon name="lucide:plus" :size="14" />
         <span v-if="!collapsed">Add Connection</span>
@@ -197,7 +227,7 @@ async function confirmRemoval(): Promise<void> {
 
   <AppConfirmDialog
     :open="Boolean(state.pendingConnection || state.pendingGroup)"
-    :title="state.pendingConnection ? '删除 SSH 连接' : '删除分组'"
+    :title="state.pendingConnection ? '删除连接' : '删除分组'"
     :description="state.pendingConnection
       ? `确定删除“${state.pendingConnection.name}”吗？此操作不会删除服务器上的任何数据。`
       : `确定删除“${state.pendingGroup?.name ?? ''}”吗？其中的连接会移到 Ungrouped。`"
@@ -205,6 +235,16 @@ async function confirmRemoval(): Promise<void> {
     danger
     @close="closeConfirmation"
     @confirm="confirmRemoval"
+  />
+
+  <AppContextMenu
+    :open="state.addMenuOpen"
+    :x="state.addMenuX"
+    :y="state.addMenuY"
+    :items="addMenuItems"
+    label="新建连接"
+    @select="selectConnectionKind"
+    @close="state.addMenuOpen = false"
   />
 </template>
 

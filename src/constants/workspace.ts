@@ -73,7 +73,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
 export const COMMAND_TARGETS: Record<string, CommandTarget> = {
   'connect-server': { newConnection: 'ssh' },
   'new-database': { newConnection: 'database' },
-  'new-terminal': { nav: 'servers' },
+  'new-terminal': { newConnection: 'local' },
   'split-terminal': { nav: 'servers' },
   'open-files': { nav: 'servers', machineView: 'files' },
   'run-sql': { nav: 'databases' },

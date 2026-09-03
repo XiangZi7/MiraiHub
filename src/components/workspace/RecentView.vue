@@ -38,7 +38,9 @@ const { filter, keyword } = toRefs(state)
 
 /** 连接类型 → 会话类型。数据库的三种协议在这里都归为 database */
 function kindOf(connection: SavedConnection): SessionKind {
-  return connection.kind === 'ssh' ? 'ssh' : 'database'
+  if (connection.kind === 'ssh')
+    return 'ssh'
+  return connection.kind === 'local' ? 'local' : 'database'
 }
 
 /** 用过的连接，按最近使用倒序 */

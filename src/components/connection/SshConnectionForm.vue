@@ -9,7 +9,7 @@ import * as privateKeysStore from '@/api/private-keys'
 import * as ssh from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
 import { usePrivateKeys } from '@/composables/usePrivateKeys'
-import type { NewConnection } from '@/types/connection'
+import type { ConnectionTagColor, NewConnection } from '@/types/connection'
 import { isSshConnection } from '@/types/connection'
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
 import ConnectionTagEditor from './ConnectionTagEditor.vue'
@@ -81,7 +81,7 @@ const form = reactive({
   port: '22',
   username: '',
   tags: '',
-  tagColor: 'green' as const,
+  tagColor: 'green' as ConnectionTagColor,
   authentication: 'private-key',
   password: '',
   description: '',

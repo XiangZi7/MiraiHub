@@ -82,13 +82,13 @@ export interface CommandTarget {
   /** 是否把焦点交给标题栏搜索框 */
   focusSearch?: boolean
   /** 若指定，打开连接配置窗口并预选该类型 */
-  newConnection?: 'ssh' | 'database'
+  newConnection?: 'ssh' | 'local' | 'database'
 }
 
 /** SSH 密钥相关类型见 `@/types/ssh` —— 那边与 Rust 侧的模型一一对应 */
 
 /** 会话类型 */
-export type SessionKind = 'ssh' | 'database' | 'sftp'
+export type SessionKind = 'ssh' | 'local' | 'database' | 'sftp'
 
 /**
  * 最近会话记录。

@@ -86,7 +86,7 @@ function renameGroup(groupId: string, name: string): void {
 }
 
 function startDrag(event: DragEvent, connection: SavedConnection): void {
-  if (connection.kind !== 'ssh') {
+  if (connection.kind !== 'ssh' && connection.kind !== 'local') {
     event.preventDefault()
     return
   }
@@ -132,7 +132,7 @@ function eventPoint(event: MouseEvent): { x: number, y: number } {
 }
 
 function openConnectionMenu(event: MouseEvent, connection: SavedConnection): void {
-  if (connection.kind !== 'ssh')
+  if (connection.kind !== 'ssh' && connection.kind !== 'local')
     return
 
   const point = eventPoint(event)
@@ -234,7 +234,7 @@ function runContextAction(action: string): void {
             v-for="node in group.items"
             :key="node.id"
             type="button"
-            :draggable="node.kind === 'ssh'"
+            :draggable="node.kind === 'ssh' || node.kind === 'local'"
             :class="cn('connection-node w-full pl-7', activeId === node.id && 'nav-item-active')"
             :title="endpointOf(node)"
             @click="emit('open', node)"

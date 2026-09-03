@@ -35,12 +35,12 @@ export function closeWindow(): void {
 /**
  * 请求 Rust 创建原生连接配置子窗口。
  *
- * `kind` 决定打开 SSH 配置窗口还是数据库配置窗口。
+ * `kind` 决定打开 SSH、本地终端还是数据库配置窗口。
  * MySQL / PostgreSQL 属于数据库窗口内部的协议选择，不与 SSH 放在同一级。
  *
  * 浏览器开发态用 popup 降级，方便不启动 Tauri 也能检查表单 UI。
  */
-export function openConnectionWindow(kind: 'ssh' | 'database', connectionId?: string): void {
+export function openConnectionWindow(kind: 'ssh' | 'local' | 'database', connectionId?: string): void {
   const editQuery = connectionId ? `&connectionId=${encodeURIComponent(connectionId)}` : ''
   const query = `&type=${kind}${editQuery}`
 

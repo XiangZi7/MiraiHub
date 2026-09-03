@@ -8,7 +8,7 @@ use super::window;
 
 /// 打开连接配置窗口。
 ///
-/// `kind` 指定连接窗口类型（ssh / database），
+/// `kind` 指定连接窗口类型（ssh / local / database），
 /// 为空则用前端的默认值。
 #[tauri::command]
 pub async fn open_connection_window(

@@ -45,6 +45,7 @@ dirs = "6"
 thiserror = "2"
 log = "0.4"
 tauri-plugin-dialog = "2"
+portable-pty = "0.8.1"
 
 [target.'cfg(windows)'.dependencies]
 # 与 tauri 内部同版本（Cargo.lock windows 0.61.x），保证 window.hwnd() 的 HWND 类型直接兼容。

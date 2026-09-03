@@ -13,14 +13,16 @@ import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { useConnections } from '@/composables/useConnections'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { COMMAND_TARGETS } from '@/constants/workspace'
+import { connectionTagColorCss } from '@/constants/connection'
 import type { CommandItem, MachineViewId, NavId } from '@/types'
-import type { SavedConnection } from '@/types/connection'
-import { toSshConfig } from '@/types/connection'
+import type { LocalConnectionSettings, SavedConnection } from '@/types/connection'
+import { isDatabaseConnection, isLocalConnection, toSshConfig } from '@/types/connection'
 import { openConnectionWindow, toggleMaximizeWindow } from '@/utils/window'
 import AppSidebar from './AppSidebar.vue'
 import CommandPalette from './CommandPalette.vue'
 import DatabaseView from './DatabaseView.vue'
 import MachinePanel from './MachinePanel.vue'
+import LocalTerminalPanel from './LocalTerminalPanel.vue'
 import RecentView from './RecentView.vue'
 import SshKeysView from './SshKeysView.vue'
 import TerminalPanel from './TerminalPanel.vue'
@@ -103,6 +105,7 @@ const tabItems = computed<TabItem[]>(() =>
       ? 'accent'
       : tab.status === 'connecting' ? 'amber' : 'txt-3',
     closable: true,
+    accent: connectionTagColorCss(tab.connection.tagColor),
   })),
 )
 
@@ -128,14 +131,35 @@ const sshTabViews = computed(() =>
     }),
 )
 
+const localTabViews = computed(() =>
+  openTabs
+    .flatMap((tab) => {
+      const connection = tab.connection
+      if (!isLocalConnection(connection))
+        return []
+      return [{
+        id: tab.id,
+        title: connection.name,
+        settings: connection.settings as LocalConnectionSettings,
+      }]
+    }),
+)
+
 /** 当前标签按主视图收窄，避免把数据库连接传进机器面板，反之亦然 */
 const activeSshTab = computed(() =>
   activeTab.value?.connection.kind === 'ssh' ? activeTab.value : undefined,
 )
 
+const activeTerminalTab = computed(() => {
+  const tab = activeTab.value
+  return tab && (tab.connection.kind === 'ssh' || tab.connection.kind === 'local')
+    ? tab
+    : undefined
+})
+
 const activeDatabaseConnection = computed(() => {
   const connection = activeTab.value?.connection
-  return connection && connection.kind !== 'ssh' ? connection : undefined
+  return connection && isDatabaseConnection(connection) ? connection : undefined
 })
 
 /**
@@ -183,7 +207,7 @@ function handleTitleBarDblClick(event: MouseEvent): void {
  */
 function openConnection(connection: SavedConnection): void {
   open(connection)
-  state.activeNav = connection.kind === 'ssh' ? 'servers' : 'databases'
+  state.activeNav = isDatabaseConnection(connection) ? 'databases' : 'servers'
   void touch(connection.id)
 }
 
@@ -197,7 +221,7 @@ function selectTab(id: string): void {
 
   const tab = openTabs.find(item => item.id === id)
   if (tab)
-    state.activeNav = tab.connection.kind === 'ssh' ? 'servers' : 'databases'
+    state.activeNav = isDatabaseConnection(tab.connection) ? 'databases' : 'servers'
 }
 
 /**
@@ -211,8 +235,8 @@ function selectNav(nav: NavId): void {
     return
 
   const activeKindMatches = nav === 'servers'
-    ? activeTab.value?.connection.kind === 'ssh'
-    : activeTab.value?.connection.kind !== 'ssh' && Boolean(activeTab.value)
+    ? activeTab.value?.connection.kind === 'ssh' || activeTab.value?.connection.kind === 'local'
+    : Boolean(activeTab.value && isDatabaseConnection(activeTab.value.connection))
 
   if (activeKindMatches)
     return
@@ -220,8 +244,8 @@ function selectNav(nav: NavId): void {
   const candidate = [...openTabs]
     .reverse()
     .find(tab => nav === 'servers'
-      ? tab.connection.kind === 'ssh'
-      : tab.connection.kind !== 'ssh')
+      ? tab.connection.kind === 'ssh' || tab.connection.kind === 'local'
+      : isDatabaseConnection(tab.connection))
 
   if (candidate)
     activate(candidate.id)
@@ -235,7 +259,7 @@ function closeTab(id: string): void {
   if (!wasActive || !activeTab.value)
     return
 
-  state.activeNav = activeTab.value.connection.kind === 'ssh' ? 'servers' : 'databases'
+  state.activeNav = isDatabaseConnection(activeTab.value.connection) ? 'databases' : 'servers'
 }
 
 function handleSshStatus(
@@ -353,6 +377,7 @@ function runCommand(item: CommandItem): void {
           />
           <div class="flex items-center gap-0.5 pb-1.5">
             <IconButton
+              v-if="!activeTerminalTab || activeSshTab"
               :icon="machineOpen ? 'lucide:panel-right-close' : 'lucide:panel-right-open'"
               :size="14"
               :title="machineOpen ? '收起机器面板' : '展开机器面板'"
@@ -377,13 +402,22 @@ function runCommand(item: CommandItem): void {
               @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"
             />
 
+            <LocalTerminalPanel
+              v-for="tab in localTabViews"
+              v-show="activeId === tab.id"
+              :key="tab.id"
+              :title="tab.title"
+              :settings="tab.settings"
+              @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"
+            />
+
             <TerminalPanel
-              v-if="!activeSshTab"
+              v-if="!activeTerminalTab"
               key="empty-terminal"
             />
 
             <AppResizeHandle
-              v-if="machineOpen"
+              v-if="machineOpen && Boolean(activeSshTab)"
               v-model="machineWidth"
               pane-side="right"
               :min="MACHINE_MIN_WIDTH"
@@ -392,7 +426,7 @@ function runCommand(item: CommandItem): void {
             />
 
             <MachinePanel
-              v-if="machineOpen"
+              v-if="machineOpen && Boolean(activeSshTab)"
               v-model:view="machineView"
               :connection="activeSshTab?.connection"
               :session-id="activeSshTab?.sessionId ?? ''"
