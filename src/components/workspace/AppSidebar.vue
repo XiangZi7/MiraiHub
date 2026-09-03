@@ -10,7 +10,7 @@ import type { SavedConnection } from '@/types/connection'
 import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
 import { endpointOf } from '@/types/connection'
-import { openConnectionWindow } from '@/utils/window'
+import { openConnectionWindow, openSettingsWindow } from '@/utils/window'
 
 // 当前选中的主视图，由 MainWindow 通过 v-model:active 控制
 const active = defineModel<NavId>('active', { required: true })
@@ -162,7 +162,7 @@ function addConnection(): void {
         <AppIcon name="lucide:plus" :size="14" />
         <span>Add Connection</span>
       </button>
-      <IconButton icon="lucide:settings" title="设置" />
+      <IconButton icon="lucide:settings" title="设置" @click="openSettingsWindow" />
     </div>
   </aside>
 </template>

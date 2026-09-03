@@ -9,6 +9,8 @@ use crate::error::{AppError, AppResult};
 
 /// 连接配置窗口的 label。
 const CONNECTION_WINDOW: &str = "connection";
+/// 设置窗口的 label。
+const SETTINGS_WINDOW: &str = "settings";
 
 /// 给无边框窗口补上 DWM 原生阴影。
 ///
@@ -83,7 +85,9 @@ pub fn open_connection_window(app: &AppHandle, kind: Option<&str>) -> AppResult<
             .maximizable(false)
             .decorations(false)
             .transparent(true)
-            .shadow(true)
+            // 与主窗口一致：关闭 Tauri 自带阴影，构建后统一交给
+            // enable_window_shadow() 用 DWM 绘制，避免无边框窗口出现亮色描边。
+            .shadow(false)
             .skip_taskbar(true)
             .center();
 
@@ -109,6 +113,79 @@ pub fn open_connection_window(app: &AppHandle, kind: Option<&str>) -> AppResult<
 
     // 先注册销毁监听，再禁用父窗：
     // 顺序反过来的话，若构建后到监听注册前窗口被关掉，主窗会永久卡在禁用态
+    if let Some(parent) = main.as_ref() {
+        let parent_on_destroy = parent.clone();
+        dialog.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                let _ = parent_on_destroy.set_enabled(true);
+                let _ = parent_on_destroy.set_focus();
+            }
+        });
+    }
+
+    dialog.set_focus().map_err(to_app_error)?;
+
+    if let Some(parent) = main {
+        parent.set_enabled(false).map_err(to_app_error)?;
+    }
+
+    Ok(())
+}
+
+/// 打开原生设置窗口。
+///
+/// 与连接配置窗口一样，它是独立的 WebviewWindow，而不是主页面里的 HTML 遮罩。
+/// 固定尺寸和原生父子关系让它保持设置对话框的行为：显示时禁用主窗，关闭后恢复。
+pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
+    if let Some(dialog) = app.get_webview_window(SETTINGS_WINDOW) {
+        dialog.show().map_err(to_app_error)?;
+        dialog.set_focus().map_err(to_app_error)?;
+
+        if let Some(main) = app.get_webview_window("main") {
+            main.set_enabled(false).map_err(to_app_error)?;
+        }
+
+        return Ok(());
+    }
+
+    let main = app.get_webview_window("main");
+    let mut builder = WebviewWindowBuilder::new(
+        app,
+        SETTINGS_WINDOW,
+        WebviewUrl::App("index.html?window=settings".into()),
+    )
+    .title("设置")
+    .inner_size(620.0, 480.0)
+    .min_inner_size(620.0, 480.0)
+    .max_inner_size(620.0, 480.0)
+    .resizable(false)
+    .minimizable(false)
+    .maximizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .skip_taskbar(true)
+    .center();
+
+    if let Some(parent) = main.as_ref() {
+        builder = builder.parent(parent).map_err(to_app_error)?;
+    }
+
+    #[cfg(windows)]
+    {
+        use tauri::window::{Effect, EffectState, EffectsBuilder};
+
+        builder = builder.effects(
+            EffectsBuilder::new()
+                .effect(Effect::Acrylic)
+                .state(EffectState::Active)
+                .build(),
+        );
+    }
+
+    let dialog = builder.build().map_err(to_app_error)?;
+    enable_window_shadow(&dialog);
+
     if let Some(parent) = main.as_ref() {
         let parent_on_destroy = parent.clone();
         dialog.on_window_event(move |event| {

@@ -63,7 +63,7 @@
 
   /* ---------- 阴影 ----------
      每层都带一道 inset 顶部高光，这是玻璃"厚度"的来源。
-     窗口外阴影不再自绘，由系统负责（tauri.conf.json 的 shadow: true） */
+     窗口外阴影不在 WebView 内自绘，由平台层的 DWM 原生阴影负责。 */
   --shadow-win: inset 0 1px 0 rgb(255 255 255 / 0.1);
   --shadow-pop:
     0 24px 56px -12px rgb(0 0 0 / 0.66), 0 0 0 1px rgb(255 255 255 / 0.07),

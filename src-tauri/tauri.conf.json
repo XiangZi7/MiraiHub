@@ -22,7 +22,7 @@
         "transparent": true,
         "shadow": false,
         "windowEffects": {
-          "effects": ["micaDark"],
+          "effects": ["acrylic"],
           "state": "active"
         }
       }

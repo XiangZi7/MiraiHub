@@ -14,3 +14,9 @@ use super::window;
 pub async fn open_connection_window(app: AppHandle, kind: Option<String>) -> AppResult<()> {
     window::open_connection_window(&app, kind.as_deref())
 }
+
+/// 打开原生设置子窗口。
+#[tauri::command]
+pub async fn open_settings_window(app: AppHandle) -> AppResult<()> {
+    window::open_settings_window(&app)
+}

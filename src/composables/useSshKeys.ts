@@ -5,6 +5,7 @@
  */
 
 import { computed, reactive, toRefs } from 'vue'
+import * as privateKeys from '@/api/private-keys'
 import * as ssh from '@/api/ssh'
 import type { GenerateKeyRequest, SshKeyInfo } from '@/types/ssh'
 
@@ -48,6 +49,7 @@ export function useSshKeys() {
 
     try {
       state.keys = await ssh.listKeys()
+      privateKeys.syncLocalKeys(state.keys)
 
       // 选中项可能已被删掉（或首次加载还没选），回落到第一把
       if (!state.keys.some(key => key.id === state.selected))
@@ -83,6 +85,7 @@ export function useSshKeys() {
 
     try {
       await ssh.deleteKey(keyId)
+      privateKeys.forget(keyId)
       await refresh()
     }
     catch (err) {

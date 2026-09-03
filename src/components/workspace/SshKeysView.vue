@@ -4,6 +4,7 @@ import { useClipboard } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
+import { usePrivateKeys } from '@/composables/usePrivateKeys'
 import { useSshKeys } from '@/composables/useSshKeys'
 import { SSH_KEY_KIND_META } from '@/constants/ssh-keys'
 import type { GenerateKeyRequest } from '@/types/ssh'
@@ -19,6 +20,7 @@ import GenerateKeyDialog from './GenerateKeyDialog.vue'
 
 const { keys, selected, keyword, loading, error, visibleKeys, current, refresh, generate, remove }
   = useSshKeys()
+const { defaultPath: defaultPrivateKey, setDefault: setDefaultPrivateKey } = usePrivateKeys()
 
 onMounted(refresh)
 
@@ -106,6 +108,9 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           <span v-if="key.encrypted" class="shrink-0" title="私钥有口令保护">
             <AppIcon name="lucide:lock" :size="11" class="text-txt-4" />
           </span>
+          <span v-if="defaultPrivateKey === key.id" class="shrink-0" title="默认私钥">
+            <AppIcon name="lucide:star" :size="12" class="text-violet" />
+          </span>
         </button>
 
         <p v-if="loading" class="py-8 text-center text-xs text-txt-4">
@@ -126,7 +131,21 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         <span class="shrink-0 rounded border border-line bg-card px-1.5 py-0.5 text-[10px] font-medium text-txt-2">
           {{ SSH_KEY_KIND_META[current.kind].label }}
         </span>
+        <span
+          v-if="defaultPrivateKey === current.id"
+          class="shrink-0 rounded bg-violet/15 px-1.5 py-0.5 text-[10px] font-medium text-violet"
+        >
+          Default
+        </span>
         <div class="flex-1" />
+        <IconButton
+          icon="lucide:star"
+          :size="14"
+          :title="defaultPrivateKey === current.id ? '当前默认私钥' : '设为默认私钥'"
+          :disabled="defaultPrivateKey === current.id"
+          :class="defaultPrivateKey === current.id ? 'text-violet opacity-100' : ''"
+          @click="setDefaultPrivateKey(current.id)"
+        />
         <IconButton
           icon="lucide:trash-2"
           :size="14"

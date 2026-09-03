@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, useId } from 'vue'
+import { computed, onMounted, reactive, shallowRef, useId, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
+import * as privateKeysStore from '@/api/private-keys'
 import * as ssh from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
+import { usePrivateKeys } from '@/composables/usePrivateKeys'
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
+import PrivateKeySelector from './PrivateKeySelector.vue'
 
 type SectionId = 'general' | 'advanced' | 'ssh-key' | 'proxy'
 
@@ -15,6 +18,14 @@ const emit = defineEmits<{
 }>()
 
 const { create } = useConnections()
+const {
+  keys: privateKeys,
+  defaultPath: defaultPrivateKey,
+  loading: loadingPrivateKeys,
+  rememberImported,
+  setDefault: setDefaultPrivateKey,
+  refreshLocalKeys,
+} = usePrivateKeys()
 
 const sections: Array<{ id: SectionId, label: string }> = [
   { id: 'general', label: 'General' },
@@ -49,6 +60,7 @@ const feedbackTone = shallowRef<'info' | 'error'>('info')
 const testing = shallowRef(false)
 // 保存中，避免重复提交存出两条一样的连接
 const saving = shallowRef(false)
+const browsingPrivateKeys = shallowRef(false)
 const savePassword = shallowRef(false)
 const form = reactive({
   name: '',
@@ -56,14 +68,14 @@ const form = reactive({
   host: '',
   port: '22',
   username: '',
-  authentication: 'password',
+  authentication: 'private-key',
   password: '',
   description: '',
   timeout: '30',
   keepAlive: '60',
   terminalType: 'xterm-256color',
   startupCommand: '',
-  privateKey: '',
+  privateKey: defaultPrivateKey.value,
   passphrase: '',
   proxyType: 'none',
   proxyHost: '',
@@ -73,6 +85,18 @@ const form = reactive({
 })
 
 const descriptionId = useId()
+
+watch(defaultPrivateKey, (path) => {
+  // 初次扫描 ~/.ssh 找到默认项时自动带入；不覆盖用户已经手动选好的路径。
+  if (!form.privateKey.trim())
+    form.privateKey = path
+})
+
+onMounted(async () => {
+  await refreshLocalKeys()
+  if (!form.privateKey.trim())
+    form.privateKey = defaultPrivateKey.value
+})
 
 const isReady = computed<boolean>(() => (
   form.name.trim().length > 0
@@ -129,6 +153,37 @@ function setFeedback(message: string, tone: 'info' | 'error' = 'info'): void {
   feedbackTone.value = tone
 }
 
+function rememberPrivateKey(path: string): void {
+  const trimmed = path.trim()
+  if (!trimmed || trimmed.toLocaleLowerCase().endsWith('.pub'))
+    return
+
+  rememberImported([trimmed])
+}
+
+async function browsePrivateKeys(): Promise<void> {
+  if (browsingPrivateKeys.value)
+    return
+
+  browsingPrivateKeys.value = true
+
+  try {
+    const paths = await privateKeysStore.pickPrivateKeys()
+    if (!paths.length)
+      return
+
+    const remembered = rememberImported(paths)
+    form.privateKey = remembered[0]?.path ?? paths[0]
+    setFeedback(paths.length > 1 ? `已保存 ${paths.length} 把私钥` : '已选择私钥')
+  }
+  catch (error) {
+    setFeedback(ssh.errorMessage(error), 'error')
+  }
+  finally {
+    browsingPrivateKeys.value = false
+  }
+}
+
 /** 校验必填项，不通过则跳回 General 并提示 */
 function validate(): boolean {
   if (!isReady.value) {
@@ -161,6 +216,12 @@ function validate(): boolean {
   if (form.authentication === 'private-key' && !form.privateKey.trim()) {
     activeSection.value = 'ssh-key'
     setFeedback('请先选择私钥文件', 'error')
+    return false
+  }
+
+  if (form.authentication === 'private-key' && form.privateKey.trim().toLocaleLowerCase().endsWith('.pub')) {
+    activeSection.value = 'ssh-key'
+    setFeedback('请选择私钥文件，不要选择 .pub 公钥文件', 'error')
     return false
   }
 
@@ -205,6 +266,9 @@ async function saveConnection(): Promise<void> {
   saving.value = true
 
   try {
+    if (form.authentication === 'private-key')
+      rememberPrivateKey(form.privateKey)
+
     const { port, timeoutSecs, keepaliveSecs } = numericSettings()
 
     await create({
@@ -353,12 +417,16 @@ async function saveConnection(): Promise<void> {
 
       <div v-else-if="activeSection === 'ssh-key'" class="grid gap-3.5">
         <div class="connection-section-copy">
-          Choose the private key used when the authentication method is set to Private Key.
+          Choose a saved private key or add several keys with the native file picker.
         </div>
-        <AppTextField
+        <PrivateKeySelector
           v-model="form.privateKey"
-          label="Private Key Path"
-          placeholder="C:\Users\you\.ssh\id_ed25519"
+          :keys="privateKeys"
+          :default-path="defaultPrivateKey"
+          :browsing="browsingPrivateKeys || loadingPrivateKeys"
+          @browse="browsePrivateKeys"
+          @set-default="setDefaultPrivateKey"
+          @remember="rememberPrivateKey"
         />
         <AppTextField
           v-model="form.passphrase"

@@ -57,6 +57,22 @@ export function openConnectionWindow(kind: 'ssh' | 'database'): void {
   })
 }
 
+/** 请求 Rust 创建原生设置子窗口；浏览器开发态降级为固定尺寸 popup。 */
+export function openSettingsWindow(): void {
+  if (!IS_TAURI) {
+    window.open(
+      '/?window=settings',
+      'miraihub-settings',
+      'popup=yes,width=620,height=480,resizable=no',
+    )?.focus()
+    return
+  }
+
+  void invoke('open_settings_window').catch((error: unknown) => {
+    console.error('Failed to open settings window:', error)
+  })
+}
+
 const maximized = ref(false)
 
 /**

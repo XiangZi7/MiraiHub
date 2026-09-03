@@ -15,6 +15,7 @@
     "@iconify/vue": "^5.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "~2.7.3",
     "@tauri-apps/plugin-opener": "^2",
     "@types/node": "^26.4.1",
     "@vueuse/core": "^14.4.0",

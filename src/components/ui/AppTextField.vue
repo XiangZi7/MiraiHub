@@ -12,6 +12,11 @@ const props = withDefaults(defineProps<{
   required?: boolean
   autofocus?: boolean
   inputmode?: 'text' | 'numeric' | 'url'
+  readonly?: boolean
+  /** 可选的尾部操作图标，例如文件选择器。 */
+  actionIcon?: string
+  actionTitle?: string
+  actionDisabled?: boolean
 }>(), {
   type: 'text',
   placeholder: '',
@@ -19,7 +24,16 @@ const props = withDefaults(defineProps<{
   required: false,
   autofocus: false,
   inputmode: 'text',
+  readonly: false,
+  actionIcon: '',
+  actionTitle: '',
+  actionDisabled: false,
 })
+
+const emit = defineEmits<{
+  action: []
+  blur: [event: FocusEvent]
+}>()
 
 const model = defineModel<string>({ required: true })
 const passwordVisible = shallowRef(false)
@@ -49,7 +63,9 @@ const passwordButtonTitle = computed(() => passwordVisible.value ? '隐藏密码
         :required="required"
         :autofocus="autofocus"
         :inputmode="inputmode"
+        :readonly="readonly"
         class="min-w-0 flex-1 px-2.5"
+        @blur="emit('blur', $event)"
       >
 
       <IconButton
@@ -61,6 +77,17 @@ const passwordButtonTitle = computed(() => passwordVisible.value ? '隐藏密码
         :aria-pressed="passwordVisible"
         class="mr-0.5"
         @click="passwordVisible = !passwordVisible"
+      />
+
+      <IconButton
+        v-if="actionIcon"
+        :icon="actionIcon"
+        :size="14"
+        :title="actionTitle"
+        :aria-label="actionTitle"
+        :disabled="actionDisabled"
+        class="mr-0.5"
+        @click="emit('action')"
       />
     </div>
   </div>

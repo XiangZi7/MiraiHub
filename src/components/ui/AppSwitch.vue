@@ -5,9 +5,12 @@ withDefaults(defineProps<{
   label: string
   description?: string
   disabled?: boolean
+  /** 视觉上只显示开关，标签仍以隐藏文本提供给辅助技术。 */
+  hideLabel?: boolean
 }>(), {
   description: '',
   disabled: false,
+  hideLabel: false,
 })
 
 const model = defineModel<boolean>({ required: true })
@@ -35,7 +38,7 @@ const descriptionId = useId()
     >
       <span :class="['app-switch-thumb size-3', model && 'translate-x-3.5']" />
     </span>
-    <span class="min-w-0">
+    <span :class="hideLabel ? 'sr-only' : 'min-w-0'">
       <span class="block text-[11px] leading-[18px] text-txt-2">{{ label }}</span>
       <span v-if="description" :id="descriptionId" class="mt-0.5 block text-[10px] leading-4 text-txt-3">
         {{ description }}

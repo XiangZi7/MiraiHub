@@ -17,10 +17,16 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   required?: boolean
   disabled?: boolean
+  /** 保留可访问名称，但不显示组件自带标签，适合设置项这类行内布局。 */
+  hideLabel?: boolean
+  /** 28px 高的紧凑规格，用于设置面板等高密度界面。 */
+  compact?: boolean
 }>(), {
   placeholder: '请选择',
   required: false,
   disabled: false,
+  hideLabel: false,
+  compact: false,
 })
 
 const model = defineModel<string>({ required: true })
@@ -29,6 +35,7 @@ const menu = useTemplateRef<HTMLElement>('menu')
 const open = shallowRef(false)
 const activeIndex = shallowRef(-1)
 const menuStyle = shallowRef<CSSProperties>({})
+const triggerId = useId()
 const labelId = useId()
 const listboxId = useId()
 
@@ -191,13 +198,18 @@ watch(() => props.disabled, (disabled) => {
 </script>
 
 <template>
-  <div class="space-y-1.5">
-    <label :id="labelId" class="block text-[11px] font-medium text-txt-2">
+  <div :class="hideLabel ? '' : 'space-y-1.5'">
+    <label
+      :id="labelId"
+      :for="triggerId"
+      :class="hideLabel ? 'sr-only' : 'block text-[11px] font-medium text-txt-2'"
+    >
       {{ label }}
       <span v-if="required" class="text-violet" aria-hidden="true">*</span>
     </label>
 
     <button
+      :id="triggerId"
       ref="trigger"
       type="button"
       role="combobox"
@@ -208,17 +220,20 @@ watch(() => props.disabled, (disabled) => {
       :aria-activedescendant="activeOptionId"
       :aria-required="required"
       :disabled="disabled"
-      class="app-select-trigger field h-[34px] w-full cursor-pointer justify-between text-left disabled:pointer-events-none disabled:opacity-45"
+      :class="[
+        'app-select-trigger field w-full cursor-pointer justify-between text-left disabled:pointer-events-none disabled:opacity-45',
+        compact ? 'app-select-trigger-compact' : 'h-[34px]',
+      ]"
       @click="toggleMenu"
       @keydown="handleKeydown"
     >
-      <span :class="['min-w-0 flex-1 truncate text-xs', selectedOption ? 'text-txt' : 'text-txt-4']">
+      <span :class="['app-select-value min-w-0 flex-1 truncate text-xs', selectedOption ? 'text-txt' : 'text-txt-4']">
         {{ selectedOption?.label ?? placeholder }}
       </span>
       <AppIcon
         name="lucide:chevron-down"
         :size="14"
-        :class="['shrink-0 text-txt-4 transition-transform duration-150', open && 'rotate-180']"
+        :class="['shrink-0 text-txt-4 transition-transform duration-150 motion-reduce:transition-none', open && 'rotate-180']"
       />
     </button>
 
@@ -276,6 +291,18 @@ watch(() => props.disabled, (disabled) => {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
+.app-select-trigger-compact {
+  height: 28px;
+  gap: 4px;
+  border-radius: 6px;
+  padding-right: 7px;
+  padding-left: 8px;
+}
+
+.app-select-trigger-compact .app-select-value {
+  font-size: 10.5px;
+}
+
 .app-select-menu {
   border-radius: 8px;
   background: color-mix(in oklch, var(--color-panel) 90%, transparent);
@@ -309,7 +336,6 @@ watch(() => props.disabled, (disabled) => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-select-trigger svg,
   .app-select-option,
   .app-select-pop-enter-active,
   .app-select-pop-leave-active {
