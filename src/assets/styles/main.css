@@ -18,6 +18,7 @@
   --color-canvas: oklch(9% 0.006 285); /* 非 Tauri 环境的兜底桌面色 */
   --color-window: oklch(16% 0.009 285 / 0.72); /* 窗口主体 */
   --color-panel: oklch(19% 0.01 285 / 0.55); /* 侧栏 / 次级面板 */
+  --color-pane: oklch(21% 0.01 285 / 0.5); /* 工作区面板卡片 */
   --color-card: oklch(26% 0.012 285 / 0.4); /* 卡片 */
   --color-raised: oklch(32% 0.014 285 / 0.55); /* 悬浮 / 选中态 */
   --color-hover: oklch(36% 0.016 285 / 0.5); /* 交互 hover */
@@ -46,11 +47,6 @@
   --color-orange: oklch(76% 0.16 55);
   --color-danger: oklch(64% 0.21 27);
 
-  /* ---------- 交通灯 ---------- */
-  --color-tl-red: oklch(68% 0.19 25);
-  --color-tl-yellow: oklch(82% 0.15 82);
-  --color-tl-green: oklch(76% 0.19 145);
-
   /* ---------- 终端语法色 ---------- */
   --color-term-fg: oklch(88% 0.005 285);
   --color-term-green: oklch(84% 0.18 148);
@@ -62,6 +58,7 @@
      --radius-win 只服务于窗口内的浮层（命令面板等）；
      窗口外壳本身是直角，交给系统窗口边界，避免圆角外露出原生直角 */
   --radius-win: 12px;
+  --radius-pane: 12px;
   --radius-card: 10px;
 
   /* ---------- 阴影 ----------
@@ -71,6 +68,9 @@
   --shadow-pop:
     0 24px 56px -12px rgb(0 0 0 / 0.66), 0 0 0 1px rgb(255 255 255 / 0.07),
     inset 0 1px 0 rgb(255 255 255 / 0.09);
+  --shadow-pane:
+    0 1px 2px rgb(0 0 0 / 0.24), 0 10px 28px -14px rgb(0 0 0 / 0.55),
+    inset 0 1px 0 rgb(255 255 255 / 0.045);
   --shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.05);
 }
 
@@ -148,9 +148,17 @@
     -webkit-backdrop-filter: blur(28px) saturate(180%);
   }
 
-  /* 窗口标题栏 */
+  /* 窗口标题栏 —— Windows 形态：左侧品牌区留白，右侧窗口按钮必须贴边，
+     所以这里不给 pr，由内容自己控制与按钮组的间距 */
   .win-bar {
-    @apply flex h-11 shrink-0 items-center gap-3 border-b border-line-soft px-4;
+    @apply flex h-11 shrink-0 items-center gap-3 border-b border-line-soft pl-3;
+  }
+
+  /* 工作区面板 —— 主区与副面板各自成卡片，浮在窗口底色上。
+     这是 window → pane → card 三级层次里的中间一级：比窗口亮、比卡片暗 */
+  .pane {
+    @apply relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-pane border border-line bg-pane;
+    box-shadow: var(--shadow-pane);
   }
 
   /* 卡片 */
@@ -200,6 +208,16 @@
   }
 
   .nav-item-active {
+    @apply bg-raised text-txt;
+  }
+
+  /* 分段切换 —— 面板内部换视图，比连接标签页轻一级 */
+  .seg {
+    @apply flex h-6.5 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[11.5px]
+           text-txt-3 transition-colors duration-150 hover:text-txt;
+  }
+
+  .seg-active {
     @apply bg-raised text-txt;
   }
 

@@ -1,18 +1,4 @@
-import type { FileEntry, TreeNode } from '@/types'
-
-/** 文件管理器左侧目录树 */
-export const FILE_TREE: TreeNode[] = [
-  { id: 'root', label: '/', depth: 0, expanded: true },
-  { id: 'home', label: 'home', depth: 1, expanded: true },
-  { id: 'user', label: 'user', depth: 2, expanded: true },
-  { id: 'project', label: 'project', depth: 3, leaf: true, active: true },
-  { id: 'logs', label: 'logs', depth: 3, leaf: true },
-  { id: 'backup', label: 'backup', depth: 3, leaf: true },
-  { id: 'var', label: 'var', depth: 1 },
-  { id: 'etc', label: 'etc', depth: 1 },
-  { id: 'usr', label: 'usr', depth: 1 },
-  { id: 'tmp', label: 'tmp', depth: 1 },
-]
+import type { FileEntry } from '@/types'
 
 /** 文件列表 */
 export const FILE_ENTRIES: FileEntry[] = [
@@ -25,14 +11,14 @@ export const FILE_ENTRIES: FileEntry[] = [
   { id: 'f7', name: 'config.yaml', size: '2 KB', modified: 'Yesterday 20:11', kind: 'yaml' },
 ]
 
-/** 文件类型 → 图标与配色 */
+/** 文件类型 → 图标与配色。图标一律实心（对齐 UI 稿），类型靠颜色区分 */
 export const FILE_KIND_META: Record<FileEntry['kind'], { icon: string, tone: string }> = {
-  folder: { icon: 'lucide:folder', tone: 'text-blue' },
-  json: { icon: 'lucide:file-json', tone: 'text-amber' },
-  markdown: { icon: 'lucide:file-text', tone: 'text-orange' },
-  js: { icon: 'lucide:file-code-2', tone: 'text-amber' },
-  env: { icon: 'lucide:file-cog', tone: 'text-txt-3' },
-  yaml: { icon: 'lucide:file-text', tone: 'text-cyan' },
+  folder: { icon: 'mirai:folder', tone: 'text-blue' },
+  json: { icon: 'mirai:file', tone: 'text-amber' },
+  markdown: { icon: 'mirai:file', tone: 'text-orange' },
+  js: { icon: 'mirai:file', tone: 'text-accent' },
+  env: { icon: 'mirai:file', tone: 'text-txt-3' },
+  yaml: { icon: 'mirai:file', tone: 'text-cyan' },
 }
 
 /** 面包屑路径 */

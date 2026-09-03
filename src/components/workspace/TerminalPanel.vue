@@ -18,21 +18,16 @@ const state = reactive({
 })
 
 const { tabs, activeTab } = toRefs(state)
-
-defineEmits<{
-  /** 请求关闭终端面板 */
-  close: []
-}>()
 </script>
 
 <template>
-  <section class="flex w-[42%] min-w-105 max-w-180 shrink-0 flex-col border-l border-line-soft bg-terminal">
+  <section class="pane min-w-0 flex-1 bg-terminal">
     <!-- 标签栏 -->
-    <div class="flex h-11 shrink-0 items-center gap-1 border-b border-line-soft pl-2.5 pr-2">
+    <div class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft pl-2.5 pr-2">
       <TabBar v-model:active="activeTab" :tabs="tabs" addable class="flex-1" />
       <div class="flex-1" />
       <IconButton icon="lucide:maximize-2" :size="14" title="最大化" />
-      <IconButton icon="lucide:x" :size="15" title="关闭" @click="$emit('close')" />
+      <IconButton icon="lucide:ellipsis" :size="14" title="更多" />
     </div>
 
     <!-- 会话工具条 -->
@@ -62,7 +57,7 @@ defineEmits<{
     </div>
 
     <!-- 输出区 -->
-    <div class="flex-1 overflow-y-auto p-4 font-mono text-[12.5px] leading-[1.75] scroll-thin">
+    <div class="min-h-0 flex-1 overflow-y-auto p-4 font-mono text-[12.5px] leading-[1.75] scroll-thin">
       <p
         v-for="(line, index) in TERMINAL_LINES"
         :key="index"
@@ -79,7 +74,7 @@ defineEmits<{
         <!-- 光标跟在最后一行 -->
         <span
           v-if="index === TERMINAL_LINES.length - 1"
-          class="ml-px inline-block h-[15px] w-[7px] translate-y-0.5 bg-term-fg"
+          class="ml-px inline-block h-3.75 w-1.75 translate-y-0.5 bg-term-fg"
         />
       </p>
     </div>

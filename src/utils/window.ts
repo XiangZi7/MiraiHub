@@ -1,3 +1,4 @@
+import { readonly, ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 /**
@@ -28,4 +29,34 @@ export function toggleMaximizeWindow(): void {
 /** 关闭窗口 */
 export function closeWindow(): void {
   withWindow(win => win.close())
+}
+
+const maximized = ref(false)
+
+/**
+ * 窗口是否处于最大化。
+ * Windows 的窗口按钮要据此在「最大化」与「还原」两个图标间切换，
+ * 而 Tauri 只提供命令式的 isMaximized()，这里包一层响应式镜像。
+ */
+export const isMaximized = readonly(maximized)
+
+/**
+ * 开始跟踪窗口最大化状态，返回取消订阅函数。
+ * 最大化/还原必然伴随 resize，所以监听 onResized 就够了。
+ */
+export function trackMaximized(): () => void {
+  if (!IS_TAURI)
+    return () => {}
+
+  const win = getCurrentWindow()
+  const sync = async (): Promise<void> => {
+    maximized.value = await win.isMaximized()
+  }
+
+  void sync()
+
+  // onResized 是异步注册的，取消时可能监听还没建立，故用 Promise 链兜住
+  const unlisten = win.onResized(() => void sync())
+
+  return () => void unlisten.then(stop => stop())
 }

@@ -7,7 +7,7 @@ import { ACTIVITIES, METRIC_CARDS, QUICK_ACTIONS } from '@/constants/workspace'
 </script>
 
 <template>
-  <div class="flex-1 overflow-y-auto p-5 scroll-thin">
+  <div class="min-h-0 flex-1 overflow-y-auto p-4 scroll-thin">
     <!-- 服务器概要 -->
     <header class="mb-5 flex items-start gap-4">
       <div
@@ -83,10 +83,10 @@ import { ACTIVITIES, METRIC_CARDS, QUICK_ACTIONS } from '@/constants/workspace'
           v-for="action in QUICK_ACTIONS"
           :key="action.id"
           type="button"
-          class="card-action flex flex-col items-center justify-center gap-2 py-3.5"
+          class="card-action flex min-w-0 flex-col items-center justify-center gap-2 px-1 py-3.5"
         >
           <AppIcon :name="action.icon" :size="19" :class="action.tone" />
-          <span class="text-[11px] text-txt-2">{{ action.label }}</span>
+          <span class="max-w-full truncate text-[11px] text-txt-2">{{ action.label }}</span>
         </button>
       </div>
     </section>

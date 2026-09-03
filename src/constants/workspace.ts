@@ -8,13 +8,18 @@ import type {
   QuickAction,
 } from '@/types'
 
-/** 侧栏工作区导航 */
+/** 侧栏工作区导航。Files 不在此列 —— 它属于某台机器，见 MACHINE_VIEWS */
 export const NAV_ITEMS: NavItem[] = [
   { id: 'servers', label: 'Servers', icon: 'lucide:server' },
   { id: 'databases', label: 'Databases', icon: 'lucide:database' },
-  { id: 'files', label: 'Files', icon: 'lucide:folder' },
   { id: 'ssh-keys', label: 'SSH Keys', icon: 'lucide:key-round' },
   { id: 'recent', label: 'Recent', icon: 'lucide:clock' },
+]
+
+/** 机器详情面板的视图切换 */
+export const MACHINE_VIEWS: NavItem[] = [
+  { id: 'overview', label: 'Overview', icon: 'lucide:gauge' },
+  { id: 'files', label: 'Files', icon: 'mirai:folder' },
 ]
 
 /** 收藏夹 */
@@ -103,7 +108,7 @@ export const METRIC_CARDS: MetricCard[] = [
 /** 快捷操作 */
 export const QUICK_ACTIONS: QuickAction[] = [
   { id: 'terminal', label: 'Terminal', icon: 'lucide:square-terminal', tone: 'text-accent' },
-  { id: 'files', label: 'Files', icon: 'lucide:folder', tone: 'text-blue' },
+  { id: 'files', label: 'Files', icon: 'mirai:folder', tone: 'text-blue' },
   { id: 'database', label: 'Database', icon: 'lucide:database', tone: 'text-pink' },
   { id: 'port', label: 'Port Forward', icon: 'lucide:share-2', tone: 'text-cyan' },
   { id: 'upload', label: 'Upload', icon: 'lucide:upload', tone: 'text-amber' },

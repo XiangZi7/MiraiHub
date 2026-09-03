@@ -43,7 +43,7 @@ function selectResultTab(id: string): void {
 </script>
 
 <template>
-  <div class="flex min-h-0 min-w-0 flex-1">
+  <div class="pane flex-1 flex-row">
     <!-- 对象树 -->
     <nav class="flex w-[196px] shrink-0 flex-col border-r border-line-soft bg-panel">
       <div class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft px-2">

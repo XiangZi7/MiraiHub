@@ -75,17 +75,6 @@ export interface FileEntry {
   kind: 'folder' | 'json' | 'markdown' | 'js' | 'env' | 'yaml'
 }
 
-/** 文件树节点 */
-export interface TreeNode {
-  id: string
-  label: string
-  depth: number
-  expanded?: boolean
-  /** 是否为叶子（无展开箭头） */
-  leaf?: boolean
-  active?: boolean
-}
-
 /** 数据库对象树节点 */
 export interface DbNode {
   id: string
