@@ -7,9 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
-use russh::client::{self, Handle};
+use russh::client::{self, Handle, Msg};
 use russh::keys::{load_secret_key, PrivateKeyWithHashAlg, PublicKey};
-use russh::{ChannelId, ChannelMsg, Disconnect};
+use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect};
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 
@@ -27,11 +27,14 @@ struct ClientHandler;
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
 
-    async fn check_server_key(&mut self, server_public_key: &PublicKey) -> Result<bool, Self::Error> {
+    async fn check_server_key(
+        &mut self,
+        server_public_key: &PublicKey,
+    ) -> Result<bool, Self::Error> {
         // TODO(known_hosts): 接入 known_hosts 校验与首连确认弹窗后改为按需拒绝
         log::warn!(
             "跳过主机密钥校验（尚未接入 known_hosts），指纹：{}",
-            server_public_key.fingerprint(russh::keys::HashAlg::Sha256)
+            server_public_key.fingerprint(Default::default())
         );
         Ok(true)
     }
@@ -41,39 +44,10 @@ impl client::Handler for ClientHandler {
 pub struct SshSession {
     id: String,
     config: SshConfig,
-    /// russh 的连接句柄。多处并发使用（写输入、开新 channel），故加锁
-    handle: Arc<Mutex<Handle<ClientHandler>>>,
-    /// 交互式 shell 的写端。未开 shell 时为 None
-    shell: Mutex<Option<ShellHandle>>,
-}
-
-/// 交互式 shell 的控制端。
-struct ShellHandle {
-    channel_id: ChannelId,
-    /// 往 channel 写数据要经过连接句柄，这里存一份引用
-    handle: Arc<Mutex<Handle<ClientHandler>>>,
-}
-
-impl ShellHandle {
-    /// 写用户输入。
-    async fn write(&self, data: &[u8]) -> SshResult<()> {
-        let handle = self.handle.lock().await;
-        handle
-            .data(self.channel_id, data.to_vec().into())
-            .await
-            .map_err(|_| SshError::Protocol(russh::Error::SendError))?;
-        Ok(())
-    }
-
-    /// 同步终端尺寸。
-    async fn resize(&self, cols: u32, rows: u32) -> SshResult<()> {
-        let handle = self.handle.lock().await;
-        handle
-            .window_change(self.channel_id, cols, rows, 0, 0)
-            .await
-            .map_err(|_| SshError::Protocol(russh::Error::SendError))?;
-        Ok(())
-    }
+    /// russh 的连接句柄。开新 channel 时用，故加锁
+    handle: Mutex<Handle<ClientHandler>>,
+    /// 交互式 shell 的写半边。未开 shell 时为 None
+    shell: Mutex<Option<ChannelWriteHalf<Msg>>>,
 }
 
 impl SshSession {
@@ -84,8 +58,10 @@ impl SshSession {
         let endpoint = config.endpoint();
 
         let ssh_config = client::Config {
-            // 到期不续则由服务端断开；russh 会在空闲时自动发 keepalive
-            inactivity_timeout: Some(Duration::from_secs(config.keepalive_secs.max(1) * 4)),
+            // 空闲超过 keepalive 的若干倍仍无响应就判定连接已死。
+            // 设成 keepalive 的 4 倍，容忍偶发的网络抖动
+            inactivity_timeout: (config.keepalive_secs > 0)
+                .then(|| Duration::from_secs(config.keepalive_secs * 4)),
             keepalive_interval: (config.keepalive_secs > 0)
                 .then(|| Duration::from_secs(config.keepalive_secs)),
             ..Default::default()
@@ -96,19 +72,16 @@ impl SshSession {
 
         // russh 自身没有连接超时，靠外层 timeout 兜住：
         // 否则连一个丢包的地址会一直挂着，用户只看到界面卡住
-        let mut handle = tokio::time::timeout(
-            Duration::from_secs(config.timeout_secs),
-            connect_fut,
-        )
-        .await
-        .map_err(|_| SshError::Timeout {
-            endpoint: endpoint.clone(),
-            secs: config.timeout_secs,
-        })?
-        .map_err(|source| SshError::Connect {
-            endpoint: endpoint.clone(),
-            source,
-        })?;
+        let mut handle = tokio::time::timeout(Duration::from_secs(config.timeout_secs), connect_fut)
+            .await
+            .map_err(|_| SshError::Timeout {
+                endpoint: endpoint.clone(),
+                secs: config.timeout_secs,
+            })?
+            .map_err(|source| SshError::Connect {
+                endpoint: endpoint.clone(),
+                source,
+            })?;
 
         authenticate(&mut handle, &config).await?;
 
@@ -117,7 +90,7 @@ impl SshSession {
         Ok(Self {
             id,
             config,
-            handle: Arc::new(Mutex::new(handle)),
+            handle: Mutex::new(handle),
             shell: Mutex::new(None),
         })
     }
@@ -131,10 +104,8 @@ impl SshSession {
     }
 
     /// 打开带 PTY 的交互式 shell，并起一个后台任务把输出推给前端。
-    ///
-    /// 重复调用会先关掉旧 shell —— 一个会话标签页只对应一个 shell。
     pub async fn open_shell(&self, app: AppHandle, pty: PtyOptions) -> SshResult<()> {
-        let mut channel = {
+        let channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
         };
@@ -154,23 +125,21 @@ impl SshSession {
 
         channel.request_shell(false).await?;
 
-        let channel_id = channel.id();
+        // 拆成读写两半：读半边独占给后台循环，写半边留在会话里接用户输入。
+        // 不拆的话读循环会一直借着 &mut channel，输入就没法写进去
+        let (read_half, write_half) = channel.split();
 
         // 先登记写端，再起读循环：
         // 反过来的话读循环可能先收到输出并推给前端，而此时用户的输入还写不进去
         {
             let mut shell = self.shell.lock().await;
-            *shell = Some(ShellHandle {
-                channel_id,
-                handle: Arc::clone(&self.handle),
-            });
+            *shell = Some(write_half);
         }
 
         let session_id = self.id.clone();
 
-        // 读循环独占 channel 的接收端，跑在后台直到远端关闭
         tokio::spawn(async move {
-            pump_output(app, session_id, channel).await;
+            pump_output(app, session_id, read_half).await;
         });
 
         Ok(())
@@ -183,7 +152,8 @@ impl SshSession {
             .as_ref()
             .ok_or_else(|| SshError::InvalidInput("会话还没有打开 shell".into()))?;
 
-        shell.write(data).await
+        shell.data(data).await?;
+        Ok(())
     }
 
     /// 同步终端尺寸。
@@ -193,7 +163,8 @@ impl SshSession {
             .as_ref()
             .ok_or_else(|| SshError::InvalidInput("会话还没有打开 shell".into()))?;
 
-        shell.resize(cols, rows).await
+        shell.window_change(cols, rows, 0, 0).await?;
+        Ok(())
     }
 
     /// 执行单条命令，等它跑完并收集全部输出。
@@ -246,7 +217,7 @@ impl SshSession {
 }
 
 /// 后台读循环：把远端输出源源不断推给前端，直到 channel 关闭。
-async fn pump_output(app: AppHandle, session_id: String, mut channel: russh::Channel<client::Msg>) {
+async fn pump_output(app: AppHandle, session_id: String, mut channel: ChannelReadHalf) {
     let mut exit_code = None;
     let encoder = base64::engine::general_purpose::STANDARD;
 
@@ -316,29 +287,7 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, config: &SshConfig) ->
                 .success()
         }
 
-        AuthMethod::Agent => {
-            let mut agent = russh::keys::agent::client::AgentClient::connect_env()
-                .await
-                .map_err(SshError::Key)?;
-
-            let identities = agent.request_identities().await.map_err(SshError::Key)?;
-
-            // agent 里可能挂着多把钥匙，挨个试到有一把被接受
-            let mut accepted = false;
-            for key in identities {
-                let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
-
-                let result = handle
-                    .authenticate_publickey_with(&config.username, key, hash_alg, &mut agent)
-                    .await?;
-
-                if result.success() {
-                    accepted = true;
-                    break;
-                }
-            }
-            accepted
-        }
+        AuthMethod::Agent => authenticate_with_agent(handle, &config.username).await?,
     };
 
     if !accepted {
@@ -348,6 +297,75 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, config: &SshConfig) ->
     }
 
     Ok(())
+}
+
+/// 走 ssh-agent 认证。
+///
+/// agent 的接入方式各平台不同，所以按平台分开实现：
+/// Windows 上是 OpenSSH 的命名管道（另有 Pageant 作为 PuTTY 生态的备选），
+/// Unix 上是 SSH_AUTH_SOCK 指向的域套接字。
+#[cfg(windows)]
+async fn authenticate_with_agent(
+    handle: &mut Handle<ClientHandler>,
+    username: &str,
+) -> SshResult<bool> {
+    use russh::keys::agent::client::AgentClient;
+
+    /// Windows OpenSSH agent 的固定管道名
+    const OPENSSH_PIPE: &str = r"\\.\pipe\openssh-ssh-agent";
+
+    // 先试 OpenSSH agent，不在就退回 Pageant —— 装了 PuTTY 的机器通常只有后者
+    match AgentClient::connect_named_pipe(OPENSSH_PIPE).await {
+        Ok(mut agent) => try_agent_identities(handle, username, &mut agent).await,
+        Err(err) => {
+            log::debug!("连接 OpenSSH agent 失败（{err}），改试 Pageant");
+            let mut agent = AgentClient::connect_pageant().await;
+            try_agent_identities(handle, username, &mut agent).await
+        }
+    }
+}
+
+#[cfg(not(windows))]
+async fn authenticate_with_agent(
+    handle: &mut Handle<ClientHandler>,
+    username: &str,
+) -> SshResult<bool> {
+    use russh::keys::agent::client::AgentClient;
+
+    let mut agent = AgentClient::connect_env().await.map_err(SshError::Key)?;
+    try_agent_identities(handle, username, &mut agent).await
+}
+
+/// 把 agent 里挂着的钥匙挨个试过去，直到有一把被服务端接受。
+async fn try_agent_identities<S>(
+    handle: &mut Handle<ClientHandler>,
+    username: &str,
+    agent: &mut russh::keys::agent::client::AgentClient<S>,
+) -> SshResult<bool>
+where
+    S: russh::keys::agent::client::AgentStream + Unpin + Send + 'static,
+{
+    let identities = agent.request_identities().await.map_err(SshError::Key)?;
+
+    if identities.is_empty() {
+        return Err(SshError::InvalidInput(
+            "ssh-agent 里没有可用的密钥，先用 ssh-add 添加".into(),
+        ));
+    }
+
+    for key in identities {
+        let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
+
+        if handle
+            .authenticate_publickey_with(username, key, hash_alg, agent)
+            .await?
+            .success()
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 /// 连接参数的基本校验。挡住明显错误的入参，避免带着空 host 去做 DNS 解析。

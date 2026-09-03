@@ -20,7 +20,7 @@ export const TERMINAL_THEME: ITheme = {
   selectionBackground: '#ffffff26',
 
   black: '#2a2a30',
-  red: '#ff6b264',
+  red: '#ff6b62',
   green: '#7ee787',
   yellow: '#ffcb6b',
   blue: '#7cb0ff',

@@ -9,7 +9,7 @@
  */
 
 import { onBeforeUnmount, reactive, shallowRef, toRefs } from 'vue'
-import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { useDebounceFn } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
@@ -69,11 +69,6 @@ export function useSshTerminal() {
       if (state.status === 'connected' && state.sessionId)
         void ssh.writeToShell(state.sessionId, data).catch(handleWriteError)
     })
-
-    // 窗口尺寸变化时重新适配。防抖是因为拖拽窗口会连续触发几十次，
-    // 每次都往远端发 window_change 既浪费也会让远端程序反复重绘
-    const refit = useDebounceFn(() => resize(), 120)
-    useEventListener(window, 'resize', refit)
   }
 
   /** 建立连接并打开交互式 shell */
@@ -125,8 +120,13 @@ export function useSshTerminal() {
     }
   }
 
-  /** 重新适配容器尺寸，并把新尺寸同步给远端 */
-  function resize(): void {
+  /**
+   * 重新适配容器尺寸，并把新尺寸同步给远端。
+   *
+   * 防抖是因为拖拽窗口或面板会连续触发几十次，
+   * 每次都往远端发 window_change 既浪费，也会让 vim/top 这类程序反复重绘闪烁。
+   */
+  const resize = useDebounceFn(() => {
     const fit = fitAddon.value
     const terminal = term.value
     if (!fit || !terminal)
@@ -139,7 +139,7 @@ export function useSshTerminal() {
         .resizeShell(state.sessionId, terminal.cols, terminal.rows)
         .catch(err => console.warn('同步终端尺寸失败：', ssh.errorMessage(err)))
     }
-  }
+  }, 120)
 
   /** 主动断开 */
   async function disconnect(): Promise<void> {

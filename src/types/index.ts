@@ -151,30 +151,7 @@ export interface CommandTarget {
   focusSearch?: boolean
 }
 
-/** SSH 密钥算法 */
-export type SshKeyKind = 'ed25519' | 'rsa' | 'ecdsa'
-
-/** SSH 密钥 */
-export interface SshKey {
-  id: string
-  /** 密钥名，即私钥文件名 */
-  label: string
-  kind: SshKeyKind
-  /** 密钥长度，ed25519 固定 256 */
-  bits: number
-  /** SHA256 指纹 */
-  fingerprint: string
-  /** 公钥全文 */
-  publicKey: string
-  /** 私钥是否有口令保护 */
-  encrypted: boolean
-  /** 生成日期 */
-  createdAt: string
-  /** 最近一次用于连接的时间 */
-  lastUsed: string
-  /** 已授权此密钥的主机 */
-  hosts: string[]
-}
+/** SSH 密钥相关类型见 `@/types/ssh` —— 那边与 Rust 侧的模型一一对应 */
 
 /** 会话类型 */
 export type SessionKind = 'ssh' | 'database' | 'sftp'

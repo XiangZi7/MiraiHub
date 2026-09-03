@@ -48,6 +48,15 @@ pub enum SshError {
     #[error("密钥操作失败：{0}")]
     Key(#[from] russh::keys::Error),
 
+    /// ssh-key crate 自己的错误。
+    /// 它和 `russh::keys::Error` 是两个类型 —— 后者只是把前者包了一层，
+    /// 而 `PublicKey::from_openssh` 这类方法直接返回前者，故单列一个变体。
+    #[error("密钥格式错误：{0}")]
+    KeyFormat(#[from] russh::keys::ssh_key::Error),
+
+    #[error("ssh-agent 认证失败：{0}")]
+    AgentAuth(#[from] russh::AgentAuthError),
+
     #[error("文件读写失败：{0}")]
     Io(#[from] std::io::Error),
 }
@@ -56,11 +65,15 @@ impl From<SshError> for AppError {
     fn from(err: SshError) -> Self {
         let kind = match &err {
             SshError::Connect { .. } | SshError::Timeout { .. } => ErrorKind::Network,
-            SshError::AuthRejected { .. } | SshError::KeyParse { .. } => ErrorKind::Auth,
+            SshError::AuthRejected { .. }
+            | SshError::KeyParse { .. }
+            | SshError::AgentAuth(_) => ErrorKind::Auth,
             SshError::SessionNotFound(_) | SshError::KeyNotFound(_) => ErrorKind::NotFound,
             SshError::InvalidInput(_) | SshError::KeyExists(_) => ErrorKind::InvalidInput,
             SshError::Io(_) | SshError::NoHomeDir => ErrorKind::Io,
-            SshError::Protocol(_) | SshError::Key(_) => ErrorKind::Internal,
+            SshError::Protocol(_) | SshError::Key(_) | SshError::KeyFormat(_) => {
+                ErrorKind::Internal
+            }
         };
 
         // 用 Display 而非 Debug：Display 已带上下文，且不会把 AuthMethod 里的密码打出来

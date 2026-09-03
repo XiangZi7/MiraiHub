@@ -91,10 +91,7 @@ fn read_key_info(private_path: &Path, public_path: &Path) -> SshResult<SshKeyInf
     let pub_text = fs::read_to_string(public_path)?;
     let pub_text = pub_text.trim();
 
-    let public_key = PublicKey::from_openssh(pub_text).map_err(|source| SshError::KeyParse {
-        path: public_path.display().to_string(),
-        source,
-    })?;
+    let public_key = PublicKey::from_openssh(pub_text).map_err(SshError::KeyFormat)?;
 
     // 注释在 PublicKey 里，但 OpenSSH 公钥文件的第三段才是完整注释，
     // 优先取文件里的原文，解析结果作兜底
@@ -204,10 +201,7 @@ pub fn generate_key(request: &GenerateKeyRequest) -> SshResult<SshKeyInfo> {
 
     let mut private_key = PrivateKey::random(&mut rand::thread_rng(), algorithm)?;
 
-    let comment = request
-        .comment
-        .clone()
-        .unwrap_or_else(default_comment);
+    let comment = request.comment.clone().unwrap_or_else(default_comment);
     private_key.set_comment(&comment);
 
     // 空口令视为不加密：前端把"不设口令"表达成空串更自然
@@ -216,19 +210,48 @@ pub fn generate_key(request: &GenerateKeyRequest) -> SshResult<SshKeyInfo> {
         .as_deref()
         .filter(|value| !value.is_empty());
 
+    let line_ending = russh::keys::ssh_key::LineEnding::LF;
     let private_pem = match passphrase {
-        Some(pass) => private_key.encrypt(&mut rand::thread_rng(), pass)?.to_openssh(russh::keys::ssh_key::LineEnding::LF)?,
-        None => private_key.to_openssh(russh::keys::ssh_key::LineEnding::LF)?,
+        Some(pass) => private_key
+            .encrypt(&mut rand::thread_rng(), pass)?
+            .to_openssh(line_ending)?,
+        None => private_key.to_openssh(line_ending)?,
     };
 
-    fs::write(&private_path, private_pem.as_bytes())?;
-    // 私钥必须先收权限再谈其他：OpenSSH 会拒绝使用组/其他可读的私钥
-    restrict_file_permissions(&private_path)?;
+    write_private_key(&private_path, private_pem.as_bytes())?;
 
     let public_openssh = private_key.public_key().to_openssh()?;
     fs::write(&public_path, format!("{public_openssh}\n"))?;
 
     read_key_info(&private_path, &public_path)
+}
+
+/// 写入私钥文件。
+///
+/// 权限要在创建时就带上，不能先写再 chmod ——
+/// 那之间有个窗口，文件以默认权限（可能组内可读）躺在磁盘上，
+/// 私钥内容已经写进去了。
+#[cfg(unix)]
+fn write_private_key(path: &Path, contents: &[u8]) -> SshResult<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+
+    file.write_all(contents)?;
+    Ok(())
+}
+
+/// Windows 上的 NTFS ACL 与 Unix 权限位模型不同，
+/// 且 Windows 版 OpenSSH 不做私钥权限检查，直接写即可。
+#[cfg(not(unix))]
+fn write_private_key(path: &Path, contents: &[u8]) -> SshResult<()> {
+    fs::write(path, contents)?;
+    Ok(())
 }
 
 /// 删除密钥对。私钥与同名 .pub 一起删。
@@ -309,22 +332,9 @@ fn hostname_or_default() -> String {
         .unwrap_or_else(|_| "miraihub".to_owned())
 }
 
-/// 把私钥权限收成 0600。
+/// 把 ~/.ssh 目录权限收成 0700。
 ///
-/// Windows 上 NTFS ACL 与 Unix 权限位模型不同，
-/// 且 Windows 版 OpenSSH 不做这项检查，故只在 Unix 上处理。
-#[cfg(unix)]
-fn restrict_file_permissions(path: &Path) -> SshResult<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn restrict_file_permissions(_path: &Path) -> SshResult<()> {
-    Ok(())
-}
-
+/// Windows 上 NTFS ACL 与 Unix 权限位模型不同，故只在 Unix 上处理。
 #[cfg(unix)]
 fn restrict_dir_permissions(path: &Path) -> SshResult<()> {
     use std::os::unix::fs::PermissionsExt;

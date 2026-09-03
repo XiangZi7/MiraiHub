@@ -29,8 +29,10 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "io-util"] }
 
 # SSH：纯 Rust 实现，Windows 上无需 OpenSSL/libssh2 工具链。
+# 关掉 default features 是为了甩掉 aws-lc-rs —— 它带 C 代码，Windows 上要装 NASM 才能编。
+# ring 后端是纯 Rust + 预编译汇编，开箱即用；rsa/flate2 是 default 里需要保留的部分。
 # russh 的 API 在小版本间会变动，升级前先跑 cargo test。
-russh = "0.54"
+russh = { version = "0.54", default-features = false, features = ["ring", "rsa", "flate2"] }
 
 # 终端输出以 base64 过 IPC（远端字节流不保证是完整 UTF-8，见 ssh/events.rs）
 base64 = "0.22"

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, useId } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import * as ssh from '@/api/ssh'
+import type { SshAuthMethod, SshConfig } from '@/types/ssh'
 import ConnectionTextField from './ConnectionTextField.vue'
 
 type SectionId = 'general' | 'advanced' | 'ssh-key' | 'proxy'
@@ -18,6 +20,10 @@ const sections: Array<{ id: SectionId, label: string }> = [
 
 const activeSection = shallowRef<SectionId>('general')
 const feedback = shallowRef('')
+// 反馈是成功还是失败，决定文案配色
+const feedbackTone = shallowRef<'info' | 'error'>('info')
+// 测试连接进行中，避免重复点击开出一堆连接
+const testing = shallowRef(false)
 const savePassword = shallowRef(false)
 const form = reactive({
   name: '',
@@ -51,24 +57,88 @@ const isReady = computed<boolean>(() => (
   && form.username.trim().length > 0
 ))
 
-function showValidationFeedback(successMessage: string): boolean {
+/** 表单的认证方式 → API 的 tag 化联合 */
+function buildAuth(): SshAuthMethod {
+  switch (form.authentication) {
+    case 'private-key':
+      return {
+        type: 'privateKey',
+        path: form.privateKey.trim(),
+        // 空口令要传 undefined 而不是空串：后端据此判断私钥是否需要解密
+        passphrase: form.passphrase || undefined,
+      }
+    case 'agent':
+      return { type: 'agent' }
+    default:
+      return { type: 'password', password: form.password }
+  }
+}
+
+/** 收集表单为连接配置。端口等数值字段在表单里是字符串，这里统一转换 */
+function buildConfig(): SshConfig {
+  return {
+    host: form.host.trim(),
+    port: Number(form.port) || 22,
+    username: form.username.trim(),
+    auth: buildAuth(),
+    timeoutSecs: Number(form.timeout) || 20,
+    keepaliveSecs: Number(form.keepAlive) || 30,
+  }
+}
+
+function setFeedback(message: string, tone: 'info' | 'error' = 'info'): void {
+  feedback.value = message
+  feedbackTone.value = tone
+}
+
+/** 校验必填项，不通过则跳回 General 并提示 */
+function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
-    feedback.value = '请先填写连接名称、主机和用户名'
+    setFeedback('请先填写连接名称、主机和用户名', 'error')
     return false
   }
 
-  feedback.value = successMessage
+  if (form.authentication === 'private-key' && !form.privateKey.trim()) {
+    activeSection.value = 'ssh-key'
+    setFeedback('请先选择私钥文件', 'error')
+    return false
+  }
+
   return true
 }
 
-function testConnection(): void {
-  showValidationFeedback('配置格式检查通过')
+/**
+ * 测试连接：真连一次再立刻断开。
+ * 只有这样才能验出密码对不对、密钥是否被接受 —— 光校验字段格式说明不了任何问题。
+ */
+async function testConnection(): Promise<void> {
+  if (!validate() || testing.value)
+    return
+
+  testing.value = true
+  setFeedback('正在连接…')
+
+  try {
+    const sessionId = await ssh.connect(buildConfig())
+    await ssh.disconnect(sessionId)
+    setFeedback('连接成功')
+  }
+  catch (err) {
+    setFeedback(ssh.errorMessage(err), 'error')
+  }
+  finally {
+    testing.value = false
+  }
 }
 
 function saveConnection(): void {
-  if (showValidationFeedback('SSH 连接配置已就绪'))
-    emit('close')
+  if (!validate())
+    return
+
+  // TODO(persist)：接入数据库后在这里保存连接配置，
+  // 目前先关窗口 —— 会话列表还没有落地存储
+  emit('close')
 }
 </script>
 
@@ -245,10 +315,14 @@ function saveConnection(): void {
     </div>
 
     <footer class="connection-footer">
-      <button type="button" class="btn" @click="testConnection">
-        Test Connection
+      <button type="button" class="btn" :disabled="testing" @click="testConnection">
+        {{ testing ? 'Testing…' : 'Test Connection' }}
       </button>
-      <p class="min-w-0 flex-1 truncate text-[11px] text-txt-3" aria-live="polite">
+      <p
+        :class="['min-w-0 flex-1 truncate text-[11px]', feedbackTone === 'error' ? 'text-danger' : 'text-txt-3']"
+        :title="feedback"
+        aria-live="polite"
+      >
         {{ feedback }}
       </p>
       <button type="button" class="btn" @click="emit('close')">

@@ -1,49 +1,39 @@
 <script setup lang="ts">
-import { computed, reactive, toRefs } from 'vue'
+import { onMounted } from 'vue'
 import { useClipboard } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
-import StatusDot from '@/components/ui/StatusDot.vue'
-import { SSH_KEY_KIND_META, SSH_KEYS } from '@/constants/ssh-keys'
+import { useSshKeys } from '@/composables/useSshKeys'
+import { SSH_KEY_KIND_META } from '@/constants/ssh-keys'
+import { formatDate, formatRelative } from '@/utils/time'
 import { cn } from '@/utils/cn'
 
 /**
  * SSH 密钥管理。
- * 左列表 + 右详情：密钥的数量不会多，但每把都要看全（指纹、公钥全文、授权到哪些机器），
+ * 左列表 + 右详情：密钥的数量不会多，但每把都要看全（指纹、公钥全文），
  * 所以详情给足宽度，而不是塞进列表行里折叠展开。
  */
 
-// 响应式状态
-const state = reactive({
-  // 选中的密钥 id
-  selected: SSH_KEYS[0]?.id ?? '',
-  // 列表搜索关键词
-  keyword: '',
-})
+const { keys, selected, keyword, loading, error, visibleKeys, current, refresh, remove }
+  = useSshKeys()
 
-const { selected, keyword } = toRefs(state)
-
-/** 按密钥名、指纹、已授权主机过滤 */
-const visibleKeys = computed(() => {
-  const kw = state.keyword.trim().toLowerCase()
-  if (!kw)
-    return SSH_KEYS
-
-  return SSH_KEYS.filter(key =>
-    key.label.toLowerCase().includes(kw)
-    || key.fingerprint.toLowerCase().includes(kw)
-    || key.hosts.some(host => host.toLowerCase().includes(kw)),
-  )
-})
-
-/** 当前详情展示的密钥 */
-const current = computed(() => SSH_KEYS.find(key => key.id === state.selected))
+onMounted(refresh)
 
 // 指纹与公钥各用一份 clipboard：共用会让复制指纹时公钥按钮也跳成"已复制"。
 // copiedDuring 给到 1.6s，够看清反馈再回到默认态
 const fingerprintClip = useClipboard({ copiedDuring: 1600 })
 const publicKeyClip = useClipboard({ copiedDuring: 1600 })
+
+/** 删除前确认：密钥删掉就找不回来了，且远端的 authorized_keys 还留着废条目 */
+async function confirmDelete(keyId: string, label: string): Promise<void> {
+  if (!window.confirm(`确定删除密钥 ${label} 吗？私钥与公钥文件都会从 ~/.ssh 移除，且无法恢复。`))
+    return
+
+  await remove(keyId).catch(() => {
+    // 失败原因已存进 error 并展示在列表顶部
+  })
+}
 </script>
 
 <template>
@@ -53,15 +43,20 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
       <header class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft pl-3 pr-2">
         <p class="flex-1 text-[11px] font-medium text-txt-2">
           Keys
-          <span class="text-txt-4">({{ SSH_KEYS.length }})</span>
+          <span class="text-txt-4">({{ keys.length }})</span>
         </p>
-        <IconButton icon="lucide:file-key" :size="14" title="导入已有密钥" />
+        <IconButton icon="lucide:refresh-cw" :size="14" title="重新扫描" @click="refresh" />
         <IconButton icon="lucide:plus" :size="14" title="生成新密钥" />
       </header>
 
       <div class="shrink-0 px-2 pb-1 pt-2">
         <SearchField v-model="keyword" icon="lucide:search" placeholder="搜索密钥…" />
       </div>
+
+      <!-- 扫描失败：给出原因，而不是让列表静默空着 -->
+      <p v-if="error" class="mx-2 mb-1 rounded border border-danger/30 bg-danger/10 px-2 py-1.5 text-[11px] text-danger">
+        {{ error }}
+      </p>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-1.5 scroll-thin">
         <button
@@ -80,7 +75,6 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
             <span class="block truncate text-xs text-txt">{{ key.label }}</span>
             <span class="block truncate text-[10.5px] text-txt-4">
               {{ SSH_KEY_KIND_META[key.kind].label }} · {{ key.bits }} bits
-              <template v-if="key.hosts.length">· {{ key.hosts.length }} hosts</template>
             </span>
           </span>
           <!-- tooltip 挂在 span 上：SVG 元素的 title 属性不会触发浏览器提示 -->
@@ -89,8 +83,11 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
           </span>
         </button>
 
-        <p v-if="!visibleKeys.length" class="py-8 text-center text-xs text-txt-4">
-          没有匹配的密钥
+        <p v-if="loading" class="py-8 text-center text-xs text-txt-4">
+          正在扫描 ~/.ssh …
+        </p>
+        <p v-else-if="!visibleKeys.length" class="py-8 text-center text-xs text-txt-4">
+          {{ keyword ? '没有匹配的密钥' : '~/.ssh 下没有找到密钥' }}
         </p>
       </div>
     </nav>
@@ -105,8 +102,12 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
           {{ SSH_KEY_KIND_META[current.kind].label }}
         </span>
         <div class="flex-1" />
-        <IconButton icon="lucide:download" :size="14" title="导出公钥" />
-        <IconButton icon="lucide:ellipsis" :size="14" title="更多" />
+        <IconButton
+          icon="lucide:trash-2"
+          :size="14"
+          title="删除密钥"
+          @click="confirmDelete(current.id, current.label)"
+        />
       </header>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-4 scroll-thin">
@@ -114,18 +115,18 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
         <div class="mb-5 grid grid-cols-2 gap-2.5">
           <div class="card px-3 py-2.5">
             <p class="text-[11px] text-txt-3">
-              Created
+              Modified
             </p>
-            <p class="mt-1 text-xs text-txt">
-              {{ current.createdAt }}
+            <p class="mt-1 text-xs text-txt" :title="formatDate(current.modifiedAt)">
+              {{ formatRelative(current.modifiedAt) }}
             </p>
           </div>
           <div class="card px-3 py-2.5">
             <p class="text-[11px] text-txt-3">
-              Last used
+              Comment
             </p>
-            <p class="mt-1 text-xs text-txt">
-              {{ current.lastUsed }}
+            <p class="mt-1 truncate text-xs text-txt" :title="current.comment">
+              {{ current.comment || '—' }}
             </p>
           </div>
           <div class="card px-3 py-2.5">
@@ -151,6 +152,16 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
           </div>
         </div>
 
+        <!-- 路径 -->
+        <section class="mb-5">
+          <h3 class="mb-2 text-[13px] font-medium text-txt-2">
+            Path
+          </h3>
+          <div class="card px-3 py-2">
+            <code class="block truncate font-mono text-[11.5px] text-txt-2" :title="current.id">{{ current.id }}</code>
+          </div>
+        </section>
+
         <!-- 指纹 -->
         <section class="mb-5">
           <h3 class="mb-2 text-[13px] font-medium text-txt-2">
@@ -168,7 +179,7 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
         </section>
 
         <!-- 公钥全文 -->
-        <section class="mb-5">
+        <section>
           <div class="mb-2 flex items-center gap-2">
             <h3 class="flex-1 text-[13px] font-medium text-txt-2">
               Public key
@@ -184,30 +195,6 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
           </div>
           <pre class="card overflow-x-auto whitespace-pre-wrap break-all bg-terminal px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-term-fg scroll-thin">{{ current.publicKey }}</pre>
         </section>
-
-        <!-- 授权主机 -->
-        <section>
-          <h3 class="mb-2 text-[13px] font-medium text-txt-2">
-            Authorized hosts
-            <span class="text-txt-4">({{ current.hosts.length }})</span>
-          </h3>
-
-          <div v-if="current.hosts.length" class="card divide-y divide-line-soft overflow-hidden">
-            <div
-              v-for="host in current.hosts"
-              :key="host"
-              class="flex items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-raised"
-            >
-              <StatusDot :size="7" />
-              <span class="flex-1 truncate text-xs text-txt-2">{{ host }}</span>
-              <AppIcon name="lucide:chevron-right" :size="13" class="shrink-0 text-txt-4" />
-            </div>
-          </div>
-
-          <p v-else class="card px-3.5 py-4 text-center text-xs text-txt-4">
-            这把密钥还没授权到任何主机
-          </p>
-        </section>
       </div>
     </div>
 
@@ -221,7 +208,7 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
           还没有密钥
         </p>
         <p class="max-w-70 text-xs text-txt-4">
-          生成一把新密钥，或从 ~/.ssh 导入已有的
+          生成一把新密钥，或把已有的放进 ~/.ssh
         </p>
       </div>
     </div>
