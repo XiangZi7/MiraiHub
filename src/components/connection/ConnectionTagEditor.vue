@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, shallowRef, useId } from 'vue'
-import AppIcon from '@/components/ui/AppIcon.vue'
 import { CONNECTION_TAG_COLORS } from '@/constants/connection'
 import type { ConnectionTagColor, ConnectionTagDefinition } from '@/types/connection'
+import ConnectionTagBadge from './ConnectionTagBadge.vue'
 
 const props = withDefaults(defineProps<{
   availableTags?: readonly ConnectionTagDefinition[]
@@ -21,9 +21,13 @@ const selectedTags = computed(() => tags.value
   .filter(Boolean))
 
 const selectedKeys = computed(() => new Set(selectedTags.value.map(tag => tag.toLocaleLowerCase())))
-const suggestions = computed(() => props.availableTags.filter(
-  tag => !selectedKeys.value.has(tag.name.toLocaleLowerCase()),
-))
+const suggestions = computed(() => {
+  const query = draft.value.trim().toLocaleLowerCase()
+  return props.availableTags
+    .filter(tag => !selectedKeys.value.has(tag.name.toLocaleLowerCase()))
+    .filter(tag => !query || tag.name.toLocaleLowerCase().includes(query))
+    .slice(0, 12)
+})
 
 function definitionOf(name: string): ConnectionTagDefinition | undefined {
   const key = name.toLocaleLowerCase()
@@ -71,17 +75,14 @@ function handleInputKeydown(event: KeyboardEvent): void {
     <div class="space-y-1.5">
       <label :for="inputId" class="block text-[11px] font-medium text-txt-2">Tags</label>
       <div class="tag-input-shell">
-        <span
+        <ConnectionTagBadge
           v-for="tag in selectedTags"
           :key="tag"
-          class="tag-chip"
-          :style="{ '--tag-color': tagColor(tag) }"
-        >
-          <span class="max-w-28 truncate">{{ tag }}</span>
-          <button type="button" :aria-label="`移除标签 ${tag}`" @click="removeTag(tag)">
-            <AppIcon name="lucide:x" :size="11" />
-          </button>
-        </span>
+          :label="tag"
+          :color="tagColor(tag)"
+          removable
+          @remove="removeTag(tag)"
+        />
         <input
           :id="inputId"
           v-model="draft"
@@ -99,18 +100,15 @@ function handleInputKeydown(event: KeyboardEvent): void {
         共享标签 · 点击即可使用
       </p>
       <div class="flex flex-wrap gap-1.5">
-        <button
+        <ConnectionTagBadge
           v-for="tag in suggestions"
           :key="tag.name"
-          type="button"
-          class="tag-suggestion"
-          :style="{ '--tag-color': tagColor(tag.name) }"
+          :label="tag.name"
+          :color="tagColor(tag.name)"
+          selectable
           @mousedown.prevent
-          @click="addTag(tag.name)"
-        >
-          <AppIcon name="lucide:plus" :size="10" />
-          {{ tag.name }}
-        </button>
+          @select="addTag(tag.name)"
+        />
       </div>
     </div>
 
@@ -139,20 +137,20 @@ function handleInputKeydown(event: KeyboardEvent): void {
 <style scoped>
 .tag-input-shell {
   display: flex;
-  min-height: 36px;
+  min-height: 34px;
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
   border: 1px solid var(--color-line);
-  border-radius: 7px;
-  background: color-mix(in oklch, var(--color-panel) 88%, transparent);
-  padding: 5px 7px;
+  border-radius: 8px;
+  background: var(--color-panel);
+  padding: 5px 8px;
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .tag-input-shell:focus-within {
-  border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  border-color: var(--color-line-strong);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-violet) 9%, transparent);
 }
 
 .tag-input {
@@ -169,58 +167,39 @@ function handleInputKeydown(event: KeyboardEvent): void {
   color: var(--color-txt-4);
 }
 
-.tag-chip,
-.tag-suggestion {
-  display: inline-flex;
-  cursor: pointer;
-  align-items: center;
-  gap: 3px;
-  border: 1px solid color-mix(in oklch, var(--tag-color) 42%, transparent);
-  border-radius: 5px;
-  background: color-mix(in oklch, var(--tag-color) 12%, transparent);
-  padding: 2px 5px;
-  color: var(--tag-color);
-  font-size: 10px;
-  line-height: 15px;
-}
-
-.tag-chip > button {
-  display: grid;
-  cursor: pointer;
-  place-items: center;
-  border-radius: 3px;
-  opacity: 0.72;
-}
-
-.tag-chip > button:hover,
-.tag-chip > button:focus-visible,
-.tag-suggestion:hover,
-.tag-suggestion:focus-visible {
-  background: color-mix(in oklch, var(--tag-color) 18%, transparent);
-  opacity: 1;
-  outline: none;
-}
-
 .tag-color-option {
-  width: 18px;
-  height: 18px;
+  position: relative;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
   cursor: pointer;
-  border: 2px solid transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  outline: none;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.tag-color-option::before {
+  position: absolute;
+  inset: 4px;
   border-radius: 50%;
   background: var(--tag-color);
-  outline: none;
-  transition: box-shadow 150ms ease, transform 150ms ease;
+  content: '';
 }
 
 .tag-color-option:hover,
 .tag-color-option:focus-visible {
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--tag-color) 22%, transparent);
+  background: var(--color-hover);
 }
 
 .tag-color-option-active {
-  border-color: color-mix(in oklch, white 78%, var(--tag-color));
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--tag-color) 26%, transparent);
+  border-color: color-mix(in oklch, var(--tag-color) 30%, var(--color-line-strong));
+  background: color-mix(in oklch, var(--tag-color) 8%, var(--color-raised));
+}
+
+.tag-color-option-active::before {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--tag-color) 13%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

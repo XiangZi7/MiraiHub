@@ -30,9 +30,10 @@ const state = reactive({
 /** 从存储层重新拉取 */
 async function refresh(): Promise<void> {
   const [items, groups, tags] = await Promise.all([store.list(), store.listGroups(), store.listTags()])
-  state.items = items
-  state.groups = groups
-  state.tags = tags
+  // 对外暴露的是只读数组代理，保持数组身份不变才能让已挂载窗口持续收到刷新。
+  state.items.splice(0, state.items.length, ...items)
+  state.groups.splice(0, state.groups.length, ...groups)
+  state.tags.splice(0, state.tags.length, ...tags)
   state.loaded = true
 }
 

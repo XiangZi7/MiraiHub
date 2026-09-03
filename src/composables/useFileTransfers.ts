@@ -38,7 +38,7 @@ interface DownloadOptions {
 }
 
 const state = reactive({ items: [] as FileTransferTask[] })
-let listenerStarted = false
+let listenerReady: Promise<void> | undefined
 
 function nameOf(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
@@ -72,14 +72,18 @@ function applyEvent(event: SshTransferEvent): void {
     task.completedAt = Date.now()
 }
 
-function ensureListener(): void {
-  if (listenerStarted || !IS_TAURI)
-    return
-  listenerStarted = true
-  void ssh.onTransfer(applyEvent).catch((error) => {
-    listenerStarted = false
-    console.error('监听文件传输状态失败：', error)
-  })
+function ensureListener(): Promise<void> {
+  if (!IS_TAURI)
+    return Promise.resolve()
+  if (!listenerReady) {
+    listenerReady = ssh.onTransfer(applyEvent)
+      .then(() => undefined)
+      .catch((error) => {
+        listenerReady = undefined
+        console.error('监听文件传输状态失败：', error)
+      })
+  }
+  return listenerReady
 }
 
 function createTask(input: Pick<FileTransferTask, 'direction' | 'fileName' | 'source' | 'target' | 'connectionName'>): FileTransferTask {
@@ -99,7 +103,7 @@ function createTask(input: Pick<FileTransferTask, 'direction' | 'fileName' | 'so
 }
 
 async function upload(options: UploadOptions): Promise<boolean> {
-  ensureListener()
+  await ensureListener()
   const task = createTask({
     direction: 'upload',
     fileName: nameOf(options.localPath),
@@ -135,7 +139,7 @@ async function upload(options: UploadOptions): Promise<boolean> {
 }
 
 async function download(options: DownloadOptions): Promise<string | null> {
-  ensureListener()
+  await ensureListener()
   const task = createTask({
     direction: 'download',
     fileName: nameOf(options.remotePath),
@@ -220,8 +224,23 @@ async function cancel(taskId: string): Promise<void> {
   }
 }
 
+async function pauseAll(): Promise<void> {
+  const runningIds = state.items
+    .filter(task => task.status === 'running')
+    .map(task => task.id)
+  await Promise.all(runningIds.map(pause))
+}
+
+async function resumeAll(): Promise<void> {
+  const pausedIds = state.items
+    .filter(task => task.status === 'paused')
+    .map(task => task.id)
+  await Promise.all(pausedIds.map(resume))
+}
+
 function clearSettled(): void {
-  state.items = state.items.filter(task => ['queued', 'running', 'paused'].includes(task.status))
+  const active = state.items.filter(task => ['queued', 'running', 'paused'].includes(task.status))
+  state.items.splice(0, state.items.length, ...active)
 }
 
 const activeTasks = computed(() => state.items.filter(task => ['queued', 'running', 'paused'].includes(task.status)))
@@ -229,7 +248,7 @@ const completedTasks = computed(() => state.items.filter(task => task.status ===
 const failedTasks = computed(() => state.items.filter(task => task.status === 'error' || task.status === 'cancelled'))
 
 export function useFileTransfers() {
-  ensureListener()
+  void ensureListener()
   return {
     tasks: readonly(state).items,
     activeTasks,
@@ -240,6 +259,8 @@ export function useFileTransfers() {
     pause,
     resume,
     cancel,
+    pauseAll,
+    resumeAll,
     clearSettled,
   }
 }

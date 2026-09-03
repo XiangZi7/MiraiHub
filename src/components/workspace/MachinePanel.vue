@@ -69,7 +69,7 @@ const sessionId = toRef(props, 'sessionId')
     <FilesView
       v-else
       :session-id="sessionId"
-      :connection-name="connection?.name"
+      :connection-name="connection ? `${connection.name} (${connection.host})` : ''"
     />
   </section>
 </template>

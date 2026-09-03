@@ -60,7 +60,6 @@ const descriptionId = useId()
 const isReady = computed<boolean>(() => (
   form.name.trim().length > 0
   && form.host.trim().length > 0
-  && form.database.trim().length > 0
   && form.username.trim().length > 0
 ))
 
@@ -87,7 +86,7 @@ function selectKind(nextKind: DatabaseKind): void {
 function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
-    setFeedback('请填写连接名称、主机、数据库和用户名', 'error')
+    setFeedback('请填写连接名称、主机和用户名', 'error')
     return false
   }
 
@@ -219,9 +218,8 @@ async function saveConnection(): Promise<void> {
 
         <AppTextField
           v-model="form.database"
-          label="Database Name"
+          label="Database Name (Optional)"
           placeholder="e.g. production"
-          required
         />
 
         <AppTextField

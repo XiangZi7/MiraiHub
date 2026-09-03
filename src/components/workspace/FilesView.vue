@@ -150,6 +150,11 @@ async function uploadPaths(localPaths: readonly string[]): Promise<void> {
       let action: Exclude<ConflictAction, 'cancel'> = 'overwrite'
       const exists = await ssh.pathExists(props.sessionId, remotePath)
       if (exists) {
+        const existingEntry = entries.value.find(entry => entry.name === localName(localPath))
+        if (existingEntry?.kind === 'directory') {
+          operationError.value = `无法上传“${localName(localPath)}”：远端已有同名目录`
+          continue
+        }
         if (policy) {
           action = policy
         } else {

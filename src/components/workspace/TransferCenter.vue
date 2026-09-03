@@ -1,70 +1,121 @@
 <script setup lang="ts">
 import { computed, shallowRef, useTemplateRef } from 'vue'
-import { useEventListener } from '@vueuse/core'
+import { useEventListener, useNow } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import IconButton from '@/components/ui/IconButton.vue'
-import { useFileTransfers, type FileTransferTask } from '@/composables/useFileTransfers'
-import { formatBytes } from '@/utils/format'
+import {
+  useFileTransfers,
+  type FileTransferDirection,
+  type FileTransferTask,
+} from '@/composables/useFileTransfers'
+import { formatBytes, formatRate } from '@/utils/format'
+import { formatDuration } from '@/utils/time'
+import TransferPanelFooter from './transfer/TransferPanelFooter.vue'
+import TransferPanelHeader, { type TransferPanelTab } from './transfer/TransferPanelHeader.vue'
+import TransferTaskGroup from './transfer/TransferTaskGroup.vue'
 
-type TransferTab = 'active' | 'completed' | 'failed'
+interface TransferGroupView {
+  key: string
+  direction: FileTransferDirection
+  connectionName: string
+  tasks: FileTransferTask[]
+}
 
 const {
+  tasks,
   activeTasks,
-  completedTasks,
-  failedTasks,
   pause,
   resume,
   cancel,
+  pauseAll,
+  resumeAll,
   clearSettled,
 } = useFileTransfers()
 
 const open = shallowRef(false)
-const activeTab = shallowRef<TransferTab>('active')
-const root = useTemplateRef<HTMLElement>('root')
+const activeTab = shallowRef<TransferPanelTab>('transfers')
+const triggerRoot = useTemplateRef<HTMLElement>('triggerRoot')
+const panelRoot = useTemplateRef<HTMLElement>('panelRoot')
+const now = useNow({ interval: 1000 })
 
-const tabs = computed(() => [
-  { id: 'active' as const, label: '进行中', count: activeTasks.value.length },
-  { id: 'completed' as const, label: '已完成', count: completedTasks.value.length },
-  { id: 'failed' as const, label: '错误', count: failedTasks.value.length },
-])
+const historyTasks = computed(() => tasks.filter(task => ['completed', 'error', 'cancelled'].includes(task.status)))
+const visibleTasks = computed(() => activeTab.value === 'history' ? historyTasks.value : [...tasks])
 
-const visibleTasks = computed(() => {
-  if (activeTab.value === 'completed')
-    return completedTasks.value
-  if (activeTab.value === 'failed')
-    return failedTasks.value
-  return activeTasks.value
-})
+const groups = computed<TransferGroupView[]>(() => {
+  const byConnection = new Map<string, TransferGroupView>()
 
-const emptyLabel = computed(() => {
-  if (activeTab.value === 'completed')
-    return '还没有完成的传输'
-  if (activeTab.value === 'failed')
-    return '没有错误或已取消的任务'
-  return '当前没有传输任务'
-})
-
-function progressOf(task: FileTransferTask): number {
-  if (!task.totalBytes)
-    return task.status === 'completed' ? 100 : 0
-  return Math.min(100, Math.round(task.transferredBytes / task.totalBytes * 100))
-}
-
-function statusLabel(task: FileTransferTask): string {
-  const labels: Record<FileTransferTask['status'], string> = {
-    queued: '等待中',
-    running: task.direction === 'upload' ? '正在上传' : '正在下载',
-    paused: '已暂停',
-    completed: '已完成',
-    error: '失败',
-    cancelled: '已取消',
+  for (const task of visibleTasks.value) {
+    const connectionName = task.connectionName || 'Remote server'
+    const key = `${task.direction}:${connectionName}`
+    const existing = byConnection.get(key)
+    if (existing) {
+      existing.tasks.push(task)
+      continue
+    }
+    byConnection.set(key, {
+      key,
+      direction: task.direction,
+      connectionName,
+      tasks: [task],
+    })
   }
-  return labels[task.status]
-}
+
+  return [...byConnection.values()]
+})
+
+const aggregate = computed(() => {
+  const current = [...tasks]
+  const totalBytes = current.reduce((sum, task) => sum + task.totalBytes, 0)
+  const transferredBytes = current.reduce((sum, task) => {
+    if (!task.totalBytes)
+      return sum + task.transferredBytes
+    return sum + Math.min(task.transferredBytes, task.totalBytes)
+  }, 0)
+  const progress = totalBytes
+    ? Math.min(100, Math.round(transferredBytes / totalBytes * 100))
+    : current.length && current.every(task => task.status === 'completed') ? 100 : 0
+  const startedAt = current.length ? Math.min(...current.map(task => task.createdAt)) : 0
+  const elapsedSeconds = startedAt ? Math.max(1, (now.value.getTime() - startedAt) / 1000) : 0
+  const rate = elapsedSeconds ? transferredBytes / elapsedSeconds : 0
+  const remainingMs = rate > 0 && totalBytes > transferredBytes
+    ? (totalBytes - transferredBytes) / rate * 1000
+    : 0
+
+  return { totalBytes, transferredBytes, progress, rate, remainingMs }
+})
+
+const canPause = computed(() => activeTasks.value.some(task => task.status === 'running'))
+const canResume = computed(() => !canPause.value && activeTasks.value.some(task => task.status === 'paused'))
+
+const statusLabel = computed(() => {
+  const active = activeTasks.value
+  if (!active.length)
+    return tasks.length ? 'Complete' : 'Idle'
+  if (!active.some(task => task.status === 'running'))
+    return 'Paused'
+  const directions = new Set(active.map(task => task.direction))
+  if (directions.size > 1)
+    return 'Transferring'
+  return directions.has('upload') ? 'Uploading' : 'Downloading'
+})
+
+const footerSummary = computed(() => {
+  const direction = new Set(tasks.map(task => task.direction))
+  const prefix = direction.size === 1 && direction.has('upload')
+    ? 'Upload'
+    : direction.size === 1 && direction.has('download') ? 'Download' : 'Transfer'
+  const total = aggregate.value.totalBytes ? formatBytes(aggregate.value.totalBytes) : 'Calculating'
+  const rate = aggregate.value.rate ? formatRate(aggregate.value.rate) : '--'
+  const remaining = aggregate.value.remainingMs ? ` • ${formatDuration(aggregate.value.remainingMs)} remaining` : ''
+  return `${prefix}: ${formatBytes(aggregate.value.transferredBytes)} / ${total} • ${rate}${remaining}`
+})
+
+const emptyLabel = computed(() => activeTab.value === 'history' ? 'No transfer history yet' : 'No file transfers yet')
 
 useEventListener(document, 'pointerdown', (event: PointerEvent) => {
-  if (open.value && !root.value?.contains(event.target as Node))
-    open.value = false
+  const target = event.target as Node
+  if (!open.value || triggerRoot.value?.contains(target) || panelRoot.value?.contains(target))
+    return
+  open.value = false
 }, { capture: true })
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
@@ -74,11 +125,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </script>
 
 <template>
-  <div ref="root" class="relative">
+  <div ref="triggerRoot" class="relative">
     <button
       type="button"
       class="icon-btn relative"
-      title="传输中心"
+      title="File Transfer"
       :aria-expanded="open"
       aria-haspopup="dialog"
       @click="open = !open"
@@ -87,113 +138,53 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <span v-if="activeTasks.length" class="transfer-badge">{{ Math.min(activeTasks.length, 9) }}</span>
     </button>
 
-    <Transition name="transfer-center">
-      <section v-if="open" class="transfer-center" role="dialog" aria-label="文件传输中心">
-        <header class="flex items-center gap-2 border-b border-line-soft px-3 py-2.5">
-          <div class="grid size-7 place-items-center rounded-lg bg-violet/12 text-violet">
-            <AppIcon name="lucide:arrow-up-down" :size="15" />
-          </div>
-          <div class="min-w-0 flex-1">
-            <h2 class="text-xs font-semibold text-txt">文件传输</h2>
-            <p class="text-[10px] text-txt-4">上传与下载任务</p>
-          </div>
-          <button
-            v-if="completedTasks.length || failedTasks.length"
-            type="button"
-            class="text-[10px] text-txt-3 hover:text-txt"
-            @click="clearSettled"
-          >
-            清除记录
-          </button>
-        </header>
+    <Teleport to="body">
+      <Transition name="transfer-center">
+        <section
+          v-if="open"
+          ref="panelRoot"
+          class="transfer-center"
+          role="dialog"
+          aria-label="File Transfer"
+        >
+          <TransferPanelHeader
+            :tab="activeTab"
+            :status-label="statusLabel"
+            :progress="aggregate.progress"
+            @close="open = false"
+            @change-tab="activeTab = $event"
+          />
 
-        <div class="flex h-9 items-end gap-1 border-b border-line-soft px-2" role="tablist" aria-label="传输状态">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === tab.id"
-            :class="['transfer-tab', activeTab === tab.id && 'transfer-tab-active']"
-            @click="activeTab = tab.id"
-          >
-            {{ tab.label }}
-            <span class="tab-count">{{ tab.count }}</span>
-          </button>
-        </div>
+          <div class="transfer-content scroll-thin">
+            <TransferTaskGroup
+              v-for="group in groups"
+              :key="group.key"
+              :direction="group.direction"
+              :connection-name="group.connectionName"
+              :tasks="group.tasks"
+              @pause="pause"
+              @resume="resume"
+              @cancel="cancel"
+            />
 
-        <div class="max-h-90 min-h-32 overflow-y-auto p-1.5 scroll-thin">
-          <article
-            v-for="task in visibleTasks"
-            :key="task.id"
-            class="transfer-task"
-          >
-            <div :class="['transfer-direction', task.direction === 'upload' ? 'text-violet' : 'text-cyan']">
-              <AppIcon :name="task.direction === 'upload' ? 'lucide:upload' : 'lucide:download'" :size="14" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <p class="min-w-0 flex-1 truncate text-[11.5px] font-medium text-txt" :title="task.fileName">
-                  {{ task.fileName }}
-                </p>
-                <span :class="['shrink-0 text-[9.5px]', task.status === 'error' ? 'text-danger' : 'text-txt-3']">
-                  {{ statusLabel(task) }}
-                </span>
-              </div>
-              <p class="mt-0.5 truncate text-[9.5px] text-txt-4" :title="`${task.source} → ${task.target}`">
-                {{ task.connectionName || task.target }}
-              </p>
-
-              <div v-if="['queued', 'running', 'paused'].includes(task.status)" class="mt-2">
-                <div class="h-1 overflow-hidden rounded-full bg-raised">
-                  <div class="transfer-progress" :style="{ width: `${progressOf(task)}%` }" />
-                </div>
-                <div class="mt-1 flex items-center gap-2 text-[9px] text-txt-4">
-                  <span>{{ formatBytes(task.transferredBytes) }} / {{ task.totalBytes ? formatBytes(task.totalBytes) : '计算中' }}</span>
-                  <span class="flex-1" />
-                  <span>{{ progressOf(task) }}%</span>
-                </div>
-              </div>
-
-              <p v-if="task.error" class="mt-1 truncate text-[9.5px] text-danger" :title="task.error">
-                {{ task.error }}
-              </p>
-            </div>
-
-            <div class="flex shrink-0 items-center gap-0.5">
-              <IconButton
-                v-if="task.status === 'running'"
-                icon="lucide:pause"
-                :size="12"
-                title="暂停"
-                @click="pause(task.id)"
-              />
-              <IconButton
-                v-else-if="task.status === 'paused'"
-                icon="lucide:play"
-                :size="12"
-                title="继续"
-                @click="resume(task.id)"
-              />
-              <IconButton
-                v-if="['queued', 'running', 'paused'].includes(task.status)"
-                icon="lucide:x"
-                :size="12"
-                title="取消"
-                @click="cancel(task.id)"
-              />
-            </div>
-          </article>
-
-          <div v-if="!visibleTasks.length" class="grid min-h-29 place-items-center text-center">
-            <div>
-              <AppIcon name="lucide:inbox" :size="22" class="mx-auto text-txt-4" />
-              <p class="mt-2 text-[11px] text-txt-4">{{ emptyLabel }}</p>
+            <div v-if="!groups.length" class="transfer-empty">
+              <AppIcon name="lucide:folder-clock" :size="25" />
+              <p>{{ emptyLabel }}</p>
             </div>
           </div>
-        </div>
-      </section>
-    </Transition>
+
+          <TransferPanelFooter
+            :summary="footerSummary"
+            :history="activeTab === 'history'"
+            :can-pause="canPause"
+            :can-resume="canResume"
+            @pause-all="pauseAll"
+            @resume-all="resumeAll"
+            @clear-history="clearSettled"
+          />
+        </section>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -208,88 +199,48 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   place-items: center;
   border: 1px solid var(--color-panel);
   border-radius: 999px;
-  background: var(--color-violet);
+  background: #4798ff;
   padding: 0 3px;
-  color: white;
+  color: #fff;
   font-size: 8px;
   line-height: 1;
 }
 
 .transfer-center {
-  position: absolute;
-  z-index: 90;
-  top: calc(100% + 8px);
-  right: -8px;
-  width: min(390px, calc(100vw - 24px));
+  position: fixed;
+  z-index: 110;
+  top: 42px;
+  right: 8px;
+  display: flex;
+  width: min(315px, calc(100vw - 16px));
+  height: min(598px, calc(100vh - 50px));
   overflow: hidden;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 11px;
-  background: color-mix(in oklch, var(--color-panel) 94%, transparent);
-  box-shadow: var(--shadow-pop);
-  backdrop-filter: blur(28px) saturate(170%);
+  flex-direction: column;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 9px;
+  background:
+    radial-gradient(circle at 20% 0%, rgb(39 53 63 / 15%), transparent 34%),
+    rgb(11 15 18 / 98%);
+  box-shadow: 0 18px 55px rgb(0 0 0 / 48%);
+  backdrop-filter: blur(24px) saturate(130%);
 }
 
-.transfer-tab {
-  display: flex;
-  height: 31px;
-  cursor: pointer;
-  align-items: center;
-  gap: 5px;
-  border-bottom: 2px solid transparent;
-  padding: 0 8px;
-  color: var(--color-txt-3);
-  font-size: 10.5px;
-  outline: none;
+.transfer-content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 9px 10px 14px;
 }
 
-.transfer-tab:hover,
-.transfer-tab:focus-visible {
-  color: var(--color-txt);
-}
-
-.transfer-tab-active {
-  border-bottom-color: var(--color-violet);
-  color: var(--color-txt);
-}
-
-.tab-count {
-  min-width: 16px;
-  border-radius: 999px;
-  background: var(--color-raised);
-  padding: 0 4px;
-  color: var(--color-txt-3);
-  font-size: 8.5px;
-  line-height: 16px;
-  text-align: center;
-}
-
-.transfer-task {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  border-radius: 7px;
-  padding: 8px;
-}
-
-.transfer-task:hover {
-  background: var(--color-hover);
-}
-
-.transfer-direction {
+.transfer-empty {
   display: grid;
-  width: 27px;
-  height: 27px;
-  flex: 0 0 auto;
+  min-height: 250px;
   place-items: center;
-  border-radius: 7px;
-  background: var(--color-raised);
-}
-
-.transfer-progress {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--color-indigo), var(--color-violet));
-  transition: width 180ms ease;
+  align-content: center;
+  gap: 9px;
+  color: #58636c;
+  font-size: 10.5px;
+  text-align: center;
 }
 
 .transfer-center-enter-active,
@@ -300,12 +251,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
 .transfer-center-enter-from,
 .transfer-center-leave-to {
-  transform: translateY(-5px) scale(0.985);
+  transform: translateY(-4px) scale(0.988);
   opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .transfer-progress,
   .transfer-center-enter-active,
   .transfer-center-leave-active {
     transition: none;

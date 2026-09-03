@@ -1,182 +1,162 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
-import AppContextMenu from '@/components/ui/AppContextMenu.vue'
-import AppIcon from '@/components/ui/AppIcon.vue'
-import IconButton from '@/components/ui/IconButton.vue'
-import StatusDot from '@/components/ui/StatusDot.vue'
-import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
-import type { ContextMenuItem } from '@/types/context-menu'
-import { endpointOf } from '@/types/connection'
-import { connectionTagColorCss } from '@/constants/connection'
-import { cn } from '@/utils/cn'
-import SidebarGroupEditor from './SidebarGroupEditor.vue'
+import { computed, reactive } from "vue";
+import ConnectionTagBadge from "@/components/connection/ConnectionTagBadge.vue";
+import AppContextMenu from "@/components/ui/AppContextMenu.vue";
+import AppIcon from "@/components/ui/AppIcon.vue";
+import IconButton from "@/components/ui/IconButton.vue";
+import StatusDot from "@/components/ui/StatusDot.vue";
+import type { ConnectionGroupView, SavedConnection } from "@/types/connection";
+import type { ContextMenuItem } from "@/types/context-menu";
+import { endpointOf } from "@/types/connection";
+import { connectionTagColorCss } from "@/constants/connection";
+import { useConnectionGroupDrag } from "@/composables/useConnectionGroupDrag";
+import { cn } from "@/utils/cn";
+import SidebarGroupEditor from "./SidebarGroupEditor.vue";
 
 const props = defineProps<{
-  label: string
-  groups: readonly ConnectionGroupView[]
-  loaded: boolean
-  activeId?: string
-  connectedIds: ReadonlySet<string>
-  openIds: ReadonlySet<string>
-}>()
+  label: string;
+  groups: readonly ConnectionGroupView[];
+  loaded: boolean;
+  activeId?: string;
+  connectedIds: ReadonlySet<string>;
+  openIds: ReadonlySet<string>;
+}>();
 
 const emit = defineEmits<{
-  open: [connection: SavedConnection]
-  addConnection: []
-  createGroup: [name: string]
-  renameGroup: [groupId: string, name: string]
-  removeGroup: [group: ConnectionGroupView]
-  move: [connectionId: string, groupName: string]
-  edit: [connection: SavedConnection]
-  duplicate: [connection: SavedConnection]
-  remove: [connection: SavedConnection]
-}>()
+  open: [connection: SavedConnection];
+  addConnection: [];
+  createGroup: [name: string];
+  renameGroup: [groupId: string, name: string];
+  removeGroup: [group: ConnectionGroupView];
+  move: [connectionId: string, groupName: string];
+  edit: [connection: SavedConnection];
+  duplicate: [connection: SavedConnection];
+  remove: [connection: SavedConnection];
+}>();
 
 const state = reactive({
   collapsed: {} as Record<string, boolean>,
   creatingGroup: false,
-  editingGroupId: '',
-  draggedConnectionId: '',
-  dropGroupId: '',
+  editingGroupId: "",
   menuOpen: false,
   menuX: 0,
   menuY: 0,
   menuConnection: null as SavedConnection | null,
   menuGroup: null as ConnectionGroupView | null,
-})
+});
 
 const contextItems = computed<ContextMenuItem[]>(() => {
   if (state.menuConnection) {
     return [
-      { id: 'open', label: '打开连接', icon: 'lucide:square-terminal' },
-      { id: 'edit', label: '编辑连接', icon: 'lucide:pencil' },
-      { id: 'duplicate', label: '复制连接', icon: 'lucide:copy' },
-      { id: 'delete', label: '删除连接', icon: 'lucide:trash-2', danger: true, separatorBefore: true },
-    ]
+      { id: "open", label: "打开连接", icon: "lucide:square-terminal" },
+      { id: "edit", label: "编辑连接", icon: "lucide:pencil" },
+      { id: "duplicate", label: "复制连接", icon: "lucide:copy" },
+      {
+        id: "delete",
+        label: "删除连接",
+        icon: "lucide:trash-2",
+        danger: true,
+        separatorBefore: true,
+      },
+    ];
   }
 
   return [
-    { id: 'rename-group', label: '重命名分组', icon: 'lucide:pencil' },
-    { id: 'delete-group', label: '删除分组', icon: 'lucide:trash-2', danger: true, separatorBefore: true },
-  ]
-})
+    { id: "rename-group", label: "重命名分组", icon: "lucide:pencil" },
+    {
+      id: "delete-group",
+      label: "删除分组",
+      icon: "lucide:trash-2",
+      danger: true,
+      separatorBefore: true,
+    },
+  ];
+});
 
 function isExpanded(groupId: string): boolean {
-  return !state.collapsed[groupId]
+  return !state.collapsed[groupId];
 }
 
 function toggleGroup(groupId: string): void {
-  state.collapsed[groupId] = !state.collapsed[groupId]
+  state.collapsed[groupId] = !state.collapsed[groupId];
 }
 
-function toneOf(connection: SavedConnection): 'accent' | 'amber' | 'txt-3' {
-  if (props.connectedIds.has(connection.id))
-    return 'accent'
-  return props.openIds.has(connection.id) ? 'amber' : 'txt-3'
+function toneOf(connection: SavedConnection): "accent" | "amber" | "txt-3" {
+  if (props.connectedIds.has(connection.id)) return "accent";
+  return props.openIds.has(connection.id) ? "amber" : "txt-3";
 }
 
 function createGroup(name: string): void {
-  state.creatingGroup = false
-  emit('createGroup', name)
+  state.creatingGroup = false;
+  emit("createGroup", name);
 }
 
 function renameGroup(groupId: string, name: string): void {
-  state.editingGroupId = ''
-  emit('renameGroup', groupId, name)
+  state.editingGroupId = "";
+  emit("renameGroup", groupId, name);
 }
 
-function startDrag(event: DragEvent, connection: SavedConnection): void {
-  if (connection.kind !== 'ssh' && connection.kind !== 'local') {
-    event.preventDefault()
-    return
-  }
+const groupDrag = useConnectionGroupDrag({
+  groups: () => props.groups,
+  onDrop(connectionId, group) {
+    state.collapsed[group.id] = false;
+    emit("move", connectionId, group.name === "Ungrouped" ? "" : group.name);
+  },
+});
 
-  state.draggedConnectionId = connection.id
-  event.dataTransfer?.setData('text/plain', connection.id)
-  if (event.dataTransfer)
-    event.dataTransfer.effectAllowed = 'move'
+function openConnection(connection: SavedConnection): void {
+  if (groupDrag.consumeSuppressedClick(connection.id)) return;
+  emit("open", connection);
 }
 
-function dragOver(event: DragEvent, group: ConnectionGroupView): void {
-  if (!state.draggedConnectionId || group.kind !== 'ssh')
-    return
-
-  event.preventDefault()
-  state.dropGroupId = group.id
-  if (event.dataTransfer)
-    event.dataTransfer.dropEffect = 'move'
-}
-
-function dropOnGroup(event: DragEvent, group: ConnectionGroupView): void {
-  if (!state.draggedConnectionId || group.kind !== 'ssh')
-    return
-
-  event.preventDefault()
-  const connectionId = state.draggedConnectionId
-  state.collapsed[group.id] = false
-  clearDrag()
-  emit('move', connectionId, group.name === 'Ungrouped' ? '' : group.name)
-}
-
-function clearDrag(): void {
-  state.draggedConnectionId = ''
-  state.dropGroupId = ''
-}
-
-function eventPoint(event: MouseEvent): { x: number, y: number } {
+function eventPoint(event: MouseEvent): { x: number; y: number } {
   if (event.clientX || event.clientY)
-    return { x: event.clientX, y: event.clientY }
+    return { x: event.clientX, y: event.clientY };
 
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  return { x: rect.left + 20, y: rect.top + rect.height / 2 }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  return { x: rect.left + 20, y: rect.top + rect.height / 2 };
 }
 
-function openConnectionMenu(event: MouseEvent, connection: SavedConnection): void {
-  if (connection.kind !== 'ssh' && connection.kind !== 'local')
-    return
+function openConnectionMenu(
+  event: MouseEvent,
+  connection: SavedConnection,
+): void {
+  if (connection.kind !== "ssh" && connection.kind !== "local") return;
 
-  const point = eventPoint(event)
-  state.menuConnection = connection
-  state.menuGroup = null
-  state.menuX = point.x
-  state.menuY = point.y
-  state.menuOpen = true
+  const point = eventPoint(event);
+  state.menuConnection = connection;
+  state.menuGroup = null;
+  state.menuX = point.x;
+  state.menuY = point.y;
+  state.menuOpen = true;
 }
 
 function openGroupMenu(event: MouseEvent, group: ConnectionGroupView): void {
-  if (group.virtual)
-    return
+  if (group.virtual) return;
 
-  const point = eventPoint(event)
-  state.menuConnection = null
-  state.menuGroup = group
-  state.menuX = point.x
-  state.menuY = point.y
-  state.menuOpen = true
+  const point = eventPoint(event);
+  state.menuConnection = null;
+  state.menuGroup = group;
+  state.menuX = point.x;
+  state.menuY = point.y;
+  state.menuOpen = true;
 }
 
 function runContextAction(action: string): void {
-  const connection = state.menuConnection
+  const connection = state.menuConnection;
   if (connection) {
-    if (action === 'open')
-      emit('open', connection)
-    else if (action === 'edit')
-      emit('edit', connection)
-    else if (action === 'duplicate')
-      emit('duplicate', connection)
-    else if (action === 'delete')
-      emit('remove', connection)
-    return
+    if (action === "open") emit("open", connection);
+    else if (action === "edit") emit("edit", connection);
+    else if (action === "duplicate") emit("duplicate", connection);
+    else if (action === "delete") emit("remove", connection);
+    return;
   }
 
-  const group = state.menuGroup
-  if (!group)
-    return
+  const group = state.menuGroup;
+  if (!group) return;
 
-  if (action === 'rename-group')
-    state.editingGroupId = group.id
-  else if (action === 'delete-group')
-    emit('removeGroup', group)
+  if (action === "rename-group") state.editingGroupId = group.id;
+  else if (action === "delete-group") emit("removeGroup", group);
 }
 </script>
 
@@ -186,7 +166,12 @@ function runContextAction(action: string): void {
       <p class="group-label">
         {{ label }}
       </p>
-      <IconButton icon="lucide:folder-plus" :size="13" title="新建分组" @click="state.creatingGroup = true" />
+      <IconButton
+        icon="lucide:folder-plus"
+        :size="13"
+        title="新建分组"
+        @click="state.creatingGroup = true"
+      />
     </div>
 
     <SidebarGroupEditor
@@ -200,9 +185,11 @@ function runContextAction(action: string): void {
       <div
         v-for="group in groups"
         :key="group.id"
-        :class="['sidebar-group', state.dropGroupId === group.id && 'sidebar-group-drop']"
-        @dragover="dragOver($event, group)"
-        @drop="dropOnGroup($event, group)"
+        :data-connection-group-id="group.id"
+        :class="[
+          'sidebar-group',
+          groupDrag.targetGroupId.value === group.id && 'sidebar-group-drop',
+        ]"
       >
         <SidebarGroupEditor
           v-if="state.editingGroupId === group.id"
@@ -222,11 +209,18 @@ function runContextAction(action: string): void {
           <AppIcon
             name="lucide:chevron-right"
             :size="13"
-            :class="cn('text-txt-4 transition-transform duration-150 motion-reduce:transition-none', isExpanded(group.id) && 'rotate-90')"
+            :class="
+              cn(
+                'text-txt-4 transition-transform duration-150 motion-reduce:transition-none',
+                isExpanded(group.id) && 'rotate-90',
+              )
+            "
           />
           <AppIcon name="lucide:folder" :size="13" class="text-txt-3" />
           <span class="flex-1 truncate text-left">{{ group.name }}</span>
-          <span class="shrink-0 text-[10px] text-txt-4">{{ group.items.length }}</span>
+          <span class="shrink-0 text-[10px] text-txt-4">{{
+            group.items.length
+          }}</span>
         </button>
 
         <div v-show="isExpanded(group.id)" class="space-y-0.5">
@@ -234,13 +228,20 @@ function runContextAction(action: string): void {
             v-for="node in group.items"
             :key="node.id"
             type="button"
-            :draggable="node.kind === 'ssh' || node.kind === 'local'"
-            :class="cn('connection-node w-full pl-7', activeId === node.id && 'nav-item-active')"
+            :class="
+              cn(
+                'connection-node w-full pl-7',
+                (node.kind === 'ssh' || node.kind === 'local') &&
+                  'connection-node-draggable',
+                groupDrag.draggedConnectionId.value === node.id &&
+                  'connection-node-dragging',
+                activeId === node.id && 'nav-item-active',
+              )
+            "
             :title="endpointOf(node)"
-            @click="emit('open', node)"
+            @click="openConnection(node)"
             @contextmenu.prevent.stop="openConnectionMenu($event, node)"
-            @dragstart="startDrag($event, node)"
-            @dragend="clearDrag"
+            @pointerdown="groupDrag.start($event, node, group)"
           >
             <StatusDot
               :tone="toneOf(node)"
@@ -249,19 +250,23 @@ function runContextAction(action: string): void {
               class="mt-1.5 self-start"
             />
             <span class="min-w-0 flex-1 text-left">
-              <span class="block truncate text-[11.5px] text-txt">{{ node.name }}</span>
-              <span class="mt-0.5 block truncate font-mono text-[9.5px] text-txt-4">
-                {{ node.kind === 'local' ? endpointOf(node) : node.host }}
+              <span class="block truncate text-[11.5px] text-txt">{{
+                node.name
+              }}</span>
+              <span
+                class="mt-0.5 block truncate font-mono text-[9.5px] text-txt-4"
+              >
+                {{ node.kind === "local" ? endpointOf(node) : node.host }}
               </span>
             </span>
-            <span v-if="node.tags.length" class="flex max-w-20 shrink-0 flex-col items-end gap-0.5">
-              <span
-                v-for="tag in node.tags.slice(0, 2)"
-                :key="tag"
-                class="connection-tag"
-                :style="{ '--tag-color': connectionTagColorCss(node.tagColor) }"
-              >
-                {{ tag }}
+            <span v-if="node.tags.length" class="connection-tags-preview">
+              <ConnectionTagBadge
+                :label="node.tags[0]"
+                :color="connectionTagColorCss(node.tagColor)"
+                compact
+              />
+              <span v-if="node.tags.length > 1" class="connection-tags-more">
+                +{{ node.tags.length - 1 }}
               </span>
             </span>
           </button>
@@ -283,22 +288,38 @@ function runContextAction(action: string): void {
       :x="state.menuX"
       :y="state.menuY"
       :items="contextItems"
-      :label="state.menuConnection ? `${state.menuConnection.name} 操作` : '分组操作'"
+      :label="
+        state.menuConnection ? `${state.menuConnection.name} 操作` : '分组操作'
+      "
       @select="runContextAction"
       @close="state.menuOpen = false"
     />
+
+    <Teleport to="body">
+      <div
+        v-if="groupDrag.dragging.value"
+        class="connection-drag-ghost"
+        :style="groupDrag.dragStyle.value"
+      >
+        <AppIcon name="lucide:server" :size="13" />
+        <span>{{ groupDrag.draggedLabel.value }}</span>
+      </div>
+    </Teleport>
   </section>
 </template>
 
 <style scoped>
 .sidebar-group {
   border-radius: 6px;
-  transition: background-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .sidebar-group-drop {
   background: color-mix(in oklch, var(--color-violet) 11%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-violet) 50%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklch, var(--color-violet) 50%, transparent);
 }
 
 .connection-node {
@@ -313,7 +334,44 @@ function runContextAction(action: string): void {
   padding-bottom: 5px;
   color: var(--color-txt-2);
   outline: none;
-  transition: color 120ms ease, background-color 120ms ease;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.connection-node-draggable {
+  cursor: default;
+  touch-action: pan-y;
+}
+
+.connection-node-draggable:active {
+    cursor: default;
+}
+
+.connection-node-dragging {
+  background: var(--color-hover);
+  opacity: 0.45;
+}
+
+.connection-drag-ghost {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  max-width: 240px;
+  pointer-events: none;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid
+    color-mix(in oklch, var(--color-violet) 48%, var(--color-line));
+  border-radius: 7px;
+  background: var(--color-panel);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
+  padding: 7px 10px;
+  color: var(--color-txt);
+  font-size: 11.5px;
+  line-height: 1;
+  transform: translateY(-50%);
+  white-space: nowrap;
 }
 
 .connection-node:hover,
@@ -322,18 +380,24 @@ function runContextAction(action: string): void {
   color: var(--color-txt);
 }
 
-.connection-tag {
-  max-width: 80px;
-  overflow: hidden;
-  border: 1px solid color-mix(in oklch, var(--tag-color) 34%, transparent);
-  border-radius: 4px;
-  background: color-mix(in oklch, var(--tag-color) 10%, transparent);
-  padding: 0 4px;
-  color: var(--tag-color);
-  font-size: 8.5px;
-  line-height: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.connection-tags-preview {
+  display: flex;
+  min-width: 0;
+  max-width: 92px;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 3px;
+}
+
+.connection-tags-preview > :first-child {
+  min-width: 0;
+}
+
+.connection-tags-more {
+  flex: 0 0 auto;
+  color: var(--color-txt-4);
+  font-size: 8px;
+  line-height: 17px;
 }
 
 @media (prefers-reduced-motion: reduce) {
