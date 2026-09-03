@@ -1,11 +1,27 @@
 <script setup lang="ts">
-import { reactive, toRefs } from 'vue'
+import { computed, reactive, toRefs } from 'vue'
 import type { TabItem } from '@/components/ui/TabBar.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import TabBar from '@/components/ui/TabBar.vue'
 import { DB_TREE, QUERY_ROWS, SQL_LINES } from '@/constants/database'
+import type { SavedConnection } from '@/types/connection'
+import { isDatabaseConnection } from '@/types/connection'
 import { cn } from '@/utils/cn'
+import { openConnectionWindow } from '@/utils/window'
+
+/**
+ * 数据库查询工作台。
+ *
+ * 对象树、SQL 编辑器与结果集仍是示例数据 —— 真正的查询要等 Rust 侧的
+ * db 模块（连接池 + 查询执行）落地。当前已接上的是"连接层"：
+ * 标题、库名跟随选中的连接走，不再写死成 production。
+ */
+
+const props = defineProps<{
+  /** 当前标签对应的连接，未打开任何数据库标签时为 undefined */
+  connection?: SavedConnection
+}>()
 
 /** SQL 语法类别 → 颜色 class */
 const TOKEN_CLASS: Record<string, string> = {
@@ -37,13 +53,71 @@ const state = reactive({
 
 const { tabs, activeTab, resultTab } = toRefs(state)
 
+/** 工具条右侧显示的当前库名 */
+const databaseName = computed(() => {
+  const connection = props.connection
+
+  if (!connection || !isDatabaseConnection(connection))
+    return '未选择连接'
+
+  return connection.settings.database || connection.name
+})
+
+/** 对象树的根节点名跟随连接走 */
+const treeNodes = computed(() =>
+  DB_TREE.map(node =>
+    node.depth === 0 && node.id === 'production'
+      ? { ...node, label: databaseName.value }
+      : node,
+  ),
+)
+
+/** 新建查询标签。真正的多标签查询要等执行引擎接上，这里先只加壳 */
+function addQueryTab(): void {
+  const next = state.tabs.length + 1
+  const id = `q${Date.now()}`
+
+  state.tabs.push({ id, label: `Query ${next}` })
+  state.activeTab = id
+}
+
+function closeQueryTab(id: string): void {
+  const index = state.tabs.findIndex(tab => tab.id === id)
+  if (index === -1)
+    return
+
+  state.tabs.splice(index, 1)
+
+  if (state.activeTab === id)
+    state.activeTab = (state.tabs[index] ?? state.tabs[index - 1])?.id ?? ''
+}
+
 function selectResultTab(id: string): void {
   state.resultTab = id
 }
 </script>
 
 <template>
-  <div class="pane flex-1 flex-row">
+  <!-- 没有打开任何数据库连接：给出新建入口，而不是展示一屏假数据 -->
+  <div v-if="!connection" class="pane flex-1 items-center justify-center">
+    <div class="flex flex-col items-center gap-3 text-center">
+      <div class="grid size-14 place-items-center rounded-2xl border border-line bg-card text-txt-3">
+        <AppIcon name="lucide:database" :size="26" />
+      </div>
+      <p class="text-sm text-txt-2">
+        还没有打开数据库
+      </p>
+      <p class="max-w-70 text-xs text-txt-4">
+        从左侧选一个数据库连接，或新建一个
+      </p>
+      <button type="button" class="btn mt-1" @click="openConnectionWindow('mysql')">
+        <AppIcon name="lucide:plus" :size="13" />
+        <span>新建数据库连接</span>
+      </button>
+    </div>
+  </div>
+
+  <div v-else class="pane flex-1 flex-row">
     <!-- 对象树 -->
     <nav class="flex w-[196px] shrink-0 flex-col border-r border-line-soft bg-panel">
       <div class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft px-2">
@@ -55,7 +129,7 @@ function selectResultTab(id: string): void {
 
       <div class="flex-1 overflow-y-auto p-1.5 scroll-thin">
         <button
-          v-for="node in DB_TREE"
+          v-for="node in treeNodes"
           :key="node.id"
           type="button"
           :class="cn('nav-item h-7 w-full text-xs', node.active && 'nav-item-active')"
@@ -78,7 +152,13 @@ function selectResultTab(id: string): void {
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- 查询标签栏 -->
       <div class="flex h-10 shrink-0 items-end border-b border-line-soft px-2">
-        <TabBar v-model:active="activeTab" :tabs="tabs" addable />
+        <TabBar
+          v-model:active="activeTab"
+          :tabs="tabs"
+          addable
+          @add="addQueryTab"
+          @close="closeQueryTab"
+        />
       </div>
 
       <!-- 执行工具条 -->
@@ -103,9 +183,10 @@ function selectResultTab(id: string): void {
         <button
           type="button"
           class="field h-7 w-[172px] justify-between text-xs"
+          :title="databaseName"
         >
-          <span class="text-txt-2">production</span>
-          <AppIcon name="lucide:chevron-down" :size="12" class="text-txt-4" />
+          <span class="truncate text-txt-2">{{ databaseName }}</span>
+          <AppIcon name="lucide:chevron-down" :size="12" class="shrink-0 text-txt-4" />
         </button>
       </div>
 

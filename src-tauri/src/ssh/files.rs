@@ -110,43 +110,33 @@ fn parse_listing(stdout: &str) -> DirectoryListing {
 /// 解析一行 `ls -lA --time-style=full-iso` 输出。
 ///
 /// 格式：`-rw-r--r-- 1 user group 1234 2024-05-22 09:41:21.000000000 +0800 name`
-/// 文件名可能含空格，所以按前 8 个字段切分后，剩下的整体作为名字，
-/// 而不是简单 split_whitespace 取最后一段。
+/// 文件名可能含空格，所以逐个取走前面的定长字段，剩下的整体作为名字 ——
+/// 简单 split_whitespace 取最后一段会把 "my notes.txt" 截成 "notes.txt"。
 fn parse_entry(line: &str, dir: &str) -> Option<RemoteFile> {
-    let mut fields = line.splitn(9, char::is_whitespace).filter(|f| !f.is_empty());
+    // perms links owner group size date time
+    let (head, rest) = take_fields(line, 7)?;
 
-    let permissions = fields.next()?;
-    let _links = fields.next()?;
-    let owner = fields.next()?;
-    let group = fields.next()?;
-    let size: u64 = fields.next()?.parse().unwrap_or(0);
-    let date = fields.next()?;
-    let time = fields.next()?;
-    let zone = fields.next()?;
+    let permissions = head[0];
+    let owner = head[2];
+    let group = head[3];
+    let size: u64 = head[4].parse().unwrap_or(0);
 
-    // splitn(9) 的最后一段还可能带前导空格与残留的时区/文件名，重新切一次
-    let rest = fields.next()?.trim_start();
+    // 第 8 个字段两种格式都有，但含义不同：
+    // full-iso 里是时区（+0800），短格式里是时间（09:41）或年份（2023）。
+    // 无论哪种，文件名都从它之后开始
+    let (eighth, name_part) = next_field(rest)?;
 
-    // full-iso 不被支持时会退化成短格式，此时第 8 段不是时区而是文件名的一部分。
-    // 时区形如 +0800 / -0500，据此判断该用哪种解析路径
-    let is_full_iso = zone.len() == 5
-        && (zone.starts_with('+') || zone.starts_with('-'))
-        && zone[1..].chars().all(|c| c.is_ascii_digit());
-
-    let (name_part, modified_at) = if is_full_iso {
-        (rest, parse_iso_datetime(date, time))
+    // full-iso 不被内核自带的 ls 支持时会退化成短格式，
+    // 短格式没有年份信息，索性不猜时间，让前端显示为未知
+    let modified_at = if is_timezone(eighth) {
+        parse_iso_datetime(head[5], head[6])
     } else {
-        // 短格式：date time zone 实际是 "月 日 时间"，名字从第 8 段开始
-        (
-            // 把被切走的第 8 段接回来
-            return_short_format(line)?,
-            0,
-        )
+        0
     };
 
     // 符号链接的 " -> 目标" 要从名字里摘出来
     let (name, link_target) = match name_part.split_once(" -> ") {
-        Some((name, target)) => (name, Some(target.to_owned())),
+        Some((name, target)) => (name, Some(target.trim_end().to_owned())),
         None => (name_part, None),
     };
 
@@ -168,17 +158,40 @@ fn parse_entry(line: &str, dir: &str) -> Option<RemoteFile> {
     })
 }
 
-/// 短日期格式下取文件名：跳过前 8 个空白分隔字段。
-fn return_short_format(line: &str) -> Option<&str> {
+/// 取走开头的 `count` 个空白分隔字段，返回它们与剩余部分。
+///
+/// 不用 `splitn`：ls 为对齐会插入连续空格，
+/// splitn 把中间的空字符串也算进分割次数，字段就错位了。
+fn take_fields(line: &str, count: usize) -> Option<(Vec<&str>, &str)> {
+    let mut fields = Vec::with_capacity(count);
     let mut rest = line;
 
-    for _ in 0..8 {
-        rest = rest.trim_start();
-        let end = rest.find(char::is_whitespace)?;
-        rest = &rest[end..];
+    for _ in 0..count {
+        let (field, tail) = next_field(rest)?;
+        fields.push(field);
+        rest = tail;
     }
 
-    Some(rest.trim_start())
+    Some((fields, rest))
+}
+
+/// 取下一个字段与其后的剩余部分（已跳过前导空白）。
+fn next_field(input: &str) -> Option<(&str, &str)> {
+    let trimmed = input.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
+
+    Some((&trimmed[..end], trimmed[end..].trim_start()))
+}
+
+/// 是否是 `+0800` / `-0500` 这样的时区偏移。
+fn is_timezone(field: &str) -> bool {
+    field.len() == 5
+        && matches!(field.as_bytes()[0], b'+' | b'-')
+        && field[1..].bytes().all(|b| b.is_ascii_digit())
 }
 
 /// 权限串首字符决定类型。

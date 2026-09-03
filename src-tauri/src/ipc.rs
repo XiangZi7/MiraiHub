@@ -29,6 +29,9 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ssh::commands::ssh_write,
         ssh::commands::ssh_resize,
         ssh::commands::ssh_exec,
+        // ---------- SSH：远端信息 ----------
+        ssh::commands::ssh_system_stats,
+        ssh::commands::ssh_list_directory,
         // ---------- SSH：密钥 ----------
         ssh::commands::ssh_list_keys,
         ssh::commands::ssh_generate_key,

@@ -6,10 +6,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use russh::keys::ssh_key::private::RsaKeypair;
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg, PrivateKey, PublicKey};
 
 use super::error::{SshError, SshResult};
 use super::models::{GenerateKeyRequest, SshKeyInfo, SshKeyKind};
+
+/// RSA 默认位数。与 ssh-keygen 的现代推荐一致
+const DEFAULT_RSA_BITS: u32 = 4096;
 
 /// 扫描时跳过的文件：这些不是私钥。
 const SKIP_FILES: &[&str] = &[
@@ -189,17 +193,7 @@ pub fn generate_key(request: &GenerateKeyRequest) -> SshResult<SshKeyInfo> {
         return Err(SshError::KeyExists(request.label.clone()));
     }
 
-    let algorithm = match request.kind {
-        SshKeyKind::Ed25519 => Algorithm::Ed25519,
-        SshKeyKind::Rsa => Algorithm::Rsa {
-            hash: Some(HashAlg::Sha256),
-        },
-        SshKeyKind::Ecdsa => Algorithm::Ecdsa {
-            curve: EcdsaCurve::NistP256,
-        },
-    };
-
-    let mut private_key = PrivateKey::random(&mut rand::thread_rng(), algorithm)?;
+    let mut private_key = generate_private_key(request)?;
 
     let comment = request.comment.clone().unwrap_or_else(default_comment);
     private_key.set_comment(&comment);
@@ -224,6 +218,48 @@ pub fn generate_key(request: &GenerateKeyRequest) -> SshResult<SshKeyInfo> {
     fs::write(&public_path, format!("{public_openssh}\n"))?;
 
     read_key_info(&private_path, &public_path)
+}
+
+/// 按请求的算法生成私钥。
+///
+/// RSA 单独走 `RsaKeypair::random`：`PrivateKey::random` 对 RSA 写死了
+/// 4096 位，用户选 2048/3072 会被静默忽略 —— 界面上给了选项就得生效。
+fn generate_private_key(request: &GenerateKeyRequest) -> SshResult<PrivateKey> {
+    let mut rng = rand::thread_rng();
+
+    let key = match request.kind {
+        SshKeyKind::Ed25519 => PrivateKey::random(&mut rng, Algorithm::Ed25519)?,
+        SshKeyKind::Ecdsa => PrivateKey::random(
+            &mut rng,
+            Algorithm::Ecdsa {
+                curve: EcdsaCurve::NistP256,
+            },
+        )?,
+        SshKeyKind::Rsa => {
+            let bits = validate_rsa_bits(request.bits)?;
+            let keypair = RsaKeypair::random(&mut rng, bits).map_err(SshError::KeyFormat)?;
+            PrivateKey::from(keypair)
+        }
+    };
+
+    Ok(key)
+}
+
+/// 校验 RSA 位数。
+///
+/// 2048 是当前的安全下限，低于它的密钥已经不该再生成；
+/// 上限 8192 是因为再往上生成要几分钟，用户会以为程序卡死，
+/// 而收益微乎其微。
+fn validate_rsa_bits(bits: Option<u32>) -> SshResult<usize> {
+    let bits = bits.unwrap_or(DEFAULT_RSA_BITS);
+
+    if !(2048..=8192).contains(&bits) {
+        return Err(SshError::InvalidInput(format!(
+            "RSA 位数必须在 2048-8192 之间，收到 {bits}"
+        )));
+    }
+
+    Ok(bits as usize)
 }
 
 /// 写入私钥文件。
@@ -363,5 +399,19 @@ mod tests {
     fn accepts_normal_label() {
         assert!(validate_label("id_ed25519").is_ok());
         assert!(validate_label("deploy_rsa").is_ok());
+    }
+
+    #[test]
+    fn rejects_weak_and_absurd_rsa_sizes() {
+        assert!(validate_rsa_bits(Some(1024)).is_err());
+        assert!(validate_rsa_bits(Some(16384)).is_err());
+    }
+
+    #[test]
+    fn accepts_standard_rsa_sizes() {
+        assert_eq!(validate_rsa_bits(Some(2048)).unwrap(), 2048);
+        assert_eq!(validate_rsa_bits(Some(4096)).unwrap(), 4096);
+        // 不传时用默认值，而不是报错
+        assert_eq!(validate_rsa_bits(None).unwrap(), DEFAULT_RSA_BITS as usize);
     }
 }

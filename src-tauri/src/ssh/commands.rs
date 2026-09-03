@@ -8,11 +8,13 @@ use tauri::{AppHandle, State};
 
 use crate::error::AppResult;
 
+use super::files::DirectoryListing;
 use super::manager::SessionManager;
 use super::models::{
     CommandOutput, GenerateKeyRequest, PtyOptions, SessionInfo, SshConfig, SshKeyInfo,
 };
-use super::{events, keys};
+use super::stats::SystemStats;
+use super::{events, files, keys, stats};
 
 /// 建立连接，返回会话 id。
 #[tauri::command]
@@ -89,6 +91,30 @@ pub async fn ssh_exec(
 ) -> AppResult<CommandOutput> {
     let session = manager.get(&session_id).await?;
     Ok(session.exec(&command).await?)
+}
+
+/// 采集远端系统指标。
+///
+/// 每次调用会在远端 sleep 1 秒做两次采样（CPU/网络速率需要差值），
+/// 所以前端的轮询间隔不要短于 3 秒。
+#[tauri::command]
+pub async fn ssh_system_stats(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+) -> AppResult<SystemStats> {
+    let session = manager.get(&session_id).await?;
+    Ok(stats::collect(&session).await?)
+}
+
+/// 列出远端目录。path 传空表示家目录。
+#[tauri::command]
+pub async fn ssh_list_directory(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    path: String,
+) -> AppResult<DirectoryListing> {
+    let session = manager.get(&session_id).await?;
+    Ok(files::list_directory(&session, &path).await?)
 }
 
 /// 扫描 ~/.ssh 下的密钥。

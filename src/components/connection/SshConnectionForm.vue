@@ -2,6 +2,7 @@
 import { computed, reactive, shallowRef, useId } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import * as ssh from '@/api/ssh'
+import { useConnections } from '@/composables/useConnections'
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
 import ConnectionTextField from './ConnectionTextField.vue'
 
@@ -10,6 +11,8 @@ type SectionId = 'general' | 'advanced' | 'ssh-key' | 'proxy'
 const emit = defineEmits<{
   close: []
 }>()
+
+const { create } = useConnections()
 
 const sections: Array<{ id: SectionId, label: string }> = [
   { id: 'general', label: 'General' },
@@ -24,9 +27,12 @@ const feedback = shallowRef('')
 const feedbackTone = shallowRef<'info' | 'error'>('info')
 // 测试连接进行中，避免重复点击开出一堆连接
 const testing = shallowRef(false)
+// 保存中，避免重复提交存出两条一样的连接
+const saving = shallowRef(false)
 const savePassword = shallowRef(false)
 const form = reactive({
   name: '',
+  group: '',
   host: '',
   port: '22',
   username: '',
@@ -57,20 +63,25 @@ const isReady = computed<boolean>(() => (
   && form.username.trim().length > 0
 ))
 
-/** 表单的认证方式 → API 的 tag 化联合 */
-function buildAuth(): SshAuthMethod {
+/**
+ * 表单的认证方式 → API 的 tag 化联合。
+ *
+ * `keepSecret` 为 false 时不带凭据 —— 保存到本地时用它来实现"不保存密码"，
+ * 而测试连接必须带上，否则测的就不是用户填的那套凭据了。
+ */
+function buildAuth(keepSecret = true): SshAuthMethod {
   switch (form.authentication) {
     case 'private-key':
       return {
         type: 'privateKey',
         path: form.privateKey.trim(),
         // 空口令要传 undefined 而不是空串：后端据此判断私钥是否需要解密
-        passphrase: form.passphrase || undefined,
+        passphrase: keepSecret ? form.passphrase || undefined : undefined,
       }
     case 'agent':
       return { type: 'agent' }
     default:
-      return { type: 'password', password: form.password }
+      return { type: 'password', password: keepSecret ? form.password : '' }
   }
 }
 
@@ -132,13 +143,45 @@ async function testConnection(): Promise<void> {
   }
 }
 
-function saveConnection(): void {
-  if (!validate())
+/**
+ * 保存连接。
+ *
+ * 密码 / 口令一并存进本地存储：这是本地桌面应用，数据不出机器。
+ * 用户没勾"保存密码"就不写，下次连接时再问 ——
+ * 那时表单里的 auth 会是空密码，后端会认证失败并明确提示。
+ */
+async function saveConnection(): Promise<void> {
+  if (!validate() || saving.value)
     return
 
-  // TODO(persist)：接入数据库后在这里保存连接配置，
-  // 目前先关窗口 —— 会话列表还没有落地存储
-  emit('close')
+  saving.value = true
+
+  try {
+    await create({
+      name: form.name.trim(),
+      kind: 'ssh',
+      host: form.host.trim(),
+      port: Number(form.port) || 22,
+      username: form.username.trim(),
+      group: form.group.trim(),
+      description: form.description.trim(),
+      settings: {
+        auth: buildAuth(savePassword.value),
+        timeoutSecs: Number(form.timeout) || 20,
+        keepaliveSecs: Number(form.keepAlive) || 30,
+        terminalType: form.terminalType,
+        startupCommand: form.startupCommand.trim(),
+      },
+    })
+
+    emit('close')
+  }
+  catch (err) {
+    setFeedback(`保存失败：${ssh.errorMessage(err)}`, 'error')
+  }
+  finally {
+    saving.value = false
+  }
 }
 </script>
 
@@ -160,13 +203,20 @@ function saveConnection(): void {
 
     <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin">
       <div v-if="activeSection === 'general'" class="grid gap-3.5">
-        <ConnectionTextField
-          v-model="form.name"
-          label="Connection Name"
-          placeholder="e.g. Production Server"
-          required
-          autofocus
-        />
+        <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
+          <ConnectionTextField
+            v-model="form.name"
+            label="Connection Name"
+            placeholder="e.g. Production Server"
+            required
+            autofocus
+          />
+          <ConnectionTextField
+            v-model="form.group"
+            label="Group"
+            placeholder="e.g. Production"
+          />
+        </div>
 
         <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
           <ConnectionTextField
@@ -328,8 +378,8 @@ function saveConnection(): void {
       <button type="button" class="btn" @click="emit('close')">
         Cancel
       </button>
-      <button type="submit" class="connection-primary">
-        Connect
+      <button type="submit" class="connection-primary" :disabled="saving">
+        {{ saving ? 'Saving…' : 'Save' }}
       </button>
     </footer>
   </form>

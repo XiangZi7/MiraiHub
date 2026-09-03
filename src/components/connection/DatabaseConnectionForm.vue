@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, useId } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { useConnections } from '@/composables/useConnections'
 import ConnectionTextField from './ConnectionTextField.vue'
 
 type DatabaseKind = 'mysql' | 'postgresql'
@@ -14,14 +15,21 @@ const emit = defineEmits<{
   close: []
 }>()
 
+const { create } = useConnections()
+
 const activeSection = shallowRef<SectionId>('general')
 const feedback = shallowRef('')
+// 反馈是成功还是失败，决定文案配色
+const feedbackTone = shallowRef<'info' | 'error'>('info')
+// 保存中，避免重复提交存出两条一样的连接
+const saving = shallowRef(false)
 const savePassword = shallowRef(false)
 const defaultPort = props.kind === 'mysql' ? '3306' : '5432'
 const databaseLabel = props.kind === 'mysql' ? 'MySQL' : 'PostgreSQL'
 
 const form = reactive({
   name: '',
+  group: '',
   host: '',
   port: defaultPort,
   database: '',
@@ -44,24 +52,70 @@ const isReady = computed<boolean>(() => (
   && form.username.trim().length > 0
 ))
 
-function showValidationFeedback(successMessage: string): boolean {
+function setFeedback(message: string, tone: 'info' | 'error' = 'info'): void {
+  feedback.value = message
+  feedbackTone.value = tone
+}
+
+/** 校验必填项，不通过则跳回 General 并提示 */
+function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
-    feedback.value = '请填写连接名称、主机、数据库和用户名'
+    setFeedback('请填写连接名称、主机、数据库和用户名', 'error')
     return false
   }
 
-  feedback.value = successMessage
   return true
 }
 
+/**
+ * 测试连接。
+ *
+ * 数据库驱动还没接上（Rust 侧的 db 模块待建），
+ * 所以这里只能验字段格式 —— 说清楚这一点，别让人以为真连过了。
+ */
 function testConnection(): void {
-  showValidationFeedback('配置格式检查通过')
+  if (validate())
+    setFeedback('字段检查通过；数据库连通性测试待驱动接入')
 }
 
-function saveConnection(): void {
-  if (showValidationFeedback(`${databaseLabel} 连接配置已就绪`))
+/**
+ * 保存连接。
+ *
+ * 存下来之后侧栏的 Databases 分组就能看到它、点开成标签页；
+ * 真正的查询执行要等 db 模块落地。
+ */
+async function saveConnection(): Promise<void> {
+  if (!validate() || saving.value)
+    return
+
+  saving.value = true
+
+  try {
+    await create({
+      name: form.name.trim(),
+      kind: props.kind,
+      host: form.host.trim(),
+      port: Number(form.port) || Number(defaultPort),
+      username: form.username.trim(),
+      group: form.group.trim(),
+      description: form.description.trim(),
+      settings: {
+        database: form.database.trim(),
+        // 没勾"保存密码"就不写进存储，下次连接时再问
+        password: savePassword.value ? form.password : '',
+        ssl: form.sslMode !== 'disable',
+      },
+    })
+
     emit('close')
+  }
+  catch (err) {
+    setFeedback(`保存失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+  }
+  finally {
+    saving.value = false
+  }
 }
 </script>
 
@@ -83,13 +137,20 @@ function saveConnection(): void {
 
     <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin">
       <div v-if="activeSection === 'general'" class="grid gap-3.5">
-        <ConnectionTextField
-          v-model="form.name"
-          label="Connection Name"
-          :placeholder="`e.g. ${databaseLabel} Database`"
-          required
-          autofocus
-        />
+        <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
+          <ConnectionTextField
+            v-model="form.name"
+            label="Connection Name"
+            :placeholder="`e.g. ${databaseLabel} Database`"
+            required
+            autofocus
+          />
+          <ConnectionTextField
+            v-model="form.group"
+            label="Group"
+            placeholder="e.g. Production"
+          />
+        </div>
 
         <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
           <ConnectionTextField
@@ -192,14 +253,18 @@ function saveConnection(): void {
       <button type="button" class="btn" @click="testConnection">
         Test Connection
       </button>
-      <p class="min-w-0 flex-1 truncate text-[11px] text-txt-3" aria-live="polite">
+      <p
+        :class="['min-w-0 flex-1 truncate text-[11px]', feedbackTone === 'error' ? 'text-danger' : 'text-txt-3']"
+        :title="feedback"
+        aria-live="polite"
+      >
         {{ feedback }}
       </p>
       <button type="button" class="btn" @click="emit('close')">
         Cancel
       </button>
-      <button type="submit" class="connection-primary">
-        Save
+      <button type="submit" class="connection-primary" :disabled="saving">
+        {{ saving ? 'Saving…' : 'Save' }}
       </button>
     </footer>
   </form>

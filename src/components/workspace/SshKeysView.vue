@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref, shallowRef } from 'vue'
 import { useClipboard } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import { useSshKeys } from '@/composables/useSshKeys'
 import { SSH_KEY_KIND_META } from '@/constants/ssh-keys'
+import type { GenerateKeyRequest } from '@/types/ssh'
 import { formatDate, formatRelative } from '@/utils/time'
 import { cn } from '@/utils/cn'
+import GenerateKeyDialog from './GenerateKeyDialog.vue'
 
 /**
  * SSH 密钥管理。
@@ -15,10 +17,15 @@ import { cn } from '@/utils/cn'
  * 所以详情给足宽度，而不是塞进列表行里折叠展开。
  */
 
-const { keys, selected, keyword, loading, error, visibleKeys, current, refresh, remove }
+const { keys, selected, keyword, loading, error, visibleKeys, current, refresh, generate, remove }
   = useSshKeys()
 
 onMounted(refresh)
+
+// 生成密钥对话框是否打开
+const generateOpen = shallowRef(false)
+// 拿到对话框实例，生成失败时把错误回传给它显示在表单里
+const dialogRef = ref<InstanceType<typeof GenerateKeyDialog>>()
 
 // 指纹与公钥各用一份 clipboard：共用会让复制指纹时公钥按钮也跳成"已复制"。
 // copiedDuring 给到 1.6s，够看清反馈再回到默认态
@@ -34,6 +41,22 @@ async function confirmDelete(keyId: string, label: string): Promise<void> {
     // 失败原因已存进 error 并展示在列表顶部
   })
 }
+
+/**
+ * 生成密钥。
+ *
+ * 失败不关对话框 —— 用户填的参数还在里面，
+ * 关掉会让他重填一遍才知道哪里错了。
+ */
+async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
+  try {
+    await generate(request)
+    generateOpen.value = false
+  }
+  catch (err) {
+    dialogRef.value?.fail(err instanceof Error ? err.message : String(err))
+  }
+}
 </script>
 
 <template>
@@ -46,7 +69,7 @@ async function confirmDelete(keyId: string, label: string): Promise<void> {
           <span class="text-txt-4">({{ keys.length }})</span>
         </p>
         <IconButton icon="lucide:refresh-cw" :size="14" title="重新扫描" @click="refresh" />
-        <IconButton icon="lucide:plus" :size="14" title="生成新密钥" />
+        <IconButton icon="lucide:plus" :size="14" title="生成新密钥" @click="generateOpen = true" />
       </header>
 
       <div class="shrink-0 px-2 pb-1 pt-2">
@@ -210,7 +233,18 @@ async function confirmDelete(keyId: string, label: string): Promise<void> {
         <p class="max-w-70 text-xs text-txt-4">
           生成一把新密钥，或把已有的放进 ~/.ssh
         </p>
+        <button type="button" class="btn mt-1" @click="generateOpen = true">
+          <AppIcon name="lucide:plus" :size="13" />
+          <span>生成新密钥</span>
+        </button>
       </div>
     </div>
+
+    <GenerateKeyDialog
+      v-if="generateOpen"
+      ref="dialogRef"
+      @close="generateOpen = false"
+      @submit="handleGenerate"
+    />
   </div>
 </template>

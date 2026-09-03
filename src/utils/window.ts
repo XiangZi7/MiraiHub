@@ -34,19 +34,25 @@ export function closeWindow(): void {
 
 /**
  * 请求 Rust 创建原生连接配置子窗口。
+ *
+ * `kind` 决定窗口打开时默认选中哪个连接类型 ——
+ * 从 Databases 视图点"新建"却落在 SSH 表单上，用户还要再点一次。
+ *
  * 浏览器开发态用 popup 降级，方便不启动 Tauri 也能检查表单 UI。
  */
-export function openConnectionWindow(): void {
+export function openConnectionWindow(kind?: 'ssh' | 'mysql' | 'postgresql'): void {
+  const query = kind ? `&type=${kind}` : ''
+
   if (!IS_TAURI) {
     window.open(
-      '/?window=connection',
+      `/?window=connection${query}`,
       'miraihub-connection',
       'popup=yes,width=620,height=640,resizable=no',
     )?.focus()
     return
   }
 
-  void invoke('open_connection_window').catch((error: unknown) => {
+  void invoke('open_connection_window', { kind: kind ?? null }).catch((error: unknown) => {
     console.error('Failed to open connection window:', error)
   })
 }

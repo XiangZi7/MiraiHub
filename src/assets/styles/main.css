@@ -146,13 +146,20 @@
    组件层 —— 复用度最高的样式收敛在此
    ========================================================================== */
 @layer components {
-  /* 窗口外壳 —— 唯一承担 backdrop-filter 的层，内部靠半透明色分层。
+  /* 窗口外壳 —— 浏览器预览时由这一层承担 backdrop-filter，内部靠半透明色分层。
      直角：无装饰窗口在系统层面就是直角，CSS 再切圆角只会露出原生底色 */
   .win {
     @apply relative flex flex-col overflow-hidden bg-window;
     box-shadow: var(--shadow-win);
     backdrop-filter: blur(28px) saturate(180%);
     -webkit-backdrop-filter: blur(28px) saturate(180%);
+  }
+
+  /* Tauri 已由 DWM 的 Mica 提供系统材质；再对整个 WebView 做实时模糊会在拖窗时
+     触发双重合成。关闭重复滤镜后保留半透明分层与环境光，但移动走纯原生合成路径。 */
+  html.is-tauri .win {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   /* 窗口标题栏 —— Windows 形态：左侧品牌区留白，右侧窗口按钮必须贴边，

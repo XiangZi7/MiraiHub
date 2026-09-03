@@ -3,21 +3,28 @@ import { computed, reactive, toRefs } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
-import StatusDot from '@/components/ui/StatusDot.vue'
-import { RECENT_FILTERS, RECENT_GROUPS, SESSION_KIND_META } from '@/constants/recent'
-import type { RecentFilter, RecentGroup, RecentSession } from '@/types'
+import { useConnections } from '@/composables/useConnections'
+import { RECENT_BUCKETS, RECENT_FILTERS, SESSION_KIND_META } from '@/constants/recent'
+import type { RecentFilter, RecentGroup, SessionKind } from '@/types'
+import type { SavedConnection } from '@/types/connection'
+import { endpointOf } from '@/types/connection'
 import { cn } from '@/utils/cn'
+import { formatRelative } from '@/utils/time'
 
 /**
  * 最近会话。
- * 唯一的真实动作是"再连一次"，所以每行右侧留出重连入口，
- * 其余信息（地址、时长、结果）只做辨识用。
+ *
+ * 数据来自已保存连接的 lastUsedAt —— 每次成功打开都会刷新它。
+ * 独立的会话历史（每次连接的起止时间、结果）要等数据库模块建表，
+ * 在那之前"最近用过哪些连接"已经能满足主要用途：快速回到刚才那台机器。
  */
 
 const emit = defineEmits<{
-  /** 请求重新打开某条会话 */
-  open: [session: RecentSession]
+  /** 请求重新打开某条连接 */
+  open: [connection: SavedConnection]
 }>()
+
+const { connections, update } = useConnections()
 
 // 响应式状态
 const state = reactive({
@@ -29,20 +36,56 @@ const state = reactive({
 
 const { filter, keyword } = toRefs(state)
 
-/** 按类型 + 关键词过滤，空分组不占位 */
+/** 连接类型 → 会话类型。数据库的三种协议在这里都归为 database */
+function kindOf(connection: SavedConnection): SessionKind {
+  return connection.kind === 'ssh' ? 'ssh' : 'database'
+}
+
+/** 用过的连接，按最近使用倒序 */
+const usedConnections = computed(() =>
+  connections
+    .filter(item => item.lastUsedAt > 0)
+    .slice()
+    .sort((a, b) => b.lastUsedAt - a.lastUsedAt),
+)
+
+/** 按类型 + 关键词过滤后再分时间段，空分组不占位 */
 const visibleGroups = computed<RecentGroup[]>(() => {
   const kw = state.keyword.trim().toLowerCase()
+  const now = Date.now()
 
-  return RECENT_GROUPS
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item =>
-        (state.filter === 'all' || item.kind === state.filter)
-        && (!kw
-          || item.label.toLowerCase().includes(kw)
-          || item.address.toLowerCase().includes(kw)),
-      ),
-    }))
+  const matched = usedConnections.value.filter((item) => {
+    if (state.filter !== 'all' && kindOf(item) !== state.filter)
+      return false
+
+    if (!kw)
+      return true
+
+    return item.name.toLowerCase().includes(kw)
+      || item.host.toLowerCase().includes(kw)
+  })
+
+  return RECENT_BUCKETS
+    .map((bucket, index) => {
+      // 每个桶只收"比上一个桶更早、但不超过自身边界"的记录，
+      // 否则今天的记录会同时落进 Today 和后面所有更宽的桶
+      const lower = index === 0 ? 0 : RECENT_BUCKETS[index - 1].within
+
+      const items = matched
+        .filter((item) => {
+          const age = now - item.lastUsedAt
+          return age >= lower && age < bucket.within
+        })
+        .map(item => ({
+          id: item.id,
+          label: item.name,
+          kind: kindOf(item),
+          address: endpointOf(item),
+          usedAt: item.lastUsedAt,
+        }))
+
+      return { id: bucket.id, label: bucket.label, items }
+    })
     .filter(group => group.items.length > 0)
 })
 
@@ -50,6 +93,25 @@ const visibleGroups = computed<RecentGroup[]>(() => {
 const total = computed(() =>
   visibleGroups.value.reduce((sum, group) => sum + group.items.length, 0),
 )
+
+/** 一条都没用过 vs 只是被筛掉了，两种空状态的出路不一样 */
+const hasHistory = computed(() => usedConnections.value.length > 0)
+
+function reopen(id: string): void {
+  const connection = connections.find(item => item.id === id)
+  if (connection)
+    emit('open', connection)
+}
+
+/** 清空记录：把 lastUsedAt 归零，连接本身保留 */
+async function clearHistory(): Promise<void> {
+  if (!window.confirm('清空最近会话记录？连接配置本身会保留。'))
+    return
+
+  await Promise.all(
+    usedConnections.value.map(item => update(item.id, { lastUsedAt: 0 })),
+  )
+}
 </script>
 
 <template>
@@ -74,7 +136,12 @@ const total = computed(() =>
         placeholder="搜索会话…"
         class="h-7 w-56"
       />
-      <IconButton icon="lucide:trash-2" :size="14" title="清空记录" />
+      <IconButton
+        icon="lucide:trash-2"
+        :size="14"
+        title="清空记录"
+        @click="clearHistory"
+      />
     </header>
 
     <!-- 会话列表 -->
@@ -110,20 +177,8 @@ const total = computed(() =>
               </p>
             </div>
 
-            <!-- 结果：失败的会话没有时长，用红点 + Failed 顶上，不留空 -->
-            <span
-              v-if="session.status === 'failed'"
-              class="flex shrink-0 items-center gap-1.5 text-[11px] text-danger"
-            >
-              <StatusDot tone="danger" :size="6" />
-              <span>Failed</span>
-            </span>
-            <span v-else class="shrink-0 text-[11px] text-txt-3">
-              {{ session.duration }}
-            </span>
-
             <span class="w-28 shrink-0 truncate text-right text-[11px] text-txt-4">
-              {{ session.time }}
+              {{ formatRelative(session.usedAt) }}
             </span>
 
             <!-- 重连：常态隐形，hover 到行上才出现，避免列表被按钮填满 -->
@@ -131,7 +186,7 @@ const total = computed(() =>
               type="button"
               class="btn shrink-0 px-2 py-1 text-[11px] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
               title="重新连接"
-              @click="emit('open', session)"
+              @click="reopen(session.id)"
             >
               <AppIcon name="lucide:rotate-cw" :size="12" />
               <span>Reconnect</span>
@@ -146,10 +201,10 @@ const total = computed(() =>
             <AppIcon name="lucide:clock" :size="26" />
           </div>
           <p class="text-sm text-txt-2">
-            没有匹配的会话
+            {{ hasHistory ? '没有匹配的会话' : '还没有会话记录' }}
           </p>
           <p class="max-w-70 text-xs text-txt-4">
-            换个关键词，或把筛选切回 All
+            {{ hasHistory ? '换个关键词，或把筛选切回 All' : '打开一个连接后，这里会记下来' }}
           </p>
         </div>
       </div>

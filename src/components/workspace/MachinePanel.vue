@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { toRef } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { MACHINE_VIEWS } from '@/constants/workspace'
 import type { MachineViewId } from '@/types'
+import type { SavedConnection } from '@/types/connection'
 import { cn } from '@/utils/cn'
 import FilesView from './FilesView.vue'
 import ServerOverview from './ServerOverview.vue'
@@ -13,6 +15,13 @@ import ServerOverview from './ServerOverview.vue'
  * 而不是各占一个侧栏菜单 —— 侧栏只负责选机器/选模块。
  */
 
+const props = defineProps<{
+  /** 当前标签对应的连接，无标签时为 undefined */
+  connection?: SavedConnection
+  /** 后端 SSH 会话 id，未连上时为空串 */
+  sessionId: string
+}>()
+
 // 当前视图由 MainWindow 持有：命令面板的 Open Files 需要越过本组件直接切到 Files
 const view = defineModel<MachineViewId>('view', { required: true })
 
@@ -20,6 +29,9 @@ defineEmits<{
   /** 请求收起面板 */
   close: []
 }>()
+
+// 转成 ref 传给子组件的 composable：它们 watch 会话 id 的变化来重新取数
+const sessionId = toRef(props, 'sessionId')
 </script>
 
 <template>
@@ -47,7 +59,11 @@ defineEmits<{
       />
     </header>
 
-    <ServerOverview v-if="view === 'overview'" />
-    <FilesView v-else />
+    <ServerOverview
+      v-if="view === 'overview'"
+      :connection="connection"
+      :session-id="sessionId"
+    />
+    <FilesView v-else :session-id="sessionId" />
   </section>
 </template>

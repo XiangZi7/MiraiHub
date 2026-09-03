@@ -1,5 +1,4 @@
 import type { ITheme } from '@xterm/xterm'
-import type { TermSpan } from '@/types'
 
 /**
  * xterm.js 配色。

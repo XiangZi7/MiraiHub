@@ -5,7 +5,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSshTerminal } from '@/composables/useSshTerminal'
-import type { SshConfig } from '@/types/ssh'
+import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 
 const props = defineProps<{
@@ -14,15 +14,28 @@ const props = defineProps<{
    * 由上层在用户选中连接后传入。
    */
   config?: SshConfig
+  /** 连接名，展示在工具条上。缺省时退回 user@host */
+  title?: string
+}>()
+
+const emit = defineEmits<{
+  /**
+   * 连接状态变化。带上后端会话 id，
+   * 让机器面板能用它去查系统指标与目录列表。
+   */
+  status: [status: SshSessionStatus, sessionId: string]
 }>()
 
 const containerRef = ref<HTMLElement>()
 
-const { status, mount, connect, disconnect, resize } = useSshTerminal()
+const { status, sessionId, mount, connect, disconnect, resize } = useSshTerminal()
 
 // xterm 是否已挂到容器上。挂载只做一次，重连复用同一个实例。
 // 用普通变量而非响应式：模板不读它，只是 watch 内部的一次性标记
 let mounted = false
+
+/** 状态变化即上报，让标签页的状态点跟着走 */
+watch(status, value => emit('status', value, sessionId.value), { immediate: true })
 
 /** 工具条上的连接状态文案与配色 */
 const statusMeta = computed(() => {
@@ -36,10 +49,13 @@ const statusMeta = computed(() => {
   }
 })
 
-/** 标题栏展示的目标地址 */
-const endpoint = computed(() =>
-  props.config ? `${props.config.username}@${props.config.host}` : '未选择服务器',
-)
+/** 标题栏展示的目标 */
+const endpoint = computed(() => {
+  if (!props.config)
+    return '未选择服务器'
+
+  return props.title || `${props.config.username}@${props.config.host}`
+})
 
 /**
  * 挂载并连接。
@@ -94,10 +110,9 @@ async function reconnect(): Promise<void> {
         SSH
       </span>
 
-      <button type="button" class="flex items-center gap-1 text-[11px] text-txt-2 transition-colors hover:text-txt">
-        <span>{{ endpoint }}</span>
-        <AppIcon name="lucide:chevron-down" :size="12" />
-      </button>
+      <span class="truncate text-[11px] text-txt-2" :title="sessionId || undefined">
+        {{ endpoint }}
+      </span>
 
       <div class="flex-1" />
 

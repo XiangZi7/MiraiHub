@@ -11,7 +11,7 @@ export interface TabItem {
   /** 左侧图标（与 dot 二选一） */
   icon?: string
   /** 左侧状态点色调 */
-  dot?: 'accent' | 'txt-3'
+  dot?: 'accent' | 'amber' | 'txt-3'
   /** 是否可关闭 */
   closable?: boolean
 }
@@ -24,6 +24,8 @@ defineProps<{
 
 const emit = defineEmits<{
   add: []
+  /** 请求关闭某个标签 */
+  close: [id: string]
 }>()
 
 const active = defineModel<string>('active', { required: true })
@@ -31,28 +33,38 @@ const active = defineModel<string>('active', { required: true })
 
 <template>
   <div class="flex min-w-0 h-full items-center gap-0.5 overflow-x-auto scroll-none">
-    <button
+    <!-- 关闭按钮嵌在标签里，所以外层用 div 而不是 button：button 不能嵌套 -->
+    <div
       v-for="tab in tabs"
       :key="tab.id"
-      type="button"
+      role="tab"
+      tabindex="0"
+      :aria-selected="active === tab.id"
       :class="cn(
-        'group flex h-full shrink-0 items-center gap-2 rounded-t-lg border-b-2 px-3 text-xs transition-colors duration-150',
+        'group flex h-full shrink-0 cursor-pointer items-center gap-2 rounded-t-lg border-b-2 px-3 text-xs transition-colors duration-150',
         active === tab.id
           ? 'border-accent bg-card text-txt'
           : 'border-transparent text-txt-3 hover:bg-panel hover:text-txt-2',
       )"
       @click="active = tab.id"
+      @keydown.enter="active = tab.id"
+      @keydown.space.prevent="active = tab.id"
     >
-      <StatusDot v-if="tab.dot" :tone="tab.dot" :size="6" :glow="tab.dot === 'accent'" />
+      <StatusDot v-if="tab.dot" :tone="tab.dot" :size="6" :glow="tab.dot !== 'txt-3'" />
       <AppIcon v-else-if="tab.icon" :name="tab.icon" :size="13" />
       <span class="whitespace-nowrap">{{ tab.label }}</span>
-      <AppIcon
+
+      <!-- 常态半隐，hover 才显形：一排标签全挂着叉号太吵 -->
+      <button
         v-if="tab.closable"
-        name="lucide:x"
-        :size="12"
-        class="opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100"
-      />
-    </button>
+        type="button"
+        class="-mr-1 grid size-4 shrink-0 place-items-center rounded opacity-0 transition-opacity hover:bg-hover group-hover:opacity-60 hover:opacity-100!"
+        :title="`关闭 ${tab.label}`"
+        @click.stop="emit('close', tab.id)"
+      >
+        <AppIcon name="lucide:x" :size="12" />
+      </button>
+    </div>
 
     <button
       v-if="addable"

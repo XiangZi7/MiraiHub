@@ -16,10 +16,12 @@ import type {
   PtyOptions,
   SshCommandOutput,
   SshConfig,
+  SshDirectoryListing,
   SshKeyInfo,
   SshOutputEvent,
   SshSessionInfo,
   SshStatusEvent,
+  SshSystemStats,
 } from '@/types/ssh'
 import { IS_TAURI } from '@/utils/window'
 
@@ -114,6 +116,26 @@ export async function resizeShell(sessionId: string, cols: number, rows: number)
 export async function exec(sessionId: string, command: string): Promise<SshCommandOutput> {
   ensureTauri()
   return invoke<SshCommandOutput>('ssh_exec', { sessionId, command })
+}
+
+/**
+ * 采集远端系统指标。
+ *
+ * 后端为算 CPU / 网络速率会在远端 sleep 1 秒做两次采样，
+ * 所以这个调用本身就有 1 秒以上的延迟，轮询间隔别短于 3 秒。
+ */
+export async function systemStats(sessionId: string): Promise<SshSystemStats> {
+  ensureTauri()
+  return invoke<SshSystemStats>('ssh_system_stats', { sessionId })
+}
+
+/** 列出远端目录。path 传空串表示家目录 */
+export async function listDirectory(
+  sessionId: string,
+  path: string,
+): Promise<SshDirectoryListing> {
+  ensureTauri()
+  return invoke<SshDirectoryListing>('ssh_list_directory', { sessionId, path })
 }
 
 /** 扫描 ~/.ssh 下的本地密钥 */

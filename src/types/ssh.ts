@@ -114,3 +114,75 @@ export interface SshStatusEvent {
   exitCode: number | null
   reason: string | null
 }
+
+/** CPU 指标 */
+export interface SshCpuStats {
+  /** 使用率百分比 */
+  usage: number
+  cores: number
+  model: string
+  /** 1 / 5 / 15 分钟平均负载 */
+  load: [number, number, number]
+}
+
+/** 内存指标，单位 KB */
+export interface SshMemoryStats {
+  totalKb: number
+  usedKb: number
+  swapTotalKb: number
+  swapUsedKb: number
+}
+
+/** 根分区磁盘指标，单位 KB */
+export interface SshDiskStats {
+  totalKb: number
+  usedKb: number
+}
+
+/** 网络速率，单位字节每秒 */
+export interface SshNetworkStats {
+  rxBytesPerSec: number
+  txBytesPerSec: number
+}
+
+/** 一次采集到的远端系统快照 */
+export interface SshSystemStats {
+  hostname: string
+  os: string
+  kernel: string
+  arch: string
+  /** 开机时长秒数 */
+  uptimeSecs: number
+  cpu: SshCpuStats
+  memory: SshMemoryStats
+  disk: SshDiskStats
+  network: SshNetworkStats
+  onlineUsers: number
+}
+
+/** 远端目录项类型 */
+export type SshFileKind = 'directory' | 'file' | 'symlink' | 'other'
+
+/** 远端目录项 */
+export interface SshRemoteFile {
+  /** 绝对路径，同时作为列表 key */
+  path: string
+  name: string
+  kind: SshFileKind
+  size: number
+  /** 修改时间 Unix 毫秒，短日期格式解析不出时为 0 */
+  modifiedAt: number
+  /** 权限位，如 rwxr-xr-x */
+  permissions: string
+  owner: string
+  group: string
+  /** 软链目标，仅 kind = symlink 时有值 */
+  linkTarget: string | null
+}
+
+/** 一次列目录的结果 */
+export interface SshDirectoryListing {
+  /** 规范化后的绝对路径 */
+  path: string
+  entries: SshRemoteFile[]
+}

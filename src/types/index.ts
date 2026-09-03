@@ -140,7 +140,7 @@ export interface TermSpan {
 
 /**
  * 命令面板某条命令的落点。
- * 连接层还没接上，所以命令目前只承诺"把人送到能干这件事的视图"。
+ * 一条命令要么直接打开新建连接窗口，要么把人送到能干这件事的视图。
  */
 export interface CommandTarget {
   /** 切到哪个主视图，省略表示留在当前视图 */
@@ -149,6 +149,8 @@ export interface CommandTarget {
   machineView?: MachineViewId
   /** 是否把焦点交给标题栏搜索框 */
   focusSearch?: boolean
+  /** 若指定，打开连接配置窗口并预选该类型 */
+  newConnection?: 'ssh' | 'mysql' | 'postgresql'
 }
 
 /** SSH 密钥相关类型见 `@/types/ssh` —— 那边与 Rust 侧的模型一一对应 */
@@ -156,20 +158,21 @@ export interface CommandTarget {
 /** 会话类型 */
 export type SessionKind = 'ssh' | 'database' | 'sftp'
 
-/** 最近会话记录 */
+/**
+ * 最近会话记录。
+ * 由已保存连接的 lastUsedAt 派生而来，不是独立存储的一份历史 ——
+ * 真正的会话历史（每次连接的起止、结果）等数据库模块落地后再建表。
+ */
 export interface RecentSession {
+  /** 与来源连接的 id 一致 */
   id: string
   /** 连接名 */
   label: string
   kind: SessionKind
   /** 地址，含端口 */
   address: string
-  /** 会话时长文案，未连上则为空 */
-  duration: string
-  /** 相对时间文案 */
-  time: string
-  /** 会话结果 */
-  status: 'success' | 'failed'
+  /** 最后使用时间，Unix 毫秒，从未用过为 0 */
+  usedAt: number
 }
 
 /** 最近会话按时间分组 */
