@@ -25,7 +25,7 @@ const logoStyle = computed(() => {
     :style="logoStyle"
   >
     <img
-      src="/logo-mini.png"
+      src="/logo-app-icon.png"
       alt=""
       draggable="false"
       class="block size-full object-cover"

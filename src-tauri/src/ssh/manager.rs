@@ -143,7 +143,13 @@ mod tests {
     #[tokio::test]
     async fn get_missing_session_reports_not_found() {
         let manager = SessionManager::new();
-        let err = manager.get("nope").await.unwrap_err();
-        assert!(matches!(err, SshError::SessionNotFound(_)));
+
+        // 用 match 而不是 unwrap_err()：后者要求 Ok 分支实现 Debug，
+        // 而 SshSession 里握着连接句柄，不该为了一行测试给它派生 Debug
+        match manager.get("nope").await {
+            Err(SshError::SessionNotFound(id)) => assert_eq!(id, "nope"),
+            Err(other) => panic!("期望 SessionNotFound，实际是 {other}"),
+            Ok(_) => panic!("空管理器不该返回会话"),
+        }
     }
 }
