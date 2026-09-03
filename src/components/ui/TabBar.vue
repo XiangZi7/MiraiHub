@@ -22,6 +22,10 @@ defineProps<{
   addable?: boolean
 }>()
 
+const emit = defineEmits<{
+  add: []
+}>()
+
 const active = defineModel<string>('active', { required: true })
 </script>
 
@@ -55,6 +59,7 @@ const active = defineModel<string>('active', { required: true })
       type="button"
       class="icon-btn ml-1"
       title="新建"
+      @click="emit('add')"
     >
       <AppIcon name="lucide:plus" :size="14" />
     </button>

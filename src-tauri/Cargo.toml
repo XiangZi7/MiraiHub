@@ -20,15 +20,37 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-log = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# 异步运行时。Tauri 内部已用 tokio，这里显式声明是因为 ssh 模块直接用了
+# timeout / spawn / 同步原语；features 按需取，不开 "full"。
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "io-util"] }
+
+# SSH：纯 Rust 实现，Windows 上无需 OpenSSL/libssh2 工具链。
+# russh 的 API 在小版本间会变动，升级前先跑 cargo test。
+russh = "0.54"
+
+# 终端输出以 base64 过 IPC（远端字节流不保证是完整 UTF-8，见 ssh/events.rs）
+base64 = "0.22"
+# 生成密钥时的随机源。版本需与 russh 内部 ssh-key 所用的 rand 主版本一致，
+# 否则 PrivateKey::random 的 RNG trait 对不上。
+rand = "0.8"
+# 定位 ~/.ssh
+dirs = "6"
+# 错误类型派生
+thiserror = "2"
+log = "0.4"
+
 [target.'cfg(windows)'.dependencies]
 # 与 tauri 内部同版本（Cargo.lock windows 0.61.x），保证 window.hwnd() 的 HWND 类型直接兼容。
-# 仅用于给无边框主窗补 DWM 原生阴影，见 lib.rs 的 enable_window_shadow。
+# 仅用于给无边框主窗补 DWM 原生阴影，见 platform/window.rs 的 enable_window_shadow。
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_UI_Controls",
 ] }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

@@ -3,6 +3,7 @@ import { nextTick, reactive, ref, toRefs } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { TabItem } from '@/components/ui/TabBar.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import BrandLogo from '@/components/ui/BrandLogo.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import TabBar from '@/components/ui/TabBar.vue'
@@ -10,7 +11,7 @@ import WindowControls from '@/components/ui/WindowControls.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { COMMAND_TARGETS } from '@/constants/workspace'
 import type { CommandItem, MachineViewId, NavId, RecentSession } from '@/types'
-import { toggleMaximizeWindow } from '@/utils/window'
+import { openConnectionWindow, toggleMaximizeWindow } from '@/utils/window'
 import AppSidebar from './AppSidebar.vue'
 import CommandPalette from './CommandPalette.vue'
 import DatabaseView from './DatabaseView.vue'
@@ -107,12 +108,7 @@ function reopenSession(session: RecentSession): void {
          带 data-tauri-drag-region 的区域可拖拽，按钮本身不带故不受影响 -->
     <header class="win-bar relative z-10" data-tauri-drag-region @dblclick="handleTitleBarDblClick">
       <div class="flex items-center gap-2" data-tauri-drag-region>
-        <div
-          class="grid size-5 place-items-center rounded-md text-black/80"
-          style="background: linear-gradient(140deg, var(--color-accent), var(--color-cyan))"
-        >
-          <AppIcon name="lucide:server" :size="12" />
-        </div>
+        <BrandLogo />
         <h1 class="text-[13px] font-medium tracking-tight text-txt">
           MiraiHub
         </h1>
@@ -131,7 +127,7 @@ function reopenSession(session: RecentSession): void {
 
       <div class="flex items-center gap-1.5">
         <IconButton icon="lucide:command" title="命令面板 (⌘K)" @click="paletteOpen = true" />
-        <IconButton icon="lucide:plus" title="新建连接" />
+        <IconButton icon="lucide:plus" title="新建连接" @click="openConnectionWindow" />
         <IconButton icon="lucide:bell" title="通知" />
         <IconButton icon="lucide:life-buoy" title="帮助" />
 
@@ -153,7 +149,13 @@ function reopenSession(session: RecentSession): void {
       <div class="flex min-w-0 flex-1 flex-col">
         <!-- 连接标签栏 -->
         <div class="flex h-11 shrink-0 items-end gap-2 border-b border-line-soft px-2.5">
-          <TabBar v-model:active="activeTab" :tabs="tabs" addable class="flex-1" />
+          <TabBar
+            v-model:active="activeTab"
+            :tabs="tabs"
+            addable
+            class="flex-1"
+            @add="openConnectionWindow"
+          />
           <div class="flex items-center gap-0.5 pb-1.5">
             <IconButton
               :icon="machineOpen ? 'lucide:panel-right-close' : 'lucide:panel-right-open'"

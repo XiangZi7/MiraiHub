@@ -6,6 +6,7 @@ import StatusDot from '@/components/ui/StatusDot.vue'
 import { FAVORITES, NAV_ITEMS, PROJECT_GROUPS } from '@/constants/workspace'
 import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
+import { openConnectionWindow } from '@/utils/window'
 
 // 当前选中的主视图，由 MainWindow 通过 v-model:active 控制
 const active = defineModel<NavId>('active', { required: true })
@@ -118,7 +119,7 @@ function toggleGroup(id: string): void {
 
     <!-- 底部操作 -->
     <div class="flex shrink-0 items-center gap-2 border-t border-line-soft p-2.5">
-      <button type="button" class="btn flex-1">
+      <button type="button" class="btn flex-1" @click="openConnectionWindow">
         <AppIcon name="lucide:plus" :size="14" />
         <span>Add Connection</span>
       </button>

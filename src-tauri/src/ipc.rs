@@ -1,0 +1,37 @@
+//! IPC 命令注册表。
+//!
+//! `generate_handler!` 是宏，必须在一处拿到完整的命令列表，没法真正分散到各模块，
+//! 所以把这唯一的调用点单独收在这里：新增命令只改这个文件，
+//! `app.rs` 与 `lib.rs` 都不用动。
+//!
+//! 命令按模块分组，命名前缀与模块对应（`ssh_*`、后续的 `db_*`），
+//! 前端在 `src/api/` 下按同样的分组封装。
+
+use tauri::ipc::Invoke;
+use tauri::Wry;
+
+use crate::{platform, ssh};
+
+/// 构造全部命令的分发闭包，交给 `tauri::Builder::invoke_handler`。
+///
+/// 返回 `impl Fn` 而不是在 `app.rs` 里直接展开宏：
+/// 这样命令清单与应用装配彻底分离，两边各自演进互不干扰。
+pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        // ---------- 平台 / 窗口 ----------
+        platform::commands::open_connection_window,
+        // ---------- SSH：会话 ----------
+        ssh::commands::ssh_connect,
+        ssh::commands::ssh_disconnect,
+        ssh::commands::ssh_list_sessions,
+        // ---------- SSH：终端 ----------
+        ssh::commands::ssh_open_shell,
+        ssh::commands::ssh_write,
+        ssh::commands::ssh_resize,
+        ssh::commands::ssh_exec,
+        // ---------- SSH：密钥 ----------
+        ssh::commands::ssh_list_keys,
+        ssh::commands::ssh_generate_key,
+        ssh::commands::ssh_delete_key,
+    ]
+}

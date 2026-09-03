@@ -1,44 +1,23 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+//! MiraiHub 桌面端。
+//!
+//! 目录约定：
+//! - `app`       应用装配：插件、托管状态、生命周期
+//! - `ipc`       IPC 命令注册表，新增命令只改这里
+//! - `error`     跨 IPC 的统一错误类型
+//! - `platform`  平台相关的窗口处理
+//! - `ssh`       SSH 连接、终端会话、密钥管理
+//! - `db`        （规划中）数据库连接与查询，分层方式与 `ssh` 一致
+//!
+//! 每个业务模块内部自下而上分层：`models` → `error` → 业务实现 → `commands`，
+//! 其中 `commands.rs` 只做转调与错误转换，逻辑写在下层以便 `cargo test` 覆盖。
 
-
-#[cfg(windows)]
-fn enable_window_shadow(window: &tauri::WebviewWindow) {
-    use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
-    use windows::Win32::UI::Controls::MARGINS;
-
-    if let Ok(hwnd) = window.hwnd() {
-        // 四边各扩 1px：足以让 DWM 判定该窗口需要系统阴影，又几乎不占客户区。
-        let margins = MARGINS {
-            cxLeftWidth: 1,
-            cxRightWidth: 1,
-            cyTopHeight: 1,
-            cyBottomHeight: 1,
-        };
-        unsafe {
-            let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-        }
-    }
-}
+pub mod app;
+pub mod error;
+pub mod ipc;
+pub mod platform;
+pub mod ssh;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .setup(|_app| {
-            #[cfg(windows)]
-            {
-                use tauri::Manager;
-                if let Some(main) = _app.get_webview_window("main") {
-                    enable_window_shadow(&main);
-                }
-            }
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![greet])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    app::run();
 }

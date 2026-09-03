@@ -1,4 +1,5 @@
 import { readonly, ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
 /**
@@ -29,6 +30,25 @@ export function toggleMaximizeWindow(): void {
 /** 关闭窗口 */
 export function closeWindow(): void {
   withWindow(win => win.close())
+}
+
+/**
+ * 请求 Rust 创建原生连接配置子窗口。
+ * 浏览器开发态用 popup 降级，方便不启动 Tauri 也能检查表单 UI。
+ */
+export function openConnectionWindow(): void {
+  if (!IS_TAURI) {
+    window.open(
+      '/?window=connection',
+      'miraihub-connection',
+      'popup=yes,width=620,height=640,resizable=no',
+    )?.focus()
+    return
+  }
+
+  void invoke('open_connection_window').catch((error: unknown) => {
+    console.error('Failed to open connection window:', error)
+  })
 }
 
 const maximized = ref(false)

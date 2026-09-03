@@ -1,40 +1,93 @@
 <script setup lang="ts">
-import { reactive, toRefs } from 'vue'
-import type { TabItem } from '@/components/ui/TabBar.vue'
+import { computed, ref, watch } from 'vue'
+import { useResizeObserver } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
-import TabBar from '@/components/ui/TabBar.vue'
-import { TERMINAL_LINES, TERM_TONE_CLASS } from '@/constants/terminal'
+import { useSshTerminal } from '@/composables/useSshTerminal'
+import type { SshConfig } from '@/types/ssh'
+import '@xterm/xterm/css/xterm.css'
 
-// 响应式状态
-const state = reactive({
-  // 终端标签页
-  tabs: [
-    { id: 't1', label: 'Terminal 1', dot: 'accent', closable: true },
-  ] as TabItem[],
-  // 当前激活的终端标签
-  activeTab: 't1',
+const props = defineProps<{
+  /**
+   * 要连接的目标。为空表示还没选服务器，此时展示空状态而不是一个连不上的终端。
+   * 由上层在用户选中连接后传入。
+   */
+  config?: SshConfig
+}>()
+
+const containerRef = ref<HTMLElement>()
+
+const { status, mount, connect, disconnect, resize } = useSshTerminal()
+
+// xterm 是否已挂到容器上。挂载只做一次，重连复用同一个实例。
+// 用普通变量而非响应式：模板不读它，只是 watch 内部的一次性标记
+let mounted = false
+
+/** 工具条上的连接状态文案与配色 */
+const statusMeta = computed(() => {
+  switch (status.value) {
+    case 'connected':
+      return { text: 'Connected', tone: 'text-accent', dot: 'accent' as const }
+    case 'connecting':
+      return { text: 'Connecting…', tone: 'text-amber', dot: 'amber' as const }
+    default:
+      return { text: 'Disconnected', tone: 'text-txt-3', dot: 'txt-3' as const }
+  }
 })
 
-const { tabs, activeTab } = toRefs(state)
+/** 标题栏展示的目标地址 */
+const endpoint = computed(() =>
+  props.config ? `${props.config.username}@${props.config.host}` : '未选择服务器',
+)
+
+/**
+ * 挂载并连接。
+ * 容器要等 v-if 渲染出来才有尺寸，所以由 watch 在 config 就位后触发，
+ * 而不是在 onMounted 里抢跑 —— 那时容器高度还是 0，fit 会算出 1 行。
+ */
+watch(
+  () => props.config,
+  async (config) => {
+    if (!config || !containerRef.value)
+      return
+
+    if (!mounted) {
+      mount(containerRef.value)
+      mounted = true
+    }
+
+    await connect(config).catch(() => {
+      // 失败原因已经写进终端并存到 composable 的 error，这里只是别让 rejection 逃逸
+    })
+  },
+  { immediate: true, flush: 'post' },
+)
+
+/**
+ * 容器尺寸变化时重新适配。
+ * 光靠 window resize 不够：收起机器面板会让终端变宽，但窗口尺寸没变，
+ * 不重算的话右侧会留一大片空白。
+ */
+useResizeObserver(containerRef, () => resize())
+
+/** 重连：先断干净再按原配置连一次 */
+async function reconnect(): Promise<void> {
+  if (!props.config)
+    return
+
+  await disconnect()
+  await connect(props.config).catch(() => {})
+}
 </script>
 
 <template>
   <section class="pane min-w-0 flex-1 bg-terminal">
-    <!-- 标签栏 -->
-    <div class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft pl-2.5 pr-2">
-      <TabBar v-model:active="activeTab" :tabs="tabs" addable class="flex-1" />
-      <div class="flex-1" />
-      <IconButton icon="lucide:maximize-2" :size="14" title="最大化" />
-      <IconButton icon="lucide:ellipsis" :size="14" title="更多" />
-    </div>
-
     <!-- 会话工具条 -->
     <div class="flex h-9 shrink-0 items-center gap-2.5 border-b border-line-soft px-3">
-      <span class="flex items-center gap-1.5 text-[11px] text-accent">
-        <StatusDot :size="6" />
-        <span>Connected</span>
+      <span :class="['flex items-center gap-1.5 text-[11px]', statusMeta.tone]">
+        <StatusDot :tone="statusMeta.dot" :size="6" :glow="status === 'connected'" />
+        <span>{{ statusMeta.text }}</span>
       </span>
 
       <span class="rounded border border-line bg-card px-1.5 py-0.5 text-[10px] font-medium text-txt-2">
@@ -42,7 +95,7 @@ const { tabs, activeTab } = toRefs(state)
       </span>
 
       <button type="button" class="flex items-center gap-1 text-[11px] text-txt-2 transition-colors hover:text-txt">
-        <span>Production Server</span>
+        <span>{{ endpoint }}</span>
         <AppIcon name="lucide:chevron-down" :size="12" />
       </button>
 
@@ -50,33 +103,49 @@ const { tabs, activeTab } = toRefs(state)
 
       <IconButton icon="lucide:columns-2" :size="14" title="分屏" />
       <IconButton icon="lucide:search" :size="14" title="搜索" />
-      <IconButton icon="lucide:clipboard" :size="14" title="复制" />
-      <IconButton icon="lucide:trash-2" :size="14" title="清屏" />
-      <IconButton icon="lucide:rotate-cw" :size="14" title="重连" />
+      <IconButton icon="lucide:rotate-cw" :size="14" title="重连" @click="reconnect" />
       <IconButton icon="lucide:ellipsis" :size="14" title="更多" />
     </div>
 
-    <!-- 输出区 -->
-    <div class="min-h-0 flex-1 overflow-y-auto p-4 font-mono text-[12.5px] leading-[1.75] scroll-thin">
-      <p
-        v-for="(line, index) in TERMINAL_LINES"
-        :key="index"
-        class="whitespace-pre text-term-fg"
-      >
-        <template v-if="line.length">
-          <span
-            v-for="(span, i) in line"
-            :key="i"
-            :class="span.tone ? TERM_TONE_CLASS[span.tone] : undefined"
-          >{{ span.text }}</span>
-        </template>
-        <template v-else>&nbsp;</template>
-        <!-- 光标跟在最后一行 -->
-        <span
-          v-if="index === TERMINAL_LINES.length - 1"
-          class="ml-px inline-block h-3.75 w-1.75 translate-y-0.5 bg-term-fg"
-        />
-      </p>
+    <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染 -->
+    <div v-if="config" class="relative min-h-0 flex-1">
+      <div ref="containerRef" class="absolute inset-0 p-2" />
+    </div>
+
+    <!-- 还没选服务器 -->
+    <div v-else class="flex min-h-0 flex-1 items-center justify-center">
+      <div class="flex flex-col items-center gap-3 text-center">
+        <div class="grid size-14 place-items-center rounded-2xl border border-line bg-card text-txt-3">
+          <AppIcon name="lucide:square-terminal" :size="26" />
+        </div>
+        <p class="text-sm text-txt-2">
+          还没有打开终端
+        </p>
+        <p class="max-w-70 text-xs text-txt-4">
+          从左侧选一台服务器，或新建一个连接
+        </p>
+      </div>
     </div>
   </section>
 </template>
+
+<style scoped>
+/* xterm 默认给容器加内边距的位置不对，且它的滚动条要跟项目其余部分统一 */
+:deep(.xterm-viewport) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+:deep(.xterm-viewport)::-webkit-scrollbar {
+  width: 8px;
+}
+
+:deep(.xterm-viewport)::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--color-line-strong);
+}
+
+:deep(.xterm-viewport)::-webkit-scrollbar-track {
+  background: transparent;
+}
+</style>
