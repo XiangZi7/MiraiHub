@@ -19,10 +19,10 @@ export const SQL_LINES: CodeLine[] = [
   { no: 3, tokens: [{ text: '    u.username,' }] },
   { no: 4, tokens: [{ text: '    u.email,' }] },
   { no: 5, tokens: [{ text: '    u.created_at' }] },
-  { no: 16, tokens: [{ text: 'FROM', kind: 'keyword' }, { text: ' users u' }] },
-  { no: 17, tokens: [{ text: 'WHERE', kind: 'keyword' }, { text: ' u.id > ' }, { text: '100', kind: 'num' }] },
-  { no: 13, tokens: [{ text: 'ORDER BY', kind: 'keyword' }, { text: ' u.created_at ' }, { text: 'DESC', kind: 'keyword' }] },
-  { no: 18, tokens: [{ text: 'LIMIT', kind: 'keyword' }, { text: ' ' }, { text: '100', kind: 'num' }, { text: ';' }] },
+  { no: 6, tokens: [{ text: 'FROM', kind: 'keyword' }, { text: ' users u' }] },
+  { no: 7, tokens: [{ text: 'WHERE', kind: 'keyword' }, { text: ' u.id > ' }, { text: '100', kind: 'num' }] },
+  { no: 8, tokens: [{ text: 'ORDER BY', kind: 'keyword' }, { text: ' u.created_at ' }, { text: 'DESC', kind: 'keyword' }] },
+  { no: 9, tokens: [{ text: 'LIMIT', kind: 'keyword' }, { text: ' ' }, { text: '100', kind: 'num' }, { text: ';' }] },
 ]
 
 /** 查询结果集 */

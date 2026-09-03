@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { reactive, toRefs } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { MACHINE_VIEWS } from '@/constants/workspace'
+import type { MachineViewId } from '@/types'
 import { cn } from '@/utils/cn'
 import FilesView from './FilesView.vue'
 import ServerOverview from './ServerOverview.vue'
@@ -13,13 +13,8 @@ import ServerOverview from './ServerOverview.vue'
  * 而不是各占一个侧栏菜单 —— 侧栏只负责选机器/选模块。
  */
 
-// 响应式状态
-const state = reactive({
-  // 当前视图 id，取值见 MACHINE_VIEWS
-  view: 'overview',
-})
-
-const { view } = toRefs(state)
+// 当前视图由 MainWindow 持有：命令面板的 Open Files 需要越过本组件直接切到 Files
+const view = defineModel<MachineViewId>('view', { required: true })
 
 defineEmits<{
   /** 请求收起面板 */

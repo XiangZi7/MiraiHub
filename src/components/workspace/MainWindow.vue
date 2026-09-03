@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, toRefs } from 'vue'
+import { nextTick, reactive, ref, toRefs } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { TabItem } from '@/components/ui/TabBar.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -8,12 +8,18 @@ import SearchField from '@/components/ui/SearchField.vue'
 import TabBar from '@/components/ui/TabBar.vue'
 import WindowControls from '@/components/ui/WindowControls.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
+import { COMMAND_TARGETS } from '@/constants/workspace'
+import type { CommandItem, MachineViewId, NavId, RecentSession } from '@/types'
 import { toggleMaximizeWindow } from '@/utils/window'
 import AppSidebar from './AppSidebar.vue'
 import CommandPalette from './CommandPalette.vue'
 import DatabaseView from './DatabaseView.vue'
 import MachinePanel from './MachinePanel.vue'
+import RecentView from './RecentView.vue'
+import SshKeysView from './SshKeysView.vue'
 import TerminalPanel from './TerminalPanel.vue'
+
+const searchRef = ref<InstanceType<typeof SearchField>>()
 
 // 响应式状态
 const state = reactive({
@@ -29,14 +35,16 @@ const state = reactive({
   // 顶部搜索关键词
   keyword: '',
   // 侧栏选中的主视图
-  activeNav: 'servers',
+  activeNav: 'servers' as NavId,
   // 命令面板是否展开
   paletteOpen: false,
   // 是否显示右侧机器详情面板（概览 / 文件）
   machineOpen: true,
+  // 机器面板当前视图，放在这里是为了让命令面板能直接切过去
+  machineView: 'overview' as MachineViewId,
 })
 
-const { tabs, activeTab, keyword, activeNav, paletteOpen, machineOpen } = toRefs(state)
+const { tabs, activeTab, keyword, activeNav, paletteOpen, machineOpen, machineView } = toRefs(state)
 
 /** 全局快捷键：⌘K / Ctrl+K 开合命令面板，Esc 关闭 */
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
@@ -58,13 +66,46 @@ function handleTitleBarDblClick(event: MouseEvent): void {
   if ((event.target as HTMLElement).hasAttribute('data-tauri-drag-region'))
     toggleMaximizeWindow()
 }
+
+/**
+ * 执行命令面板选中的命令。
+ * 会话层还没接上，所以这里只做导航：切视图、必要时展开机器面板、把焦点交给搜索框。
+ * 命令 → 落点的对应表见 COMMAND_TARGETS。
+ */
+function runCommand(item: CommandItem): void {
+  const target = COMMAND_TARGETS[item.id]
+  if (!target)
+    return
+
+  if (target.nav)
+    state.activeNav = target.nav
+
+  if (target.machineView) {
+    state.machineOpen = true
+    state.machineView = target.machineView
+  }
+
+  // 等面板关闭后再抢焦点，否则会被卸载中的输入框吞掉
+  if (target.focusSearch)
+    void nextTick(() => searchRef.value?.focus())
+}
+
+/** 从最近会话重连：数据库会话回数据库视图，其余回终端视图 */
+function reopenSession(session: RecentSession): void {
+  state.activeNav = session.kind === 'database' ? 'databases' : 'servers'
+
+  if (session.kind === 'sftp') {
+    state.machineOpen = true
+    state.machineView = 'files'
+  }
+}
 </script>
 
 <template>
   <WindowFrame ambient class="h-screen w-screen">
     <!-- 标题栏：Windows 形态 —— 品牌在左，窗口按钮贴右上角。
          带 data-tauri-drag-region 的区域可拖拽，按钮本身不带故不受影响 -->
-    <header class="win-bar relative z-10" data-tauri-drag-region>
+    <header class="win-bar relative z-10" data-tauri-drag-region @dblclick="handleTitleBarDblClick">
       <div class="flex items-center gap-2" data-tauri-drag-region>
         <div
           class="grid size-5 place-items-center rounded-md text-black/80"
@@ -80,6 +121,7 @@ function handleTitleBarDblClick(event: MouseEvent): void {
       <div class="flex-1" data-tauri-drag-region />
 
       <SearchField
+        ref="searchRef"
         v-model="keyword"
         icon="lucide:search"
         placeholder="搜索服务器、文件、命令…"
@@ -127,12 +169,20 @@ function handleTitleBarDblClick(event: MouseEvent): void {
         <div class="flex min-h-0 flex-1 gap-2.5 p-2.5">
           <template v-if="activeNav === 'servers'">
             <TerminalPanel />
-            <MachinePanel v-if="machineOpen" @close="machineOpen = false" />
+            <MachinePanel
+              v-if="machineOpen"
+              v-model:view="machineView"
+              @close="machineOpen = false"
+            />
           </template>
 
           <DatabaseView v-else-if="activeNav === 'databases'" />
 
-          <!-- 尚未接入的模块，先给出明确的空状态而不是白屏 -->
+          <SshKeysView v-else-if="activeNav === 'ssh-keys'" />
+
+          <RecentView v-else-if="activeNav === 'recent'" @open="reopenSession" />
+
+          <!-- 兜底：以后新增侧栏项但视图还没落地时，给出空状态而不是白屏 -->
           <div v-else class="pane flex-1 items-center justify-center">
             <div class="flex flex-col items-center gap-3 text-center">
               <div class="grid size-14 place-items-center rounded-2xl border border-line bg-card text-txt-3">
@@ -157,7 +207,7 @@ function handleTitleBarDblClick(event: MouseEvent): void {
         class="absolute inset-0 z-50 flex justify-center bg-black/45 pt-[13vh]"
         @click.self="paletteOpen = false"
       >
-        <CommandPalette @close="paletteOpen = false" />
+        <CommandPalette @close="paletteOpen = false" @run="runCommand" />
       </div>
     </Transition>
   </WindowFrame>

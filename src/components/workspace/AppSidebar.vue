@@ -4,10 +4,11 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { FAVORITES, NAV_ITEMS, PROJECT_GROUPS } from '@/constants/workspace'
+import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
 
 // 当前选中的主视图，由 MainWindow 通过 v-model:active 控制
-const active = defineModel<string>('active', { required: true })
+const active = defineModel<NavId>('active', { required: true })
 
 // 响应式状态
 const state = reactive({

@@ -1,9 +1,18 @@
 /** 连接状态 */
 export type ConnectionStatus = 'online' | 'offline' | 'connecting'
 
-/** 侧栏导航项 */
-export interface NavItem {
-  id: string
+/** 侧栏主视图 id */
+export type NavId = 'servers' | 'databases' | 'ssh-keys' | 'recent'
+
+/** 机器详情面板的视图 id */
+export type MachineViewId = 'overview' | 'files'
+
+/**
+ * 导航项。侧栏与机器面板共用这个结构，各自把 Id 收窄成自己的字面量联合，
+ * 这样"当前视图"在状态和模板里都是可校验的，不会写错一个字符串就静默降级到空状态。
+ */
+export interface NavItem<Id extends string = string> {
+  id: Id
   label: string
   icon: string
 }
@@ -127,4 +136,74 @@ export interface TermSpan {
   text: string
   tone?: 'fg' | 'green' | 'blue' | 'cyan' | 'dim'
   bold?: boolean
+}
+
+/**
+ * 命令面板某条命令的落点。
+ * 连接层还没接上，所以命令目前只承诺"把人送到能干这件事的视图"。
+ */
+export interface CommandTarget {
+  /** 切到哪个主视图，省略表示留在当前视图 */
+  nav?: NavId
+  /** 若指定，同时展开机器面板并切到该视图 */
+  machineView?: MachineViewId
+  /** 是否把焦点交给标题栏搜索框 */
+  focusSearch?: boolean
+}
+
+/** SSH 密钥算法 */
+export type SshKeyKind = 'ed25519' | 'rsa' | 'ecdsa'
+
+/** SSH 密钥 */
+export interface SshKey {
+  id: string
+  /** 密钥名，即私钥文件名 */
+  label: string
+  kind: SshKeyKind
+  /** 密钥长度，ed25519 固定 256 */
+  bits: number
+  /** SHA256 指纹 */
+  fingerprint: string
+  /** 公钥全文 */
+  publicKey: string
+  /** 私钥是否有口令保护 */
+  encrypted: boolean
+  /** 生成日期 */
+  createdAt: string
+  /** 最近一次用于连接的时间 */
+  lastUsed: string
+  /** 已授权此密钥的主机 */
+  hosts: string[]
+}
+
+/** 会话类型 */
+export type SessionKind = 'ssh' | 'database' | 'sftp'
+
+/** 最近会话记录 */
+export interface RecentSession {
+  id: string
+  /** 连接名 */
+  label: string
+  kind: SessionKind
+  /** 地址，含端口 */
+  address: string
+  /** 会话时长文案，未连上则为空 */
+  duration: string
+  /** 相对时间文案 */
+  time: string
+  /** 会话结果 */
+  status: 'success' | 'failed'
+}
+
+/** 最近会话按时间分组 */
+export interface RecentGroup {
+  id: string
+  label: string
+  items: RecentSession[]
+}
+
+/** 最近会话的类型筛选项 */
+export interface RecentFilter {
+  id: 'all' | SessionKind
+  label: string
 }
