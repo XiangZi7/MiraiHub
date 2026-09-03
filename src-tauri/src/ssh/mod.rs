@@ -25,5 +25,7 @@ pub mod models;
 pub mod session;
 pub mod shell;
 pub mod stats;
+pub mod transfers;
 
 pub use manager::SessionManager;
+pub use transfers::TransferManager;

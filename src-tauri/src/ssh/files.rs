@@ -1,14 +1,22 @@
 //! 远端文件浏览。
 //!
-//! 用 `ls -lA` 解析而不是走 SFTP 子系统：russh 本身不带 SFTP 实现，
-//! 引入 russh-sftp 会多一层依赖与协议状态机，而列目录这一个需求
-//! 用 exec 就能覆盖。真要做上传下载时再上 SFTP 更合适。
+//! 列目录沿用 `ls -lA`，上传、下载与变更操作走独立 SFTP 通道。
 
+use std::path::{Path, PathBuf};
+
+use russh_sftp::client::SftpSession;
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::error::{SshError, SshResult};
+use super::events::{emit_transfer, TransferEvent};
+use super::models::{DownloadFileRequest, UploadFileRequest};
 use super::session::SshSession;
 use super::shell::quote;
+use super::transfers::{TransferControl, TransferManager};
+
+const TRANSFER_BUFFER_SIZE: usize = 128 * 1024;
 
 /// 目录项类型。前端据此选图标，也决定双击是进目录还是打开文件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,6 +102,355 @@ pub async fn list_directory(session: &SshSession, path: &str) -> SshResult<Direc
     }
 
     Ok(parse_listing(&output.stdout))
+}
+
+/// 查询远端路径是否存在，用于上传前的同名冲突确认。
+pub async fn path_exists(session: &SshSession, path: &str) -> SshResult<bool> {
+    validate_remote_path(path)?;
+    let sftp = session.open_sftp().await?;
+    sftp.try_exists(path).await.map_err(sftp_error)
+}
+
+/// 重命名远端文件或目录。
+pub async fn rename_path(session: &SshSession, old_path: &str, new_path: &str) -> SshResult<()> {
+    validate_remote_path(old_path)?;
+    validate_remote_path(new_path)?;
+    if old_path == new_path {
+        return Ok(());
+    }
+
+    let sftp = session.open_sftp().await?;
+    if sftp.try_exists(new_path).await.map_err(sftp_error)? {
+        return Err(SshError::RemoteFileExists(new_path.to_owned()));
+    }
+    sftp.rename(old_path, new_path).await.map_err(sftp_error)
+}
+
+/// 删除远端文件、软链或空目录。目录非空时由服务器返回明确错误，避免误递归删除。
+pub async fn delete_path(session: &SshSession, path: &str, is_directory: bool) -> SshResult<()> {
+    validate_remote_path(path)?;
+    let sftp = session.open_sftp().await?;
+    if is_directory {
+        sftp.remove_dir(path).await.map_err(sftp_error)
+    } else {
+        sftp.remove_file(path).await.map_err(sftp_error)
+    }
+}
+
+pub async fn upload_file(
+    app: &AppHandle,
+    session: &SshSession,
+    transfers: &TransferManager,
+    request: &UploadFileRequest,
+) -> SshResult<String> {
+    validate_remote_path(&request.remote_path)?;
+    if request.local_path.trim().is_empty() {
+        return Err(SshError::InvalidInput("本地文件路径不能为空".into()));
+    }
+
+    let metadata = tokio::fs::metadata(&request.local_path).await?;
+    if !metadata.is_file() {
+        return Err(SshError::InvalidInput(format!(
+            "目前仅支持上传文件：{}",
+            request.local_path
+        )));
+    }
+    let total = metadata.len();
+    let control = transfers.begin(&request.task_id, total).await?;
+    let result = upload_inner(app, session, request, &control, total).await;
+    transfers.finish(&request.task_id).await;
+    result.map(|()| request.remote_path.clone())
+}
+
+async fn upload_inner(
+    app: &AppHandle,
+    session: &SshSession,
+    request: &UploadFileRequest,
+    control: &TransferControl,
+    total: u64,
+) -> SshResult<()> {
+    let sftp = session.open_sftp().await?;
+    if sftp
+        .try_exists(&request.remote_path)
+        .await
+        .map_err(sftp_error)?
+        && !request.overwrite
+    {
+        return Err(SshError::RemoteFileExists(request.remote_path.clone()));
+    }
+
+    let temp_path = remote_temp_path(&request.remote_path, &request.task_id);
+    if sftp.try_exists(&temp_path).await.map_err(sftp_error)? {
+        let _ = sftp.remove_file(&temp_path).await;
+    }
+
+    let mut source = tokio::fs::File::open(&request.local_path).await?;
+    let mut target = sftp.create(&temp_path).await.map_err(sftp_error)?;
+    let result: SshResult<()> = async {
+        let mut buffer = vec![0_u8; TRANSFER_BUFFER_SIZE];
+        let mut transferred = 0_u64;
+        emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
+
+        loop {
+            control.checkpoint().await?;
+            let read = source.read(&mut buffer).await?;
+            if read == 0 {
+                break;
+            }
+            target.write_all(&buffer[..read]).await?;
+            transferred += read as u64;
+            control.set_transferred(transferred);
+            emit_transfer(
+                app,
+                TransferEvent::progress(&request.task_id, transferred, total),
+            );
+        }
+
+        target.flush().await?;
+        target.shutdown().await?;
+        control.checkpoint().await?;
+
+        let destination_exists = sftp
+            .try_exists(&request.remote_path)
+            .await
+            .map_err(sftp_error)?;
+        if destination_exists {
+            if !request.overwrite {
+                return Err(SshError::RemoteFileExists(request.remote_path.clone()));
+            }
+
+            let destination = sftp
+                .metadata(&request.remote_path)
+                .await
+                .map_err(sftp_error)?;
+            if destination.is_dir() {
+                return Err(SshError::InvalidInput(format!(
+                    "同名路径是目录，不能用文件覆盖：{}",
+                    request.remote_path
+                )));
+            }
+
+            // 先把旧文件挪成备份，落位失败时还能还原，避免覆盖过程中丢掉两边数据。
+            let backup_path = remote_backup_path(&request.remote_path, &request.task_id);
+            if sftp.try_exists(&backup_path).await.map_err(sftp_error)? {
+                let _ = sftp.remove_file(&backup_path).await;
+            }
+            sftp.rename(&request.remote_path, &backup_path)
+                .await
+                .map_err(sftp_error)?;
+            if let Err(error) = sftp.rename(&temp_path, &request.remote_path).await {
+                let _ = sftp.rename(&backup_path, &request.remote_path).await;
+                return Err(sftp_error(error));
+            }
+            let _ = sftp.remove_file(&backup_path).await;
+        } else {
+            sftp.rename(&temp_path, &request.remote_path)
+                .await
+                .map_err(sftp_error)?;
+        }
+        Ok(())
+    }
+    .await;
+
+    if result.is_err() {
+        let _ = target.shutdown().await;
+        let _ = sftp.remove_file(&temp_path).await;
+    }
+    let _ = sftp.close().await;
+    result
+}
+
+/// 下载远端文件。local_path 为空时写入系统临时目录，供“双击打开”使用。
+pub async fn download_file(
+    app: &AppHandle,
+    session: &SshSession,
+    transfers: &TransferManager,
+    request: &DownloadFileRequest,
+) -> SshResult<String> {
+    validate_remote_path(&request.remote_path)?;
+    let sftp = session.open_sftp().await?;
+    let total = sftp
+        .metadata(&request.remote_path)
+        .await
+        .map_err(sftp_error)?
+        .size
+        .unwrap_or(0);
+    let final_path =
+        local_download_path(&request.local_path, &request.remote_path, &request.task_id);
+    if final_path.exists() && !request.overwrite {
+        return Err(SshError::InvalidInput(format!(
+            "本地路径已存在：{}",
+            final_path.display()
+        )));
+    }
+
+    if let Some(parent) = final_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    let control = transfers.begin(&request.task_id, total).await?;
+    let temp_path = local_temp_path(&final_path, &request.task_id);
+    let result = download_inner(
+        app,
+        &sftp,
+        request,
+        &final_path,
+        &temp_path,
+        &control,
+        total,
+    )
+    .await;
+    transfers.finish(&request.task_id).await;
+    let _ = sftp.close().await;
+    result.map(|()| final_path.to_string_lossy().into_owned())
+}
+
+async fn download_inner(
+    app: &AppHandle,
+    sftp: &SftpSession,
+    request: &DownloadFileRequest,
+    final_path: &Path,
+    temp_path: &Path,
+    control: &TransferControl,
+    total: u64,
+) -> SshResult<()> {
+    if temp_path.exists() {
+        let _ = tokio::fs::remove_file(temp_path).await;
+    }
+
+    let mut source = sftp.open(&request.remote_path).await.map_err(sftp_error)?;
+    let mut target = tokio::fs::File::create(temp_path).await?;
+    let result: SshResult<()> = async {
+        let mut buffer = vec![0_u8; TRANSFER_BUFFER_SIZE];
+        let mut transferred = 0_u64;
+        emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
+
+        loop {
+            control.checkpoint().await?;
+            let read = source.read(&mut buffer).await?;
+            if read == 0 {
+                break;
+            }
+            target.write_all(&buffer[..read]).await?;
+            transferred += read as u64;
+            control.set_transferred(transferred);
+            emit_transfer(
+                app,
+                TransferEvent::progress(&request.task_id, transferred, total),
+            );
+        }
+
+        target.flush().await?;
+        target.sync_all().await?;
+        control.checkpoint().await?;
+
+        if final_path.exists() {
+            if !request.overwrite {
+                return Err(SshError::InvalidInput(format!(
+                    "本地路径已存在：{}",
+                    final_path.display()
+                )));
+            }
+            let backup_path = local_backup_path(final_path, &request.task_id);
+            if backup_path.exists() {
+                let _ = tokio::fs::remove_file(&backup_path).await;
+            }
+            tokio::fs::rename(final_path, &backup_path).await?;
+            if let Err(error) = tokio::fs::rename(temp_path, final_path).await {
+                let _ = tokio::fs::rename(&backup_path, final_path).await;
+                return Err(error.into());
+            }
+            let _ = tokio::fs::remove_file(backup_path).await;
+        } else {
+            tokio::fs::rename(temp_path, final_path).await?;
+        }
+        Ok(())
+    }
+    .await;
+
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(temp_path).await;
+    }
+    result
+}
+
+fn validate_remote_path(path: &str) -> SshResult<()> {
+    if path.trim().is_empty() {
+        return Err(SshError::InvalidInput("远端路径不能为空".into()));
+    }
+    Ok(())
+}
+
+fn sftp_error(error: russh_sftp::client::error::Error) -> SshError {
+    SshError::Sftp(error.to_string())
+}
+
+fn safe_task_id(task_id: &str) -> String {
+    task_id
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || *character == '-' || *character == '_'
+        })
+        .take(80)
+        .collect()
+}
+
+fn remote_temp_path(remote_path: &str, task_id: &str) -> String {
+    let (parent, name) = remote_path.rsplit_once('/').unwrap_or((".", remote_path));
+    let parent = if parent.is_empty() { "/" } else { parent };
+    join_path(
+        parent,
+        &format!(".{name}.miraihub-{}.part", safe_task_id(task_id)),
+    )
+}
+
+fn remote_backup_path(remote_path: &str, task_id: &str) -> String {
+    let (parent, name) = remote_path.rsplit_once('/').unwrap_or((".", remote_path));
+    let parent = if parent.is_empty() { "/" } else { parent };
+    join_path(
+        parent,
+        &format!(".{name}.miraihub-{}.backup", safe_task_id(task_id)),
+    )
+}
+
+fn local_temp_path(final_path: &Path, task_id: &str) -> PathBuf {
+    PathBuf::from(format!(
+        "{}.miraihub-{}.part",
+        final_path.to_string_lossy(),
+        safe_task_id(task_id)
+    ))
+}
+
+fn local_backup_path(final_path: &Path, task_id: &str) -> PathBuf {
+    PathBuf::from(format!(
+        "{}.miraihub-{}.backup",
+        final_path.to_string_lossy(),
+        safe_task_id(task_id)
+    ))
+}
+
+fn local_download_path(local_path: &str, remote_path: &str, task_id: &str) -> PathBuf {
+    if !local_path.trim().is_empty() {
+        return PathBuf::from(local_path);
+    }
+
+    let remote_name = remote_path.rsplit('/').next().unwrap_or("remote-file");
+    let safe_name: String = remote_name
+        .chars()
+        .map(|character| {
+            if matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            ) {
+                '_'
+            } else {
+                character
+            }
+        })
+        .collect();
+    std::env::temp_dir()
+        .join("MiraiHub")
+        .join(format!("{}-{safe_name}", safe_task_id(task_id)))
 }
 
 /// 解析 `pwd` + `ls -lA` 的合并输出。
@@ -364,5 +721,22 @@ mod tests {
             parse_iso_datetime("2024-05-22", "09:41:21.000000000", "+0800"),
             1_716_342_081_000
         );
+    }
+
+    #[test]
+    fn builds_hidden_remote_part_path_next_to_destination() {
+        assert_eq!(
+            remote_temp_path("/var/www/app.js", "transfer-1"),
+            "/var/www/.app.js.miraihub-transfer-1.part"
+        );
+        assert_eq!(
+            remote_temp_path("/app.js", "transfer-1"),
+            "/.app.js.miraihub-transfer-1.part"
+        );
+    }
+
+    #[test]
+    fn task_id_cannot_escape_temporary_path() {
+        assert_eq!(safe_task_id("../../bad:id"), "badid");
     }
 }

@@ -12,9 +12,11 @@ use super::completion::{self, ShellSuggestion};
 use super::files::DirectoryListing;
 use super::manager::SessionManager;
 use super::models::{
-    CommandOutput, GenerateKeyRequest, PtyOptions, SessionInfo, SshConfig, SshKeyInfo,
+    CommandOutput, DownloadFileRequest, GenerateKeyRequest, PtyOptions, SessionInfo, SshConfig,
+    SshKeyInfo, UploadFileRequest,
 };
 use super::stats::SystemStats;
+use super::transfers::TransferManager;
 use super::{events, files, keys, stats};
 
 /// 建立连接，返回会话 id。
@@ -128,6 +130,127 @@ pub async fn ssh_list_directory(
 ) -> AppResult<DirectoryListing> {
     let session = manager.get(&session_id).await?;
     Ok(files::list_directory(&session, &path).await?)
+}
+
+#[tauri::command]
+pub async fn ssh_path_exists(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    path: String,
+) -> AppResult<bool> {
+    let session = manager.get(&session_id).await?;
+    Ok(files::path_exists(&session, &path).await?)
+}
+
+#[tauri::command]
+pub async fn ssh_rename_path(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    old_path: String,
+    new_path: String,
+) -> AppResult<()> {
+    let session = manager.get(&session_id).await?;
+    Ok(files::rename_path(&session, &old_path, &new_path).await?)
+}
+
+#[tauri::command]
+pub async fn ssh_delete_path(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    path: String,
+    is_directory: bool,
+) -> AppResult<()> {
+    let session = manager.get(&session_id).await?;
+    Ok(files::delete_path(&session, &path, is_directory).await?)
+}
+
+#[tauri::command]
+pub async fn ssh_upload_file(
+    app: AppHandle,
+    manager: State<'_, SessionManager>,
+    transfers: State<'_, TransferManager>,
+    request: UploadFileRequest,
+) -> AppResult<String> {
+    let session = manager.get(&request.session_id).await?;
+    let result = files::upload_file(&app, &session, &transfers, &request).await;
+
+    match &result {
+        Ok(_) => events::emit_transfer(
+            &app,
+            events::TransferEvent::completed(&request.task_id, None),
+        ),
+        Err(super::error::SshError::TransferCancelled) => events::emit_transfer(
+            &app,
+            events::TransferEvent::status(&request.task_id, "cancelled"),
+        ),
+        Err(error) => events::emit_transfer(
+            &app,
+            events::TransferEvent::failed(&request.task_id, error.to_string()),
+        ),
+    }
+
+    Ok(result?)
+}
+
+#[tauri::command]
+pub async fn ssh_download_file(
+    app: AppHandle,
+    manager: State<'_, SessionManager>,
+    transfers: State<'_, TransferManager>,
+    request: DownloadFileRequest,
+) -> AppResult<String> {
+    let session = manager.get(&request.session_id).await?;
+    let result = files::download_file(&app, &session, &transfers, &request).await;
+
+    match &result {
+        Ok(path) => events::emit_transfer(
+            &app,
+            events::TransferEvent::completed(&request.task_id, Some(path.clone())),
+        ),
+        Err(super::error::SshError::TransferCancelled) => events::emit_transfer(
+            &app,
+            events::TransferEvent::status(&request.task_id, "cancelled"),
+        ),
+        Err(error) => events::emit_transfer(
+            &app,
+            events::TransferEvent::failed(&request.task_id, error.to_string()),
+        ),
+    }
+
+    Ok(result?)
+}
+
+#[tauri::command]
+pub async fn ssh_pause_transfer(
+    app: AppHandle,
+    transfers: State<'_, TransferManager>,
+    task_id: String,
+) -> AppResult<()> {
+    transfers.pause(&task_id).await?;
+    events::emit_transfer(&app, events::TransferEvent::status(task_id, "paused"));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ssh_resume_transfer(
+    app: AppHandle,
+    transfers: State<'_, TransferManager>,
+    task_id: String,
+) -> AppResult<()> {
+    transfers.resume(&task_id).await?;
+    events::emit_transfer(&app, events::TransferEvent::status(task_id, "running"));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ssh_cancel_transfer(
+    app: AppHandle,
+    transfers: State<'_, TransferManager>,
+    task_id: String,
+) -> AppResult<()> {
+    transfers.cancel(&task_id).await?;
+    events::emit_transfer(&app, events::TransferEvent::status(task_id, "cancelled"));
+    Ok(())
 }
 
 /// 扫描 ~/.ssh 下的密钥。

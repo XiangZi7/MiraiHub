@@ -28,7 +28,7 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const { create, update } = useConnections()
+const { create, update, tags: sharedTags } = useConnections()
 const {
   keys: privateKeys,
   defaultPath: defaultPrivateKey,
@@ -79,7 +79,7 @@ const form = reactive({
   group: '',
   host: '',
   port: '22',
-  username: '',
+  username: 'root',
   tags: '',
   tagColor: 'green' as ConnectionTagColor,
   authentication: 'private-key',
@@ -428,7 +428,11 @@ async function saveConnection(): Promise<void> {
           required
         />
 
-        <ConnectionTagEditor v-model="form.tags" v-model:color="form.tagColor" />
+        <ConnectionTagEditor
+          v-model="form.tags"
+          v-model:color="form.tagColor"
+          :available-tags="sharedTags"
+        />
 
         <AppSelect
           v-model="form.authentication"

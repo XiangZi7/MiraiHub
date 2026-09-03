@@ -26,6 +26,7 @@ import LocalTerminalPanel from './LocalTerminalPanel.vue'
 import RecentView from './RecentView.vue'
 import SshKeysView from './SshKeysView.vue'
 import TerminalPanel from './TerminalPanel.vue'
+import TransferCenter from './TransferCenter.vue'
 
 const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
 const { width: viewportWidth } = useWindowSize()
@@ -330,6 +331,7 @@ function runCommand(item: CommandItem): void {
       <div class="flex items-center gap-1.5">
         <IconButton icon="lucide:command" title="命令面板 (⌘K)" @click="paletteOpen = true" />
         <IconButton icon="lucide:plus" title="新建连接" @click="addConnection" />
+        <TransferCenter />
         <IconButton icon="lucide:bell" title="通知" />
         <IconButton icon="lucide:life-buoy" title="帮助" />
 

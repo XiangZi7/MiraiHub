@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
@@ -33,6 +33,7 @@ const emit = defineEmits<{
 }>()
 
 const containerRef = useTemplateRef<HTMLElement>('terminal')
+const terminalAreaRef = useTemplateRef<HTMLElement>('terminalArea')
 
 const {
   term,
@@ -49,6 +50,14 @@ const {
 
 const completionEnabled = computed(() => status.value === 'connected')
 const completion = useSshShellCompletion({ sessionId, inputLine, enabled: completionEnabled })
+const completionAnchor = shallowRef({
+  left: 12,
+  top: 40 as number | undefined,
+  bottom: undefined as number | undefined,
+  width: 420,
+  maxHeight: 260,
+})
+let anchorFrame = 0
 
 // xterm 是否已挂到容器上。挂载只做一次，重连复用同一个实例。
 // 用普通变量而非响应式：模板不读它，只是 watch 内部的一次性标记
@@ -119,7 +128,65 @@ watch(
  * 光靠 window resize 不够：收起机器面板会让终端变宽，但窗口尺寸没变，
  * 不重算的话右侧会留一大片空白。
  */
-useResizeObserver(containerRef, () => resize())
+useResizeObserver(containerRef, () => {
+  resize()
+  scheduleCompletionAnchorUpdate()
+})
+
+function scheduleCompletionAnchorUpdate(): void {
+  cancelAnimationFrame(anchorFrame)
+  anchorFrame = requestAnimationFrame(updateCompletionAnchor)
+}
+
+/** 把建议框贴到当前输入 token，而不是固定压在终端底部。 */
+function updateCompletionAnchor(): void {
+  const terminal = term.value
+  const area = terminalAreaRef.value
+  const screen = terminal?.element?.querySelector<HTMLElement>('.xterm-screen')
+  if (!terminal || !area || !screen || !completion.open.value)
+    return
+
+  const areaRect = area.getBoundingClientRect()
+  const screenRect = screen.getBoundingClientRect()
+  const cellWidth = screenRect.width / Math.max(terminal.cols, 1)
+  const cellHeight = screenRect.height / Math.max(terminal.rows, 1)
+  const tokenLength = [...currentToken(inputLine.value)].length
+  const tokenColumn = Math.max(0, terminal.buffer.active.cursorX - tokenLength)
+  const cursorTop = screenRect.top - areaRect.top + terminal.buffer.active.cursorY * cellHeight
+  const desiredWidth = Math.min(440, Math.max(260, areaRect.width - 24))
+  const left = Math.min(
+    Math.max(12, screenRect.left - areaRect.left + tokenColumn * cellWidth),
+    Math.max(12, areaRect.width - desiredWidth - 12),
+  )
+  const belowTop = cursorTop + cellHeight + 5
+  const roomBelow = areaRect.height - belowTop - 10
+  const roomAbove = cursorTop - 10
+  const placeBelow = roomBelow >= 140 || roomBelow >= roomAbove
+  const availableHeight = Math.max(92, placeBelow ? roomBelow : roomAbove)
+
+  completionAnchor.value = {
+    left,
+    top: placeBelow ? belowTop : undefined,
+    bottom: placeBelow ? undefined : areaRect.height - cursorTop + 5,
+    width: desiredWidth,
+    maxHeight: Math.min(260, availableHeight),
+  }
+}
+
+watch(
+  [() => completion.open.value, inputLine, () => completion.suggestions.value.length],
+  ([isOpen]) => {
+    if (isOpen)
+      void nextTick(scheduleCompletionAnchorUpdate)
+  },
+)
+
+watch(term, (terminal, _previous, onCleanup) => {
+  const disposable = terminal?.onCursorMove(scheduleCompletionAnchorUpdate)
+  onCleanup(() => disposable?.dispose())
+}, { immediate: true })
+
+onBeforeUnmount(() => cancelAnimationFrame(anchorFrame))
 
 /** 重连：先断干净再按原配置连一次 */
 async function reconnect(): Promise<void> {
@@ -205,7 +272,7 @@ setSubmitHandler(line => void completion.trackSubmittedCommand(line))
     </div>
 
     <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染 -->
-    <div v-if="config" class="relative min-h-0 flex-1">
+    <div v-if="config" ref="terminalArea" class="relative min-h-0 flex-1 overflow-hidden">
       <div ref="terminal" class="absolute inset-0 p-2" />
       <p
         v-if="status === 'connecting'"
@@ -221,6 +288,7 @@ setSubmitHandler(line => void completion.trackSubmittedCommand(line))
           :items="completion.suggestions.value"
           :active-index="completion.activeIndex.value"
           :loading="completion.loading.value"
+          :anchor="completionAnchor"
           @hover="completion.activeIndex.value = $event"
           @select="acceptSuggestion"
         />

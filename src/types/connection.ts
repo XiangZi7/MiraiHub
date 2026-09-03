@@ -20,6 +20,13 @@ export type ConnectionTagColor
     | 'violet'
     | 'gray'
 
+/** 可被所有连接复用的标签定义。连接记录只保存标签名，目录负责共享与配色。 */
+export interface ConnectionTagDefinition {
+  name: string
+  color: ConnectionTagColor
+  createdAt: number
+}
+
 export type LocalShellKind = 'powershell' | 'cmd' | 'git-bash'
 
 /** 侧边栏分组按 SSH / 数据库两棵树隔离。 */

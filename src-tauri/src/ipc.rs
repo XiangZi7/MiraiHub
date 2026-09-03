@@ -34,6 +34,14 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         // ---------- SSH：远端信息 ----------
         ssh::commands::ssh_system_stats,
         ssh::commands::ssh_list_directory,
+        ssh::commands::ssh_path_exists,
+        ssh::commands::ssh_rename_path,
+        ssh::commands::ssh_delete_path,
+        ssh::commands::ssh_upload_file,
+        ssh::commands::ssh_download_file,
+        ssh::commands::ssh_pause_transfer,
+        ssh::commands::ssh_resume_transfer,
+        ssh::commands::ssh_cancel_transfer,
         // ---------- SSH：密钥 ----------
         ssh::commands::ssh_list_keys,
         ssh::commands::ssh_generate_key,

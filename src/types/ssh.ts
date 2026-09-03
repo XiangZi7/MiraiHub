@@ -187,6 +187,18 @@ export interface SshDirectoryListing {
   entries: SshRemoteFile[]
 }
 
+export type SshTransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'error' | 'cancelled'
+
+/** Rust 侧通过 ssh://transfer 推送的增量状态。null 表示本次事件不更新该字段。 */
+export interface SshTransferEvent {
+  taskId: string
+  status: SshTransferStatus
+  transferredBytes: number | null
+  totalBytes: number | null
+  localPath: string | null
+  error: string | null
+}
+
 export type ShellSuggestionKind = 'command' | 'directory' | 'file'
 
 export interface ShellSuggestion {

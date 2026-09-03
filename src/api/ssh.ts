@@ -23,12 +23,14 @@ import type {
   ShellSuggestion,
   SshStatusEvent,
   SshSystemStats,
+  SshTransferEvent,
 } from '@/types/ssh'
 import { IS_TAURI } from '@/utils/window'
 
 /** 事件名，与 Rust 侧 `ssh/events.rs` 的常量对应 */
 const EVENT_OUTPUT = 'ssh://output'
 const EVENT_STATUS = 'ssh://status'
+const EVENT_TRANSFER = 'ssh://transfer'
 
 /**
  * 判断错误是否是后端抛回的结构化 AppError。
@@ -149,6 +151,58 @@ export async function listDirectory(
   return invoke<SshDirectoryListing>('ssh_list_directory', { sessionId, path })
 }
 
+export async function pathExists(sessionId: string, path: string): Promise<boolean> {
+  ensureTauri()
+  return invoke<boolean>('ssh_path_exists', { sessionId, path })
+}
+
+export async function renamePath(sessionId: string, oldPath: string, newPath: string): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_rename_path', { sessionId, oldPath, newPath })
+}
+
+export async function deletePath(sessionId: string, path: string, isDirectory: boolean): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_delete_path', { sessionId, path, isDirectory })
+}
+
+export async function uploadFile(options: {
+  sessionId: string
+  taskId: string
+  localPath: string
+  remotePath: string
+  overwrite: boolean
+}): Promise<string> {
+  ensureTauri()
+  return invoke<string>('ssh_upload_file', { request: options })
+}
+
+export async function downloadFile(options: {
+  sessionId: string
+  taskId: string
+  remotePath: string
+  localPath: string
+  overwrite: boolean
+}): Promise<string> {
+  ensureTauri()
+  return invoke<string>('ssh_download_file', { request: options })
+}
+
+export async function pauseTransfer(taskId: string): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_pause_transfer', { taskId })
+}
+
+export async function resumeTransfer(taskId: string): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_resume_transfer', { taskId })
+}
+
+export async function cancelTransfer(taskId: string): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_cancel_transfer', { taskId })
+}
+
 /** 扫描 ~/.ssh 下的本地密钥 */
 export async function listKeys(): Promise<SshKeyInfo[]> {
   ensureTauri()
@@ -192,6 +246,10 @@ export function onStatus(
     if (event.payload.sessionId === sessionId)
       handler(event.payload)
   })
+}
+
+export function onTransfer(handler: (payload: SshTransferEvent) => void): Promise<UnlistenFn> {
+  return listen<SshTransferEvent>(EVENT_TRANSFER, event => handler(event.payload))
 }
 
 /**

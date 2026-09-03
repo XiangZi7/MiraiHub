@@ -22,7 +22,7 @@ const props = withDefaults(defineProps<{
 }>(), { connectionId: '' })
 
 const emit = defineEmits<{ close: [] }>()
-const { create, update } = useConnections()
+const { create, update, tags: sharedTags } = useConnections()
 const saving = shallowRef(false)
 const loading = shallowRef(Boolean(props.connectionId))
 const feedback = shallowRef('')
@@ -152,7 +152,11 @@ async function save(): Promise<void> {
           action-title="选择工作目录"
           @action="browseDirectory"
         />
-        <ConnectionTagEditor v-model="form.tags" v-model:color="form.tagColor" />
+        <ConnectionTagEditor
+          v-model="form.tags"
+          v-model:color="form.tagColor"
+          :available-tags="sharedTags"
+        />
         <div class="space-y-1.5">
           <label for="local-description" class="block text-[11px] font-medium text-txt-2">Description (Optional)</label>
           <textarea

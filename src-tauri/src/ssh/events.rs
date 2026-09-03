@@ -12,6 +12,8 @@ use tauri::{AppHandle, Emitter};
 pub const EVENT_OUTPUT: &str = "ssh://output";
 /// 会话状态变化（连上、断开）。
 pub const EVENT_STATUS: &str = "ssh://status";
+/// 文件传输进度与状态变化。
+pub const EVENT_TRANSFER: &str = "ssh://transfer";
 
 /// 终端输出负载。
 ///
@@ -39,6 +41,55 @@ pub struct StatusEvent {
     pub exit_code: Option<u32>,
     /// 异常断开时的原因文案
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferEvent {
+    pub task_id: String,
+    pub status: &'static str,
+    pub transferred_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub local_path: Option<String>,
+    pub error: Option<String>,
+}
+
+impl TransferEvent {
+    pub fn progress(task_id: impl Into<String>, transferred: u64, total: u64) -> Self {
+        Self {
+            task_id: task_id.into(),
+            status: "running",
+            transferred_bytes: Some(transferred),
+            total_bytes: Some(total),
+            local_path: None,
+            error: None,
+        }
+    }
+
+    pub fn status(task_id: impl Into<String>, status: &'static str) -> Self {
+        Self {
+            task_id: task_id.into(),
+            status,
+            transferred_bytes: None,
+            total_bytes: None,
+            local_path: None,
+            error: None,
+        }
+    }
+
+    pub fn completed(task_id: impl Into<String>, local_path: Option<String>) -> Self {
+        Self {
+            local_path,
+            ..Self::status(task_id, "completed")
+        }
+    }
+
+    pub fn failed(task_id: impl Into<String>, error: impl Into<String>) -> Self {
+        Self {
+            error: Some(error.into()),
+            ..Self::status(task_id, "error")
+        }
+    }
 }
 
 impl StatusEvent {
@@ -83,5 +134,11 @@ pub fn emit_output(app: &AppHandle, payload: OutputEvent) {
 pub fn emit_status(app: &AppHandle, payload: StatusEvent) {
     if let Err(err) = app.emit(EVENT_STATUS, payload) {
         log::warn!("推送会话状态失败：{err}");
+    }
+}
+
+pub fn emit_transfer(app: &AppHandle, payload: TransferEvent) {
+    if let Err(err) = app.emit(EVENT_TRANSFER, payload) {
+        log::warn!("推送文件传输状态失败：{err}");
     }
 }

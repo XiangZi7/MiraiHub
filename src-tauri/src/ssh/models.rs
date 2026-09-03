@@ -127,6 +127,26 @@ pub struct CommandOutput {
     pub exit_code: Option<u32>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadFileRequest {
+    pub session_id: String,
+    pub task_id: String,
+    pub local_path: String,
+    pub remote_path: String,
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadFileRequest {
+    pub session_id: String,
+    pub task_id: String,
+    pub remote_path: String,
+    pub local_path: String,
+    pub overwrite: bool,
+}
+
 /// SSH 密钥算法。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

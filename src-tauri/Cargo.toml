@@ -26,13 +26,14 @@ serde_json = "1"
 
 # 异步运行时。Tauri 内部已用 tokio，这里显式声明是因为 ssh 模块直接用了
 # timeout / spawn / 同步原语；features 按需取，不开 "full"。
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "io-util", "fs"] }
 
 # SSH：纯 Rust 实现，Windows 上无需 OpenSSL/libssh2 工具链。
 # 关掉 default features 是为了甩掉 aws-lc-rs —— 它带 C 代码，Windows 上要装 NASM 才能编。
 # ring 后端是纯 Rust + 预编译汇编，开箱即用；rsa/flate2 是 default 里需要保留的部分。
 # russh 的 API 在小版本间会变动，升级前先跑 cargo test。
 russh = { version = "0.54", default-features = false, features = ["ring", "rsa", "flate2"] }
+russh-sftp = "2.3"
 
 # 终端输出以 base64 过 IPC（远端字节流不保证是完整 UTF-8，见 ssh/events.rs）
 base64 = "0.22"

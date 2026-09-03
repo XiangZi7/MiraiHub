@@ -45,6 +45,7 @@ fn register_plugins(builder: Builder<Wry>) -> Builder<Wry> {
 fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
     builder
         .manage(ssh::SessionManager::new())
+        .manage(ssh::TransferManager::new())
         .manage(local_terminal::LocalTerminalManager::new())
 }
 
@@ -66,6 +67,8 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
     // 退出前给每条连接发一个正常的 disconnect，
     // 否则远端要等 TCP 超时才回收 session
     if let RunEvent::Exit = event {
+        let transfers = app.state::<ssh::TransferManager>();
+        tauri::async_runtime::block_on(transfers.cancel_all());
         let manager = app.state::<ssh::SessionManager>();
         tauri::async_runtime::block_on(manager.shutdown());
         let local_terminals = app.state::<local_terminal::LocalTerminalManager>();

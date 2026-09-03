@@ -66,6 +66,10 @@ const sessionId = toRef(props, 'sessionId')
       :connection="connection"
       :session-id="sessionId"
     />
-    <FilesView v-else :session-id="sessionId" />
+    <FilesView
+      v-else
+      :session-id="sessionId"
+      :connection-name="connection?.name"
+    />
   </section>
 </template>

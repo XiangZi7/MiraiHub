@@ -59,6 +59,15 @@ pub enum SshError {
 
     #[error("文件读写失败：{0}")]
     Io(#[from] std::io::Error),
+
+    #[error("SFTP 操作失败：{0}")]
+    Sftp(String),
+
+    #[error("远端路径已存在：{0}")]
+    RemoteFileExists(String),
+
+    #[error("传输已取消")]
+    TransferCancelled,
 }
 
 impl From<SshError> for AppError {
@@ -69,8 +78,11 @@ impl From<SshError> for AppError {
                 ErrorKind::Auth
             }
             SshError::SessionNotFound(_) | SshError::KeyNotFound(_) => ErrorKind::NotFound,
-            SshError::InvalidInput(_) | SshError::KeyExists(_) => ErrorKind::InvalidInput,
-            SshError::Io(_) | SshError::NoHomeDir => ErrorKind::Io,
+            SshError::InvalidInput(_) | SshError::KeyExists(_) | SshError::RemoteFileExists(_) => {
+                ErrorKind::InvalidInput
+            }
+            SshError::Io(_) | SshError::NoHomeDir | SshError::Sftp(_) => ErrorKind::Io,
+            SshError::TransferCancelled => ErrorKind::InvalidInput,
             SshError::Protocol(_) | SshError::Key(_) | SshError::KeyFormat(_) => {
                 ErrorKind::Internal
             }

@@ -13,6 +13,7 @@ import type {
   ConnectionGroupKind,
   ConnectionGroupView,
   ConnectionKind,
+  ConnectionTagDefinition,
   NewConnection,
   SavedConnection,
 } from '@/types/connection'
@@ -21,15 +22,17 @@ const state = reactive({
   // 全部已保存的连接
   items: [] as SavedConnection[],
   groups: [] as ConnectionGroup[],
+  tags: [] as ConnectionTagDefinition[],
   // 首次加载是否完成，避免加载途中把空列表当成"一条都没有"
   loaded: false,
 })
 
 /** 从存储层重新拉取 */
 async function refresh(): Promise<void> {
-  const [items, groups] = await Promise.all([store.list(), store.listGroups()])
+  const [items, groups, tags] = await Promise.all([store.list(), store.listGroups(), store.listTags()])
   state.items = items
   state.groups = groups
+  state.tags = tags
   state.loaded = true
 }
 
@@ -99,6 +102,7 @@ export function useConnections() {
   return {
     connections: readonly(state).items,
     groups: readonly(state).groups,
+    tags: readonly(state).tags,
     loaded: computed(() => state.loaded),
     sshConnections,
     databaseConnections,

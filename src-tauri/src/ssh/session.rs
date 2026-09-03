@@ -10,6 +10,7 @@ use base64::Engine as _;
 use russh::client::{self, Handle, Msg};
 use russh::keys::{load_secret_key, PrivateKeyWithHashAlg, PublicKey};
 use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect};
+use russh_sftp::client::SftpSession;
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 
@@ -201,6 +202,20 @@ impl SshSession {
             stderr: String::from_utf8_lossy(&stderr).into_owned(),
             exit_code,
         })
+    }
+
+    /// 为一次文件操作打开独立的 SFTP 子系统通道。
+    /// 每个传输使用独立通道，暂停大文件时不会挡住目录浏览或其他传输。
+    pub async fn open_sftp(&self) -> SshResult<SftpSession> {
+        let channel = {
+            let handle = self.handle.lock().await;
+            handle.channel_open_session().await?
+        };
+
+        channel.request_subsystem(true, "sftp").await?;
+        SftpSession::new(channel.into_stream())
+            .await
+            .map_err(|error| SshError::Sftp(error.to_string()))
     }
 
     /// 主动断开。

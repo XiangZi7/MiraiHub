@@ -13,6 +13,7 @@
 import type {
   ConnectionGroup,
   ConnectionGroupKind,
+  ConnectionTagDefinition,
   NewConnection,
   SavedConnection,
 } from '@/types/connection'
@@ -21,6 +22,7 @@ import { groupKindOf } from '@/types/connection'
 
 const STORAGE_KEY = 'miraihub.connections.v1'
 const GROUP_STORAGE_KEY = 'miraihub.connection-groups.v1'
+const TAG_STORAGE_KEY = 'miraihub.connection-tags.v1'
 
 /** 通知同一页面内的其他订阅者数据变了 */
 const CHANGE_EVENT = 'miraihub:connections-changed'
@@ -96,6 +98,68 @@ function writeGroups(groups: ConnectionGroup[]): void {
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT))
 }
 
+function readTags(): ConnectionTagDefinition[] {
+  try {
+    const raw = localStorage.getItem(TAG_STORAGE_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    const tags = Array.isArray(parsed)
+      ? parsed.filter((tag): tag is ConnectionTagDefinition => (
+          typeof tag === 'object'
+          && tag !== null
+          && typeof tag.name === 'string'
+          && isTagColor(tag.color)
+          && typeof tag.createdAt === 'number'
+        ))
+      : []
+
+    // 首次升级时把旧连接上的自由文本标签收进共享目录，已有数据无需重建。
+    const known = new Set(tags.map(tag => normalizedName(tag.name)))
+    let changed = false
+    for (const connection of readAll()) {
+      for (const name of connection.tags) {
+        const key = normalizedName(name)
+        if (!key || known.has(key))
+          continue
+        tags.push({ name: name.trim(), color: connection.tagColor, createdAt: connection.createdAt })
+        known.add(key)
+        changed = true
+      }
+    }
+
+    if (changed)
+      localStorage.setItem(TAG_STORAGE_KEY, JSON.stringify(tags))
+
+    return tags
+  }
+  catch (error) {
+    console.warn('读取共享标签失败，按空列表处理：', error)
+    return []
+  }
+}
+
+function writeTags(tags: ConnectionTagDefinition[]): void {
+  localStorage.setItem(TAG_STORAGE_KEY, JSON.stringify(tags))
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT))
+}
+
+function ensureTags(names: readonly string[], color: ConnectionTagColor): void {
+  const tags = readTags()
+  const known = new Set(tags.map(tag => normalizedName(tag.name)))
+  const additions: ConnectionTagDefinition[] = []
+
+  for (const rawName of names) {
+    const name = rawName.trim()
+    const key = normalizedName(name)
+    if (!key || known.has(key))
+      continue
+    additions.push({ name, color, createdAt: Date.now() })
+    known.add(key)
+  }
+
+  if (additions.length)
+    writeTags([...tags, ...additions])
+}
+
 function normalizedName(name: string): string {
   return name.trim().toLocaleLowerCase()
 }
@@ -165,6 +229,10 @@ export async function listGroups(): Promise<ConnectionGroup[]> {
   return groups.sort((a, b) => a.createdAt - b.createdAt)
 }
 
+export async function listTags(): Promise<ConnectionTagDefinition[]> {
+  return readTags().sort((a, b) => a.createdAt - b.createdAt)
+}
+
 /** 按 id 取单条 */
 export async function get(id: string): Promise<SavedConnection | undefined> {
   return readAll().find(item => item.id === id)
@@ -173,6 +241,7 @@ export async function get(id: string): Promise<SavedConnection | undefined> {
 /** 新增一条，返回补全了 id 与时间戳的记录 */
 export async function create(input: NewConnection): Promise<SavedConnection> {
   ensureGroup(groupKindOf(input.kind), input.group)
+  ensureTags(input.tags, input.tagColor)
 
   const connection: SavedConnection = {
     ...input,
@@ -196,6 +265,7 @@ export async function update(
     const nextKind = patch.kind ?? existing.kind
     const nextGroup = patch.group ?? existing.group
     ensureGroup(groupKindOf(nextKind), nextGroup)
+    ensureTags(patch.tags ?? existing.tags, patch.tagColor ?? existing.tagColor)
   }
 
   writeAll(
@@ -273,7 +343,7 @@ export async function removeGroup(id: string): Promise<void> {
  */
 export function subscribe(handler: () => void): () => void {
   const onStorage = (event: StorageEvent): void => {
-    if (event.key === STORAGE_KEY || event.key === GROUP_STORAGE_KEY || event.key === null)
+    if (event.key === STORAGE_KEY || event.key === GROUP_STORAGE_KEY || event.key === TAG_STORAGE_KEY || event.key === null)
       handler()
   }
 
