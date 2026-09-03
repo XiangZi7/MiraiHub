@@ -186,3 +186,13 @@ export interface SshDirectoryListing {
   path: string
   entries: SshRemoteFile[]
 }
+
+export type ShellSuggestionKind = 'command' | 'directory' | 'file'
+
+export interface ShellSuggestion {
+  /** 替换当前 token 的完整文本 */
+  value: string
+  label: string
+  kind: ShellSuggestionKind
+  description: string
+}

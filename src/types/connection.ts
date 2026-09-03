@@ -8,7 +8,37 @@
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
 
 /** 连接协议。SSH 与数据库共用一套存储，靠这个字段分流 */
-export type ConnectionKind = 'ssh' | 'mysql' | 'postgresql'
+export type ConnectionKind = 'ssh' | 'local' | 'mysql' | 'postgresql'
+
+export type ConnectionTagColor
+  = | 'red'
+    | 'orange'
+    | 'amber'
+    | 'green'
+    | 'cyan'
+    | 'blue'
+    | 'violet'
+    | 'gray'
+
+export type LocalShellKind = 'powershell' | 'cmd' | 'git-bash'
+
+/** 侧边栏分组按 SSH / 数据库两棵树隔离。 */
+export type ConnectionGroupKind = 'ssh' | 'database'
+
+/** 用户显式创建的分组；即使暂时没有连接也会保留。 */
+export interface ConnectionGroup {
+  id: string
+  name: string
+  kind: ConnectionGroupKind
+  createdAt: number
+}
+
+/** 侧边栏消费的分组视图，包含聚合后的连接。 */
+export interface ConnectionGroupView extends ConnectionGroup {
+  items: SavedConnection[]
+  /** 未分组是运行时虚拟分组，不写入存储。 */
+  virtual?: boolean
+}
 
 /** SSH 连接的专属配置 */
 export interface SshConnectionSettings {
@@ -32,6 +62,13 @@ export interface DatabaseConnectionSettings {
   ssl: boolean
 }
 
+/** 本地 PTY 终端的专属配置 */
+export interface LocalConnectionSettings {
+  shell: LocalShellKind
+  /** 空串表示继承当前用户目录 */
+  workingDirectory: string
+}
+
 /**
  * 一条已保存的连接。
  *
@@ -51,11 +88,15 @@ export interface SavedConnection {
   group: string
   /** 备注 */
   description: string
+  /** 侧栏展示的短标签，可配置多个 */
+  tags: string[]
+  /** 标签徽章与标签页下划线颜色 */
+  tagColor: ConnectionTagColor
   /** 创建时间，Unix 毫秒 */
   createdAt: number
   /** 最后一次连接时间，从未连过为 0 */
   lastUsedAt: number
-  settings: SshConnectionSettings | DatabaseConnectionSettings
+  settings: SshConnectionSettings | LocalConnectionSettings | DatabaseConnectionSettings
 }
 
 /** 保存新连接时的入参，id 与时间戳由存储层生成 */
@@ -72,7 +113,13 @@ export function isSshConnection(
 export function isDatabaseConnection(
   connection: SavedConnection,
 ): connection is SavedConnection & { settings: DatabaseConnectionSettings } {
-  return connection.kind !== 'ssh'
+  return connection.kind === 'mysql' || connection.kind === 'postgresql'
+}
+
+export function isLocalConnection(
+  connection: SavedConnection,
+): connection is SavedConnection & { settings: LocalConnectionSettings } {
+  return connection.kind === 'local'
 }
 
 /**
@@ -100,5 +147,12 @@ export function toSshConfig(connection: SavedConnection): SshConfig {
 
 /** `user@host:port`，列表与标题栏展示用 */
 export function endpointOf(connection: SavedConnection): string {
+  if (isLocalConnection(connection))
+    return connection.settings.workingDirectory || '本机'
+
   return `${connection.username}@${connection.host}:${connection.port}`
+}
+
+export function groupKindOf(kind: ConnectionKind): ConnectionGroupKind {
+  return kind === 'mysql' || kind === 'postgresql' ? 'database' : 'ssh'
 }

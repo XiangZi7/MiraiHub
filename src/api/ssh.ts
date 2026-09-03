@@ -20,6 +20,7 @@ import type {
   SshKeyInfo,
   SshOutputEvent,
   SshSessionInfo,
+  ShellSuggestion,
   SshStatusEvent,
   SshSystemStats,
 } from '@/types/ssh'
@@ -116,6 +117,16 @@ export async function resizeShell(sessionId: string, cols: number, rows: number)
 export async function exec(sessionId: string, command: string): Promise<SshCommandOutput> {
   ensureTauri()
   return invoke<SshCommandOutput>('ssh_exec', { sessionId, command })
+}
+
+/** 查询交互式 shell 当前输入行的命令与路径候选。 */
+export async function completeShell(
+  sessionId: string,
+  line: string,
+  cwd: string,
+): Promise<ShellSuggestion[]> {
+  ensureTauri()
+  return invoke<ShellSuggestion[]>('ssh_complete_shell', { sessionId, line, cwd })
 }
 
 /**

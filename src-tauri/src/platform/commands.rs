@@ -11,8 +11,12 @@ use super::window;
 /// `kind` 指定连接窗口类型（ssh / database），
 /// 为空则用前端的默认值。
 #[tauri::command]
-pub async fn open_connection_window(app: AppHandle, kind: Option<String>) -> AppResult<()> {
-    window::open_connection_window(&app, kind.as_deref())
+pub async fn open_connection_window(
+    app: AppHandle,
+    kind: Option<String>,
+    connection_id: Option<String>,
+) -> AppResult<()> {
+    window::open_connection_window(&app, kind.as_deref(), connection_id.as_deref())
 }
 
 /// 打开原生设置子窗口。

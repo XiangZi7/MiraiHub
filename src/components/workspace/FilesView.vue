@@ -9,6 +9,7 @@ import type { SshRemoteFile } from '@/types/ssh'
 import { cn } from '@/utils/cn'
 import { formatBytes } from '@/utils/format'
 import { formatDateTime } from '@/utils/time'
+import RemotePathInput from './RemotePathInput.vue'
 
 /**
  * 远端文件浏览。
@@ -27,7 +28,6 @@ const {
   loading,
   error,
   selected,
-  breadcrumbs,
   canGoBack,
   canGoForward,
   load,
@@ -76,6 +76,13 @@ const summary = computed(() => {
     <!-- 路径工具条 -->
     <div class="flex h-9 shrink-0 items-center gap-0.5 border-b border-line-soft px-2">
       <IconButton
+        icon="lucide:house"
+        :size="14"
+        title="主目录"
+        :disabled="!connected"
+        @click="load('')"
+      />
+      <IconButton
         icon="lucide:arrow-left"
         :size="14"
         title="后退"
@@ -97,33 +104,13 @@ const summary = computed(() => {
         @click="goUp"
       />
 
-      <!-- 面包屑：机器面板宽度有限，去掉目录树后它就是唯一的目录导航。
-           路径深时靠自身横向滚动，而不是把面板撑宽 -->
-      <nav class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pl-1 text-xs scroll-none">
-        <button
-          type="button"
-          class="shrink-0 rounded px-1 py-0.5 text-txt-4 transition-colors hover:bg-hover hover:text-txt"
-          title="根目录"
-          @click="load('/')"
-        >
-          /
-        </button>
-        <template v-for="(crumb, index) in breadcrumbs" :key="crumb.path">
-          <button
-            type="button"
-            :class="cn(
-              'shrink-0 rounded px-1.5 py-0.5 transition-colors',
-              index === breadcrumbs.length - 1
-                ? 'bg-raised text-txt'
-                : 'text-txt-2 hover:bg-hover hover:text-txt',
-            )"
-            @click="load(crumb.path)"
-          >
-            {{ crumb.name }}
-          </button>
-          <span v-if="index < breadcrumbs.length - 1" class="shrink-0 text-txt-4">/</span>
-        </template>
-      </nav>
+      <RemotePathInput
+        :path="path"
+        :entries="sortedEntries"
+        :connected="connected"
+        :loading="loading"
+        @navigate="load"
+      />
 
       <IconButton
         :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'"

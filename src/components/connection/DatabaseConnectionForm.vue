@@ -126,6 +126,8 @@ async function saveConnection(): Promise<void> {
       username: form.username.trim(),
       group: form.group.trim(),
       description: form.description.trim(),
+      tags: [],
+      tagColor: 'green',
       settings: {
         database: form.database.trim(),
         // 没勾"保存密码"就不写进存储，下次连接时再问

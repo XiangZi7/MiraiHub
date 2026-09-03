@@ -38,8 +38,9 @@
   /* ---------- 语义强调色 ---------- */
   --color-accent: oklch(84% 0.18 148); /* 主强调：在线绿 */
   --color-accent-deep: oklch(72% 0.19 150);
-  --color-violet: oklch(75% 0.15 295);
-  --color-indigo: oklch(70% 0.15 278);
+  /* 品牌紫使用 UI 稿里的深色区间；按钮、开关、勾选框等基础组件统一消费 */
+  --color-violet: oklch(61% 0.19 295);
+  --color-indigo: oklch(50% 0.18 278);
   --color-blue: oklch(74% 0.14 250);
   --color-cyan: oklch(80% 0.13 200);
   --color-pink: oklch(74% 0.17 350);

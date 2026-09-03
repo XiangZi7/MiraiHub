@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, toRefs, useTemplateRef, watch } from 'vue'
-import { useEventListener } from '@vueuse/core'
+import { useEventListener, useWindowSize } from '@vueuse/core'
 import type { TabItem } from '@/components/ui/TabBar.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import BrandLogo from '@/components/ui/BrandLogo.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import TabBar from '@/components/ui/TabBar.vue'
 import WindowControls from '@/components/ui/WindowControls.vue'
@@ -25,6 +26,17 @@ import SshKeysView from './SshKeysView.vue'
 import TerminalPanel from './TerminalPanel.vue'
 
 const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
+const { width: viewportWidth } = useWindowSize()
+
+const SIDEBAR_MIN_WIDTH = 184
+const SIDEBAR_MAX_WIDTH = 380
+const MACHINE_MIN_WIDTH = 384
+const MACHINE_MAX_WIDTH = 720
+const DEFAULT_SIDEBAR_WIDTH = 224
+const DEFAULT_MACHINE_WIDTH = Math.min(
+  620,
+  Math.max(MACHINE_MIN_WIDTH, (window.innerWidth - DEFAULT_SIDEBAR_WIDTH - 20) * 0.42),
+)
 
 const { connections, touch } = useConnections()
 const {
@@ -45,13 +57,38 @@ const state = reactive({
   activeNav: 'servers' as NavId,
   // 命令面板是否展开
   paletteOpen: false,
+  // 两个分隔条的实时宽度由主窗口统一保存，切换视图不会丢失
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+  sidebarCollapsed: false,
+  machineWidth: DEFAULT_MACHINE_WIDTH,
   // 是否显示右侧机器详情面板（概览 / 文件）
   machineOpen: true,
   // 机器面板当前视图，放在这里是为了让命令面板能直接切过去
   machineView: 'overview' as MachineViewId,
 })
 
-const { keyword, activeNav, paletteOpen, machineOpen, machineView } = toRefs(state)
+const {
+  keyword,
+  activeNav,
+  paletteOpen,
+  sidebarWidth,
+  sidebarCollapsed,
+  machineWidth,
+  machineOpen,
+  machineView,
+} = toRefs(state)
+
+/** 始终给终端至少留出 360px，窗口变窄时同步收紧右侧面板上限。 */
+const machineMaxWidth = computed(() => {
+  const visibleSidebarWidth = state.sidebarCollapsed ? 52 : state.sidebarWidth
+  const available = viewportWidth.value - visibleSidebarWidth - 390
+  return Math.max(MACHINE_MIN_WIDTH, Math.min(MACHINE_MAX_WIDTH, available))
+})
+
+watch(machineMaxWidth, (maxWidth) => {
+  if (state.machineWidth > maxWidth)
+    state.machineWidth = maxWidth
+}, { immediate: true })
 
 /**
  * 打开的连接 → 标签栏数据。
@@ -285,7 +322,22 @@ function runCommand(item: CommandItem): void {
 
     <!-- 主体 -->
     <div class="relative z-10 flex min-h-0 flex-1">
-      <AppSidebar :active="activeNav" @update:active="selectNav" @open="openConnection" />
+      <AppSidebar
+        :active="activeNav"
+        v-model:width="sidebarWidth"
+        v-model:collapsed="sidebarCollapsed"
+        @update:active="selectNav"
+        @open="openConnection"
+      />
+      <AppResizeHandle
+        v-if="!sidebarCollapsed"
+        v-model="sidebarWidth"
+        pane-side="left"
+        :min="SIDEBAR_MIN_WIDTH"
+        :max="SIDEBAR_MAX_WIDTH"
+        label="调整主侧栏宽度"
+        overlay
+      />
 
       <div class="flex min-w-0 flex-1 flex-col">
         <!-- 连接标签栏 -->
@@ -311,31 +363,43 @@ function runCommand(item: CommandItem): void {
         </div>
 
         <!-- 主视图：跟随侧栏切换。各视图自带 .pane，浮在窗口底色上 -->
-        <div class="flex min-h-0 flex-1 gap-2.5 p-2.5">
-          <!-- SSH 标签保持挂载，只隐藏非活动项；关闭标签时才真正卸载并断开 -->
-          <TerminalPanel
-            v-for="tab in sshTabViews"
-            v-show="activeNav === 'servers' && activeId === tab.id"
-            :key="tab.id"
-            :config="tab.config"
-            :title="tab.title"
-            :terminal-type="tab.terminalType"
-            :startup-command="tab.startupCommand"
-            @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"
-          />
+        <div class="flex min-h-0 flex-1 p-2.5">
+          <template v-if="activeNav === 'servers'">
+            <!-- SSH 标签保持挂载，只隐藏非活动项；关闭标签时才真正卸载并断开 -->
+            <TerminalPanel
+              v-for="tab in sshTabViews"
+              v-show="activeId === tab.id"
+              :key="tab.id"
+              :config="tab.config"
+              :title="tab.title"
+              :terminal-type="tab.terminalType"
+              :startup-command="tab.startupCommand"
+              @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"
+            />
 
-          <TerminalPanel
-            v-if="activeNav === 'servers' && !activeSshTab"
-            key="empty-terminal"
-          />
+            <TerminalPanel
+              v-if="!activeSshTab"
+              key="empty-terminal"
+            />
 
-          <MachinePanel
-            v-if="activeNav === 'servers' && machineOpen"
-            v-model:view="machineView"
-            :connection="activeSshTab?.connection"
-            :session-id="activeSshTab?.sessionId ?? ''"
-            @close="machineOpen = false"
-          />
+            <AppResizeHandle
+              v-if="machineOpen"
+              v-model="machineWidth"
+              pane-side="right"
+              :min="MACHINE_MIN_WIDTH"
+              :max="machineMaxWidth"
+              label="调整机器面板宽度"
+            />
+
+            <MachinePanel
+              v-if="machineOpen"
+              v-model:view="machineView"
+              :connection="activeSshTab?.connection"
+              :session-id="activeSshTab?.sessionId ?? ''"
+              :width="machineWidth"
+              @close="machineOpen = false"
+            />
+          </template>
 
           <DatabaseView
             v-else-if="activeNav === 'databases'"

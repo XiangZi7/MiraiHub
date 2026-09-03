@@ -15,6 +15,7 @@ use super::models::{
 };
 use super::stats::SystemStats;
 use super::{events, files, keys, stats};
+use super::completion::{self, ShellSuggestion};
 
 /// 建立连接，返回会话 id。
 #[tauri::command]
@@ -91,6 +92,18 @@ pub async fn ssh_exec(
 ) -> AppResult<CommandOutput> {
     let session = manager.get(&session_id).await?;
     Ok(session.exec(&command).await?)
+}
+
+/// 根据当前输入行返回命令与远端路径候选。
+#[tauri::command]
+pub async fn ssh_complete_shell(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    line: String,
+    cwd: String,
+) -> AppResult<Vec<ShellSuggestion>> {
+    let session = manager.get(&session_id).await?;
+    Ok(completion::suggestions(&session, &line, &cwd).await?)
 }
 
 /// 采集远端系统指标。

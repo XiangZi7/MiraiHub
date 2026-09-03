@@ -51,7 +51,11 @@ pub fn enable_window_shadow(_window: &WebviewWindow) {}
 /// 同一时间只保留一个实例，重复触发把已有窗口带到前台。
 ///
 /// `kind` 决定打开 SSH 配置还是数据库配置，作为 query 参数传给前端。
-pub fn open_connection_window(app: &AppHandle, kind: Option<&str>) -> AppResult<()> {
+pub fn open_connection_window(
+    app: &AppHandle,
+    kind: Option<&str>,
+    connection_id: Option<&str>,
+) -> AppResult<()> {
     if let Some(dialog) = app.get_webview_window(CONNECTION_WINDOW) {
         dialog.show().map_err(to_app_error)?;
         dialog.set_focus().map_err(to_app_error)?;
@@ -67,11 +71,19 @@ pub fn open_connection_window(app: &AppHandle, kind: Option<&str>) -> AppResult<
 
     // kind 只允许两个固定值：它会拼进 URL，不校验的话
     // 前端传来的任意字符串都能注入 query 参数
-    let url = match kind {
-        Some(kind @ ("ssh" | "database")) => {
-            format!("index.html?window=connection&type={kind}")
-        }
-        _ => "index.html?window=connection".to_owned(),
+    let kind = match kind {
+        Some(kind @ ("ssh" | "database")) => kind,
+        _ => "ssh",
+    };
+    let safe_connection_id = connection_id.filter(|id| {
+        !id.is_empty()
+            && id.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+            })
+    });
+    let url = match safe_connection_id {
+        Some(id) => format!("index.html?window=connection&type={kind}&connectionId={id}"),
+        None => format!("index.html?window=connection&type={kind}"),
     };
 
     let mut builder =

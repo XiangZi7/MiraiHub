@@ -4,20 +4,31 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
+import * as connectionsStore from '@/api/connections'
 import * as privateKeysStore from '@/api/private-keys'
 import * as ssh from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
 import { usePrivateKeys } from '@/composables/usePrivateKeys'
+import type { NewConnection } from '@/types/connection'
+import { isSshConnection } from '@/types/connection'
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
+import ConnectionTagEditor from './ConnectionTagEditor.vue'
 import PrivateKeySelector from './PrivateKeySelector.vue'
+import StartupCommandPresetField from './StartupCommandPresetField.vue'
 
 type SectionId = 'general' | 'advanced' | 'ssh-key' | 'proxy'
+
+const props = withDefaults(defineProps<{
+  connectionId?: string
+}>(), {
+  connectionId: '',
+})
 
 const emit = defineEmits<{
   close: []
 }>()
 
-const { create } = useConnections()
+const { create, update } = useConnections()
 const {
   keys: privateKeys,
   defaultPath: defaultPrivateKey,
@@ -61,6 +72,7 @@ const testing = shallowRef(false)
 // 保存中，避免重复提交存出两条一样的连接
 const saving = shallowRef(false)
 const browsingPrivateKeys = shallowRef(false)
+const loadingConnection = shallowRef(Boolean(props.connectionId))
 const savePassword = shallowRef(false)
 const form = reactive({
   name: '',
@@ -68,6 +80,8 @@ const form = reactive({
   host: '',
   port: '22',
   username: '',
+  tags: '',
+  tagColor: 'green' as const,
   authentication: 'private-key',
   password: '',
   description: '',
@@ -93,10 +107,53 @@ watch(defaultPrivateKey, (path) => {
 })
 
 onMounted(async () => {
-  await refreshLocalKeys()
+  await Promise.all([
+    refreshLocalKeys(),
+    loadConnection(),
+  ])
   if (!form.privateKey.trim())
     form.privateKey = defaultPrivateKey.value
 })
+
+async function loadConnection(): Promise<void> {
+  if (!props.connectionId)
+    return
+
+  try {
+    const connection = await connectionsStore.get(props.connectionId)
+    if (!connection || !isSshConnection(connection)) {
+      setFeedback('找不到要编辑的 SSH 连接', 'error')
+      return
+    }
+
+    const settings = connection.settings
+    Object.assign(form, {
+      name: connection.name,
+      group: connection.group,
+      host: connection.host,
+      port: String(connection.port),
+      username: connection.username,
+      tags: connection.tags.join(', '),
+      tagColor: connection.tagColor,
+      description: connection.description,
+      timeout: String(settings.timeoutSecs),
+      keepAlive: String(settings.keepaliveSecs),
+      terminalType: settings.terminalType,
+      startupCommand: settings.startupCommand,
+      authentication: settings.auth.type === 'privateKey' ? 'private-key' : settings.auth.type,
+      password: settings.auth.type === 'password' ? settings.auth.password : '',
+      privateKey: settings.auth.type === 'privateKey' ? settings.auth.path : defaultPrivateKey.value,
+      passphrase: settings.auth.type === 'privateKey' ? settings.auth.passphrase ?? '' : '',
+    })
+    savePassword.value = settings.auth.type === 'password' && Boolean(settings.auth.password)
+  }
+  catch (error) {
+    setFeedback(`读取连接失败：${ssh.errorMessage(error)}`, 'error')
+  }
+  finally {
+    loadingConnection.value = false
+  }
+}
 
 const isReady = computed<boolean>(() => (
   form.name.trim().length > 0
@@ -110,6 +167,13 @@ function numericSettings(): { port: number, timeoutSecs: number, keepaliveSecs: 
     timeoutSecs: Number(form.timeout),
     keepaliveSecs: Number(form.keepAlive),
   }
+}
+
+function normalizedTags(): string[] {
+  return [...new Set(form.tags
+    .split(/[,，]/)
+    .map(tag => tag.trim())
+    .filter(Boolean))]
 }
 
 /**
@@ -271,7 +335,7 @@ async function saveConnection(): Promise<void> {
 
     const { port, timeoutSecs, keepaliveSecs } = numericSettings()
 
-    await create({
+    const input: NewConnection = {
       name: form.name.trim(),
       kind: 'ssh',
       host: form.host.trim(),
@@ -279,6 +343,8 @@ async function saveConnection(): Promise<void> {
       username: form.username.trim(),
       group: form.group.trim(),
       description: form.description.trim(),
+      tags: normalizedTags(),
+      tagColor: form.tagColor,
       settings: {
         auth: buildAuth(savePassword.value),
         timeoutSecs,
@@ -286,7 +352,12 @@ async function saveConnection(): Promise<void> {
         terminalType: form.terminalType,
         startupCommand: form.startupCommand.trim(),
       },
-    })
+    }
+
+    if (props.connectionId)
+      await update(props.connectionId, input)
+    else
+      await create(input)
 
     emit('close')
   }
@@ -357,6 +428,8 @@ async function saveConnection(): Promise<void> {
           required
         />
 
+        <ConnectionTagEditor v-model="form.tags" v-model:color="form.tagColor" />
+
         <AppSelect
           v-model="form.authentication"
           label="Authentication Method"
@@ -408,11 +481,7 @@ async function saveConnection(): Promise<void> {
           <AppTextField v-model="form.keepAlive" label="Keep Alive (s)" inputmode="numeric" />
         </div>
         <AppSelect v-model="form.terminalType" label="Terminal Type" :options="terminalOptions" />
-        <AppTextField
-          v-model="form.startupCommand"
-          label="Startup Command"
-          placeholder="e.g. tmux attach || tmux"
-        />
+        <StartupCommandPresetField v-model="form.startupCommand" />
       </div>
 
       <div v-else-if="activeSection === 'ssh-key'" class="grid gap-3.5">
@@ -467,8 +536,8 @@ async function saveConnection(): Promise<void> {
       <AppButton @click="emit('close')">
         Cancel
       </AppButton>
-      <AppButton type="submit" variant="primary" :disabled="saving">
-        {{ saving ? 'Saving…' : 'Save' }}
+      <AppButton type="submit" variant="primary" :disabled="saving || loadingConnection">
+        {{ saving ? 'Saving…' : props.connectionId ? 'Update' : 'Save' }}
       </AppButton>
     </footer>
   </form>

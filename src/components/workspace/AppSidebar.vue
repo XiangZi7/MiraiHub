@@ -1,32 +1,43 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, reactive, toRaw } from 'vue'
+import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
-import StatusDot from '@/components/ui/StatusDot.vue'
 import { useConnections } from '@/composables/useConnections'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { NAV_ITEMS } from '@/constants/workspace'
-import type { SavedConnection } from '@/types/connection'
+import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
 import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
-import { endpointOf } from '@/types/connection'
 import { openConnectionWindow, openSettingsWindow } from '@/utils/window'
+import SidebarProjects from './SidebarProjects.vue'
 
 // 当前选中的主视图，由 MainWindow 通过 v-model:active 控制
 const active = defineModel<NavId>('active', { required: true })
+const width = defineModel<number>('width', { required: true })
+const collapsed = defineModel<boolean>('collapsed', { default: false })
 
 const emit = defineEmits<{
   /** 请求打开某条连接 */
   open: [connection: SavedConnection]
 }>()
 
-const { groupsFor, loaded } = useConnections()
+const {
+  groupsFor,
+  loaded,
+  create: createConnection,
+  update: updateConnection,
+  remove: removeConnection,
+  createGroup,
+  renameGroup,
+  removeGroup,
+} = useConnections()
 const { tabs, activeId } = useWorkspaceTabs()
 
 // 响应式状态
 const state = reactive({
-  // 分组折叠状态，key 为分组名。默认展开，只记录被手动折叠的
-  collapsed: {} as Record<string, boolean>,
+  pendingConnection: null as SavedConnection | null,
+  pendingGroup: null as ConnectionGroupView | null,
 })
 
 /**
@@ -46,46 +57,93 @@ const groupsLabel = computed(() =>
   active.value === 'databases' ? 'Databases' : 'Projects',
 )
 
+const currentGroupKind = computed(() =>
+  active.value === 'databases' ? 'database' as const : 'ssh' as const,
+)
+
 /** 已打开且连上的连接 id，用来给节点点亮绿点 */
 const connectedIds = computed(
   () => new Set(tabs.filter(tab => tab.status === 'connected').map(tab => tab.id)),
 )
 
-function toggleGroup(name: string): void {
-  state.collapsed[name] = !state.collapsed[name]
-}
-
-function isExpanded(name: string): boolean {
-  return !state.collapsed[name]
-}
-
-/** 节点状态：连上是 accent，仅打开未连上是 amber，其余灰 */
-function toneOf(connection: SavedConnection): 'accent' | 'amber' | 'txt-3' {
-  if (connectedIds.value.has(connection.id))
-    return 'accent'
-
-  return tabs.some(tab => tab.id === connection.id) ? 'amber' : 'txt-3'
-}
+const openIds = computed(() => new Set(tabs.map(tab => tab.id)))
 
 /** 新建连接时带上当前视图对应的类型，省一次手动切换 */
 function addConnection(): void {
   openConnectionWindow(active.value === 'databases' ? 'database' : 'ssh')
 }
+
+function editConnection(connection: SavedConnection): void {
+  openConnectionWindow('ssh', connection.id)
+}
+
+async function moveConnection(connectionId: string, groupName: string): Promise<void> {
+  await updateConnection(connectionId, { group: groupName })
+}
+
+async function duplicateConnection(connection: SavedConnection): Promise<void> {
+  await createConnection({
+    name: `${connection.name} Copy`,
+    kind: connection.kind,
+    host: connection.host,
+    port: connection.port,
+    username: connection.username,
+    group: connection.group,
+    description: connection.description,
+    settings: structuredClone(toRaw(connection.settings)),
+  })
+}
+
+function requestRemoveConnection(connection: SavedConnection): void {
+  state.pendingConnection = connection
+  state.pendingGroup = null
+}
+
+function requestRemoveGroup(group: ConnectionGroupView): void {
+  state.pendingConnection = null
+  state.pendingGroup = group
+}
+
+function closeConfirmation(): void {
+  state.pendingConnection = null
+  state.pendingGroup = null
+}
+
+async function confirmRemoval(): Promise<void> {
+  const connection = state.pendingConnection
+  const group = state.pendingGroup
+  closeConfirmation()
+
+  if (connection)
+    await removeConnection(connection.id)
+  else if (group)
+    await removeGroup(group.id)
+}
 </script>
 
 <template>
-  <aside class="flex w-56 shrink-0 flex-col border-r border-line-soft bg-panel">
+  <aside
+    class="app-sidebar"
+    :style="{ width: collapsed ? '3.25rem' : `${width}px` }"
+    aria-label="主侧边栏"
+  >
     <!-- 顶部工具条 -->
-    <div class="flex h-11 shrink-0 items-center gap-1 border-b border-line-soft px-2.5">
-      <IconButton icon="lucide:panel-left" title="折叠侧栏" />
-      <IconButton icon="lucide:layout-grid" title="布局" />
-      <div class="flex-1" />
-      <IconButton icon="lucide:chevrons-left" title="收起" />
+    <div :class="['flex h-11 shrink-0 items-center gap-1 border-b border-line-soft', collapsed ? 'justify-center px-1.5' : 'px-2.5']">
+      <template v-if="!collapsed">
+        <IconButton icon="lucide:panel-left" title="侧边栏" @click="collapsed = true" />
+        <IconButton icon="lucide:layout-grid" title="布局" />
+        <div class="flex-1" />
+      </template>
+      <IconButton
+        :icon="collapsed ? 'lucide:chevrons-right' : 'lucide:chevrons-left'"
+        :title="collapsed ? '展开侧栏' : '折叠侧栏'"
+        @click="collapsed = !collapsed"
+      />
     </div>
 
-    <div class="flex-1 overflow-y-auto px-2 py-3 scroll-thin">
+    <div :class="['flex-1 overflow-y-auto py-3 scroll-thin', collapsed ? 'px-1.5' : 'px-2']">
       <!-- 工作区 -->
-      <p class="group-label mb-1.5">
+      <p v-if="!collapsed" class="group-label mb-1.5">
         Workspace
       </p>
       <nav class="space-y-0.5">
@@ -93,76 +151,69 @@ function addConnection(): void {
           v-for="item in NAV_ITEMS"
           :key="item.id"
           type="button"
-          :class="cn('nav-item w-full', active === item.id && 'nav-item-active')"
+          :class="cn('nav-item w-full', collapsed && 'justify-center px-0', active === item.id && 'nav-item-active')"
+          :title="collapsed ? item.label : undefined"
           @click="active = item.id"
         >
           <AppIcon :name="item.icon" :size="15" class="text-txt-3" />
-          <span>{{ item.label }}</span>
+          <span v-if="!collapsed">{{ item.label }}</span>
         </button>
       </nav>
 
-      <!-- 连接树 -->
-      <div class="mb-1.5 mt-5 flex items-center justify-between pr-1">
-        <p class="group-label">
-          {{ groupsLabel }}
-        </p>
-        <IconButton icon="lucide:plus" :size="13" title="新建连接" @click="addConnection" />
-      </div>
-
-      <div class="space-y-0.5">
-        <div v-for="group in projectGroups" :key="group.name">
-          <button
-            type="button"
-            class="nav-item w-full"
-            @click="toggleGroup(group.name)"
-          >
-            <AppIcon
-              name="lucide:chevron-right"
-              :size="13"
-              :class="cn('text-txt-4 transition-transform duration-150', isExpanded(group.name) && 'rotate-90')"
-            />
-            <span class="flex-1 truncate text-left">{{ group.name }}</span>
-            <span class="shrink-0 text-[10px] text-txt-4">{{ group.items.length }}</span>
-          </button>
-
-          <div v-show="isExpanded(group.name)" class="space-y-0.5">
-            <button
-              v-for="node in group.items"
-              :key="node.id"
-              type="button"
-              :class="cn('nav-item w-full pl-7', activeId === node.id && 'nav-item-active')"
-              :title="endpointOf(node)"
-              @click="emit('open', node)"
-            >
-              <StatusDot
-                :tone="toneOf(node)"
-                :size="6"
-                :glow="toneOf(node) !== 'txt-3'"
-              />
-              <span class="flex-1 truncate text-left">{{ node.name }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 一条连接都没有：直接给出口，而不是留一片空白 -->
-        <button
-          v-if="loaded && !projectGroups.length"
-          type="button"
-          class="w-full rounded-lg border border-dashed border-line px-3 py-4 text-center text-[11px] text-txt-4 transition-colors hover:border-line-strong hover:text-txt-3"
-          @click="addConnection"
-        >
-          还没有连接，点这里新建
-        </button>
-      </div>
+      <SidebarProjects
+        v-if="!collapsed"
+        :label="groupsLabel"
+        :groups="projectGroups"
+        :loaded="loaded"
+        :active-id="activeId"
+        :connected-ids="connectedIds"
+        :open-ids="openIds"
+        @open="emit('open', $event)"
+        @add-connection="addConnection"
+        @create-group="createGroup(currentGroupKind, $event)"
+        @rename-group="renameGroup"
+        @remove-group="requestRemoveGroup"
+        @move="moveConnection"
+        @edit="editConnection"
+        @duplicate="duplicateConnection"
+        @remove="requestRemoveConnection"
+      />
     </div>
 
     <!-- 底部操作 -->
-    <div class="flex shrink-0 items-center gap-2 border-t border-line-soft p-2.5">
-      <button type="button" class="btn flex-1" @click="addConnection">
+    <div :class="['flex shrink-0 items-center gap-2 border-t border-line-soft', collapsed ? 'flex-col p-1.5' : 'p-2.5']">
+      <button
+        type="button"
+        :class="['btn', collapsed ? 'size-7 px-0' : 'flex-1']"
+        :title="collapsed ? 'Add Connection' : undefined"
+        @click="addConnection"
+      >
         <AppIcon name="lucide:plus" :size="14" />
-        <span>Add Connection</span>
+        <span v-if="!collapsed">Add Connection</span>
       </button>
       <IconButton icon="lucide:settings" title="设置" @click="openSettingsWindow" />
     </div>
   </aside>
+
+  <AppConfirmDialog
+    :open="Boolean(state.pendingConnection || state.pendingGroup)"
+    :title="state.pendingConnection ? '删除 SSH 连接' : '删除分组'"
+    :description="state.pendingConnection
+      ? `确定删除“${state.pendingConnection.name}”吗？此操作不会删除服务器上的任何数据。`
+      : `确定删除“${state.pendingGroup?.name ?? ''}”吗？其中的连接会移到 Ungrouped。`"
+    confirm-label="删除"
+    danger
+    @close="closeConfirmation"
+    @confirm="confirmRemoval"
+  />
 </template>
+
+<style scoped>
+.app-sidebar {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--color-line-soft);
+  background: var(--color-panel);
+}
+</style>

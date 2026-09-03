@@ -62,6 +62,17 @@ const endpoint = computed(() => {
 })
 
 /**
+ * 连接提示是瞬时界面状态，不写入 xterm 缓冲区。
+ * 这样连接完成后提示会真正移除，重连也不会把它夹在远端输出中间。
+ */
+const connectingText = computed(() => {
+  if (!props.config)
+    return ''
+
+  return `正在连接 ${props.config.username}@${props.config.host}:${props.config.port} …`
+})
+
+/**
  * 挂载并连接。
  * 容器要等 v-if 渲染出来才有尺寸，所以由 watch 在 config 就位后触发，
  * 而不是在 onMounted 里抢跑 —— 那时容器高度还是 0，fit 会算出 1 行。
@@ -134,6 +145,14 @@ async function reconnect(): Promise<void> {
     <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染 -->
     <div v-if="config" class="relative min-h-0 flex-1">
       <div ref="terminal" class="absolute inset-0 p-2" />
+      <p
+        v-if="status === 'connecting'"
+        class="pointer-events-none absolute top-2 left-2 z-10 font-mono text-xs leading-[1.4] text-txt-3"
+        role="status"
+        aria-live="polite"
+      >
+        {{ connectingText }}
+      </p>
     </div>
 
     <!-- 还没选服务器 -->

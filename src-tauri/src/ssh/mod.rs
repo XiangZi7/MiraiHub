@@ -15,6 +15,7 @@
 //! 后续的数据库模块按同样的分层放在 `crate::db`，两边互不引用。
 
 pub mod commands;
+pub mod completion;
 pub mod error;
 pub mod events;
 pub mod files;

@@ -8,18 +8,28 @@
 
 import { computed, reactive, readonly } from 'vue'
 import * as store from '@/api/connections'
-import type { ConnectionKind, NewConnection, SavedConnection } from '@/types/connection'
+import type {
+  ConnectionGroup,
+  ConnectionGroupKind,
+  ConnectionGroupView,
+  ConnectionKind,
+  NewConnection,
+  SavedConnection,
+} from '@/types/connection'
 
 const state = reactive({
   // 全部已保存的连接
   items: [] as SavedConnection[],
+  groups: [] as ConnectionGroup[],
   // 首次加载是否完成，避免加载途中把空列表当成"一条都没有"
   loaded: false,
 })
 
 /** 从存储层重新拉取 */
 async function refresh(): Promise<void> {
-  state.items = await store.list()
+  const [items, groups] = await Promise.all([store.list(), store.listGroups()])
+  state.items = items
+  state.groups = groups
   state.loaded = true
 }
 
@@ -44,22 +54,38 @@ const databaseConnections = computed(() =>
  *
  * 未分组的连接归到"Ungrouped"而不是丢掉 —— 新建时不填分组是常态。
  */
-function groupBy(connections: SavedConnection[]): { name: string, items: SavedConnection[] }[] {
-  const groups = new Map<string, SavedConnection[]>()
+function groupBy(
+  connections: SavedConnection[],
+  declaredGroups: ConnectionGroup[],
+  kind: ConnectionGroupKind,
+): ConnectionGroupView[] {
+  const groups = new Map<string, ConnectionGroupView>()
+
+  for (const group of declaredGroups.filter(group => group.kind === kind)) {
+    groups.set(group.name.trim().toLocaleLowerCase(), { ...group, items: [] })
+  }
 
   for (const item of connections) {
     const name = item.group.trim() || 'Ungrouped'
-    const bucket = groups.get(name)
+    const key = name.toLocaleLowerCase()
+    const bucket = groups.get(key)
 
     if (bucket)
-      bucket.push(item)
-    else
-      groups.set(name, [item])
+      bucket.items.push(item)
+    else {
+      groups.set(key, {
+        id: name === 'Ungrouped' ? `ungrouped-${kind}` : `implicit-${kind}-${key}`,
+        name,
+        kind,
+        createdAt: item.createdAt,
+        items: [item],
+        virtual: true,
+      })
+    }
   }
 
   // 名称排序，但 Ungrouped 永远垫底 —— 它是兜底桶，不该抢占视线
-  return [...groups.entries()]
-    .map(([name, items]) => ({ name, items }))
+  return [...groups.values()]
     .sort((a, b) => {
       if (a.name === 'Ungrouped')
         return 1
@@ -72,13 +98,20 @@ function groupBy(connections: SavedConnection[]): { name: string, items: SavedCo
 export function useConnections() {
   return {
     connections: readonly(state).items,
+    groups: readonly(state).groups,
     loaded: computed(() => state.loaded),
     sshConnections,
     databaseConnections,
 
     /** 按 kind 取出对应的分组树 */
-    groupsFor: (kind: ConnectionKind | 'database') =>
-      groupBy(kind === 'database' ? databaseConnections.value : sshConnections.value),
+    groupsFor: (kind: ConnectionKind | 'database') => {
+      const groupKind = kind === 'database' ? 'database' : 'ssh'
+      return groupBy(
+        groupKind === 'database' ? databaseConnections.value : sshConnections.value,
+        state.groups,
+        groupKind,
+      )
+    },
 
     find: (id: string) => state.items.find(item => item.id === id),
 
@@ -97,6 +130,21 @@ export function useConnections() {
 
     async remove(id: string): Promise<void> {
       await store.remove(id)
+      await refresh()
+    },
+
+    async createGroup(kind: ConnectionGroupKind, name: string): Promise<void> {
+      await store.createGroup(kind, name)
+      await refresh()
+    },
+
+    async renameGroup(id: string, name: string): Promise<void> {
+      await store.renameGroup(id, name)
+      await refresh()
+    },
+
+    async removeGroup(id: string): Promise<void> {
+      await store.removeGroup(id)
       await refresh()
     },
 

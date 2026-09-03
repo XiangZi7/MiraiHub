@@ -20,6 +20,8 @@ const props = defineProps<{
   connection?: SavedConnection
   /** 后端 SSH 会话 id，未连上时为空串 */
   sessionId: string
+  /** 由主窗口统一管理的面板宽度 */
+  width: number
 }>()
 
 // 当前视图由 MainWindow 持有：命令面板的 Open Files 需要越过本组件直接切到 Files
@@ -35,7 +37,7 @@ const sessionId = toRef(props, 'sessionId')
 </script>
 
 <template>
-  <section class="pane w-[42%] min-w-96 max-w-155 shrink-0">
+  <section class="pane min-w-0 shrink-0" :style="{ width: `${props.width}px` }">
     <!-- 视图切换 -->
     <header class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft px-2">
       <button

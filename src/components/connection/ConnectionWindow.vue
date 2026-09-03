@@ -8,10 +8,14 @@ import { closeWindow, IS_TAURI } from '@/utils/window'
 import DatabaseConnectionForm from './DatabaseConnectionForm.vue'
 import SshConnectionForm from './SshConnectionForm.vue'
 
-const requestedKind = new URLSearchParams(window.location.search).get('type')
+const searchParams = new URLSearchParams(window.location.search)
+const requestedKind = searchParams.get('type')
+const connectionId = searchParams.get('connectionId') ?? ''
 const isDatabase = requestedKind === 'database'
 const databaseKind = shallowRef<'mysql' | 'postgresql'>('mysql')
-const title = isDatabase ? 'Add Database Connection' : 'Add SSH Connection'
+const title = connectionId
+  ? 'Edit SSH Connection'
+  : isDatabase ? 'Add Database Connection' : 'Add SSH Connection'
 
 function closeDialog(): void {
   if (IS_TAURI) {
@@ -40,7 +44,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </header>
 
     <main class="relative z-10 flex min-h-0 flex-1 flex-col">
-      <SshConnectionForm v-if="!isDatabase" @close="closeDialog" />
+      <SshConnectionForm v-if="!isDatabase" :connection-id="connectionId" @close="closeDialog" />
       <DatabaseConnectionForm
         v-else
         v-model:kind="databaseKind"

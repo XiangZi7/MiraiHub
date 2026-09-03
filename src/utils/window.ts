@@ -40,8 +40,9 @@ export function closeWindow(): void {
  *
  * 浏览器开发态用 popup 降级，方便不启动 Tauri 也能检查表单 UI。
  */
-export function openConnectionWindow(kind: 'ssh' | 'database'): void {
-  const query = `&type=${kind}`
+export function openConnectionWindow(kind: 'ssh' | 'database', connectionId?: string): void {
+  const editQuery = connectionId ? `&connectionId=${encodeURIComponent(connectionId)}` : ''
+  const query = `&type=${kind}${editQuery}`
 
   if (!IS_TAURI) {
     window.open(
@@ -52,7 +53,7 @@ export function openConnectionWindow(kind: 'ssh' | 'database'): void {
     return
   }
 
-  void invoke('open_connection_window', { kind }).catch((error: unknown) => {
+  void invoke('open_connection_window', { kind, connectionId }).catch((error: unknown) => {
     console.error('Failed to open connection window:', error)
   })
 }

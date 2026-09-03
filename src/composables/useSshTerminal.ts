@@ -96,7 +96,6 @@ export function useSshTerminal() {
     const currentOperation = ++operation
     state.status = 'connecting'
     state.error = ''
-    terminal.writeln(`\x1b[90m正在连接 ${config.username}@${config.host}:${config.port} …\x1b[0m`)
 
     let id = ''
 
