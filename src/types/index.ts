@@ -23,38 +23,6 @@ export interface QuickAction {
   tone: string
 }
 
-/** 数据库对象树节点 */
-export interface DbNode {
-  id: string
-  label: string
-  icon: string
-  depth: number
-  expanded?: boolean
-  leaf?: boolean
-  active?: boolean
-}
-
-/** SQL 结果集行 */
-export interface QueryRow {
-  id: number
-  username: string
-  email: string
-  createdAt: string
-}
-
-/** SQL 代码高亮片段 */
-export interface CodeToken {
-  text: string
-  /** 语法类别 */
-  kind?: 'keyword' | 'func' | 'num' | 'plain'
-}
-
-/** SQL 编辑器行 */
-export interface CodeLine {
-  no: number
-  tokens: CodeToken[]
-}
-
 /** 命令面板条目 */
 export interface CommandItem {
   id: string

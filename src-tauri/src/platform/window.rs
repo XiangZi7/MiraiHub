@@ -96,7 +96,10 @@ pub fn open_connection_window(
             .minimizable(false)
             .maximizable(false)
             .decorations(false)
-            .transparent(true)
+            // 固定尺寸对话框使用前端静态渐变背景，不启用 Acrylic/Mica。
+            // 不透明窗口不需要桌面实时采样，拖动和表单输入时更省 GPU。
+            .transparent(false)
+            .background_color(tauri::webview::Color(18, 18, 27, 255))
             // 与主窗口一致：关闭 Tauri 自带阴影，构建后统一交给
             // enable_window_shadow() 用 DWM 绘制，避免无边框窗口出现亮色描边。
             .shadow(false)
@@ -105,18 +108,6 @@ pub fn open_connection_window(
 
     if let Some(parent) = main.as_ref() {
         builder = builder.parent(parent).map_err(to_app_error)?;
-    }
-
-    #[cfg(windows)]
-    {
-        use tauri::window::{Effect, EffectState, EffectsBuilder};
-
-        builder = builder.effects(
-            EffectsBuilder::new()
-                .effect(Effect::MicaDark)
-                .state(EffectState::Active)
-                .build(),
-        );
     }
 
     let dialog = builder.build().map_err(to_app_error)?;
@@ -174,25 +165,15 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
     .minimizable(false)
     .maximizable(false)
     .decorations(false)
-    .transparent(true)
+    // 设置窗口与连接窗口使用同一套低开销静态背景。
+    .transparent(false)
+    .background_color(tauri::webview::Color(18, 18, 27, 255))
     .shadow(false)
     .skip_taskbar(true)
     .center();
 
     if let Some(parent) = main.as_ref() {
         builder = builder.parent(parent).map_err(to_app_error)?;
-    }
-
-    #[cfg(windows)]
-    {
-        use tauri::window::{Effect, EffectState, EffectsBuilder};
-
-        builder = builder.effects(
-            EffectsBuilder::new()
-                .effect(Effect::MicaDark)
-                .state(EffectState::Active)
-                .build(),
-        );
     }
 
     let dialog = builder.build().map_err(to_app_error)?;

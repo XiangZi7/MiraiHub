@@ -163,6 +163,14 @@ const activeDatabaseConnection = computed(() => {
   return connection && isDatabaseConnection(connection) ? connection : undefined
 })
 
+/** 数据库标签独立挂载，使每条连接的连接池、SQL 草稿与结果互不覆盖。 */
+const databaseTabViews = computed(() =>
+  openTabs.flatMap((tab) => {
+    const connection = tab.connection
+    return isDatabaseConnection(connection) ? [{ id: tab.id, connection }] : []
+  }),
+)
+
 /**
  * 连接被删除时关掉对应标签。
  *
@@ -437,10 +445,16 @@ function runCommand(item: CommandItem): void {
             />
           </template>
 
-          <DatabaseView
-            v-else-if="activeNav === 'databases'"
-            :connection="activeDatabaseConnection"
-          />
+          <template v-else-if="activeNav === 'databases'">
+            <DatabaseView
+              v-for="tab in databaseTabViews"
+              v-show="activeId === tab.id"
+              :key="tab.id"
+              :connection="tab.connection"
+              @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"
+            />
+            <DatabaseView v-if="!activeDatabaseConnection" />
+          </template>
 
           <SshKeysView v-else-if="activeNav === 'ssh-keys'" />
 

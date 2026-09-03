@@ -14,8 +14,7 @@ use uuid::Uuid;
 use super::error::{DatabaseError, DatabaseResult};
 use super::manager::DatabasePool;
 use super::models::{
-    DatabaseColumn, DatabaseObject, DatabaseObjectKind, DatabaseQueryColumn,
-    DatabaseQueryResult,
+    DatabaseColumn, DatabaseObject, DatabaseObjectKind, DatabaseQueryColumn, DatabaseQueryResult,
 };
 
 const MAX_RESULT_ROWS: usize = 1_000;
@@ -33,6 +32,10 @@ async fn list_mysql_objects(pool: &MySqlPool) -> DatabaseResult<Vec<DatabaseObje
         SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
         FROM information_schema.tables
         WHERE TABLE_SCHEMA = DATABASE()
+           OR (
+             DATABASE() IS NULL
+             AND TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+           )
         ORDER BY TABLE_SCHEMA, TABLE_TYPE, TABLE_NAME
         "#,
     )
@@ -129,7 +132,9 @@ async fn describe_mysql_object(
                 name: row.try_get("COLUMN_NAME").map_err(DatabaseError::Query)?,
                 data_type: row.try_get("COLUMN_TYPE").map_err(DatabaseError::Query)?,
                 nullable: nullable.eq_ignore_ascii_case("YES"),
-                default_value: row.try_get("COLUMN_DEFAULT").map_err(DatabaseError::Query)?,
+                default_value: row
+                    .try_get("COLUMN_DEFAULT")
+                    .map_err(DatabaseError::Query)?,
                 ordinal: row
                     .try_get::<u32, _>("ORDINAL_POSITION")
                     .map_err(DatabaseError::Query)? as i32,
@@ -164,8 +169,12 @@ async fn describe_postgresql_object(
                 name: row.try_get("column_name").map_err(DatabaseError::Query)?,
                 data_type: row.try_get("data_type").map_err(DatabaseError::Query)?,
                 nullable: nullable.eq_ignore_ascii_case("YES"),
-                default_value: row.try_get("column_default").map_err(DatabaseError::Query)?,
-                ordinal: row.try_get("ordinal_position").map_err(DatabaseError::Query)?,
+                default_value: row
+                    .try_get("column_default")
+                    .map_err(DatabaseError::Query)?,
+                ordinal: row
+                    .try_get("ordinal_position")
+                    .map_err(DatabaseError::Query)?,
             })
         })
         .collect()
@@ -185,7 +194,10 @@ pub async fn execute(pool: &DatabasePool, sql: &str) -> DatabaseResult<DatabaseQ
 
 async fn execute_mysql(pool: &MySqlPool, statement: &str) -> DatabaseResult<DatabaseQueryResult> {
     let started = Instant::now();
-    let description = pool.describe(statement).await.map_err(DatabaseError::Query)?;
+    let description = pool
+        .describe(statement)
+        .await
+        .map_err(DatabaseError::Query)?;
     let columns = description
         .columns()
         .iter()
@@ -218,12 +230,12 @@ async fn execute_mysql(pool: &MySqlPool, statement: &str) -> DatabaseResult<Data
     Ok(read_result(columns, rows, truncated, started))
 }
 
-async fn execute_postgresql(
-    pool: &PgPool,
-    statement: &str,
-) -> DatabaseResult<DatabaseQueryResult> {
+async fn execute_postgresql(pool: &PgPool, statement: &str) -> DatabaseResult<DatabaseQueryResult> {
     let started = Instant::now();
-    let description = pool.describe(statement).await.map_err(DatabaseError::Query)?;
+    let description = pool
+        .describe(statement)
+        .await
+        .map_err(DatabaseError::Query)?;
     let columns = description
         .columns()
         .iter()
@@ -301,7 +313,11 @@ fn decode_mysql_row(row: &MySqlRow) -> Vec<Option<String>> {
 }
 
 fn decode_mysql_value(row: &MySqlRow, index: usize, type_name: &str) -> Option<String> {
-    if row.try_get_raw(index).map(|value| value.is_null()).unwrap_or(false) {
+    if row
+        .try_get_raw(index)
+        .map(|value| value.is_null())
+        .unwrap_or(false)
+    {
         return None;
     }
 
@@ -323,17 +339,24 @@ fn decode_mysql_value(row: &MySqlRow, index: usize, type_name: &str) -> Option<S
         "BIGINT" => row.try_get::<i64, _>(index).map(|value| value.to_string()),
         "FLOAT" => row.try_get::<f32, _>(index).map(|value| value.to_string()),
         "DOUBLE" | "REAL" => row.try_get::<f64, _>(index).map(|value| value.to_string()),
-        "DECIMAL" | "NUMERIC" => row.try_get::<Decimal, _>(index).map(|value| value.to_string()),
-        "DATE" => row.try_get::<NaiveDate, _>(index).map(|value| value.to_string()),
-        "TIME" => row.try_get::<NaiveTime, _>(index).map(|value| value.to_string()),
+        "DECIMAL" | "NUMERIC" => row
+            .try_get::<Decimal, _>(index)
+            .map(|value| value.to_string()),
+        "DATE" => row
+            .try_get::<NaiveDate, _>(index)
+            .map(|value| value.to_string()),
+        "TIME" => row
+            .try_get::<NaiveTime, _>(index)
+            .map(|value| value.to_string()),
         "DATETIME" | "TIMESTAMP" => row
             .try_get::<NaiveDateTime, _>(index)
             .map(|value| value.to_string()),
         "JSON" => row
             .try_get::<serde_json::Value, _>(index)
             .map(|value| value.to_string()),
-        "BINARY" | "VARBINARY" | "TINYBLOB" | "BLOB" | "MEDIUMBLOB" | "LONGBLOB"
-        | "BIT" => row.try_get::<Vec<u8>, _>(index).map(format_binary),
+        "BINARY" | "VARBINARY" | "TINYBLOB" | "BLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BIT" => {
+            row.try_get::<Vec<u8>, _>(index).map(format_binary)
+        }
         _ => row.try_get::<String, _>(index),
     };
 
@@ -349,7 +372,11 @@ fn decode_postgresql_row(row: &PgRow) -> Vec<Option<String>> {
 }
 
 fn decode_postgresql_value(row: &PgRow, index: usize, type_name: &str) -> Option<String> {
-    if row.try_get_raw(index).map(|value| value.is_null()).unwrap_or(false) {
+    if row
+        .try_get_raw(index)
+        .map(|value| value.is_null())
+        .unwrap_or(false)
+    {
         return None;
     }
 
@@ -360,9 +387,15 @@ fn decode_postgresql_value(row: &PgRow, index: usize, type_name: &str) -> Option
         "INT8" => row.try_get::<i64, _>(index).map(|value| value.to_string()),
         "FLOAT4" => row.try_get::<f32, _>(index).map(|value| value.to_string()),
         "FLOAT8" => row.try_get::<f64, _>(index).map(|value| value.to_string()),
-        "NUMERIC" => row.try_get::<Decimal, _>(index).map(|value| value.to_string()),
-        "DATE" => row.try_get::<NaiveDate, _>(index).map(|value| value.to_string()),
-        "TIME" => row.try_get::<NaiveTime, _>(index).map(|value| value.to_string()),
+        "NUMERIC" => row
+            .try_get::<Decimal, _>(index)
+            .map(|value| value.to_string()),
+        "DATE" => row
+            .try_get::<NaiveDate, _>(index)
+            .map(|value| value.to_string()),
+        "TIME" => row
+            .try_get::<NaiveTime, _>(index)
+            .map(|value| value.to_string()),
         "TIMESTAMP" => row
             .try_get::<NaiveDateTime, _>(index)
             .map(|value| value.to_string()),

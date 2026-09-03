@@ -134,7 +134,9 @@ fn validate_config(config: &DatabaseConfig) -> DatabaseResult<()> {
         return Err(DatabaseError::InvalidInput("用户名不能为空".to_owned()));
     }
     if config.port == 0 {
-        return Err(DatabaseError::InvalidInput("端口必须在 1 到 65535 之间".to_owned()));
+        return Err(DatabaseError::InvalidInput(
+            "端口必须在 1 到 65535 之间".to_owned(),
+        ));
     }
 
     Ok(())
@@ -184,7 +186,13 @@ impl DatabaseManager {
     }
 
     pub async fn shutdown(&self) {
-        let pools: Vec<_> = self.sessions.write().await.drain().map(|(_, pool)| pool).collect();
+        let pools: Vec<_> = self
+            .sessions
+            .write()
+            .await
+            .drain()
+            .map(|(_, pool)| pool)
+            .collect();
         for pool in pools {
             pool.close().await;
         }
@@ -231,6 +239,9 @@ mod tests {
             timeout_secs: 20,
         };
 
-        assert!(matches!(validate_config(&config), Err(DatabaseError::InvalidInput(_))));
+        assert!(matches!(
+            validate_config(&config),
+            Err(DatabaseError::InvalidInput(_))
+        ));
     }
 }

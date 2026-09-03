@@ -17,7 +17,7 @@ export interface WorkspaceTab {
   /** 标签 id。与连接 id 一致 —— 同一个连接只开一个标签 */
   id: string
   connection: SavedConnection
-  /** SSH 会话状态，数据库标签固定 disconnected 直到接入 db 模块 */
+  /** SSH / 本地终端 / 数据库共享的会话状态 */
   status: SshSessionStatus
   /**
    * 后端会话 id，未连上时为空。

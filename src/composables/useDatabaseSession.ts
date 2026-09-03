@@ -70,10 +70,12 @@ export function useDatabaseSession(
 
   function resetData(): void {
     state.objects = []
+    state.objectsLoading = false
     state.objectsError = ''
     state.columnsByObject = {}
     state.inspectingKeys.clear()
     state.queryResult = null
+    state.queryLoading = false
     state.queryError = ''
   }
 
@@ -112,7 +114,6 @@ export function useDatabaseSession(
       state.connectionError = database.errorMessage(error)
       state.needsPassword = database.isAppError(error)
         && error.kind === 'auth'
-        && !target.settings.password
     }
   }
 

@@ -35,7 +35,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </script>
 
 <template>
-  <WindowFrame ambient class="h-screen w-screen">
+  <WindowFrame ambient surface="dialog" class="h-screen w-screen">
     <header class="connection-titlebar relative z-10" data-tauri-drag-region>
       <BrandLogo />
       <h1 id="connection-window-title" class="text-[13px] font-semibold tracking-tight text-txt">

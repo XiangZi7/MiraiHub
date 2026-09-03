@@ -125,7 +125,7 @@ export function isSshConnection(
 /** 类型收窄：这条连接是数据库吗 */
 export function isDatabaseConnection(
   connection: SavedConnection,
-): connection is SavedConnection & { settings: DatabaseConnectionSettings } {
+): connection is SavedConnection & { kind: DatabaseKind, settings: DatabaseConnectionSettings } {
   return connection.kind === 'mysql' || connection.kind === 'postgresql'
 }
 
