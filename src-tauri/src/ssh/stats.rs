@@ -259,7 +259,12 @@ fn parse_meminfo(text: &str) -> (u64, u64, u64, u64) {
     let unused = if available > 0 { available } else { free };
     let used = total.saturating_sub(unused);
 
-    (total, used, swap_total, swap_total.saturating_sub(swap_free))
+    (
+        total,
+        used,
+        swap_total,
+        swap_total.saturating_sub(swap_free),
+    )
 }
 
 /// 解析 `df -kP /` 的数据行，返回 (总量, 已用)，单位 KB。
@@ -385,7 +390,8 @@ mod tests {
 
     #[test]
     fn network_skips_loopback() {
-        let first = "Inter-|   Receive\n face |bytes\n  lo: 1000 0 0 0 0 0 0 0 1000 0 0 0 0 0 0 0\n\
+        let first =
+            "Inter-|   Receive\n face |bytes\n  lo: 1000 0 0 0 0 0 0 0 1000 0 0 0 0 0 0 0\n\
                      eth0: 5000 0 0 0 0 0 0 0 2000 0 0 0 0 0 0 0";
         let second = "  lo: 9000 0 0 0 0 0 0 0 9000 0 0 0 0 0 0 0\n\
                       eth0: 6000 0 0 0 0 0 0 0 2500 0 0 0 0 0 0 0";

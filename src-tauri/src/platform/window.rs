@@ -48,7 +48,7 @@ pub fn enable_window_shadow(_window: &WebviewWindow) {}
 /// 它有独立的窗口阴影与任务栏行为，且能通过禁用父窗实现原生模态。
 /// 同一时间只保留一个实例，重复触发把已有窗口带到前台。
 ///
-/// `kind` 决定窗口初始选中的连接类型，作为 query 参数传给前端。
+/// `kind` 决定打开 SSH 配置还是数据库配置，作为 query 参数传给前端。
 pub fn open_connection_window(app: &AppHandle, kind: Option<&str>) -> AppResult<()> {
     if let Some(dialog) = app.get_webview_window(CONNECTION_WINDOW) {
         dialog.show().map_err(to_app_error)?;
@@ -63,28 +63,29 @@ pub fn open_connection_window(app: &AppHandle, kind: Option<&str>) -> AppResult<
 
     let main = app.get_webview_window("main");
 
-    // kind 只允许三个固定值：它会拼进 URL，不校验的话
+    // kind 只允许两个固定值：它会拼进 URL，不校验的话
     // 前端传来的任意字符串都能注入 query 参数
     let url = match kind {
-        Some(kind @ ("ssh" | "mysql" | "postgresql")) => {
+        Some(kind @ ("ssh" | "database")) => {
             format!("index.html?window=connection&type={kind}")
         }
         _ => "index.html?window=connection".to_owned(),
     };
 
-    let mut builder = WebviewWindowBuilder::new(app, CONNECTION_WINDOW, WebviewUrl::App(url.into()))
-        .title("Add Connection")
-        .inner_size(620.0, 640.0)
-        .min_inner_size(620.0, 640.0)
-        .max_inner_size(620.0, 640.0)
-        .resizable(false)
-        .minimizable(false)
-        .maximizable(false)
-        .decorations(false)
-        .transparent(true)
-        .shadow(true)
-        .skip_taskbar(true)
-        .center();
+    let mut builder =
+        WebviewWindowBuilder::new(app, CONNECTION_WINDOW, WebviewUrl::App(url.into()))
+            .title("Add Connection")
+            .inner_size(620.0, 640.0)
+            .min_inner_size(620.0, 640.0)
+            .max_inner_size(620.0, 640.0)
+            .resizable(false)
+            .minimizable(false)
+            .maximizable(false)
+            .decorations(false)
+            .transparent(true)
+            .shadow(true)
+            .skip_taskbar(true)
+            .center();
 
     if let Some(parent) = main.as_ref() {
         builder = builder.parent(parent).map_err(to_app_error)?;
@@ -96,9 +97,8 @@ pub fn open_connection_window(app: &AppHandle, kind: Option<&str>) -> AppResult<
 
         builder = builder.effects(
             EffectsBuilder::new()
-                .effect(Effect::MicaDark)
+                .effect(Effect::Acrylic)
                 .state(EffectState::Active)
-                .radius(14.0)
                 .build(),
         );
     }

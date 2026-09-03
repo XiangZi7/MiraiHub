@@ -155,7 +155,7 @@
     -webkit-backdrop-filter: blur(28px) saturate(180%);
   }
 
-  /* Tauri 已由 DWM 的 Mica 提供系统材质；再对整个 WebView 做实时模糊会在拖窗时
+  /* Tauri 已由 DWM 的原生窗口材质提供模糊；再对整个 WebView 做实时模糊会在拖窗时
      触发双重合成。关闭重复滤镜后保留半透明分层与环境光，但移动走纯原生合成路径。 */
   html.is-tauri .win {
     backdrop-filter: none;
@@ -202,7 +202,32 @@
   }
 
   .btn-primary {
-    @apply border-transparent bg-accent-deep text-black hover:bg-accent hover:text-black;
+    @apply text-white;
+    border-color: color-mix(in oklch, var(--color-violet) 65%, white 8%);
+    background: linear-gradient(135deg, var(--color-indigo), var(--color-violet));
+    box-shadow: 0 5px 18px color-mix(in oklch, var(--color-violet) 24%, transparent);
+    transition:
+      border-color 150ms ease,
+      filter 150ms ease;
+  }
+
+  .btn:focus-visible,
+  .btn-primary:focus-visible {
+    border-color: var(--color-line-strong);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  }
+
+  .btn-primary:hover,
+  .btn-primary:focus-visible {
+    border-color: color-mix(in oklch, var(--color-violet) 55%, white 28%);
+    filter: brightness(1.1);
+  }
+
+  .btn:disabled,
+  .btn-primary:disabled {
+    pointer-events: none;
+    opacity: 0.5;
   }
 
   /* 输入框 */

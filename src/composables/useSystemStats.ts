@@ -37,9 +37,10 @@ export function useSystemStats(sessionId: Ref<string>) {
   const { stats, loading, error, history } = toRefs(state)
 
   let timer: ReturnType<typeof setTimeout> | undefined
-  // 采集期间禁止重入：一次采集要一秒多，
-  // 定时器到点时上一次可能还没回来，重叠请求只会浪费远端资源
-  let inflight = false
+  // 每次会话变化都递增。旧请求回来时用它判断结果是否已经过期，
+  // 同时只阻止同一代请求重入，不妨碍切换服务器后立刻采新机器。
+  let generation = 0
+  let inflightGeneration = -1
 
   /** 把新采样推进历史，超长丢最早的 */
   function pushHistory(snapshot: SshSystemStats): void {
@@ -60,20 +61,23 @@ export function useSystemStats(sessionId: Ref<string>) {
 
   /** 采集一次 */
   async function refresh(): Promise<void> {
-    if (!sessionId.value || inflight)
+    const id = sessionId.value
+    const requestGeneration = generation
+
+    if (!id || inflightGeneration === requestGeneration)
       return
 
-    inflight = true
+    inflightGeneration = requestGeneration
 
     if (!state.stats)
       state.loading = true
 
     try {
-      const snapshot = await ssh.systemStats(sessionId.value)
+      const snapshot = await ssh.systemStats(id)
 
       // 采集期间会话可能已经断了或换了台机器，
       // 这时的结果属于上一台，写进去会让界面显示错误的数据
-      if (!sessionId.value)
+      if (generation !== requestGeneration || sessionId.value !== id)
         return
 
       state.stats = snapshot
@@ -84,8 +88,10 @@ export function useSystemStats(sessionId: Ref<string>) {
       state.error = ssh.errorMessage(err)
     }
     finally {
-      inflight = false
-      state.loading = false
+      if (generation === requestGeneration) {
+        inflightGeneration = -1
+        state.loading = false
+      }
     }
   }
 
@@ -95,14 +101,14 @@ export function useSystemStats(sessionId: Ref<string>) {
    * 用 setTimeout 自续而不是 setInterval：采集耗时不固定（网络慢时可能好几秒），
    * setInterval 会在慢的时候堆积回调，这样每次都是「上一次结束后再等 5 秒」。
    */
-  function schedule(): void {
+  function schedule(expectedGeneration = generation): void {
     stop()
 
     timer = setTimeout(async () => {
       await refresh()
       // 停止后 refresh 可能还在飞，回来时定时器已经清了，此时不该再续
-      if (timer !== undefined)
-        schedule()
+      if (timer !== undefined && generation === expectedGeneration)
+        schedule(expectedGeneration)
     }, POLL_INTERVAL)
   }
 
@@ -118,8 +124,11 @@ export function useSystemStats(sessionId: Ref<string>) {
     sessionId,
     async (id) => {
       stop()
+      const currentGeneration = ++generation
+      inflightGeneration = -1
 
       state.stats = null
+      state.loading = false
       state.error = ''
       state.history = { cpu: [], memory: [], disk: [], network: [] }
 
@@ -127,12 +136,18 @@ export function useSystemStats(sessionId: Ref<string>) {
         return
 
       await refresh()
-      schedule()
+
+      if (generation === currentGeneration)
+        schedule(currentGeneration)
     },
     { immediate: true },
   )
 
-  onBeforeUnmount(stop)
+  onBeforeUnmount(() => {
+    // 让正在等待的初次 refresh 失效，避免它在组件卸载后又把轮询定时器续起来。
+    generation += 1
+    stop()
+  })
 
   /** 是否有数据可展示 */
   const ready = computed(() => state.stats !== null)

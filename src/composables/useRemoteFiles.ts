@@ -5,7 +5,7 @@
  * 每个用它的组件各写一份历史栈没有意义。
  */
 
-import { computed, reactive, toRefs, watch, type Ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, toRefs, watch, type Ref } from 'vue'
 import * as ssh from '@/api/ssh'
 import type { SshRemoteFile } from '@/types/ssh'
 
@@ -54,21 +54,30 @@ export function useRemoteFiles(sessionId: Ref<string>) {
   const canGoBack = computed(() => state.cursor > 0)
   const canGoForward = computed(() => state.cursor < state.history.length - 1)
 
+  // 后一次导航使前一次失效，避免慢目录的旧响应覆盖用户刚切到的新目录/新服务器。
+  let requestId = 0
+
   /**
    * 列出目录。
    *
    * `record` 控制是否写入历史：前进/后退本身不该再产生新历史条目，
    * 否则按几次后退就再也回不到最前面了。
    */
-  async function load(target: string, record = true): Promise<void> {
-    if (!sessionId.value)
-      return
+  async function load(target: string, record = true): Promise<boolean> {
+    const id = sessionId.value
+    if (!id)
+      return false
+
+    const currentRequest = ++requestId
 
     state.loading = true
     state.error = ''
 
     try {
-      const listing = await ssh.listDirectory(sessionId.value, target)
+      const listing = await ssh.listDirectory(id, target)
+
+      if (currentRequest !== requestId || sessionId.value !== id)
+        return false
 
       state.path = listing.path
       state.entries = listing.entries
@@ -76,14 +85,20 @@ export function useRemoteFiles(sessionId: Ref<string>) {
 
       if (record)
         pushHistory(listing.path)
+
+      return true
     }
     catch (err) {
-      state.error = ssh.errorMessage(err)
+      if (currentRequest === requestId && sessionId.value === id)
+        state.error = ssh.errorMessage(err)
+
       // 保留原来的列表：进不去新目录时，让用户还能看到刚才那个，
       // 而不是连当前位置也一起清空
+      return false
     }
     finally {
-      state.loading = false
+      if (currentRequest === requestId)
+        state.loading = false
     }
   }
 
@@ -115,16 +130,18 @@ export function useRemoteFiles(sessionId: Ref<string>) {
     if (!canGoBack.value)
       return
 
-    state.cursor -= 1
-    await load(state.history[state.cursor], false)
+    const targetCursor = state.cursor - 1
+    if (await load(state.history[targetCursor], false))
+      state.cursor = targetCursor
   }
 
   async function goForward(): Promise<void> {
     if (!canGoForward.value)
       return
 
-    state.cursor += 1
-    await load(state.history[state.cursor], false)
+    const targetCursor = state.cursor + 1
+    if (await load(state.history[targetCursor], false))
+      state.cursor = targetCursor
   }
 
   /** 重新列一次当前目录 */
@@ -136,8 +153,10 @@ export function useRemoteFiles(sessionId: Ref<string>) {
   watch(
     sessionId,
     async (id) => {
+      requestId += 1
       state.path = ''
       state.entries = []
+      state.loading = false
       state.error = ''
       state.selected = ''
       state.history = []
@@ -149,6 +168,10 @@ export function useRemoteFiles(sessionId: Ref<string>) {
     },
     { immediate: true },
   )
+
+  onBeforeUnmount(() => {
+    requestId += 1
+  })
 
   return {
     path,

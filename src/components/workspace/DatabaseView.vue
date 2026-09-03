@@ -110,7 +110,7 @@ function selectResultTab(id: string): void {
       <p class="max-w-70 text-xs text-txt-4">
         从左侧选一个数据库连接，或新建一个
       </p>
-      <button type="button" class="btn mt-1" @click="openConnectionWindow('mysql')">
+      <button type="button" class="btn mt-1" @click="openConnectionWindow('database')">
         <AppIcon name="lucide:plus" :size="13" />
         <span>新建数据库连接</span>
       </button>

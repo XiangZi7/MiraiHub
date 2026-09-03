@@ -69,9 +69,12 @@ pub async fn list_directory(session: &SshSession, path: &str) -> SshResult<Direc
 
     // --time-style 固定成 ISO 长格式：ls 默认按 locale 和文件新旧
     // 输出两种不同格式（半年内带时间不带年，半年外带年不带时间），没法统一解析
+    // fallback 只包住 ls：如果 cd 失败，整条命令必须失败。
+    // 写成 `cd && pwd && ls || ls` 会在 cd 失败时去默认目录执行 fallback，
+    // 前端最终看到的是一份来自错误目录、还把首个文件名当路径的伪成功结果。
     let command = format!(
-        "cd {quoted} && pwd && LC_ALL=C ls -lA --time-style=full-iso 2>/dev/null || \
-         LC_ALL=C ls -lA"
+        "cd {quoted} && {{ pwd; LC_ALL=C ls -lA --time-style=full-iso 2>/dev/null || \
+         LC_ALL=C ls -lA; }}"
     );
 
     let output = session.exec(&command).await?;
@@ -129,7 +132,7 @@ fn parse_entry(line: &str, dir: &str) -> Option<RemoteFile> {
     // full-iso 不被内核自带的 ls 支持时会退化成短格式，
     // 短格式没有年份信息，索性不猜时间，让前端显示为未知
     let modified_at = if is_timezone(eighth) {
-        parse_iso_datetime(head[5], head[6])
+        parse_iso_datetime(head[5], head[6], eighth)
     } else {
         0
     };
@@ -213,12 +216,11 @@ fn join_path(dir: &str, name: &str) -> String {
     }
 }
 
-/// 解析 `2024-05-22` + `09:41:21.000000000` 为 Unix 毫秒（UTC）。
+/// 解析 `2024-05-22` + `09:41:21.000000000` + `+0800` 为 Unix 毫秒（UTC）。
 ///
 /// 自己算而不是引入 chrono：只需要这一处日期解析，
 /// 格式还是固定的 ISO，为它多一个依赖不划算。
-/// 时区偏移忽略 —— 展示的是相对时间（"3 小时前"），几小时的绝对偏差不影响判断。
-fn parse_iso_datetime(date: &str, time: &str) -> i64 {
+fn parse_iso_datetime(date: &str, time: &str, timezone: &str) -> i64 {
     let mut date_parts = date.split('-');
     let year: i64 = date_parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
     let month: i64 = date_parts.next().and_then(|v| v.parse().ok()).unwrap_or(1);
@@ -237,7 +239,22 @@ fn parse_iso_datetime(date: &str, time: &str) -> i64 {
 
     let days = days_from_civil(year, month, day);
 
-    (days * 86400 + hour * 3600 + minute * 60 + second) * 1000
+    let local_seconds = days * 86400 + hour * 3600 + minute * 60 + second;
+
+    // `+0800` 表示本地时间比 UTC 快 8 小时，因此换算成 UTC 要减去偏移。
+    // 字段在调用前已由 is_timezone 校验，这里仍用安全解析，异常时按 UTC 兜底。
+    let offset_sign = if timezone.starts_with('-') { -1 } else { 1 };
+    let offset_hours = timezone
+        .get(1..3)
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
+    let offset_minutes = timezone
+        .get(3..5)
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
+    let offset_seconds = offset_sign * (offset_hours * 3600 + offset_minutes * 60);
+
+    (local_seconds - offset_seconds) * 1000
 }
 
 /// 公历日期 → 距 1970-01-01 的天数。
@@ -261,7 +278,8 @@ mod tests {
 
     #[test]
     fn parses_full_iso_entry() {
-        let line = "-rw-r--r-- 1 ubuntu ubuntu 2048 2024-05-22 09:41:21.000000000 +0800 package.json";
+        let line =
+            "-rw-r--r-- 1 ubuntu ubuntu 2048 2024-05-22 09:41:21.000000000 +0800 package.json";
         let entry = parse_entry(line, "/home/ubuntu").unwrap();
 
         assert_eq!(entry.name, "package.json");
@@ -332,13 +350,16 @@ mod tests {
     #[test]
     fn converts_epoch_correctly() {
         // 1970-01-01 00:00:00 是 0
-        assert_eq!(parse_iso_datetime("1970-01-01", "00:00:00"), 0);
+        assert_eq!(parse_iso_datetime("1970-01-01", "00:00:00", "+0000"), 0);
         // 1970-01-02 00:00:00 是 86400 秒
-        assert_eq!(parse_iso_datetime("1970-01-02", "00:00:00"), 86_400_000);
-        // 2024-05-22 09:41:21 UTC = 1716370881
         assert_eq!(
-            parse_iso_datetime("2024-05-22", "09:41:21.000000000"),
-            1_716_370_881_000
+            parse_iso_datetime("1970-01-02", "00:00:00", "+0000"),
+            86_400_000
+        );
+        // 2024-05-22 09:41:21 +0800 = 2024-05-22 01:41:21 UTC
+        assert_eq!(
+            parse_iso_datetime("2024-05-22", "09:41:21.000000000", "+0800"),
+            1_716_342_081_000
         );
     }
 }

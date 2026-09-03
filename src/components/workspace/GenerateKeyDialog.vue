@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import ConnectionTextField from '@/components/connection/ConnectionTextField.vue'
+import AppTextField from '@/components/ui/AppTextField.vue'
 import { RSA_BITS_OPTIONS, SSH_KEY_KIND_OPTIONS } from '@/constants/ssh-keys'
 import type { GenerateKeyRequest, SshKeyKind } from '@/types/ssh'
 import { cn } from '@/utils/cn'
@@ -111,30 +112,31 @@ defineExpose({ fail })
   >
     <form class="grid gap-3.5" @submit.prevent="submit">
       <!-- 算法 -->
-      <div class="space-y-1.5">
-        <p class="text-[11px] font-medium text-txt-2">
+      <fieldset class="space-y-1.5">
+        <legend class="text-[11px] font-medium text-txt-2">
           算法
-        </p>
-        <div class="grid grid-cols-3 gap-2">
-          <button
+        </legend>
+        <div class="grid grid-cols-3 gap-2" role="radiogroup" aria-label="密钥算法">
+          <AppButton
             v-for="option in SSH_KEY_KIND_OPTIONS"
             :key="option.value"
-            type="button"
+            role="radio"
+            :aria-checked="form.kind === option.value"
             :class="cn(
-              'flex flex-col items-start gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors',
+              'h-auto flex-col !items-start !gap-0.5 !px-2.5 !py-2 text-left',
               form.kind === option.value
-                ? 'border-violet/60 bg-violet/12 text-txt'
-                : 'border-line bg-card text-txt-3 hover:border-line-strong hover:text-txt-2',
+                ? '!border-violet/60 !bg-violet/12 !text-txt'
+                : 'text-txt-3',
             )"
             @click="selectKind(option.value)"
           >
             <span class="text-[11.5px] font-medium">{{ option.label }}</span>
             <span class="text-[10px] text-txt-4">{{ option.hint }}</span>
-          </button>
+          </AppButton>
         </div>
-      </div>
+      </fieldset>
 
-      <ConnectionTextField
+      <AppTextField
         v-model="form.label"
         label="密钥名"
         placeholder="id_ed25519"
@@ -142,35 +144,36 @@ defineExpose({ fail })
       />
 
       <!-- RSA 位数 -->
-      <div v-if="showBits" class="space-y-1.5">
-        <p class="text-[11px] font-medium text-txt-2">
+      <fieldset v-if="showBits" class="space-y-1.5">
+        <legend class="text-[11px] font-medium text-txt-2">
           位数
-        </p>
-        <div class="flex gap-2">
-          <button
+        </legend>
+        <div class="flex gap-2" role="radiogroup" aria-label="RSA 密钥位数">
+          <AppButton
             v-for="bits in RSA_BITS_OPTIONS"
             :key="bits"
-            type="button"
+            role="radio"
+            :aria-checked="form.bits === bits"
             :class="cn(
-              'flex-1 rounded-lg border px-2 py-1.5 text-[11.5px] transition-colors',
+              'flex-1 text-[11.5px]',
               form.bits === bits
-                ? 'border-violet/60 bg-violet/12 text-txt'
-                : 'border-line bg-card text-txt-3 hover:border-line-strong hover:text-txt-2',
+                ? '!border-violet/60 !bg-violet/12 !text-txt'
+                : 'text-txt-3',
             )"
             @click="form.bits = bits"
           >
             {{ bits }}
-          </button>
+          </AppButton>
         </div>
-      </div>
+      </fieldset>
 
-      <ConnectionTextField
+      <AppTextField
         v-model="form.comment"
         label="注释（可选）"
         placeholder="留空则用 user@hostname"
       />
 
-      <ConnectionTextField
+      <AppTextField
         v-model="form.passphrase"
         label="口令（可选）"
         type="password"
@@ -178,7 +181,7 @@ defineExpose({ fail })
         autocomplete="new-password"
       />
 
-      <ConnectionTextField
+      <AppTextField
         v-if="form.passphrase"
         v-model="form.confirm"
         label="确认口令"
@@ -190,30 +193,29 @@ defineExpose({ fail })
       <!-- 不设口令的风险要说明白：私钥文件被拿走就等于服务器被拿走 -->
       <p
         v-if="!form.passphrase"
-        class="flex items-start gap-1.5 rounded-lg border border-amber/25 bg-amber/8 px-2.5 py-2 text-[11px] text-amber"
+        class="card flex items-start gap-1.5 border-amber/25 bg-amber/8 px-2.5 py-2 text-[11px] text-amber"
       >
         <AppIcon name="lucide:triangle-alert" :size="13" class="mt-px shrink-0" />
         <span>不设口令的私钥，任何拿到文件的人都能直接登录你的服务器</span>
       </p>
 
-      <p v-if="error" class="rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-2 text-[11px] text-danger">
+      <p v-if="error" class="card border-danger/30 bg-danger/10 px-2.5 py-2 text-[11px] text-danger" role="alert">
         {{ error }}
       </p>
     </form>
 
     <template #footer>
       <div class="flex-1" />
-      <button type="button" class="btn" @click="emit('close')">
+      <AppButton @click="emit('close')">
         取消
-      </button>
-      <button
-        type="button"
-        class="btn-primary"
+      </AppButton>
+      <AppButton
+        variant="primary"
         :disabled="submitting"
         @click="submit"
       >
         {{ submitting ? '生成中…' : '生成' }}
-      </button>
+      </AppButton>
     </template>
   </AppDialog>
 </template>

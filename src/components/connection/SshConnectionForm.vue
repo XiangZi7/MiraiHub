@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, useId } from 'vue'
-import AppIcon from '@/components/ui/AppIcon.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import AppTextField from '@/components/ui/AppTextField.vue'
 import * as ssh from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
-import ConnectionTextField from './ConnectionTextField.vue'
 
 type SectionId = 'general' | 'advanced' | 'ssh-key' | 'proxy'
 
@@ -20,6 +22,24 @@ const sections: Array<{ id: SectionId, label: string }> = [
   { id: 'ssh-key', label: 'SSH Key' },
   { id: 'proxy', label: 'Proxy' },
 ]
+
+const authenticationOptions = [
+  { value: 'password', label: 'Password' },
+  { value: 'private-key', label: 'Private Key' },
+  { value: 'agent', label: 'SSH Agent' },
+] as const
+
+const terminalOptions = [
+  { value: 'xterm-256color', label: 'xterm-256color' },
+  { value: 'xterm', label: 'xterm' },
+  { value: 'vt100', label: 'vt100' },
+] as const
+
+const proxyOptions = [
+  { value: 'none', label: 'No Proxy' },
+  { value: 'socks5', label: 'SOCKS5' },
+  { value: 'http', label: 'HTTP' },
+] as const
 
 const activeSection = shallowRef<SectionId>('general')
 const feedback = shallowRef('')
@@ -52,9 +72,6 @@ const form = reactive({
   proxyPassword: '',
 })
 
-const authId = useId()
-const terminalId = useId()
-const proxyTypeId = useId()
 const descriptionId = useId()
 
 const isReady = computed<boolean>(() => (
@@ -62,6 +79,14 @@ const isReady = computed<boolean>(() => (
   && form.host.trim().length > 0
   && form.username.trim().length > 0
 ))
+
+function numericSettings(): { port: number, timeoutSecs: number, keepaliveSecs: number } {
+  return {
+    port: Number(form.port),
+    timeoutSecs: Number(form.timeout),
+    keepaliveSecs: Number(form.keepAlive),
+  }
+}
 
 /**
  * 表单的认证方式 → API 的 tag 化联合。
@@ -87,13 +112,15 @@ function buildAuth(keepSecret = true): SshAuthMethod {
 
 /** 收集表单为连接配置。端口等数值字段在表单里是字符串，这里统一转换 */
 function buildConfig(): SshConfig {
+  const { port, timeoutSecs, keepaliveSecs } = numericSettings()
+
   return {
     host: form.host.trim(),
-    port: Number(form.port) || 22,
+    port,
     username: form.username.trim(),
     auth: buildAuth(),
-    timeoutSecs: Number(form.timeout) || 20,
-    keepaliveSecs: Number(form.keepAlive) || 30,
+    timeoutSecs,
+    keepaliveSecs,
   }
 }
 
@@ -107,6 +134,27 @@ function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
     setFeedback('请先填写连接名称、主机和用户名', 'error')
+    return false
+  }
+
+  const { port, timeoutSecs, keepaliveSecs } = numericSettings()
+
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    activeSection.value = 'general'
+    setFeedback('端口必须是 1–65535 之间的整数', 'error')
+    return false
+  }
+
+  if (!Number.isInteger(timeoutSecs) || timeoutSecs < 1 || timeoutSecs > 3600) {
+    activeSection.value = 'advanced'
+    setFeedback('连接超时必须是 1–3600 秒之间的整数', 'error')
+    return false
+  }
+
+  // 0 是明确支持的“关闭 keepalive”，不能用 `Number(value) || 30` 把它改回默认值。
+  if (!Number.isInteger(keepaliveSecs) || keepaliveSecs < 0 || keepaliveSecs > 86400) {
+    activeSection.value = 'advanced'
+    setFeedback('Keep Alive 必须是 0–86400 秒之间的整数', 'error')
     return false
   }
 
@@ -157,18 +205,20 @@ async function saveConnection(): Promise<void> {
   saving.value = true
 
   try {
+    const { port, timeoutSecs, keepaliveSecs } = numericSettings()
+
     await create({
       name: form.name.trim(),
       kind: 'ssh',
       host: form.host.trim(),
-      port: Number(form.port) || 22,
+      port,
       username: form.username.trim(),
       group: form.group.trim(),
       description: form.description.trim(),
       settings: {
         auth: buildAuth(savePassword.value),
-        timeoutSecs: Number(form.timeout) || 20,
-        keepaliveSecs: Number(form.keepAlive) || 30,
+        timeoutSecs,
+        keepaliveSecs,
         terminalType: form.terminalType,
         startupCommand: form.startupCommand.trim(),
       },
@@ -204,14 +254,14 @@ async function saveConnection(): Promise<void> {
     <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin">
       <div v-if="activeSection === 'general'" class="grid gap-3.5">
         <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
-          <ConnectionTextField
+          <AppTextField
             v-model="form.name"
             label="Connection Name"
             placeholder="e.g. Production Server"
             required
             autofocus
           />
-          <ConnectionTextField
+          <AppTextField
             v-model="form.group"
             label="Group"
             placeholder="e.g. Production"
@@ -219,14 +269,14 @@ async function saveConnection(): Promise<void> {
         </div>
 
         <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
-          <ConnectionTextField
+          <AppTextField
             v-model="form.host"
             label="Host"
             placeholder="192.168.1.100 or server.example.com"
             inputmode="url"
             required
           />
-          <ConnectionTextField
+          <AppTextField
             v-model="form.port"
             label="Port"
             placeholder="22"
@@ -235,7 +285,7 @@ async function saveConnection(): Promise<void> {
           />
         </div>
 
-        <ConnectionTextField
+        <AppTextField
           v-model="form.username"
           label="Username"
           placeholder="e.g. ubuntu"
@@ -243,36 +293,27 @@ async function saveConnection(): Promise<void> {
           required
         />
 
-        <div class="space-y-1.5">
-          <label :for="authId" class="connection-label">Authentication Method</label>
-          <div class="connection-select-wrap">
-            <select :id="authId" v-model="form.authentication" class="connection-select">
-              <option value="password">Password</option>
-              <option value="private-key">Private Key</option>
-              <option value="agent">SSH Agent</option>
-            </select>
-            <AppIcon name="lucide:chevron-down" :size="14" class="pointer-events-none text-txt-4" />
-          </div>
-        </div>
+        <AppSelect
+          v-model="form.authentication"
+          label="Authentication Method"
+          :options="authenticationOptions"
+        />
 
         <template v-if="form.authentication === 'password'">
           <div class="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-            <ConnectionTextField
+            <AppTextField
               v-model="form.password"
               label="Password"
               type="password"
               placeholder="Enter password"
               autocomplete="current-password"
             />
-            <label class="connection-check mb-2">
-              <input v-model="savePassword" type="checkbox">
-              <span>Save password</span>
-            </label>
+            <AppCheckbox v-model="savePassword" label="Save password" class="mb-2" />
           </div>
         </template>
 
         <div v-else-if="form.authentication === 'private-key'" class="space-y-2">
-          <ConnectionTextField
+          <AppTextField
             v-model="form.privateKey"
             label="Private Key"
             placeholder="Select a private key in the SSH Key tab"
@@ -299,21 +340,11 @@ async function saveConnection(): Promise<void> {
           Fine-tune connection stability and terminal startup behavior.
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <ConnectionTextField v-model="form.timeout" label="Connection Timeout (s)" inputmode="numeric" />
-          <ConnectionTextField v-model="form.keepAlive" label="Keep Alive (s)" inputmode="numeric" />
+          <AppTextField v-model="form.timeout" label="Connection Timeout (s)" inputmode="numeric" />
+          <AppTextField v-model="form.keepAlive" label="Keep Alive (s)" inputmode="numeric" />
         </div>
-        <div class="space-y-1.5">
-          <label :for="terminalId" class="connection-label">Terminal Type</label>
-          <div class="connection-select-wrap">
-            <select :id="terminalId" v-model="form.terminalType" class="connection-select">
-              <option value="xterm-256color">xterm-256color</option>
-              <option value="xterm">xterm</option>
-              <option value="vt100">vt100</option>
-            </select>
-            <AppIcon name="lucide:chevron-down" :size="14" class="pointer-events-none text-txt-4" />
-          </div>
-        </div>
-        <ConnectionTextField
+        <AppSelect v-model="form.terminalType" label="Terminal Type" :options="terminalOptions" />
+        <AppTextField
           v-model="form.startupCommand"
           label="Startup Command"
           placeholder="e.g. tmux attach || tmux"
@@ -324,12 +355,12 @@ async function saveConnection(): Promise<void> {
         <div class="connection-section-copy">
           Choose the private key used when the authentication method is set to Private Key.
         </div>
-        <ConnectionTextField
+        <AppTextField
           v-model="form.privateKey"
           label="Private Key Path"
           placeholder="C:\Users\you\.ssh\id_ed25519"
         />
-        <ConnectionTextField
+        <AppTextField
           v-model="form.passphrase"
           label="Key Passphrase"
           type="password"
@@ -342,32 +373,22 @@ async function saveConnection(): Promise<void> {
         <div class="connection-section-copy">
           Route this SSH connection through a SOCKS or HTTP proxy.
         </div>
-        <div class="space-y-1.5">
-          <label :for="proxyTypeId" class="connection-label">Proxy Type</label>
-          <div class="connection-select-wrap">
-            <select :id="proxyTypeId" v-model="form.proxyType" class="connection-select">
-              <option value="none">No Proxy</option>
-              <option value="socks5">SOCKS5</option>
-              <option value="http">HTTP</option>
-            </select>
-            <AppIcon name="lucide:chevron-down" :size="14" class="pointer-events-none text-txt-4" />
-          </div>
-        </div>
+        <AppSelect v-model="form.proxyType" label="Proxy Type" :options="proxyOptions" />
         <template v-if="form.proxyType !== 'none'">
           <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
-            <ConnectionTextField v-model="form.proxyHost" label="Proxy Host" placeholder="127.0.0.1" />
-            <ConnectionTextField v-model="form.proxyPort" label="Port" placeholder="1080" inputmode="numeric" />
+            <AppTextField v-model="form.proxyHost" label="Proxy Host" placeholder="127.0.0.1" />
+            <AppTextField v-model="form.proxyPort" label="Port" placeholder="1080" inputmode="numeric" />
           </div>
-          <ConnectionTextField v-model="form.proxyUsername" label="Proxy Username" placeholder="Optional" />
-          <ConnectionTextField v-model="form.proxyPassword" label="Proxy Password" type="password" placeholder="Optional" />
+          <AppTextField v-model="form.proxyUsername" label="Proxy Username" placeholder="Optional" />
+          <AppTextField v-model="form.proxyPassword" label="Proxy Password" type="password" placeholder="Optional" />
         </template>
       </div>
     </div>
 
     <footer class="connection-footer">
-      <button type="button" class="btn" :disabled="testing" @click="testConnection">
+      <AppButton :disabled="testing" @click="testConnection">
         {{ testing ? 'Testing…' : 'Test Connection' }}
-      </button>
+      </AppButton>
       <p
         :class="['min-w-0 flex-1 truncate text-[11px]', feedbackTone === 'error' ? 'text-danger' : 'text-txt-3']"
         :title="feedback"
@@ -375,12 +396,12 @@ async function saveConnection(): Promise<void> {
       >
         {{ feedback }}
       </p>
-      <button type="button" class="btn" @click="emit('close')">
+      <AppButton @click="emit('close')">
         Cancel
-      </button>
-      <button type="submit" class="connection-primary" :disabled="saving">
+      </AppButton>
+      <AppButton type="submit" variant="primary" :disabled="saving">
         {{ saving ? 'Saving…' : 'Save' }}
-      </button>
+      </AppButton>
     </footer>
   </form>
 </template>
@@ -435,40 +456,6 @@ async function saveConnection(): Promise<void> {
   font-weight: 500;
 }
 
-.connection-select-wrap {
-  display: flex;
-  height: 34px;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--color-line);
-  border-radius: 7px;
-  background: color-mix(in oklch, var(--color-panel) 88%, transparent);
-  padding-right: 10px;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.connection-select-wrap:focus-within {
-  border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
-}
-
-.connection-select {
-  min-width: 0;
-  flex: 1;
-  appearance: none;
-  align-self: stretch;
-  border: 0;
-  background: transparent;
-  padding: 0 10px;
-  color: var(--color-txt);
-  font-size: 12px;
-  outline: none;
-}
-
-.connection-select option {
-  background: #1a1b22;
-}
-
 .connection-textarea {
   width: 100%;
   resize: none;
@@ -491,22 +478,6 @@ async function saveConnection(): Promise<void> {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
-.connection-check {
-  display: flex;
-  cursor: pointer;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-  color: var(--color-txt-3);
-  font-size: 11px;
-}
-
-.connection-check input {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--color-violet);
-}
-
 .connection-section-copy {
   border: 1px solid var(--color-line-soft);
   border-radius: 8px;
@@ -527,27 +498,4 @@ async function saveConnection(): Promise<void> {
   padding: 0 18px;
 }
 
-.connection-primary {
-  display: inline-flex;
-  height: 30px;
-  cursor: pointer;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in oklch, var(--color-violet) 65%, white 8%);
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--color-indigo), var(--color-violet));
-  padding: 0 15px;
-  color: white;
-  font-size: 12px;
-  font-weight: 500;
-  box-shadow: 0 5px 18px color-mix(in oklch, var(--color-violet) 24%, transparent);
-  transition: filter 150ms ease, border-color 150ms ease;
-}
-
-.connection-primary:hover,
-.connection-primary:focus-visible {
-  border-color: color-mix(in oklch, var(--color-violet) 55%, white 28%);
-  filter: brightness(1.1);
-  outline: none;
-}
 </style>

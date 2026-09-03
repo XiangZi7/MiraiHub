@@ -85,7 +85,7 @@ pub fn list_keys() -> SshResult<Vec<SshKeyInfo>> {
     }
 
     // 按修改时间倒序：最近生成/使用的排前面
-    keys.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    keys.sort_by_key(|key| std::cmp::Reverse(key.modified_at));
 
     Ok(keys)
 }
@@ -101,9 +101,14 @@ fn read_key_info(private_path: &Path, public_path: &Path) -> SshResult<SshKeyInf
     // 优先取文件里的原文，解析结果作兜底
     let comment = pub_text
         .split_whitespace()
-        .nth(2)
-        .map(str::to_owned)
-        .unwrap_or_else(|| public_key.comment().to_owned());
+        .skip(2)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let comment = if comment.is_empty() {
+        public_key.comment().to_owned()
+    } else {
+        comment
+    };
 
     let label = private_path
         .file_name()
@@ -211,11 +216,16 @@ pub fn generate_key(request: &GenerateKeyRequest) -> SshResult<SshKeyInfo> {
             .to_openssh(line_ending)?,
         None => private_key.to_openssh(line_ending)?,
     };
+    let public_openssh = private_key.public_key().to_openssh()?;
 
     write_private_key(&private_path, private_pem.as_bytes())?;
 
-    let public_openssh = private_key.public_key().to_openssh()?;
-    fs::write(&public_path, format!("{public_openssh}\n"))?;
+    // 私钥已经落盘后，公钥写失败必须回滚私钥。
+    // 否则下次重试会报“密钥已存在”，但列表又因为缺 .pub 看不到这把半成品。
+    if let Err(err) = fs::write(&public_path, format!("{public_openssh}\n")) {
+        let _ = fs::remove_file(&private_path);
+        return Err(SshError::Io(err));
+    }
 
     read_key_info(&private_path, &public_path)
 }
@@ -282,8 +292,8 @@ fn write_private_key(path: &Path, contents: &[u8]) -> SshResult<()> {
     Ok(())
 }
 
-/// Windows 上的 NTFS ACL 与 Unix 权限位模型不同，
-/// 且 Windows 版 OpenSSH 不做私钥权限检查，直接写即可。
+/// Windows 上的 NTFS ACL 与 Unix 权限位模型不同。
+/// 文件建在当前用户的 ~/.ssh 下并继承该目录 ACL；不能用 Unix mode 位表达额外限制。
 #[cfg(not(unix))]
 fn write_private_key(path: &Path, contents: &[u8]) -> SshResult<()> {
     fs::write(path, contents)?;
@@ -413,5 +423,26 @@ mod tests {
         assert_eq!(validate_rsa_bits(Some(4096)).unwrap(), 4096);
         // 不传时用默认值，而不是报错
         assert_eq!(validate_rsa_bits(None).unwrap(), DEFAULT_RSA_BITS as usize);
+    }
+
+    #[test]
+    fn generates_every_supported_key_kind() {
+        let cases = [
+            (SshKeyKind::Ed25519, None),
+            (SshKeyKind::Ecdsa, None),
+            (SshKeyKind::Rsa, Some(2048)),
+        ];
+
+        for (kind, bits) in cases {
+            let request = GenerateKeyRequest {
+                label: "test_key".into(),
+                kind,
+                bits,
+                comment: None,
+                passphrase: None,
+            };
+
+            assert!(generate_private_key(&request).is_ok());
+        }
     }
 }

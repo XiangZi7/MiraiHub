@@ -1,6 +1,3 @@
-/** 连接状态 */
-export type ConnectionStatus = 'online' | 'offline' | 'connecting'
-
 /** 侧栏主视图 id */
 export type NavId = 'servers' | 'databases' | 'ssh-keys' | 'recent'
 
@@ -17,47 +14,6 @@ export interface NavItem<Id extends string = string> {
   icon: string
 }
 
-/** 收藏项 */
-export interface FavoriteItem {
-  id: string
-  label: string
-}
-
-/** 项目分组下的服务器节点 */
-export interface ProjectNode {
-  id: string
-  label: string
-  status: ConnectionStatus
-}
-
-/** 项目分组 */
-export interface ProjectGroup {
-  id: string
-  label: string
-  expanded: boolean
-  children: ProjectNode[]
-}
-
-/** 服务器资源指标卡 */
-export interface MetricCard {
-  id: string
-  label: string
-  /** 主数值，如 "32%" 或 "6.2" */
-  value: string
-  /** 主数值后缀，如 "/ 16 GB" */
-  suffix?: string
-  /** 副标题，如 "39%" */
-  caption?: string
-  /** 上行速率文案，仅网络卡使用 */
-  up?: string
-  /** 下行速率文案，仅网络卡使用 */
-  down?: string
-  /** 折线颜色 CSS 变量 */
-  color: string
-  /** 折线数据 */
-  trend: number[]
-}
-
 /** 快捷操作 */
 export interface QuickAction {
   id: string
@@ -65,23 +21,6 @@ export interface QuickAction {
   icon: string
   /** 图标颜色 class */
   tone: string
-}
-
-/** 最近活动 */
-export interface ActivityItem {
-  id: string
-  text: string
-  time: string
-  tone: 'accent' | 'blue' | 'violet' | 'amber'
-}
-
-/** 文件条目 */
-export interface FileEntry {
-  id: string
-  name: string
-  size: string
-  modified: string
-  kind: 'folder' | 'json' | 'markdown' | 'js' | 'env' | 'yaml'
 }
 
 /** 数据库对象树节点 */
@@ -131,13 +70,6 @@ export interface CommandGroup {
   items: CommandItem[]
 }
 
-/** 终端输出行片段 */
-export interface TermSpan {
-  text: string
-  tone?: 'fg' | 'green' | 'blue' | 'cyan' | 'dim'
-  bold?: boolean
-}
-
 /**
  * 命令面板某条命令的落点。
  * 一条命令要么直接打开新建连接窗口，要么把人送到能干这件事的视图。
@@ -150,7 +82,7 @@ export interface CommandTarget {
   /** 是否把焦点交给标题栏搜索框 */
   focusSearch?: boolean
   /** 若指定，打开连接配置窗口并预选该类型 */
-  newConnection?: 'ssh' | 'mysql' | 'postgresql'
+  newConnection?: 'ssh' | 'database'
 }
 
 /** SSH 密钥相关类型见 `@/types/ssh` —— 那边与 Rust 侧的模型一一对应 */

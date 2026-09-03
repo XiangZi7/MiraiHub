@@ -4,13 +4,16 @@ import { cn } from '@/utils/cn'
 
 type Variant = 'default' | 'primary' | 'ghost'
 type Size = 'sm' | 'md'
+type ButtonType = 'button' | 'submit' | 'reset'
 
 const props = withDefaults(defineProps<{
   variant?: Variant
   size?: Size
+  type?: ButtonType
 }>(), {
   variant: 'default',
   size: 'md',
+  type: 'button',
 })
 
 const classes = computed<string>(() => cn(
@@ -24,7 +27,7 @@ const classes = computed<string>(() => cn(
 </script>
 
 <template>
-  <button type="button" :class="classes">
+  <button :type="type" :class="classes">
     <slot />
   </button>
 </template>

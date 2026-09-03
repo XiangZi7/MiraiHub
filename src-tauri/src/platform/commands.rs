@@ -8,7 +8,7 @@ use super::window;
 
 /// 打开连接配置窗口。
 ///
-/// `kind` 指定初始选中的连接类型（ssh / mysql / postgresql），
+/// `kind` 指定连接窗口类型（ssh / database），
 /// 为空则用前端的默认值。
 #[tauri::command]
 pub async fn open_connection_window(app: AppHandle, kind: Option<String>) -> AppResult<()> {

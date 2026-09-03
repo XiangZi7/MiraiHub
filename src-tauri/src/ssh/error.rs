@@ -65,9 +65,9 @@ impl From<SshError> for AppError {
     fn from(err: SshError) -> Self {
         let kind = match &err {
             SshError::Connect { .. } | SshError::Timeout { .. } => ErrorKind::Network,
-            SshError::AuthRejected { .. }
-            | SshError::KeyParse { .. }
-            | SshError::AgentAuth(_) => ErrorKind::Auth,
+            SshError::AuthRejected { .. } | SshError::KeyParse { .. } | SshError::AgentAuth(_) => {
+                ErrorKind::Auth
+            }
             SshError::SessionNotFound(_) | SshError::KeyNotFound(_) => ErrorKind::NotFound,
             SshError::InvalidInput(_) | SshError::KeyExists(_) => ErrorKind::InvalidInput,
             SshError::Io(_) | SshError::NoHomeDir => ErrorKind::Io,

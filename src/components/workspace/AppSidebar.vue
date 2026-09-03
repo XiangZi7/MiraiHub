@@ -69,7 +69,7 @@ function toneOf(connection: SavedConnection): 'accent' | 'amber' | 'txt-3' {
 
 /** 新建连接时带上当前视图对应的类型，省一次手动切换 */
 function addConnection(): void {
-  openConnectionWindow(active.value === 'databases' ? 'mysql' : 'ssh')
+  openConnectionWindow(active.value === 'databases' ? 'database' : 'ssh')
 }
 </script>
 

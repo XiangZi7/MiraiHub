@@ -35,13 +35,13 @@ export function closeWindow(): void {
 /**
  * 请求 Rust 创建原生连接配置子窗口。
  *
- * `kind` 决定窗口打开时默认选中哪个连接类型 ——
- * 从 Databases 视图点"新建"却落在 SSH 表单上，用户还要再点一次。
+ * `kind` 决定打开 SSH 配置窗口还是数据库配置窗口。
+ * MySQL / PostgreSQL 属于数据库窗口内部的协议选择，不与 SSH 放在同一级。
  *
  * 浏览器开发态用 popup 降级，方便不启动 Tauri 也能检查表单 UI。
  */
-export function openConnectionWindow(kind?: 'ssh' | 'mysql' | 'postgresql'): void {
-  const query = kind ? `&type=${kind}` : ''
+export function openConnectionWindow(kind: 'ssh' | 'database'): void {
+  const query = `&type=${kind}`
 
   if (!IS_TAURI) {
     window.open(
@@ -52,7 +52,7 @@ export function openConnectionWindow(kind?: 'ssh' | 'mysql' | 'postgresql'): voi
     return
   }
 
-  void invoke('open_connection_window', { kind: kind ?? null }).catch((error: unknown) => {
+  void invoke('open_connection_window', { kind }).catch((error: unknown) => {
     console.error('Failed to open connection window:', error)
   })
 }

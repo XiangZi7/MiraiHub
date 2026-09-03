@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, reactive, toRefs, useTemplateRef, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { TabItem } from '@/components/ui/TabBar.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -24,7 +24,7 @@ import RecentView from './RecentView.vue'
 import SshKeysView from './SshKeysView.vue'
 import TerminalPanel from './TerminalPanel.vue'
 
-const searchRef = ref<InstanceType<typeof SearchField>>()
+const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
 
 const { connections, touch } = useConnections()
 const {
@@ -69,17 +69,37 @@ const tabItems = computed<TabItem[]>(() =>
   })),
 )
 
-/** 当前标签对应的 SSH 连接参数，非 SSH 或无标签时为 undefined */
-const activeSshConfig = computed(() => {
+/**
+ * 每个 SSH 标签各自持有一个终端实例。
+ *
+ * 标签切换时只用 v-show 隐藏，不卸载组件；这样后台会话、终端缓冲和正在运行的命令
+ * 都能保留。真正关闭标签时 v-for 才移除组件，由 TerminalPanel 负责断开会话。
+ */
+const sshTabViews = computed(() =>
+  openTabs
+    .filter(tab => tab.connection.kind === 'ssh')
+    .map((tab) => {
+      const settings = tab.connection.settings
+
+      return {
+        id: tab.id,
+        title: tab.connection.name,
+        config: toSshConfig(tab.connection),
+        terminalType: 'terminalType' in settings ? settings.terminalType : 'xterm-256color',
+        startupCommand: 'startupCommand' in settings ? settings.startupCommand : '',
+      }
+    }),
+)
+
+/** 当前标签按主视图收窄，避免把数据库连接传进机器面板，反之亦然 */
+const activeSshTab = computed(() =>
+  activeTab.value?.connection.kind === 'ssh' ? activeTab.value : undefined,
+)
+
+const activeDatabaseConnection = computed(() => {
   const connection = activeTab.value?.connection
-  if (!connection || connection.kind !== 'ssh')
-    return undefined
-
-  return toSshConfig(connection)
+  return connection && connection.kind !== 'ssh' ? connection : undefined
 })
-
-/** 当前标签的连接，给右侧机器面板与数据库视图 */
-const activeConnection = computed(() => activeTab.value?.connection)
 
 /**
  * 连接被删除时关掉对应标签。
@@ -94,7 +114,7 @@ watch(
 
     for (const tab of [...openTabs]) {
       if (!alive.has(tab.id))
-        close(tab.id)
+        closeTab(tab.id)
     }
   },
 )
@@ -144,6 +164,57 @@ function selectTab(id: string): void {
 }
 
 /**
+ * 切换 Servers / Databases 时优先恢复该类型最近打开的标签。
+ * 没有对应标签则保留全局标签选择，主视图会展示该类型的空状态。
+ */
+function selectNav(nav: NavId): void {
+  state.activeNav = nav
+
+  if (nav !== 'servers' && nav !== 'databases')
+    return
+
+  const activeKindMatches = nav === 'servers'
+    ? activeTab.value?.connection.kind === 'ssh'
+    : activeTab.value?.connection.kind !== 'ssh' && Boolean(activeTab.value)
+
+  if (activeKindMatches)
+    return
+
+  const candidate = [...openTabs]
+    .reverse()
+    .find(tab => nav === 'servers'
+      ? tab.connection.kind === 'ssh'
+      : tab.connection.kind !== 'ssh')
+
+  if (candidate)
+    activate(candidate.id)
+}
+
+/** 关闭当前标签后，让主视图跟随新的活动标签类型 */
+function closeTab(id: string): void {
+  const wasActive = activeId.value === id
+  close(id)
+
+  if (!wasActive || !activeTab.value)
+    return
+
+  state.activeNav = activeTab.value.connection.kind === 'ssh' ? 'servers' : 'databases'
+}
+
+function handleSshStatus(
+  tabId: string,
+  status: Parameters<typeof setStatus>[1],
+  sessionId: string,
+): void {
+  setStatus(tabId, status, sessionId)
+}
+
+/** 当前主视图决定“新建”打开 SSH 表单还是数据库表单。 */
+function addConnection(): void {
+  openConnectionWindow(state.activeNav === 'databases' ? 'database' : 'ssh')
+}
+
+/**
  * 执行命令面板选中的命令。
  * 命令 → 落点的对应表见 COMMAND_TARGETS。
  */
@@ -187,7 +258,7 @@ function runCommand(item: CommandItem): void {
       <div class="flex-1" data-tauri-drag-region />
 
       <SearchField
-        ref="searchRef"
+        ref="search"
         v-model="keyword"
         icon="lucide:search"
         placeholder="搜索服务器、文件、命令…"
@@ -197,7 +268,7 @@ function runCommand(item: CommandItem): void {
 
       <div class="flex items-center gap-1.5">
         <IconButton icon="lucide:command" title="命令面板 (⌘K)" @click="paletteOpen = true" />
-        <IconButton icon="lucide:plus" title="新建连接" @click="openConnectionWindow()" />
+        <IconButton icon="lucide:plus" title="新建连接" @click="addConnection" />
         <IconButton icon="lucide:bell" title="通知" />
         <IconButton icon="lucide:life-buoy" title="帮助" />
 
@@ -214,7 +285,7 @@ function runCommand(item: CommandItem): void {
 
     <!-- 主体 -->
     <div class="relative z-10 flex min-h-0 flex-1">
-      <AppSidebar v-model:active="activeNav" @open="openConnection" />
+      <AppSidebar :active="activeNav" @update:active="selectNav" @open="openConnection" />
 
       <div class="flex min-w-0 flex-1 flex-col">
         <!-- 连接标签栏 -->
@@ -225,8 +296,8 @@ function runCommand(item: CommandItem): void {
             addable
             class="flex-1"
             @update:active="selectTab"
-            @add="openConnectionWindow()"
-            @close="close"
+            @add="addConnection"
+            @close="closeTab"
           />
           <div class="flex items-center gap-0.5 pb-1.5">
             <IconButton
@@ -241,25 +312,35 @@ function runCommand(item: CommandItem): void {
 
         <!-- 主视图：跟随侧栏切换。各视图自带 .pane，浮在窗口底色上 -->
         <div class="flex min-h-0 flex-1 gap-2.5 p-2.5">
-          <template v-if="activeNav === 'servers'">
-            <!-- key 绑到标签 id：切换连接时重建终端实例，
-                 否则上一台机器的输出会留在屏幕上 -->
-            <TerminalPanel
-              :key="activeId || 'empty'"
-              :config="activeSshConfig"
-              :title="activeConnection?.name"
-              @status="(status, sessionId) => activeId && setStatus(activeId, status, sessionId)"
-            />
-            <MachinePanel
-              v-if="machineOpen"
-              v-model:view="machineView"
-              :connection="activeConnection"
-              :session-id="activeTab?.sessionId ?? ''"
-              @close="machineOpen = false"
-            />
-          </template>
+          <!-- SSH 标签保持挂载，只隐藏非活动项；关闭标签时才真正卸载并断开 -->
+          <TerminalPanel
+            v-for="tab in sshTabViews"
+            v-show="activeNav === 'servers' && activeId === tab.id"
+            :key="tab.id"
+            :config="tab.config"
+            :title="tab.title"
+            :terminal-type="tab.terminalType"
+            :startup-command="tab.startupCommand"
+            @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"
+          />
 
-          <DatabaseView v-else-if="activeNav === 'databases'" :connection="activeConnection" />
+          <TerminalPanel
+            v-if="activeNav === 'servers' && !activeSshTab"
+            key="empty-terminal"
+          />
+
+          <MachinePanel
+            v-if="activeNav === 'servers' && machineOpen"
+            v-model:view="machineView"
+            :connection="activeSshTab?.connection"
+            :session-id="activeSshTab?.sessionId ?? ''"
+            @close="machineOpen = false"
+          />
+
+          <DatabaseView
+            v-else-if="activeNav === 'databases'"
+            :connection="activeDatabaseConnection"
+          />
 
           <SshKeysView v-else-if="activeNav === 'ssh-keys'" />
 

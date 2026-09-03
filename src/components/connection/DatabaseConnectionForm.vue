@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, useId } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import AppTextField from '@/components/ui/AppTextField.vue'
 import { useConnections } from '@/composables/useConnections'
-import ConnectionTextField from './ConnectionTextField.vue'
 
 type DatabaseKind = 'mysql' | 'postgresql'
 type SectionId = 'general' | 'ssl'
 
-const props = defineProps<{
-  kind: DatabaseKind
-}>()
+const kind = defineModel<DatabaseKind>('kind', { required: true })
 
 const emit = defineEmits<{
   close: []
@@ -24,14 +25,26 @@ const feedbackTone = shallowRef<'info' | 'error'>('info')
 // 保存中，避免重复提交存出两条一样的连接
 const saving = shallowRef(false)
 const savePassword = shallowRef(false)
-const defaultPort = props.kind === 'mysql' ? '3306' : '5432'
-const databaseLabel = props.kind === 'mysql' ? 'MySQL' : 'PostgreSQL'
+const databaseKinds: Array<{ id: DatabaseKind, label: string, icon: string }> = [
+  { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
+  { id: 'postgresql', label: 'PostgreSQL', icon: 'lucide:cylinder' },
+]
+const sslModeOptions = [
+  { value: 'disable', label: 'Disable' },
+  { value: 'prefer', label: 'Prefer' },
+  { value: 'require', label: 'Require' },
+  { value: 'verify-ca', label: 'Verify CA' },
+  { value: 'verify-full', label: 'Verify Full' },
+] as const
+const portForKind = (value: DatabaseKind): string => value === 'mysql' ? '3306' : '5432'
+const defaultPort = computed(() => portForKind(kind.value))
+const databaseLabel = computed(() => kind.value === 'mysql' ? 'MySQL' : 'PostgreSQL')
 
 const form = reactive({
   name: '',
   group: '',
   host: '',
-  port: defaultPort,
+  port: defaultPort.value,
   database: '',
   username: '',
   password: '',
@@ -42,7 +55,6 @@ const form = reactive({
   clientKey: '',
 })
 
-const sslModeId = useId()
 const descriptionId = useId()
 
 const isReady = computed<boolean>(() => (
@@ -55,6 +67,20 @@ const isReady = computed<boolean>(() => (
 function setFeedback(message: string, tone: 'info' | 'error' = 'info'): void {
   feedback.value = message
   feedbackTone.value = tone
+}
+
+/** 切换数据库协议；端口仍是旧协议默认值时一并换成新默认值。 */
+function selectKind(nextKind: DatabaseKind): void {
+  if (nextKind === kind.value)
+    return
+
+  const previousDefaultPort = defaultPort.value
+  kind.value = nextKind
+
+  if (!form.port.trim() || form.port === previousDefaultPort)
+    form.port = portForKind(nextKind)
+
+  setFeedback('')
 }
 
 /** 校验必填项，不通过则跳回 General 并提示 */
@@ -94,9 +120,9 @@ async function saveConnection(): Promise<void> {
   try {
     await create({
       name: form.name.trim(),
-      kind: props.kind,
+      kind: kind.value,
       host: form.host.trim(),
-      port: Number(form.port) || Number(defaultPort),
+      port: Number(form.port) || Number(defaultPort.value),
       username: form.username.trim(),
       group: form.group.trim(),
       description: form.description.trim(),
@@ -137,15 +163,35 @@ async function saveConnection(): Promise<void> {
 
     <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin">
       <div v-if="activeSection === 'general'" class="grid gap-3.5">
+        <fieldset class="space-y-1.5">
+          <legend class="connection-label">
+            Connection Type
+          </legend>
+          <div class="database-kinds" role="radiogroup" aria-label="Database type">
+            <button
+              v-for="option in databaseKinds"
+              :key="option.id"
+              type="button"
+              role="radio"
+              :aria-checked="kind === option.id"
+              :class="['database-kind', kind === option.id && 'database-kind-active']"
+              @click="selectKind(option.id)"
+            >
+              <AppIcon :name="option.icon" :size="13" />
+              <span>{{ option.label }}</span>
+            </button>
+          </div>
+        </fieldset>
+
         <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
-          <ConnectionTextField
+          <AppTextField
             v-model="form.name"
             label="Connection Name"
             :placeholder="`e.g. ${databaseLabel} Database`"
             required
             autofocus
           />
-          <ConnectionTextField
+          <AppTextField
             v-model="form.group"
             label="Group"
             placeholder="e.g. Production"
@@ -153,14 +199,14 @@ async function saveConnection(): Promise<void> {
         </div>
 
         <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
-          <ConnectionTextField
+          <AppTextField
             v-model="form.host"
             label="Host"
             placeholder="localhost or db.example.com"
             inputmode="url"
             required
           />
-          <ConnectionTextField
+          <AppTextField
             v-model="form.port"
             label="Port"
             :placeholder="defaultPort"
@@ -169,14 +215,14 @@ async function saveConnection(): Promise<void> {
           />
         </div>
 
-        <ConnectionTextField
+        <AppTextField
           v-model="form.database"
           label="Database Name"
           placeholder="e.g. production"
           required
         />
 
-        <ConnectionTextField
+        <AppTextField
           v-model="form.username"
           label="Username"
           :placeholder="kind === 'mysql' ? 'e.g. root' : 'e.g. postgres'"
@@ -185,17 +231,14 @@ async function saveConnection(): Promise<void> {
         />
 
         <div class="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-          <ConnectionTextField
+          <AppTextField
             v-model="form.password"
             label="Password"
             type="password"
             placeholder="Enter password"
             autocomplete="current-password"
           />
-          <label class="connection-check mb-2">
-            <input v-model="savePassword" type="checkbox">
-            <span>Save password</span>
-          </label>
+          <AppCheckbox v-model="savePassword" label="Save password" class="mb-2" />
         </div>
 
         <div class="space-y-1.5">
@@ -215,32 +258,20 @@ async function saveConnection(): Promise<void> {
           Configure encrypted transport for this {{ databaseLabel }} connection.
         </div>
 
-        <div class="space-y-1.5">
-          <label :for="sslModeId" class="connection-label">SSL Mode</label>
-          <div class="connection-select-wrap">
-            <select :id="sslModeId" v-model="form.sslMode" class="connection-select">
-              <option value="disable">Disable</option>
-              <option value="prefer">Prefer</option>
-              <option value="require">Require</option>
-              <option value="verify-ca">Verify CA</option>
-              <option value="verify-full">Verify Full</option>
-            </select>
-            <AppIcon name="lucide:chevron-down" :size="14" class="pointer-events-none text-txt-4" />
-          </div>
-        </div>
+        <AppSelect v-model="form.sslMode" label="SSL Mode" :options="sslModeOptions" />
 
         <template v-if="form.sslMode !== 'disable'">
-          <ConnectionTextField
+          <AppTextField
             v-model="form.caCertificate"
             label="CA Certificate"
             placeholder="Path to CA certificate"
           />
-          <ConnectionTextField
+          <AppTextField
             v-model="form.clientCertificate"
             label="Client Certificate"
             placeholder="Optional client certificate"
           />
-          <ConnectionTextField
+          <AppTextField
             v-model="form.clientKey"
             label="Client Key"
             placeholder="Optional client key"
@@ -250,9 +281,9 @@ async function saveConnection(): Promise<void> {
     </div>
 
     <footer class="connection-footer">
-      <button type="button" class="btn" @click="testConnection">
+      <AppButton @click="testConnection">
         Test Connection
-      </button>
+      </AppButton>
       <p
         :class="['min-w-0 flex-1 truncate text-[11px]', feedbackTone === 'error' ? 'text-danger' : 'text-txt-3']"
         :title="feedback"
@@ -260,12 +291,12 @@ async function saveConnection(): Promise<void> {
       >
         {{ feedback }}
       </p>
-      <button type="button" class="btn" @click="emit('close')">
+      <AppButton @click="emit('close')">
         Cancel
-      </button>
-      <button type="submit" class="connection-primary" :disabled="saving">
+      </AppButton>
+      <AppButton type="submit" variant="primary" :disabled="saving">
         {{ saving ? 'Saving…' : 'Save' }}
-      </button>
+      </AppButton>
     </footer>
   </form>
 </template>
@@ -320,38 +351,43 @@ async function saveConnection(): Promise<void> {
   font-weight: 500;
 }
 
-.connection-select-wrap {
-  display: flex;
-  height: 34px;
-  align-items: center;
+.database-kinds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.database-kind {
+  display: inline-flex;
+  height: 32px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   border: 1px solid var(--color-line);
   border-radius: 7px;
   background: color-mix(in oklch, var(--color-panel) 88%, transparent);
-  padding-right: 10px;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  color: var(--color-txt-3);
+  font-size: 11.5px;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
 }
 
-.connection-select-wrap:focus-within {
-  border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
-}
-
-.connection-select {
-  min-width: 0;
-  flex: 1;
-  appearance: none;
-  align-self: stretch;
-  border: 0;
-  background: transparent;
-  padding: 0 10px;
-  color: var(--color-txt);
-  font-size: 12px;
+.database-kind:hover,
+.database-kind:focus-visible {
+  border-color: var(--color-line-strong);
+  color: var(--color-txt-2);
   outline: none;
 }
 
-.connection-select option {
-  background: #1a1b22;
+.database-kind-active {
+  border-color: color-mix(in oklch, var(--color-violet) 65%, transparent);
+  background: color-mix(in oklch, var(--color-violet) 14%, var(--color-card));
+  color: var(--color-txt);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
 .connection-textarea {
@@ -376,22 +412,6 @@ async function saveConnection(): Promise<void> {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
-.connection-check {
-  display: flex;
-  cursor: pointer;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-  color: var(--color-txt-3);
-  font-size: 11px;
-}
-
-.connection-check input {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--color-violet);
-}
-
 .connection-section-copy {
   border: 1px solid var(--color-line-soft);
   border-radius: 8px;
@@ -412,27 +432,9 @@ async function saveConnection(): Promise<void> {
   padding: 0 18px;
 }
 
-.connection-primary {
-  display: inline-flex;
-  height: 30px;
-  cursor: pointer;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in oklch, var(--color-violet) 65%, white 8%);
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--color-indigo), var(--color-violet));
-  padding: 0 15px;
-  color: white;
-  font-size: 12px;
-  font-weight: 500;
-  box-shadow: 0 5px 18px color-mix(in oklch, var(--color-violet) 24%, transparent);
-  transition: filter 150ms ease, border-color 150ms ease;
-}
-
-.connection-primary:hover,
-.connection-primary:focus-visible {
-  border-color: color-mix(in oklch, var(--color-violet) 55%, white 28%);
-  filter: brightness(1.1);
-  outline: none;
+@media (prefers-reduced-motion: reduce) {
+  .database-kind {
+    transition: none;
+  }
 }
 </style>

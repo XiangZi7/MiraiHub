@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, useTemplateRef, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
@@ -16,6 +16,10 @@ const props = defineProps<{
   config?: SshConfig
   /** 连接名，展示在工具条上。缺省时退回 user@host */
   title?: string
+  /** 请求远端 PTY 使用的终端类型 */
+  terminalType?: string
+  /** shell 就绪后自动执行，空串表示不执行 */
+  startupCommand?: string
 }>()
 
 const emit = defineEmits<{
@@ -26,9 +30,9 @@ const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string]
 }>()
 
-const containerRef = ref<HTMLElement>()
+const containerRef = useTemplateRef<HTMLElement>('terminal')
 
-const { status, sessionId, mount, connect, disconnect, resize } = useSshTerminal()
+const { status, sessionId, mount, connect, resize } = useSshTerminal()
 
 // xterm 是否已挂到容器上。挂载只做一次，重连复用同一个实例。
 // 用普通变量而非响应式：模板不读它，只是 watch 内部的一次性标记
@@ -73,7 +77,10 @@ watch(
       mounted = true
     }
 
-    await connect(config).catch(() => {
+    await connect(config, {
+      terminalType: props.terminalType,
+      startupCommand: props.startupCommand,
+    }).catch(() => {
       // 失败原因已经写进终端并存到 composable 的 error，这里只是别让 rejection 逃逸
     })
   },
@@ -92,8 +99,10 @@ async function reconnect(): Promise<void> {
   if (!props.config)
     return
 
-  await disconnect()
-  await connect(props.config).catch(() => {})
+  await connect(props.config, {
+    terminalType: props.terminalType,
+    startupCommand: props.startupCommand,
+  }).catch(() => {})
 }
 </script>
 
@@ -124,7 +133,7 @@ async function reconnect(): Promise<void> {
 
     <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染 -->
     <div v-if="config" class="relative min-h-0 flex-1">
-      <div ref="containerRef" class="absolute inset-0 p-2" />
+      <div ref="terminal" class="absolute inset-0 p-2" />
     </div>
 
     <!-- 还没选服务器 -->

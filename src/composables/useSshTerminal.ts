@@ -17,6 +17,11 @@ import * as ssh from '@/api/ssh'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import { TERMINAL_THEME } from '@/constants/terminal'
 
+interface TerminalConnectOptions {
+  terminalType?: string
+  startupCommand?: string
+}
+
 export function useSshTerminal() {
   // xterm 实例不参与响应式：它内部持有大量 DOM 与缓冲区，
   // 被 Vue 深度代理会显著拖慢渲染
@@ -37,6 +42,9 @@ export function useSshTerminal() {
 
   // 事件订阅的取消函数，断开时逐个调用
   let unlisteners: UnlistenFn[] = []
+  // 连接是多段异步流程。关闭标签或改配置时递增序号，让尚未返回的旧流程自行回收。
+  let operation = 0
+  let disposed = false
 
   /**
    * 挂载 xterm 到容器。
@@ -72,50 +80,112 @@ export function useSshTerminal() {
   }
 
   /** 建立连接并打开交互式 shell */
-  async function connect(config: SshConfig): Promise<void> {
+  async function connect(
+    config: SshConfig,
+    options: TerminalConnectOptions = {},
+  ): Promise<void> {
     const terminal = term.value
     if (!terminal)
       throw new Error('终端尚未挂载')
 
+    // 配置在独立窗口里可能被修改后重新打开同一标签。
+    // 先清掉旧会话，避免一个终端同时订阅两条连接的输出。
+    if (state.sessionId)
+      await disconnect()
+
+    const currentOperation = ++operation
     state.status = 'connecting'
     state.error = ''
     terminal.writeln(`\x1b[90m正在连接 ${config.username}@${config.host}:${config.port} …\x1b[0m`)
 
+    let id = ''
+
     try {
-      const id = await ssh.connect(config)
+      id = await ssh.connect(config)
+
+      if (!isActive(currentOperation)) {
+        await discardSession(id)
+        return
+      }
+
       state.sessionId = id
 
       // 先订阅再开 shell：反过来的话 shell 启动瞬间的输出（登录 banner、
       // 提示符）会在订阅建立前就推送出来，前几行就丢了
-      unlisteners = await Promise.all([
-        ssh.onOutput(id, (payload) => {
+      const stopOutput = await ssh.onOutput(id, (payload) => {
+        if (state.sessionId === id)
           terminal.write(ssh.decodeBase64(payload.data))
-        }),
-        ssh.onStatus(id, (payload) => {
-          state.status = payload.status
+      })
 
-          if (payload.status === 'disconnected') {
-            state.error = payload.reason ?? ''
-            const suffix = payload.exitCode === null ? '' : `（退出码 ${payload.exitCode}）`
-            terminal.writeln(`\r\n\x1b[90m连接已断开${suffix}\x1b[0m`)
-          }
-        }),
-      ])
+      if (!isActive(currentOperation)) {
+        stopOutput()
+        await discardSession(id)
+        return
+      }
+
+      unlisteners.push(stopOutput)
+
+      const stopStatus = await ssh.onStatus(id, (payload) => {
+        if (state.sessionId !== id)
+          return
+
+        state.status = payload.status
+
+        if (payload.status === 'disconnected') {
+          state.error = payload.reason ?? ''
+          const suffix = payload.exitCode === null ? '' : `（退出码 ${payload.exitCode}）`
+          terminal.writeln(`\r\n\x1b[90m连接已断开${suffix}\x1b[0m`)
+        }
+      })
+
+      if (!isActive(currentOperation)) {
+        stopStatus()
+        await discardSession(id)
+        return
+      }
+
+      unlisteners.push(stopStatus)
 
       await ssh.openShell(id, {
+        term: options.terminalType || 'xterm-256color',
         cols: terminal.cols,
         rows: terminal.rows,
       })
 
+      if (!isActive(currentOperation)) {
+        await discardSession(id)
+        return
+      }
+
       state.status = 'connected'
-      terminal.focus()
+
+      const startupCommand = options.startupCommand?.trim()
+      if (startupCommand)
+        await ssh.writeToShell(id, `${startupCommand}\r`)
+
+      if (isActive(currentOperation))
+        terminal.focus()
     }
     catch (err) {
+      // 关闭标签/改配置导致的过期流程不应覆盖新连接的状态或打印伪错误。
+      if (!isActive(currentOperation)) {
+        if (id)
+          await discardSession(id)
+        return
+      }
+
       state.status = 'disconnected'
       state.error = ssh.errorMessage(err)
       terminal.writeln(`\r\n\x1b[31m连接失败：${state.error}\x1b[0m`)
+
+      // TCP 已连上但订阅、PTY 或启动命令失败时，后端会话已经登记进管理器；
+      // 只清前端订阅会把它永久留在会话表里，所以这里也要主动断开。
       // 订阅可能已部分建立，清掉避免泄漏
       await cleanup()
+
+      if (id)
+        await discardSession(id)
+
       throw err
     }
   }
@@ -143,14 +213,24 @@ export function useSshTerminal() {
 
   /** 主动断开 */
   async function disconnect(): Promise<void> {
-    if (state.sessionId) {
-      await ssh
-        .disconnect(state.sessionId)
-        .catch(err => console.warn('断开会话失败：', ssh.errorMessage(err)))
-    }
+    operation += 1
+    const id = state.sessionId
 
     await cleanup()
     state.status = 'disconnected'
+
+    if (id)
+      await discardSession(id)
+  }
+
+  function isActive(currentOperation: number): boolean {
+    return !disposed && operation === currentOperation
+  }
+
+  async function discardSession(id: string): Promise<void> {
+    await ssh
+      .disconnect(id)
+      .catch(err => console.warn('断开会话失败：', ssh.errorMessage(err)))
   }
 
   /** 取消所有事件订阅，重置会话 id */
@@ -174,6 +254,7 @@ export function useSshTerminal() {
   // 组件卸载时必须清理：xterm 持有 DOM 引用，事件订阅握着 Tauri 侧的回调，
   // 漏掉任何一个都会在反复开关标签页时累积泄漏
   onBeforeUnmount(() => {
+    disposed = true
     void disconnect()
     term.value?.dispose()
   })

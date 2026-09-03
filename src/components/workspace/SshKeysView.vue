@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, shallowRef } from 'vue'
+import { onMounted, shallowRef, useTemplateRef } from 'vue'
 import { useClipboard } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
@@ -25,7 +25,7 @@ onMounted(refresh)
 // 生成密钥对话框是否打开
 const generateOpen = shallowRef(false)
 // 拿到对话框实例，生成失败时把错误回传给它显示在表单里
-const dialogRef = ref<InstanceType<typeof GenerateKeyDialog>>()
+const dialogRef = useTemplateRef<InstanceType<typeof GenerateKeyDialog>>('generateDialog')
 
 // 指纹与公钥各用一份 clipboard：共用会让复制指纹时公钥按钮也跳成"已复制"。
 // copiedDuring 给到 1.6s，够看清反馈再回到默认态
@@ -54,7 +54,9 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
     generateOpen.value = false
   }
   catch (err) {
-    dialogRef.value?.fail(err instanceof Error ? err.message : String(err))
+    // Tauri 的结构化 AppError 是普通对象，String(err) 只会得到 [object Object]。
+    // composable 已用统一的 errorMessage 提取过可读文案，优先回传那一份。
+    dialogRef.value?.fail(error.value || (err instanceof Error ? err.message : String(err)))
   }
 }
 </script>
@@ -242,7 +244,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
 
     <GenerateKeyDialog
       v-if="generateOpen"
-      ref="dialogRef"
+      ref="generateDialog"
       @close="generateOpen = false"
       @submit="handleGenerate"
     />

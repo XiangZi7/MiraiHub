@@ -72,16 +72,17 @@ impl SshSession {
 
         // russh 自身没有连接超时，靠外层 timeout 兜住：
         // 否则连一个丢包的地址会一直挂着，用户只看到界面卡住
-        let mut handle = tokio::time::timeout(Duration::from_secs(config.timeout_secs), connect_fut)
-            .await
-            .map_err(|_| SshError::Timeout {
-                endpoint: endpoint.clone(),
-                secs: config.timeout_secs,
-            })?
-            .map_err(|source| SshError::Connect {
-                endpoint: endpoint.clone(),
-                source,
-            })?;
+        let mut handle =
+            tokio::time::timeout(Duration::from_secs(config.timeout_secs), connect_fut)
+                .await
+                .map_err(|_| SshError::Timeout {
+                    endpoint: endpoint.clone(),
+                    secs: config.timeout_secs,
+                })?
+                .map_err(|source| SshError::Connect {
+                    endpoint: endpoint.clone(),
+                    source,
+                })?;
 
         authenticate(&mut handle, &config).await?;
 
@@ -186,9 +187,7 @@ impl SshSession {
             match msg {
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
                 // ext == 1 是 stderr，其余扩展类型按协议保留，忽略即可
-                ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
-                    stderr.extend_from_slice(&data)
-                }
+                ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
                 ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
                 ChannelMsg::Eof | ChannelMsg::Close => break,
                 _ => {}
@@ -233,7 +232,7 @@ async fn pump_output(app: AppHandle, session_id: String, mut channel: ChannelRea
                     },
                 );
             }
-            ChannelMsg::ExtendedData { data, ext } if ext == 1 => {
+            ChannelMsg::ExtendedData { data, ext: 1 } => {
                 emit_output(
                     &app,
                     OutputEvent {
