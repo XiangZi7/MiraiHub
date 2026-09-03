@@ -113,7 +113,7 @@ pub fn open_connection_window(
 
         builder = builder.effects(
             EffectsBuilder::new()
-                .effect(Effect::Acrylic)
+                .effect(Effect::MicaDark)
                 .state(EffectState::Active)
                 .build(),
         );
@@ -189,7 +189,7 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
 
         builder = builder.effects(
             EffectsBuilder::new()
-                .effect(Effect::Acrylic)
+                .effect(Effect::MicaDark)
                 .state(EffectState::Active)
                 .build(),
         );

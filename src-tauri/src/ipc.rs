@@ -10,7 +10,7 @@
 use tauri::ipc::Invoke;
 use tauri::Wry;
 
-use crate::{local_terminal, platform, ssh};
+use crate::{db, local_terminal, platform, ssh};
 
 /// 构造全部命令的分发闭包，交给 `tauri::Builder::invoke_handler`。
 ///
@@ -46,6 +46,13 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ssh::commands::ssh_list_keys,
         ssh::commands::ssh_generate_key,
         ssh::commands::ssh_delete_key,
+        // ---------- 数据库 ----------
+        db::commands::db_test_connection,
+        db::commands::db_connect,
+        db::commands::db_disconnect,
+        db::commands::db_list_objects,
+        db::commands::db_describe_object,
+        db::commands::db_execute,
         // ---------- 本地终端 ----------
         local_terminal::local_terminal_create,
         local_terminal::local_terminal_write,

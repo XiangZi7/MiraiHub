@@ -48,6 +48,22 @@ log = "0.4"
 tauri-plugin-dialog = "2"
 portable-pty = "0.8.1"
 
+# 数据库工作台：同时支持 MySQL / PostgreSQL，连接池与查询都留在 Rust 侧，
+# 凭据和原始连接句柄不会跨 IPC 暴露给 WebView。
+sqlx = { version = "0.8.6", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "mysql",
+    "postgres",
+    "chrono",
+    "json",
+    "uuid",
+    "rust_decimal",
+] }
+futures-util = "0.3"
+chrono = "0.4"
+uuid = "1"
+rust_decimal = "1"
+
 [target.'cfg(windows)'.dependencies]
 # 与 tauri 内部同版本（Cargo.lock windows 0.61.x），保证 window.hwnd() 的 HWND 类型直接兼容。
 # 仅用于给无边框主窗补 DWM 原生阴影，见 platform/window.rs 的 enable_window_shadow。

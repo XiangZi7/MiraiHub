@@ -5,7 +5,7 @@
 
 use tauri::{App, AppHandle, Builder, RunEvent, Wry};
 
-use crate::{ipc, local_terminal, platform, ssh};
+use crate::{db, ipc, local_terminal, platform, ssh};
 
 /// 组装并启动应用。
 pub fn run() {
@@ -41,11 +41,12 @@ fn register_plugins(builder: Builder<Wry>) -> Builder<Wry> {
 
 /// 注册跨命令共享的托管状态。
 ///
-/// 每个业务模块一个容器：SSH 有会话表，数据库模块以后会加连接池。
+/// 每个业务模块一个容器：SSH 有会话表，数据库有连接池。
 fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
     builder
         .manage(ssh::SessionManager::new())
         .manage(ssh::TransferManager::new())
+        .manage(db::DatabaseManager::new())
         .manage(local_terminal::LocalTerminalManager::new())
 }
 
@@ -71,6 +72,8 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
         tauri::async_runtime::block_on(transfers.cancel_all());
         let manager = app.state::<ssh::SessionManager>();
         tauri::async_runtime::block_on(manager.shutdown());
+        let databases = app.state::<db::DatabaseManager>();
+        tauri::async_runtime::block_on(databases.shutdown());
         let local_terminals = app.state::<local_terminal::LocalTerminalManager>();
         local_terminals.shutdown();
     }

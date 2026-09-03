@@ -1,14 +1,24 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, useId } from 'vue'
+import { computed, onMounted, reactive, shallowRef, useId } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
+import * as connectionsStore from '@/api/connections'
+import * as databaseApi from '@/api/database'
 import { useConnections } from '@/composables/useConnections'
+import type { NewConnection } from '@/types/connection'
+import { isDatabaseConnection } from '@/types/connection'
+import type { DatabaseConfig, DatabaseKind, DatabaseSslMode } from '@/types/database'
 
-type DatabaseKind = 'mysql' | 'postgresql'
 type SectionId = 'general' | 'ssl'
+
+const props = withDefaults(defineProps<{
+  connectionId?: string
+}>(), {
+  connectionId: '',
+})
 
 const kind = defineModel<DatabaseKind>('kind', { required: true })
 
@@ -16,14 +26,16 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const { create } = useConnections()
+const { create, update } = useConnections()
 
 const activeSection = shallowRef<SectionId>('general')
 const feedback = shallowRef('')
 // 反馈是成功还是失败，决定文案配色
 const feedbackTone = shallowRef<'info' | 'error'>('info')
+const testing = shallowRef(false)
 // 保存中，避免重复提交存出两条一样的连接
 const saving = shallowRef(false)
+const loadingConnection = shallowRef(Boolean(props.connectionId))
 const savePassword = shallowRef(false)
 const databaseKinds: Array<{ id: DatabaseKind, label: string, icon: string }> = [
   { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
@@ -49,7 +61,7 @@ const form = reactive({
   username: '',
   password: '',
   description: '',
-  sslMode: 'prefer',
+  sslMode: 'prefer' as DatabaseSslMode,
   caCertificate: '',
   clientCertificate: '',
   clientKey: '',
@@ -66,6 +78,45 @@ const isReady = computed<boolean>(() => (
 function setFeedback(message: string, tone: 'info' | 'error' = 'info'): void {
   feedback.value = message
   feedbackTone.value = tone
+}
+
+onMounted(loadConnection)
+
+async function loadConnection(): Promise<void> {
+  if (!props.connectionId)
+    return
+
+  try {
+    const connection = await connectionsStore.get(props.connectionId)
+    if (!connection || !isDatabaseConnection(connection)) {
+      setFeedback('找不到要编辑的数据库连接', 'error')
+      return
+    }
+
+    const settings = connection.settings
+    kind.value = connection.kind
+    Object.assign(form, {
+      name: connection.name,
+      group: connection.group,
+      host: connection.host,
+      port: String(connection.port),
+      database: settings.database,
+      username: connection.username,
+      password: settings.password,
+      description: connection.description,
+      sslMode: settings.sslMode ?? (settings.ssl ? 'prefer' : 'disable'),
+      caCertificate: settings.caCertificate ?? '',
+      clientCertificate: settings.clientCertificate ?? '',
+      clientKey: settings.clientKey ?? '',
+    })
+    savePassword.value = Boolean(settings.password)
+  }
+  catch (error) {
+    setFeedback(`读取连接失败：${databaseApi.errorMessage(error)}`, 'error')
+  }
+  finally {
+    loadingConnection.value = false
+  }
 }
 
 /** 切换数据库协议；端口仍是旧协议默认值时一并换成新默认值。 */
@@ -90,18 +141,50 @@ function validate(): boolean {
     return false
   }
 
+  const port = Number(form.port)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    activeSection.value = 'general'
+    setFeedback('端口必须是 1–65535 之间的整数', 'error')
+    return false
+  }
+
   return true
 }
 
-/**
- * 测试连接。
- *
- * 数据库驱动还没接上（Rust 侧的 db 模块待建），
- * 所以这里只能验字段格式 —— 说清楚这一点，别让人以为真连过了。
- */
-function testConnection(): void {
-  if (validate())
-    setFeedback('字段检查通过；数据库连通性测试待驱动接入')
+function buildConfig(): DatabaseConfig {
+  return {
+    kind: kind.value,
+    host: form.host.trim(),
+    port: Number(form.port),
+    username: form.username.trim(),
+    password: form.password,
+    database: form.database.trim(),
+    sslMode: form.sslMode,
+    caCertificate: form.caCertificate.trim(),
+    clientCertificate: form.clientCertificate.trim(),
+    clientKey: form.clientKey.trim(),
+    timeoutSecs: 20,
+  }
+}
+
+/** 真正建立驱动连接并立即释放，用于验证网络、TLS 与认证配置。 */
+async function testConnection(): Promise<void> {
+  if (!validate() || testing.value)
+    return
+
+  testing.value = true
+  setFeedback('正在连接…')
+
+  try {
+    await databaseApi.testConnection(buildConfig())
+    setFeedback('连接成功')
+  }
+  catch (error) {
+    setFeedback(databaseApi.errorMessage(error), 'error')
+  }
+  finally {
+    testing.value = false
+  }
 }
 
 /**
@@ -117,7 +200,7 @@ async function saveConnection(): Promise<void> {
   saving.value = true
 
   try {
-    await create({
+    const input: NewConnection = {
       name: form.name.trim(),
       kind: kind.value,
       host: form.host.trim(),
@@ -132,13 +215,22 @@ async function saveConnection(): Promise<void> {
         // 没勾"保存密码"就不写进存储，下次连接时再问
         password: savePassword.value ? form.password : '',
         ssl: form.sslMode !== 'disable',
+        sslMode: form.sslMode,
+        caCertificate: form.caCertificate.trim(),
+        clientCertificate: form.clientCertificate.trim(),
+        clientKey: form.clientKey.trim(),
       },
-    })
+    }
+
+    if (props.connectionId)
+      await update(props.connectionId, input)
+    else
+      await create(input)
 
     emit('close')
   }
   catch (err) {
-    setFeedback(`保存失败：${err instanceof Error ? err.message : String(err)}`, 'error')
+    setFeedback(`保存失败：${databaseApi.errorMessage(err)}`, 'error')
   }
   finally {
     saving.value = false
@@ -281,8 +373,8 @@ async function saveConnection(): Promise<void> {
     </div>
 
     <footer class="connection-footer">
-      <AppButton @click="testConnection">
-        Test Connection
+      <AppButton :disabled="testing || loadingConnection" @click="testConnection">
+        {{ testing ? 'Testing…' : 'Test Connection' }}
       </AppButton>
       <p
         :class="['min-w-0 flex-1 truncate text-[11px]', feedbackTone === 'error' ? 'text-danger' : 'text-txt-3']"
@@ -294,7 +386,7 @@ async function saveConnection(): Promise<void> {
       <AppButton @click="emit('close')">
         Cancel
       </AppButton>
-      <AppButton type="submit" variant="primary" :disabled="saving">
+      <AppButton type="submit" variant="primary" :disabled="saving || loadingConnection">
         {{ saving ? 'Saving…' : 'Save' }}
       </AppButton>
     </footer>

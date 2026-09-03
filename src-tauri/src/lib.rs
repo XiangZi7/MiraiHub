@@ -6,12 +6,13 @@
 //! - `error`     跨 IPC 的统一错误类型
 //! - `platform`  平台相关的窗口处理
 //! - `ssh`       SSH 连接、终端会话、密钥管理
-//! - `db`        （规划中）数据库连接与查询，分层方式与 `ssh` 一致
+//! - `db`        数据库连接池、对象结构与查询
 //!
 //! 每个业务模块内部自下而上分层：`models` → `error` → 业务实现 → `commands`，
 //! 其中 `commands.rs` 只做转调与错误转换，逻辑写在下层以便 `cargo test` 覆盖。
 
 pub mod app;
+pub mod db;
 pub mod error;
 pub mod ipc;
 pub mod local_terminal;

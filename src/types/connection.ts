@@ -6,9 +6,10 @@
  */
 
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
+import type { DatabaseConfig, DatabaseKind, DatabaseSslMode } from '@/types/database'
 
 /** 连接协议。SSH 与数据库共用一套存储，靠这个字段分流 */
-export type ConnectionKind = 'ssh' | 'local' | 'mysql' | 'postgresql'
+export type ConnectionKind = 'ssh' | 'local' | DatabaseKind
 
 export type ConnectionTagColor
   = | 'red'
@@ -67,6 +68,11 @@ export interface DatabaseConnectionSettings {
   password: string
   /** 是否走 SSL */
   ssl: boolean
+  /** 完整 SSL 策略。可选是为了兼容只保存过 ssl 布尔值的旧连接。 */
+  sslMode?: DatabaseSslMode
+  caCertificate?: string
+  clientCertificate?: string
+  clientKey?: string
 }
 
 /** 本地 PTY 终端的专属配置 */
@@ -149,6 +155,30 @@ export function toSshConfig(connection: SavedConnection): SshConfig {
     auth: settings.auth,
     timeoutSecs: settings.timeoutSecs,
     keepaliveSecs: settings.keepaliveSecs,
+  }
+}
+
+/** 已保存的数据库连接 → Rust 驱动入参。 */
+export function toDatabaseConfig(
+  connection: SavedConnection,
+  passwordOverride?: string,
+): DatabaseConfig {
+  if (!isDatabaseConnection(connection))
+    throw new Error(`连接 ${connection.name} 不是数据库类型`)
+
+  const { settings } = connection
+  return {
+    kind: connection.kind,
+    host: connection.host,
+    port: connection.port,
+    username: connection.username,
+    password: passwordOverride ?? settings.password,
+    database: settings.database,
+    sslMode: settings.sslMode ?? (settings.ssl ? 'prefer' : 'disable'),
+    caCertificate: settings.caCertificate ?? '',
+    clientCertificate: settings.clientCertificate ?? '',
+    clientKey: settings.clientKey ?? '',
+    timeoutSecs: 20,
   }
 }
 

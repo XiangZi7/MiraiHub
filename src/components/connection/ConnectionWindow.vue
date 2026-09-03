@@ -51,6 +51,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <DatabaseConnectionForm
         v-else
         v-model:kind="databaseKind"
+        :connection-id="connectionId"
         @close="closeDialog"
       />
     </main>
