@@ -3,7 +3,10 @@
  *
  * 后端统一传 Unix 毫秒时间戳，展示层在这里转成人类可读的形式 ——
  * 避免每个组件各写一份，也让"多久算刚刚"这类阈值只有一处定义。
+ * 日期与时间的具体格式跟随设置里的「日期和时间」。
  */
+
+import { settingsSnapshot } from '@/composables/useSettings'
 
 /** 相对时间的分档，单位毫秒。从小到大匹配，命中即返回 */
 const UNITS: { limit: number, divisor: number, suffix: string }[] = [
@@ -13,6 +16,8 @@ const UNITS: { limit: number, divisor: number, suffix: string }[] = [
   { limit: 2_592_000_000, divisor: 86_400_000, suffix: '天前' },
   { limit: 31_536_000_000, divisor: 2_592_000_000, suffix: '个月前' },
 ]
+
+const pad = (value: number): string => String(value).padStart(2, '0')
 
 /**
  * 相对时间，如「3 分钟前」。
@@ -39,15 +44,41 @@ export function formatRelative(timestamp: number): string {
   return formatDate(timestamp)
 }
 
-/** 绝对日期，如「2026-09-03」 */
+/** 绝对日期，按设置输出 `2026-09-03` / `09/03/2026` / `03/09/2026` */
 export function formatDate(timestamp: number): string {
   if (!timestamp)
     return '—'
 
   const date = new Date(timestamp)
-  const pad = (value: number): string => String(value).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
 
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  switch (settingsSnapshot().dateFormat) {
+    case 'MM/DD/YYYY':
+      return `${month}/${day}/${year}`
+    case 'DD/MM/YYYY':
+      return `${day}/${month}/${year}`
+    default:
+      return `${year}-${month}-${day}`
+  }
+}
+
+/** 时刻，按设置输出 `14:32` 或 `2:32 PM` */
+export function formatTime(timestamp: number): string {
+  if (!timestamp)
+    return '—'
+
+  const date = new Date(timestamp)
+  const hours = date.getHours()
+  const minutes = pad(date.getMinutes())
+
+  if (settingsSnapshot().timeFormat === '12-hour') {
+    const suffix = hours < 12 ? 'AM' : 'PM'
+    return `${hours % 12 || 12}:${minutes} ${suffix}`
+  }
+
+  return `${pad(hours)}:${minutes}`
 }
 
 /** 日期加时间，如「2026-09-03 14:32」 */
@@ -55,10 +86,7 @@ export function formatDateTime(timestamp: number): string {
   if (!timestamp)
     return '—'
 
-  const date = new Date(timestamp)
-  const pad = (value: number): string => String(value).padStart(2, '0')
-
-  return `${formatDate(timestamp)} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return `${formatDate(timestamp)} ${formatTime(timestamp)}`
 }
 
 /** 会话时长，如「1:23:45」或「23:45」 */
@@ -67,8 +95,6 @@ export function formatDuration(ms: number): string {
   const hours = Math.floor(total / 3600)
   const minutes = Math.floor((total % 3600) / 60)
   const seconds = total % 60
-
-  const pad = (value: number): string => String(value).padStart(2, '0')
 
   return hours > 0
     ? `${hours}:${pad(minutes)}:${pad(seconds)}`

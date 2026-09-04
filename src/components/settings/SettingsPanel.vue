@@ -1,30 +1,53 @@
 <script setup lang="ts">
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import { DEFAULT_SETTINGS } from '@/types/settings'
 import type {
   EditableSettingField,
+  SettingField,
   SettingKey,
   SettingValue,
   SettingsPage,
   SettingsValues,
 } from '@/types/settings'
+import { IS_TAURI } from '@/utils/window'
+import ShortcutRecorder from './ShortcutRecorder.vue'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   page: SettingsPage
   values: SettingsValues
-}>()
+  /** 校验失败的项及原因 */
+  errors?: Partial<Record<SettingKey, string>>
+  /** 关于页等展示项的运行时取值，按 field.id 覆盖 */
+  runtimeValues?: Record<string, string>
+}>(), {
+  errors: () => ({}),
+  runtimeValues: () => ({}),
+})
 
 const emit = defineEmits<{
   update: [key: SettingKey, value: SettingValue]
 }>()
 
-function stringValue(values: SettingsValues, key: SettingKey): string {
-  const value = values[key]
+function stringValue(key: SettingKey): string {
+  const value = props.values[key]
   return typeof value === 'string' ? value : ''
 }
 
-function booleanValue(values: SettingsValues, key: SettingKey): boolean {
-  return values[key] === true
+function booleanValue(key: SettingKey): boolean {
+  return props.values[key] === true
+}
+
+function defaultString(key: SettingKey): string {
+  const value = DEFAULT_SETTINGS[key]
+  return typeof value === 'string' ? value : ''
+}
+
+/** 依赖的开关关闭时整行禁用，避免出现"最小化到托盘"却没有托盘的组合。 */
+function isDisabled(field: SettingField): boolean {
+  return field.control !== 'display' && Boolean(field.dependsOn) && !booleanValue(field.dependsOn!)
 }
 
 function updateText(field: EditableSettingField, event: Event): void {
@@ -34,71 +57,151 @@ function updateText(field: EditableSettingField, event: Event): void {
 function controlWidth(size: EditableSettingField['size']): string {
   switch (size) {
     case 'lg':
-      return 'w-40'
+      return 'w-52'
     case 'md':
-      return 'w-24'
+      return 'w-28'
     default:
       return 'w-20'
   }
+}
+
+async function browseDirectory(field: EditableSettingField): Promise<void> {
+  if (!IS_TAURI)
+    return
+
+  const selected = await openDialog({
+    directory: true,
+    multiple: false,
+    title: field.label,
+    defaultPath: stringValue(field.key) || undefined,
+  })
+  if (typeof selected === 'string')
+    emit('update', field.key, selected)
+}
+
+function displayValue(field: SettingField): string {
+  if (field.control !== 'display')
+    return ''
+  return (field.id && props.runtimeValues[field.id]) || field.displayValue
 }
 </script>
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col" :aria-labelledby="`settings-${page.id}-title`">
     <header class="settings-page-header">
-      <h2 :id="`settings-${page.id}-title`" class="text-xs font-semibold text-txt">
+      <h2 :id="`settings-${page.id}-title`" class="text-[12.5px] font-semibold text-txt">
         {{ page.title }}
       </h2>
+      <p v-if="page.description" class="mt-0.5 text-[10.5px] text-txt-4">
+        {{ page.description }}
+      </p>
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto scroll-thin">
       <section v-for="group in page.groups" :key="group.title" class="settings-group">
-        <h3 v-if="group.title !== page.title" class="settings-group-title">
+        <h3 class="settings-group-title">
           {{ group.title }}
         </h3>
 
-        <div class="px-5">
-          <div v-for="field in group.fields" :key="field.label" class="settings-row">
-            <div class="min-w-0 pr-4">
-              <p class="text-[11px] leading-4 text-txt-2">
+        <div class="settings-rows">
+          <div
+            v-for="field in group.fields"
+            :key="field.label"
+            :class="['settings-row', isDisabled(field) && 'settings-row-disabled']"
+          >
+            <div class="min-w-0 flex-1 pr-4">
+              <p class="text-[11.5px] leading-4 text-txt">
                 {{ field.label }}
               </p>
-              <p v-if="field.description" class="mt-0.5 text-[9.5px] leading-3.5 text-txt-4">
+              <p v-if="field.description" class="mt-0.5 text-[10px] leading-3.5 text-txt-4">
                 {{ field.description }}
+              </p>
+              <p
+                v-if="field.control !== 'display' && errors[field.key]"
+                class="mt-0.5 text-[10px] leading-3.5 text-danger"
+                role="alert"
+              >
+                {{ errors[field.key] }}
               </p>
             </div>
 
             <template v-if="field.control === 'display'">
-              <span class="shrink-0 text-[11px] text-txt-3">{{ field.displayValue }}</span>
+              <span class="shrink-0 font-mono text-[11px] text-txt-3">{{ displayValue(field) }}</span>
             </template>
 
             <template v-else>
               <AppSwitch
                 v-if="field.control === 'switch'"
-                :model-value="booleanValue(values, field.key)"
+                :model-value="booleanValue(field.key)"
                 :label="field.label"
+                :disabled="isDisabled(field)"
                 hide-label
                 @update:model-value="emit('update', field.key, $event)"
               />
 
               <AppSelect
                 v-else-if="field.control === 'select'"
-                :model-value="stringValue(values, field.key)"
+                :model-value="stringValue(field.key)"
                 :label="field.label"
                 :options="field.options ?? []"
+                :disabled="isDisabled(field)"
                 hide-label
                 compact
-                :class="controlWidth(field.size)"
+                :class="['shrink-0', controlWidth(field.size)]"
                 @update:model-value="emit('update', field.key, $event)"
               />
 
+              <ShortcutRecorder
+                v-else-if="field.control === 'shortcut'"
+                :model-value="stringValue(field.key)"
+                :label="field.label"
+                :default-value="defaultString(field.key)"
+                :disabled="isDisabled(field)"
+                @update:model-value="emit('update', field.key, $event)"
+              />
+
+              <div v-else-if="field.control === 'directory'" class="flex shrink-0 items-center gap-1">
+                <input
+                  :value="stringValue(field.key)"
+                  :aria-label="field.label"
+                  :placeholder="field.placeholder"
+                  :class="['settings-input', controlWidth(field.size)]"
+                  :disabled="isDisabled(field)"
+                  spellcheck="false"
+                  @input="updateText(field, $event)"
+                >
+                <button
+                  v-if="stringValue(field.key)"
+                  type="button"
+                  class="icon-btn size-6"
+                  title="清除"
+                  aria-label="清除目录"
+                  @click="emit('update', field.key, '')"
+                >
+                  <AppIcon name="lucide:x" :size="12" />
+                </button>
+                <button
+                  type="button"
+                  class="icon-btn size-6 disabled:pointer-events-none disabled:opacity-35"
+                  title="选择目录"
+                  aria-label="选择目录"
+                  :disabled="!IS_TAURI || isDisabled(field)"
+                  @click="browseDirectory(field)"
+                >
+                  <AppIcon name="lucide:folder-open" :size="13" />
+                </button>
+              </div>
+
               <input
                 v-else
-                :value="stringValue(values, field.key)"
+                :value="stringValue(field.key)"
                 :aria-label="field.label"
+                :aria-invalid="Boolean(errors[field.key]) || undefined"
                 :placeholder="field.placeholder"
                 :inputmode="field.inputmode ?? 'text'"
-                :class="['settings-input', controlWidth(field.size), field.control === 'shortcut' && 'settings-shortcut']"
+                :class="['settings-input', controlWidth(field.size), errors[field.key] && 'settings-input-invalid']"
+                :disabled="isDisabled(field)"
+                spellcheck="false"
                 @input="updateText(field, $event)"
               >
             </template>
@@ -112,12 +215,17 @@ function controlWidth(size: EditableSettingField['size']): string {
 <style scoped>
 .settings-page-header {
   display: flex;
-  height: 42px;
+  min-height: 52px;
   flex-shrink: 0;
-  align-items: center;
+  flex-direction: column;
+  justify-content: center;
   border-bottom: 1px solid var(--color-line-soft);
   background: color-mix(in oklch, var(--color-card) 26%, transparent);
-  padding: 0 15px;
+  padding: 8px 18px;
+}
+
+.settings-group {
+  padding: 10px 18px 14px;
 }
 
 .settings-group + .settings-group {
@@ -125,28 +233,45 @@ function controlWidth(size: EditableSettingField['size']): string {
 }
 
 .settings-group-title {
-  display: flex;
-  min-height: 31px;
-  align-items: center;
-  background: color-mix(in oklch, var(--color-card) 22%, transparent);
-  padding: 0 20px;
-  color: var(--color-txt-2);
-  font-size: 10.5px;
-  font-weight: 600;
+  margin-bottom: 4px;
+  padding: 0 2px;
+  color: var(--color-txt-4);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.settings-rows {
+  overflow: hidden;
+  border: 1px solid var(--color-line-soft);
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--color-card) 55%, transparent);
+  box-shadow: var(--shadow-card);
 }
 
 .settings-row {
   display: flex;
-  min-height: 31px;
+  min-height: 42px;
   align-items: center;
   justify-content: space-between;
+  padding: 7px 12px;
+  transition: opacity 150ms ease;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--color-line-soft);
+}
+
+.settings-row-disabled {
+  opacity: 0.45;
 }
 
 .settings-input {
   height: 28px;
   flex-shrink: 0;
   border: 1px solid var(--color-line);
-  border-radius: 6px;
+  border-radius: 7px;
   background: color-mix(in oklch, var(--color-panel) 82%, transparent);
   padding: 0 9px;
   color: var(--color-txt);
@@ -164,13 +289,18 @@ function controlWidth(size: EditableSettingField['size']): string {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
-.settings-shortcut {
-  color: var(--color-txt-2);
-  font-family: var(--font-mono);
-  text-align: center;
+.settings-input:disabled {
+  pointer-events: none;
+}
+
+.settings-input-invalid,
+.settings-input-invalid:focus-visible {
+  border-color: color-mix(in oklch, var(--color-danger) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-danger) 12%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .settings-row,
   .settings-input {
     transition: none;
   }

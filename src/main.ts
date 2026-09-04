@@ -11,6 +11,7 @@ import '@fontsource-variable/jetbrains-mono'
 
 import '@/assets/styles/main.css'
 import { MIRAI_ICONS } from '@/constants/icons'
+import { startSettingsRuntime } from '@/utils/settings-runtime'
 import { IS_TAURI } from '@/utils/window'
 
 // 图标离线化：本地注册整套 lucide，避免 @iconify/vue 运行时去请求远端 API
@@ -22,5 +23,10 @@ addCollection(MIRAI_ICONS)
 // 浏览器预览时没有系统效果，保留 CSS 兜底桌面背景
 if (IS_TAURI)
   document.documentElement.classList.add('is-tauri')
+
+// 启动画面只有一张黑底 logo，不参与缩放 / 材质等设置；其余窗口在挂载前先把设置套上，避免首帧闪一下
+const windowSurface = new URLSearchParams(window.location.search).get('window')
+if (windowSurface !== 'splash')
+  startSettingsRuntime()
 
 createApp(App).mount('#app')

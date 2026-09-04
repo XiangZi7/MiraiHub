@@ -1,4 +1,6 @@
 import { readonly, reactive } from 'vue'
+import { settingsSnapshot } from '@/composables/useSettings'
+import { playNotificationSound } from '@/utils/sound'
 
 export type ToastTone = 'success' | 'error' | 'warning' | 'info'
 
@@ -30,7 +32,7 @@ const DEFAULT_DURATIONS: Record<ToastTone, number> = {
   error: 6500,
 }
 
-const MAX_VISIBLE_TOASTS = 5
+const MAX_VISIBLE_TOASTS = 4
 const items = reactive<ToastItem[]>([])
 const timers = new Map<string, ToastTimer>()
 let nextId = 0
@@ -91,6 +93,10 @@ function show(tone: ToastTone, input: ToastInput): string {
   if (!title)
     return ''
 
+  // 「错误与异常」通知关闭后，失败原因仍留在各自的面板里，只是不再弹出
+  if (tone === 'error' && !settingsSnapshot().notifyErrors)
+    return ''
+
   const description = options.description?.trim() ?? ''
   const duplicate = items.find(item => item.tone === tone && item.title === title && item.description === description)
   if (duplicate)
@@ -103,6 +109,10 @@ function show(tone: ToastTone, input: ToastInput): string {
   const duration = options.duration ?? DEFAULT_DURATIONS[tone]
   items.push({ id, tone, title, description, duration })
   startTimer(id, duration)
+
+  if (settingsSnapshot().notificationSound)
+    playNotificationSound(tone)
+
   return id
 }
 

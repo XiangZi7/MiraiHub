@@ -1,22 +1,76 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, onMounted, reactive, shallowRef } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import * as settingsStore from '@/api/settings'
+import { getTauriVersion, getVersion } from '@tauri-apps/api/app'
 import AppButton from '@/components/ui/AppButton.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
+import { useSettings } from '@/composables/useSettings'
+import { toast } from '@/composables/useToast'
 import { SETTINGS_PAGES } from '@/constants/settings'
 import type { SettingKey, SettingValue, SettingsPageId, SettingsValues } from '@/types/settings'
 import { closeWindow, IS_TAURI } from '@/utils/window'
 import SettingsPanel from './SettingsPanel.vue'
 import SettingsSidebar from './SettingsSidebar.vue'
+import packageInfo from '../../../package.json'
+
+const { settings, save, defaults } = useSettings()
 
 const activePageId = shallowRef<SettingsPageId>('general')
-const draft = reactive<SettingsValues>(settingsStore.loadSettings())
+const draft = reactive<SettingsValues>({ ...settings })
+const runtimeValues = reactive<Record<string, string>>({
+  version: packageInfo.version,
+  tauriVersion: IS_TAURI ? '读取中…' : '浏览器预览',
+  platform: describePlatform(),
+})
 
 const activePage = computed(() => (
   SETTINGS_PAGES.find(page => page.id === activePageId.value) ?? SETTINGS_PAGES[0]
 ))
+
+const isDirty = computed(() => (
+  (Object.keys(draft) as SettingKey[]).some(key => draft[key] !== settings[key])
+))
+
+/** 数值输入逐项校验；只对带 range 的文本框生效。 */
+const errors = computed<Partial<Record<SettingKey, string>>>(() => {
+  const result: Partial<Record<SettingKey, string>> = {}
+
+  for (const page of SETTINGS_PAGES) {
+    for (const group of page.groups) {
+      for (const field of group.fields) {
+        if (field.control !== 'text' || !field.range)
+          continue
+
+        const raw = String(draft[field.key]).trim()
+        const value = Number(raw)
+        if (!raw || !Number.isInteger(value) || value < field.range.min || value > field.range.max)
+          result[field.key] = `请输入 ${field.range.min}–${field.range.max} 之间的整数`
+      }
+    }
+  }
+
+  return result
+})
+
+function describePlatform(): string {
+  const agent = navigator.userAgent
+  if (/Windows NT 10\.0/.test(agent))
+    return 'Windows 10 / 11'
+  if (/Windows/.test(agent))
+    return 'Windows'
+  if (/Mac OS X/.test(agent))
+    return 'macOS'
+  if (/Linux/.test(agent))
+    return 'Linux'
+  return navigator.platform || '—'
+}
+
+function pageOf(key: SettingKey): SettingsPageId | undefined {
+  return SETTINGS_PAGES.find(page => (
+    page.groups.some(group => group.fields.some(field => field.control !== 'display' && field.key === key))
+  ))?.id
+}
 
 function closeDialog(): void {
   if (IS_TAURI) {
@@ -32,17 +86,58 @@ function updateSetting(key: SettingKey, value: SettingValue): void {
 }
 
 function resetToDefaults(): void {
-  Object.assign(draft, settingsStore.defaultSettings())
+  Object.assign(draft, defaults())
+  toast.info('已恢复默认值，保存后生效')
 }
 
-function save(): void {
-  settingsStore.saveSettings({ ...draft })
+function submit(): void {
+  const firstInvalid = (Object.keys(errors.value) as SettingKey[])[0]
+  if (firstInvalid) {
+    const page = pageOf(firstInvalid)
+    if (page)
+      activePageId.value = page
+    toast.warning({ title: '有设置项不合法', description: errors.value[firstInvalid] })
+    return
+  }
+
+  // 数值型文本框统一按整数存，避免 "30 " 这类带空白的值流到消费方
+  const normalized = { ...draft }
+  for (const page of SETTINGS_PAGES) {
+    for (const group of page.groups) {
+      for (const field of group.fields) {
+        if (field.control === 'text' && field.range)
+          Object.assign(normalized, { [field.key]: String(Number(String(draft[field.key]).trim())) })
+      }
+    }
+  }
+
+  save(normalized)
+  toast.success('设置已保存')
   closeDialog()
 }
+
+onMounted(async () => {
+  if (!IS_TAURI)
+    return
+
+  try {
+    const [version, tauriVersion] = await Promise.all([getVersion(), getTauriVersion()])
+    runtimeValues.version = version
+    runtimeValues.tauriVersion = tauriVersion
+  }
+  catch (error) {
+    runtimeValues.tauriVersion = '—'
+    console.warn('读取版本信息失败：', error)
+  }
+})
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key === 'Escape')
     closeDialog()
+  else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault()
+    submit()
+  }
 })
 </script>
 
@@ -53,7 +148,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         设置
       </h1>
       <div class="flex-1" data-tauri-drag-region />
-      <IconButton icon="lucide:x" :size="15" title="关闭" @click="closeDialog" />
+      <IconButton icon="lucide:x" :size="15" title="关闭 (Esc)" @click="closeDialog" />
     </header>
 
     <div class="relative z-10 flex min-h-0 flex-1">
@@ -64,6 +159,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           :key="activePage.id"
           :page="activePage"
           :values="draft"
+          :errors="errors"
+          :runtime-values="runtimeValues"
           @update="updateSetting"
         />
 
@@ -71,11 +168,12 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           <AppButton size="sm" @click="resetToDefaults">
             重置为默认
           </AppButton>
+          <span v-if="isDirty" class="text-[10.5px] text-txt-4">有未保存的修改</span>
           <div class="flex-1" />
           <AppButton size="sm" @click="closeDialog">
             取消
           </AppButton>
-          <AppButton size="sm" variant="primary" @click="save">
+          <AppButton size="sm" variant="primary" title="Ctrl+S" @click="submit">
             保存设置
           </AppButton>
         </footer>
@@ -102,7 +200,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   height: 50px;
   flex-shrink: 0;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border-top: 1px solid var(--color-line-soft);
   background: color-mix(in oklch, var(--color-panel) 34%, transparent);
   padding: 0 14px;

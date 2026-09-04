@@ -1,3 +1,4 @@
+import { settingNumber, settingsSnapshot } from '@/composables/useSettings'
 import type { DatabaseHistoryEntry } from '@/types/database'
 
 const STORAGE_KEY = 'miraihub.database-query-history.v1'
@@ -26,8 +27,24 @@ function writeAll(entries: DatabaseHistoryEntry[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)))
 }
 
+/** 按「历史保留天数」计算的最早时间戳；0 表示永久保留 */
+function retentionCutoff(): number {
+  const days = settingNumber('historyRetention', 30)
+  return days > 0 ? Date.now() - days * 86_400_000 : 0
+}
+
+/** 读取时顺手清掉过期记录，保留策略变更后无需额外的清理入口。 */
+function readRetained(): DatabaseHistoryEntry[] {
+  const all = readAll()
+  const cutoff = retentionCutoff()
+  const kept = cutoff ? all.filter(entry => entry.executedAt >= cutoff) : all
+  if (kept.length !== all.length)
+    writeAll(kept)
+  return kept
+}
+
 export function listQueryHistory(connectionId?: string): DatabaseHistoryEntry[] {
-  const entries = readAll().sort((a, b) => b.executedAt - a.executedAt)
+  const entries = readRetained().sort((a, b) => b.executedAt - a.executedAt)
   return connectionId ? entries.filter(entry => entry.connectionId === connectionId) : entries
 }
 
@@ -38,7 +55,12 @@ export function addQueryHistory(input: Omit<DatabaseHistoryEntry, 'id' | 'execut
     id: `${now}-${Math.random().toString(36).slice(2, 9)}`,
     executedAt: now,
   }
-  const entries = readAll().filter(existing => !(
+
+  // 关闭历史记录时仍返回条目对象，调用方无需区分
+  if (!settingsSnapshot().saveQueryHistory)
+    return entry
+
+  const entries = readRetained().filter(existing => !(
     existing.connectionId === entry.connectionId
     && existing.database === entry.database
     && existing.sql.trim() === entry.sql.trim()

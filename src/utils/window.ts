@@ -27,9 +27,14 @@ export function toggleMaximizeWindow(): void {
   withWindow(win => win.toggleMaximize())
 }
 
-/** 关闭窗口 */
+/** 关闭窗口。主窗口在「最小化到托盘」开启时会被 close-requested 监听拦截成隐藏 */
 export function closeWindow(): void {
   withWindow(win => win.close())
+}
+
+/** 隐藏窗口（托盘模式下代替关闭） */
+export function hideWindow(): void {
+  withWindow(win => win.hide())
 }
 
 /**
@@ -64,7 +69,7 @@ export function openSettingsWindow(): void {
     window.open(
       '/?window=settings',
       'miraihub-settings',
-      'popup=yes,width=620,height=480,resizable=no',
+      'popup=yes,width=700,height=540,resizable=no',
     )?.focus()
     return
   }
@@ -72,6 +77,69 @@ export function openSettingsWindow(): void {
   void invoke('open_settings_window').catch((error: unknown) => {
     console.error('Failed to open settings window:', error)
   })
+}
+
+/**
+ * 主窗口首屏就绪：让 Rust 显示主窗口并关闭启动画面。
+ * 多次调用是安全的，Rust 侧只处理第一次。
+ */
+export async function appReady(): Promise<void> {
+  if (!IS_TAURI)
+    return
+
+  try {
+    await invoke('app_ready')
+  }
+  catch (error) {
+    console.warn('通知启动完成失败：', error)
+  }
+}
+
+/** 切换所有窗口的原生材质：acrylic / mica / solid。 */
+export async function setWindowMaterial(material: string): Promise<void> {
+  if (!IS_TAURI)
+    return
+
+  try {
+    await invoke('set_window_material', { material })
+  }
+  catch (error) {
+    console.warn('切换窗口材质失败：', error)
+  }
+}
+
+/** 显示或移除系统托盘图标。 */
+export async function setTrayVisible(visible: boolean): Promise<void> {
+  if (!IS_TAURI)
+    return
+
+  try {
+    await invoke('set_tray_visible', { visible })
+  }
+  catch (error) {
+    console.warn('切换托盘图标失败：', error)
+  }
+}
+
+/** 写入或移除开机自启动注册表项。失败时抛出，调用方决定是否提示。 */
+export async function setLaunchAtStartup(enabled: boolean): Promise<void> {
+  if (!IS_TAURI)
+    return
+
+  await invoke('set_launch_at_startup', { enabled })
+}
+
+/** 当前是否已登记开机自启动。 */
+export async function launchAtStartupEnabled(): Promise<boolean> {
+  if (!IS_TAURI)
+    return false
+
+  try {
+    return await invoke<boolean>('launch_at_startup_enabled')
+  }
+  catch {
+    return false
+  }
 }
 
 const maximized = ref(false)
