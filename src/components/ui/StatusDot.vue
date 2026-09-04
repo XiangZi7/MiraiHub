@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { cn } from '@/utils/cn'
 
-type Tone = 'accent' | 'blue' | 'violet' | 'amber' | 'danger' | 'txt-3'
+type Tone = 'accent' | 'success' | 'blue' | 'violet' | 'amber' | 'danger' | 'txt-3'
 
 const props = withDefaults(defineProps<{
   /** 颜色语义 */
@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
 
 const toneClass = computed<string>(() => ({
   'accent': 'text-accent',
+  'success': 'text-success',
   'blue': 'text-blue',
   'violet': 'text-violet',
   'amber': 'text-amber',

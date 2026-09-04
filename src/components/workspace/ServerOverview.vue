@@ -114,7 +114,7 @@ const facts = computed(() => {
     <header class="mb-5 flex items-start gap-4">
       <div
         class="grid size-[74px] shrink-0 place-items-center rounded-2xl border border-violet/25 text-violet"
-        style="background: linear-gradient(150deg, color-mix(in oklch, var(--color-violet) 22%, transparent), color-mix(in oklch, var(--color-indigo) 10%, transparent))"
+        style="background: color-mix(in oklch, var(--color-violet) 16%, transparent)"
       >
         <AppIcon name="lucide:server" :size="34" />
       </div>
@@ -125,9 +125,9 @@ const facts = computed(() => {
         </h1>
         <p
           class="mt-1.5 flex items-center gap-1.5 text-xs"
-          :class="connected ? 'text-accent' : 'text-txt-3'"
+          :class="connected ? 'text-success' : 'text-txt-3'"
         >
-          <StatusDot :tone="connected ? 'accent' : 'txt-3'" :size="6" :glow="connected" />
+          <StatusDot :tone="connected ? 'success' : 'txt-3'" :size="6" :glow="connected" />
           <span>{{ connected ? 'Online' : 'Offline' }}</span>
         </p>
         <p class="mt-1.5 truncate text-xs text-txt-3" :title="subtitle">

@@ -11,7 +11,7 @@ export interface TabItem {
   /** 左侧图标（与 dot 二选一） */
   icon?: string
   /** 左侧状态点色调 */
-  dot?: 'accent' | 'amber' | 'txt-3'
+  dot?: 'accent' | 'success' | 'amber' | 'txt-3'
   /** 激活下划线颜色；连接标签可跟随用户选择的标签色。 */
   accent?: string
   /** 是否可关闭 */

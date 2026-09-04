@@ -70,7 +70,7 @@ watch(status, value => emit('status', value, sessionId.value), { immediate: true
 const statusMeta = computed(() => {
   switch (status.value) {
     case 'connected':
-      return { text: 'Connected', tone: 'text-accent', dot: 'accent' as const }
+      return { text: 'Connected', tone: 'text-success', dot: 'success' as const }
     case 'connecting':
       return { text: 'Connecting…', tone: 'text-amber', dot: 'amber' as const }
     default:

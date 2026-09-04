@@ -13,7 +13,6 @@ const props = withDefaults(defineProps<{
   placeholder?: string;
   confirmLabel?: string;
   loading?: boolean;
-  error?: string;
 }>(), {
   description: "",
   initialValue: "",
@@ -21,7 +20,6 @@ const props = withDefaults(defineProps<{
   placeholder: "请输入名称",
   confirmLabel: "确认",
   loading: false,
-  error: "",
 });
 
 const emit = defineEmits<{
@@ -58,13 +56,6 @@ function submit(): void {
               required
               autofocus
             />
-            <p
-              v-if="error"
-              class="rounded-lg border border-danger/30 bg-danger/8 px-3 py-2 text-[11px] leading-4 text-danger"
-              role="alert"
-            >
-              {{ error }}
-            </p>
           </form>
 
           <template #footer>

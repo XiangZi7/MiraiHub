@@ -9,6 +9,7 @@ import * as privateKeysStore from '@/api/private-keys'
 import * as ssh from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
 import { usePrivateKeys } from '@/composables/usePrivateKeys'
+import { toast } from '@/composables/useToast'
 import type { ConnectionTagColor, NewConnection } from '@/types/connection'
 import { isSshConnection } from '@/types/connection'
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
@@ -64,9 +65,6 @@ const proxyOptions = [
 ] as const
 
 const activeSection = shallowRef<SectionId>('general')
-const feedback = shallowRef('')
-// 反馈是成功还是失败，决定文案配色
-const feedbackTone = shallowRef<'info' | 'error'>('info')
 // 测试连接进行中，避免重复点击开出一堆连接
 const testing = shallowRef(false)
 // 保存中，避免重复提交存出两条一样的连接
@@ -122,7 +120,7 @@ async function loadConnection(): Promise<void> {
   try {
     const connection = await connectionsStore.get(props.connectionId)
     if (!connection || !isSshConnection(connection)) {
-      setFeedback('找不到要编辑的 SSH 连接', 'error')
+      toast.error('找不到要编辑的 SSH 连接')
       return
     }
 
@@ -148,7 +146,7 @@ async function loadConnection(): Promise<void> {
     savePassword.value = settings.auth.type === 'password' && Boolean(settings.auth.password)
   }
   catch (error) {
-    setFeedback(`读取连接失败：${ssh.errorMessage(error)}`, 'error')
+    toast.error({ title: '读取 SSH 连接失败', description: ssh.errorMessage(error) })
   }
   finally {
     loadingConnection.value = false
@@ -212,11 +210,6 @@ function buildConfig(): SshConfig {
   }
 }
 
-function setFeedback(message: string, tone: 'info' | 'error' = 'info'): void {
-  feedback.value = message
-  feedbackTone.value = tone
-}
-
 function rememberPrivateKey(path: string): void {
   const trimmed = path.trim()
   if (!trimmed || trimmed.toLocaleLowerCase().endsWith('.pub'))
@@ -238,10 +231,10 @@ async function browsePrivateKeys(): Promise<void> {
 
     const remembered = rememberImported(paths)
     form.privateKey = remembered[0]?.path ?? paths[0]
-    setFeedback(paths.length > 1 ? `已保存 ${paths.length} 把私钥` : '已选择私钥')
+    toast.success(paths.length > 1 ? `已保存 ${paths.length} 把私钥` : '已选择私钥')
   }
   catch (error) {
-    setFeedback(ssh.errorMessage(error), 'error')
+    toast.error({ title: '选择私钥失败', description: ssh.errorMessage(error) })
   }
   finally {
     browsingPrivateKeys.value = false
@@ -252,7 +245,7 @@ async function browsePrivateKeys(): Promise<void> {
 function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
-    setFeedback('请先填写连接名称、主机和用户名', 'error')
+    toast.warning('请先填写连接名称、主机和用户名')
     return false
   }
 
@@ -260,32 +253,32 @@ function validate(): boolean {
 
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     activeSection.value = 'general'
-    setFeedback('端口必须是 1–65535 之间的整数', 'error')
+    toast.warning('端口必须是 1–65535 之间的整数')
     return false
   }
 
   if (!Number.isInteger(timeoutSecs) || timeoutSecs < 1 || timeoutSecs > 3600) {
     activeSection.value = 'advanced'
-    setFeedback('连接超时必须是 1–3600 秒之间的整数', 'error')
+    toast.warning('连接超时必须是 1–3600 秒之间的整数')
     return false
   }
 
   // 0 是明确支持的“关闭 keepalive”，不能用 `Number(value) || 30` 把它改回默认值。
   if (!Number.isInteger(keepaliveSecs) || keepaliveSecs < 0 || keepaliveSecs > 86400) {
     activeSection.value = 'advanced'
-    setFeedback('Keep Alive 必须是 0–86400 秒之间的整数', 'error')
+    toast.warning('Keep Alive 必须是 0–86400 秒之间的整数')
     return false
   }
 
   if (form.authentication === 'private-key' && !form.privateKey.trim()) {
     activeSection.value = 'ssh-key'
-    setFeedback('请先选择私钥文件', 'error')
+    toast.warning('请先选择私钥文件')
     return false
   }
 
   if (form.authentication === 'private-key' && form.privateKey.trim().toLocaleLowerCase().endsWith('.pub')) {
     activeSection.value = 'ssh-key'
-    setFeedback('请选择私钥文件，不要选择 .pub 公钥文件', 'error')
+    toast.warning('请选择私钥文件，不要选择 .pub 公钥文件')
     return false
   }
 
@@ -301,15 +294,13 @@ async function testConnection(): Promise<void> {
     return
 
   testing.value = true
-  setFeedback('正在连接…')
-
   try {
     const sessionId = await ssh.connect(buildConfig())
     await ssh.disconnect(sessionId)
-    setFeedback('连接成功')
+    toast.success('SSH 连接成功')
   }
   catch (err) {
-    setFeedback(ssh.errorMessage(err), 'error')
+    toast.error({ title: 'SSH 连接失败', description: ssh.errorMessage(err) })
   }
   finally {
     testing.value = false
@@ -359,10 +350,11 @@ async function saveConnection(): Promise<void> {
     else
       await create(input)
 
+    toast.success(props.connectionId ? 'SSH 连接已更新' : 'SSH 连接已保存')
     emit('close')
   }
   catch (err) {
-    setFeedback(`保存失败：${ssh.errorMessage(err)}`, 'error')
+    toast.error({ title: '保存 SSH 连接失败', description: ssh.errorMessage(err) })
   }
   finally {
     saving.value = false
@@ -530,13 +522,7 @@ async function saveConnection(): Promise<void> {
       <AppButton :disabled="testing" @click="testConnection">
         {{ testing ? 'Testing…' : 'Test Connection' }}
       </AppButton>
-      <p
-        :class="['min-w-0 flex-1 truncate text-[11px]', feedbackTone === 'error' ? 'text-danger' : 'text-txt-3']"
-        :title="feedback"
-        aria-live="polite"
-      >
-        {{ feedback }}
-      </p>
+      <div class="flex-1" />
       <AppButton @click="emit('close')">
         Cancel
       </AppButton>
@@ -585,7 +571,7 @@ async function saveConnection(): Promise<void> {
   left: 10px;
   height: 2px;
   border-radius: 2px 2px 0 0;
-  background: linear-gradient(90deg, var(--color-indigo), var(--color-violet));
+  background: var(--color-violet);
   content: '';
   box-shadow: 0 0 10px color-mix(in oklch, var(--color-violet) 45%, transparent);
 }

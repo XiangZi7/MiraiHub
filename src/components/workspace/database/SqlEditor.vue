@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   run: [sql: string]
+  save: []
 }>()
 
 const sql = defineModel<string>({ required: true })
@@ -133,6 +134,12 @@ function insertSuggestion(value: string): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault()
+    emit('save')
+    return
+  }
+
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault()
     if (!props.disabled) {
@@ -260,7 +267,7 @@ defineExpose({ runnableSql })
 .sql-token-identifier { color: var(--color-term-fg); }
 .sql-token-keyword { color: var(--color-violet); font-weight: 600; }
 .sql-token-function { color: var(--color-blue); }
-.sql-token-string { color: var(--color-accent); }
+.sql-token-string { color: var(--color-term-green); }
 .sql-token-number { color: var(--color-amber); }
 .sql-token-comment { color: var(--color-txt-4); font-style: italic; }
 .sql-token-operator { color: var(--color-txt-3); }

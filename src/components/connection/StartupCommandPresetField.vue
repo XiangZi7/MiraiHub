@@ -4,6 +4,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { useStartupCommandPresets } from '@/composables/useStartupCommandPresets'
+import { toast } from '@/composables/useToast'
 
 const command = defineModel<string>({ required: true })
 const { presets, save, remove } = useStartupCommandPresets()
@@ -11,7 +12,6 @@ const { presets, save, remove } = useStartupCommandPresets()
 const selectedId = shallowRef('')
 const naming = shallowRef(false)
 const presetName = shallowRef('')
-const feedback = shallowRef('')
 const nameInput = useTemplateRef<HTMLInputElement>('presetName')
 const commandId = useId()
 
@@ -32,14 +32,13 @@ watch(selectedId, (id) => {
 
 async function beginSave(): Promise<void> {
   if (!command.value.trim()) {
-    feedback.value = '先填写初始化命令'
+    toast.warning('先填写初始化命令')
     return
   }
 
   const selected = presets.value.find(item => item.id === selectedId.value)
   presetName.value = selected?.name ?? ''
   naming.value = true
-  feedback.value = ''
   await nextTick()
   nameInput.value?.focus()
   nameInput.value?.select()
@@ -54,7 +53,7 @@ async function savePreset(): Promise<void> {
   const preset = await save(name, value)
   selectedId.value = preset.id
   naming.value = false
-  feedback.value = '预设已保存'
+  toast.success(`预设“${preset.name}”已保存`)
 }
 
 async function removePreset(): Promise<void> {
@@ -63,7 +62,7 @@ async function removePreset(): Promise<void> {
 
   await remove(selectedId.value)
   selectedId.value = ''
-  feedback.value = '预设已删除，当前命令保留'
+  toast.success('预设已删除，当前命令保留')
 }
 </script>
 
@@ -116,9 +115,7 @@ async function removePreset(): Promise<void> {
       spellcheck="false"
     />
 
-    <p class="mt-1.5 min-h-4 text-[10.5px] text-txt-4" aria-live="polite">
-      {{ feedback || 'SSH shell 就绪后自动执行；预设保存在本机。' }}
-    </p>
+    <p class="mt-1.5 text-[10.5px] text-txt-4">SSH shell 就绪后自动执行；预设保存在本机。</p>
   </fieldset>
 </template>
 
@@ -164,4 +161,3 @@ async function removePreset(): Promise<void> {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 </style>
-

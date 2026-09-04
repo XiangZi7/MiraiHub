@@ -5,6 +5,7 @@ import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import { toast } from '@/composables/useToast'
 import type {
   CellValue,
   DatabaseObject,
@@ -38,7 +39,6 @@ const state = reactive({
   countLoading: false,
   mutationLoading: false,
   error: '',
-  message: '',
   activePanel: 'data' as DetailPanel,
   offset: 0,
   pageSize: '100',
@@ -109,7 +109,6 @@ function clearChanges(): void {
   edits.clear()
   deletedRows.clear()
   insertedRows.splice(0)
-  state.message = ''
 }
 
 async function loadDetailAndRows(): Promise<void> {
@@ -226,7 +225,7 @@ async function calculateCount(): Promise<void> {
     state.exactCount = await database.countRows(props.sessionId, props.object.schema, props.object.name)
   }
   catch (error) {
-    state.error = database.errorMessage(error)
+    toast.error({ title: '统计行数失败', description: database.errorMessage(error) })
   }
   finally {
     state.countLoading = false
@@ -337,13 +336,12 @@ async function commitChanges(): Promise<void> {
       table: props.object.name,
       mutations,
     })
-    state.message = `已提交 ${mutations.length} 项改动，影响 ${result.rowsAffected} 行（${result.elapsedMs} ms）`
     clearChanges()
-    state.message = `已提交 ${mutations.length} 项改动，影响 ${result.rowsAffected} 行（${result.elapsedMs} ms）`
     await loadRows()
+    toast.success(`已提交 ${mutations.length} 项改动，影响 ${result.rowsAffected} 行（${result.elapsedMs} ms）`)
   }
   catch (error) {
-    state.error = database.errorMessage(error)
+    toast.error({ title: '提交数据改动失败', description: database.errorMessage(error) })
   }
   finally {
     state.mutationLoading = false
@@ -352,7 +350,7 @@ async function commitChanges(): Promise<void> {
 
 async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value)
-  state.message = '已复制到剪贴板'
+  toast.success('已复制到剪贴板')
 }
 
 watch(
@@ -540,8 +538,6 @@ watch(() => state.pageSize, () => {
           <button type="button" class="ml-1 rounded px-1.5 py-1 text-txt-4 hover:bg-hover hover:text-txt-2" :disabled="state.countLoading" @click="calculateCount">
             {{ state.countLoading ? '统计中…' : state.exactCount !== null ? `精确 ${state.exactCount.toLocaleString()} 行` : estimatedCount !== null && estimatedCount !== undefined ? `约 ${estimatedCount.toLocaleString()} 行 · 点此精确统计` : '统计总行数' }}
           </button>
-          <span v-if="state.message" class="ml-2 truncate text-accent">{{ state.message }}</span>
-          <span v-else-if="state.error" class="ml-2 truncate text-danger" :title="state.error">{{ state.error }}</span>
           <div class="flex-1" />
           <button v-if="state.page?.sql" type="button" class="rounded px-1.5 py-1 font-mono text-txt-4 hover:bg-hover hover:text-txt-2" title="复制本页实际 SQL" @click="copyText(state.page.sql)">
             SQL

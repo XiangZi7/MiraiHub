@@ -29,7 +29,7 @@ const shellLabel = computed(() => ({
 
 const statusMeta = computed(() => {
   if (status.value === 'connected')
-    return { text: 'Connected', tone: 'text-accent', dot: 'accent' as const }
+    return { text: 'Connected', tone: 'text-success', dot: 'success' as const }
   if (status.value === 'connecting')
     return { text: 'Starting…', tone: 'text-amber', dot: 'amber' as const }
   return { text: 'Disconnected', tone: 'text-txt-3', dot: 'txt-3' as const }

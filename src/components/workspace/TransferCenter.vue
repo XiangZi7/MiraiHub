@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowRef, useTemplateRef } from 'vue'
+import { computed, shallowRef, useTemplateRef, watch } from 'vue'
 import { useEventListener, useNow } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import {
@@ -12,6 +12,7 @@ import { formatDuration } from '@/utils/time'
 import TransferPanelFooter from './transfer/TransferPanelFooter.vue'
 import TransferPanelHeader, { type TransferPanelTab } from './transfer/TransferPanelHeader.vue'
 import TransferTaskGroup from './transfer/TransferTaskGroup.vue'
+import TransferStatusFilter, { type TransferStatusFilter as TransferFilter } from './transfer/TransferStatusFilter.vue'
 
 interface TransferGroupView {
   key: string
@@ -33,12 +34,28 @@ const {
 
 const open = shallowRef(false)
 const activeTab = shallowRef<TransferPanelTab>('transfers')
+const statusFilter = shallowRef<TransferFilter>('all')
 const triggerRoot = useTemplateRef<HTMLElement>('triggerRoot')
 const panelRoot = useTemplateRef<HTMLElement>('panelRoot')
 const now = useNow({ interval: 1000 })
 
 const historyTasks = computed(() => tasks.filter(task => ['completed', 'error', 'cancelled'].includes(task.status)))
-const visibleTasks = computed(() => activeTab.value === 'history' ? historyTasks.value : [...tasks])
+const tabTasks = computed(() => activeTab.value === 'history' ? historyTasks.value : [...tasks])
+const statusCounts = computed<Record<TransferFilter, number>>(() => ({
+  all: tabTasks.value.length,
+  active: tabTasks.value.filter(task => ['queued', 'running', 'paused'].includes(task.status)).length,
+  completed: tabTasks.value.filter(task => task.status === 'completed').length,
+  failed: tabTasks.value.filter(task => task.status === 'error' || task.status === 'cancelled').length,
+}))
+const visibleTasks = computed(() => tabTasks.value.filter((task) => {
+  if (statusFilter.value === 'active')
+    return ['queued', 'running', 'paused'].includes(task.status)
+  if (statusFilter.value === 'completed')
+    return task.status === 'completed'
+  if (statusFilter.value === 'failed')
+    return task.status === 'error' || task.status === 'cancelled'
+  return true
+}))
 
 const groups = computed<TransferGroupView[]>(() => {
   const byConnection = new Map<string, TransferGroupView>()
@@ -109,7 +126,19 @@ const footerSummary = computed(() => {
   return `${prefix}: ${formatBytes(aggregate.value.transferredBytes)} / ${total} • ${rate}${remaining}`
 })
 
-const emptyLabel = computed(() => activeTab.value === 'history' ? 'No transfer history yet' : 'No file transfers yet')
+const emptyLabel = computed(() => {
+  if (statusFilter.value === 'active')
+    return '当前没有进行中的传输'
+  if (statusFilter.value === 'completed')
+    return '还没有已完成的传输'
+  if (statusFilter.value === 'failed')
+    return '当前没有错误或已取消的传输'
+  return activeTab.value === 'history' ? '还没有传输历史' : '还没有文件传输'
+})
+
+watch(activeTab, () => {
+  statusFilter.value = 'all'
+})
 
 useEventListener(document, 'pointerdown', (event: PointerEvent) => {
   const target = event.target as Node
@@ -154,6 +183,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             @close="open = false"
             @change-tab="activeTab = $event"
           />
+
+          <TransferStatusFilter v-model="statusFilter" :counts="statusCounts" />
 
           <div class="transfer-content scroll-thin">
             <TransferTaskGroup
@@ -216,13 +247,15 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   height: min(598px, calc(100vh - 50px));
   overflow: hidden;
   flex-direction: column;
-  border: 1px solid rgb(255 255 255 / 7%);
-  border-radius: 9px;
+  border: 1px solid rgb(255 255 255 / 11%);
+  border-radius: 12px;
   background:
-    radial-gradient(circle at 20% 0%, rgb(39 53 63 / 15%), transparent 34%),
-    rgb(11 15 18 / 98%);
-  box-shadow: 0 18px 55px rgb(0 0 0 / 48%);
-  backdrop-filter: blur(24px) saturate(130%);
+    linear-gradient(150deg, rgb(255 255 255 / 7%), transparent 38%),
+    radial-gradient(circle at 18% 0%, rgb(60 138 190 / 16%), transparent 40%),
+    rgb(10 14 19 / 80%);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 54%), inset 0 1px rgb(255 255 255 / 5%);
+  backdrop-filter: blur(34px) saturate(165%);
+  -webkit-backdrop-filter: blur(34px) saturate(165%);
 }
 
 .transfer-content {

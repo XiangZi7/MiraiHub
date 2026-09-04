@@ -10,6 +10,7 @@ import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { toast } from '@/composables/useToast'
 import type { SavedConnection } from '@/types/connection'
 import { isDatabaseConnection } from '@/types/connection'
 
@@ -34,8 +35,7 @@ const state = reactive({
   running: false,
   cancelling: false,
   confirmingImport: false,
-  error: '',
-  result: '',
+  finished: false,
 })
 
 const isExport = computed(() => props.mode === 'export')
@@ -56,8 +56,7 @@ watch([() => props.open, () => props.mode], ([open]) => {
   state.running = false
   state.cancelling = false
   state.confirmingImport = false
-  state.error = ''
-  state.result = ''
+  state.finished = false
 })
 
 function safeFileName(value: string): string {
@@ -75,7 +74,6 @@ function defaultExportName(): string {
 }
 
 async function choosePath(): Promise<void> {
-  state.error = ''
   if (isExport.value) {
     const selected = await saveFileDialog({
       title: '选择 SQL 导出位置',
@@ -96,13 +94,12 @@ async function choosePath(): Promise<void> {
 }
 
 function requestRun(): void {
-  state.error = ''
   if (!state.path) {
-    state.error = isExport.value ? '请先选择导出位置' : '请先选择 SQL 文件'
+    toast.warning(isExport.value ? '请先选择导出位置' : '请先选择 SQL 文件')
     return
   }
   if (!props.sessionId) {
-    state.error = '数据库连接已断开，请重新连接后再试'
+    toast.error('数据库连接已断开，请重新连接后再试')
     return
   }
 
@@ -118,8 +115,7 @@ async function confirmImport(): Promise<void> {
 async function runTransfer(): Promise<void> {
   state.running = true
   state.cancelling = false
-  state.error = ''
-  state.result = ''
+  state.finished = false
 
   try {
     if (isExport.value) {
@@ -129,14 +125,21 @@ async function runTransfer(): Promise<void> {
         state.includeData,
         state.dropExisting,
       )
-      state.result = `已导出 ${result.objects} 个对象、${result.rows} 行数据（${formatBytes(result.bytes)}），耗时 ${result.elapsedMs} ms。`
+      toast.success({
+        title: '数据库导出完成',
+        description: `已导出 ${result.objects} 个对象、${result.rows} 行数据（${formatBytes(result.bytes)}），耗时 ${result.elapsedMs} ms。`,
+      })
     } else {
       const result = await database.importSql(props.sessionId, state.path)
-      state.result = `已执行 ${result.statements} 条 SQL，影响 ${result.rowsAffected} 行，耗时 ${result.elapsedMs} ms。`
+      toast.success({
+        title: 'SQL 导入完成',
+        description: `已执行 ${result.statements} 条 SQL，影响 ${result.rowsAffected} 行，耗时 ${result.elapsedMs} ms。`,
+      })
     }
+    state.finished = true
     emit('finished', props.mode)
   } catch (error) {
-    state.error = database.errorMessage(error)
+    toast.error({ title: isExport.value ? '数据库导出失败' : 'SQL 导入失败', description: database.errorMessage(error) })
   } finally {
     state.running = false
     state.cancelling = false
@@ -150,7 +153,7 @@ async function cancelImport(): Promise<void> {
   try {
     await database.cancelQuery(props.sessionId)
   } catch (error) {
-    state.error = database.errorMessage(error)
+    toast.error({ title: '取消导入失败', description: database.errorMessage(error) })
     state.cancelling = false
   }
 }
@@ -262,20 +265,6 @@ function formatBytes(bytes: number): string {
                     : '正在导入，请稍候…'
               }}
             </p>
-            <p
-              v-if="state.result"
-              class="card border-accent/25 bg-accent/8 px-3 py-2.5 text-[11px] leading-4 text-accent"
-              role="status"
-            >
-              {{ state.result }}
-            </p>
-            <p
-              v-if="state.error"
-              class="card border-danger/30 bg-danger/10 px-3 py-2.5 text-[11px] leading-4 text-danger"
-              role="alert"
-            >
-              {{ state.error }}
-            </p>
           </div>
 
           <template #footer>
@@ -288,10 +277,10 @@ function formatBytes(bytes: number): string {
               {{ state.cancelling ? '取消中…' : '取消导入' }}
             </AppButton>
             <AppButton v-else :disabled="state.running" @click="requestClose">
-              {{ state.result ? '完成' : '取消' }}
+              {{ state.finished ? '完成' : '取消' }}
             </AppButton>
             <AppButton
-              v-if="!state.result"
+              v-if="!state.finished"
               variant="primary"
               :disabled="state.running"
               @click="requestRun"

@@ -43,7 +43,8 @@ const emit = defineEmits<{
   flex: 0 0 auto;
   border-top: 1px solid rgb(255 255 255 / 5%);
   padding: 8px 11px;
-  background: rgb(12 16 19 / 96%);
+  background: linear-gradient(180deg, rgb(255 255 255 / 2%), transparent), rgb(10 14 18 / 58%);
+  backdrop-filter: blur(18px) saturate(150%);
 }
 
 .transfer-footer-summary {

@@ -1,4 +1,4 @@
-import { computed, reactive, readonly } from 'vue'
+import { computed, reactive, readonly, watch } from 'vue'
 import * as ssh from '@/api/ssh'
 import type { SshTransferEvent, SshTransferStatus } from '@/types/ssh'
 import { IS_TAURI } from '@/utils/window'
@@ -37,8 +37,43 @@ interface DownloadOptions {
   overwrite?: boolean
 }
 
-const state = reactive({ items: [] as FileTransferTask[] })
+const HISTORY_STORAGE_KEY = 'miraihub:file-transfer-history'
+const SETTLED_STATUSES: SshTransferStatus[] = ['completed', 'error', 'cancelled']
+
+function loadTransferHistory(): FileTransferTask[] {
+  if (typeof localStorage === 'undefined')
+    return []
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) ?? '[]') as FileTransferTask[]
+    if (!Array.isArray(parsed))
+      return []
+    return parsed
+      .filter(task => task && typeof task.id === 'string' && SETTLED_STATUSES.includes(task.status))
+      .slice(0, 100)
+  }
+  catch {
+    return []
+  }
+}
+
+const state = reactive({ items: loadTransferHistory() })
 let listenerReady: Promise<void> | undefined
+
+const settledSnapshot = computed(() => state.items
+  .filter(task => SETTLED_STATUSES.includes(task.status))
+  .slice(0, 100)
+  .map(task => ({ ...task })))
+
+watch(settledSnapshot, (items) => {
+  if (typeof localStorage === 'undefined')
+    return
+  try {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items))
+  }
+  catch {
+    // 存储空间或隐私策略不可用时仍保留本次运行内的传输历史。
+  }
+}, { deep: true, immediate: true })
 
 function nameOf(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path

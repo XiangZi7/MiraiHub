@@ -11,7 +11,7 @@ export const CONNECTION_TAG_COLORS: readonly ConnectionTagColorOption[] = [
   { id: 'red', label: '红色', css: 'var(--color-danger)' },
   { id: 'orange', label: '橙色', css: 'var(--color-orange)' },
   { id: 'amber', label: '黄色', css: 'var(--color-amber)' },
-  { id: 'green', label: '绿色', css: 'var(--color-accent)' },
+  { id: 'green', label: '绿色', css: 'var(--color-success)' },
   { id: 'cyan', label: '青色', css: 'var(--color-cyan)' },
   { id: 'blue', label: '蓝色', css: 'var(--color-blue)' },
   { id: 'violet', label: '紫色', css: 'var(--color-violet)' },
@@ -32,4 +32,3 @@ export function connectionTagColorCss(color: ConnectionTagColor | undefined): st
   return CONNECTION_TAG_COLORS.find(option => option.id === color)?.css
     ?? 'var(--color-accent)'
 }
-

@@ -8,6 +8,7 @@ import AppTextField from '@/components/ui/AppTextField.vue'
 import * as connectionsStore from '@/api/connections'
 import * as databaseApi from '@/api/database'
 import { useConnections } from '@/composables/useConnections'
+import { toast } from '@/composables/useToast'
 import type { NewConnection } from '@/types/connection'
 import { isDatabaseConnection } from '@/types/connection'
 import type { DatabaseConfig, DatabaseKind, DatabaseSslMode } from '@/types/database'
@@ -29,9 +30,6 @@ const emit = defineEmits<{
 const { create, update } = useConnections()
 
 const activeSection = shallowRef<SectionId>('general')
-const feedback = shallowRef('')
-// 反馈是成功还是失败，决定文案配色
-const feedbackTone = shallowRef<'info' | 'error'>('info')
 const testing = shallowRef(false)
 // 保存中，避免重复提交存出两条一样的连接
 const saving = shallowRef(false)
@@ -75,11 +73,6 @@ const isReady = computed<boolean>(() => (
   && form.username.trim().length > 0
 ))
 
-function setFeedback(message: string, tone: 'info' | 'error' = 'info'): void {
-  feedback.value = message
-  feedbackTone.value = tone
-}
-
 onMounted(loadConnection)
 
 async function loadConnection(): Promise<void> {
@@ -89,7 +82,7 @@ async function loadConnection(): Promise<void> {
   try {
     const connection = await connectionsStore.get(props.connectionId)
     if (!connection || !isDatabaseConnection(connection)) {
-      setFeedback('找不到要编辑的数据库连接', 'error')
+      toast.error('找不到要编辑的数据库连接')
       return
     }
 
@@ -112,7 +105,7 @@ async function loadConnection(): Promise<void> {
     savePassword.value = Boolean(settings.password)
   }
   catch (error) {
-    setFeedback(`读取连接失败：${databaseApi.errorMessage(error)}`, 'error')
+    toast.error({ title: '读取连接失败', description: databaseApi.errorMessage(error) })
   }
   finally {
     loadingConnection.value = false
@@ -130,21 +123,20 @@ function selectKind(nextKind: DatabaseKind): void {
   if (!form.port.trim() || form.port === previousDefaultPort)
     form.port = portForKind(nextKind)
 
-  setFeedback('')
 }
 
 /** 校验必填项，不通过则跳回 General 并提示 */
 function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
-    setFeedback('请填写连接名称、主机和用户名', 'error')
+    toast.warning('请填写连接名称、主机和用户名')
     return false
   }
 
   const port = Number(form.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     activeSection.value = 'general'
-    setFeedback('端口必须是 1–65535 之间的整数', 'error')
+    toast.warning('端口必须是 1–65535 之间的整数')
     return false
   }
 
@@ -173,14 +165,12 @@ async function testConnection(): Promise<void> {
     return
 
   testing.value = true
-  setFeedback('正在连接…')
-
   try {
     await databaseApi.testConnection(buildConfig())
-    setFeedback('连接成功')
+    toast.success('数据库连接成功')
   }
   catch (error) {
-    setFeedback(databaseApi.errorMessage(error), 'error')
+    toast.error({ title: '数据库连接失败', description: databaseApi.errorMessage(error) })
   }
   finally {
     testing.value = false
@@ -227,10 +217,11 @@ async function saveConnection(): Promise<void> {
     else
       await create(input)
 
+    toast.success(props.connectionId ? '数据库连接已更新' : '数据库连接已保存')
     emit('close')
   }
   catch (err) {
-    setFeedback(`保存失败：${databaseApi.errorMessage(err)}`, 'error')
+    toast.error({ title: '保存数据库连接失败', description: databaseApi.errorMessage(err) })
   }
   finally {
     saving.value = false
@@ -376,13 +367,7 @@ async function saveConnection(): Promise<void> {
       <AppButton :disabled="testing || loadingConnection" @click="testConnection">
         {{ testing ? 'Testing…' : 'Test Connection' }}
       </AppButton>
-      <p
-        :class="['min-w-0 flex-1 truncate text-[11px]', feedbackTone === 'error' ? 'text-danger' : 'text-txt-3']"
-        :title="feedback"
-        aria-live="polite"
-      >
-        {{ feedback }}
-      </p>
+      <div class="flex-1" />
       <AppButton @click="emit('close')">
         Cancel
       </AppButton>
@@ -431,7 +416,7 @@ async function saveConnection(): Promise<void> {
   left: 10px;
   height: 2px;
   border-radius: 2px 2px 0 0;
-  background: linear-gradient(90deg, var(--color-indigo), var(--color-violet));
+  background: var(--color-violet);
   content: '';
   box-shadow: 0 0 10px color-mix(in oklch, var(--color-violet) 45%, transparent);
 }

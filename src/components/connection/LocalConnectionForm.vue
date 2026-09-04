@@ -7,6 +7,7 @@ import AppTextField from '@/components/ui/AppTextField.vue'
 import * as connectionsStore from '@/api/connections'
 import { errorMessage } from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
+import { toast } from '@/composables/useToast'
 import { LOCAL_SHELL_OPTIONS } from '@/constants/connection'
 import type {
   ConnectionTagColor,
@@ -25,7 +26,6 @@ const emit = defineEmits<{ close: [] }>()
 const { create, update, tags: sharedTags } = useConnections()
 const saving = shallowRef(false)
 const loading = shallowRef(Boolean(props.connectionId))
-const feedback = shallowRef('')
 
 const form = reactive({
   name: '',
@@ -52,7 +52,7 @@ onMounted(async () => {
   try {
     const connection = await connectionsStore.get(props.connectionId)
     if (!connection || !isLocalConnection(connection)) {
-      feedback.value = '找不到要编辑的本地终端'
+      toast.error('找不到要编辑的本地终端')
       return
     }
     Object.assign(form, {
@@ -66,7 +66,7 @@ onMounted(async () => {
     })
   }
   catch (error) {
-    feedback.value = `读取本地终端失败：${errorMessage(error)}`
+    toast.error({ title: '读取本地终端失败', description: errorMessage(error) })
   }
   finally {
     loading.value = false
@@ -87,12 +87,11 @@ function normalizedTags(): string[] {
 
 async function save(): Promise<void> {
   if (!ready.value || saving.value) {
-    feedback.value = '请填写终端名称'
+    toast.warning('请填写终端名称')
     return
   }
 
   saving.value = true
-  feedback.value = ''
   try {
     const input: NewConnection = {
       name: form.name.trim(),
@@ -114,10 +113,11 @@ async function save(): Promise<void> {
       await update(props.connectionId, input)
     else
       await create(input)
+    toast.success(props.connectionId ? '本地终端已更新' : '本地终端已保存')
     emit('close')
   }
   catch (error) {
-    feedback.value = `保存失败：${errorMessage(error)}`
+    toast.error({ title: '保存本地终端失败', description: errorMessage(error) })
   }
   finally {
     saving.value = false
@@ -171,7 +171,7 @@ async function save(): Promise<void> {
     </div>
 
     <footer class="local-footer">
-      <p class="min-w-0 flex-1 truncate text-[11px] text-danger" aria-live="polite">{{ feedback }}</p>
+      <div class="flex-1" />
       <AppButton @click="emit('close')">Cancel</AppButton>
       <AppButton type="submit" variant="primary" :disabled="saving || loading">
         {{ saving ? 'Saving…' : props.connectionId ? 'Update' : 'Save' }}

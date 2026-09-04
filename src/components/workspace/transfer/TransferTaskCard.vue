@@ -203,7 +203,7 @@ const sizeLabel = computed(() => {
 }
 
 .transfer-progress-complete {
-  background: linear-gradient(90deg, #18c77a, #36dc91);
+  background: linear-gradient(90deg, color-mix(in oklch, var(--color-success) 82%, black), var(--color-success));
 }
 
 .transfer-progress-error {
@@ -250,7 +250,7 @@ const sizeLabel = computed(() => {
 }
 
 .transfer-result-success {
-  color: #29d083;
+  color: var(--color-success);
 }
 
 .transfer-result-error {

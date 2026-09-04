@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, toRefs, useTemplateRef, watch } from 'vue'
-import { useEventListener, useWindowSize } from '@vueuse/core'
+import { useEventListener, useStorage, useWindowSize } from '@vueuse/core'
 import type { TabItem } from '@/components/ui/TabBar.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import BrandLogo from '@/components/ui/BrandLogo.vue'
@@ -13,7 +13,6 @@ import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { useConnections } from '@/composables/useConnections'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { COMMAND_TARGETS } from '@/constants/workspace'
-import { connectionTagColorCss } from '@/constants/connection'
 import type { CommandItem, MachineViewId, NavId } from '@/types'
 import type { LocalConnectionSettings, SavedConnection } from '@/types/connection'
 import { isDatabaseConnection, isLocalConnection, toSshConfig } from '@/types/connection'
@@ -56,12 +55,14 @@ const {
   setStatus,
 } = useWorkspaceTabs()
 
+const cachedActiveNav = useStorage<NavId>('miraihub:workspace-route', 'servers')
+
 // 响应式状态
 const state = reactive({
   // 顶部搜索关键词
   keyword: '',
   // 侧栏选中的主视图
-  activeNav: 'servers' as NavId,
+  activeNav: cachedActiveNav.value,
   // 命令面板是否展开
   paletteOpen: false,
   // 两个分隔条的实时宽度由主窗口统一保存，切换视图不会丢失
@@ -85,6 +86,12 @@ const {
   machineView,
 } = toRefs(state)
 
+watch(activeNav, (nav) => {
+  cachedActiveNav.value = nav
+})
+
+const unsupportedNav = computed(() => !['servers', 'databases', 'ssh-keys', 'recent'].includes(activeNav.value))
+
 /** 始终给终端至少留出 360px，窗口变窄时同步收紧右侧面板上限。 */
 const machineMaxWidth = computed(() => {
   const visibleSidebarWidth = state.sidebarCollapsed ? 52 : state.sidebarWidth
@@ -107,10 +114,9 @@ const tabItems = computed<TabItem[]>(() =>
     id: tab.id,
     label: tab.connection.name,
     dot: tab.status === 'connected'
-      ? 'accent'
+      ? 'success'
       : tab.status === 'connecting' ? 'amber' : 'txt-3',
     closable: true,
-    accent: connectionTagColorCss(tab.connection.tagColor),
   })),
 )
 
@@ -421,7 +427,7 @@ function runCommand(item: CommandItem): void {
 
         <!-- 主视图：跟随侧栏切换。各视图自带 .pane，浮在窗口底色上 -->
         <div class="flex min-h-0 flex-1 p-2.5">
-          <template v-if="activeNav === 'servers'">
+          <div v-show="activeNav === 'servers'" class="contents">
             <!-- SSH 标签保持挂载，只隐藏非活动项；关闭标签时才真正卸载并断开 -->
             <TerminalPanel
               v-for="tab in sshTabViews"
@@ -465,9 +471,9 @@ function runCommand(item: CommandItem): void {
               :width="machineWidth"
               @close="machineOpen = false"
             />
-          </template>
+          </div>
 
-          <template v-else-if="activeNav === 'databases'">
+          <div v-show="activeNav === 'databases'" class="contents">
             <DatabaseView
               v-for="tab in databaseTabViews"
               v-show="activeId === tab.id"
@@ -477,14 +483,14 @@ function runCommand(item: CommandItem): void {
               @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"
             />
             <DatabaseView v-if="!activeDatabaseConnection" />
-          </template>
+          </div>
 
-          <SshKeysView v-else-if="activeNav === 'ssh-keys'" />
+          <SshKeysView v-show="activeNav === 'ssh-keys'" />
 
-          <RecentView v-else-if="activeNav === 'recent'" @open="openConnection" />
+          <RecentView v-show="activeNav === 'recent'" @open="openConnection" />
 
           <!-- 兜底：以后新增侧栏项但视图还没落地时，给出空状态而不是白屏 -->
-          <div v-else class="pane flex-1 items-center justify-center">
+          <div v-show="unsupportedNav" class="pane flex-1 items-center justify-center">
             <div class="flex flex-col items-center gap-3 text-center">
               <div class="grid size-14 place-items-center rounded-2xl border border-line bg-card text-txt-3">
                 <AppIcon name="lucide:construction" :size="26" />

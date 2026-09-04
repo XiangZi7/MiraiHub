@@ -59,7 +59,7 @@ const descriptionId = useId()
 
 .app-checkbox-box-checked {
   border-color: color-mix(in oklch, var(--color-violet) 68%, white 8%);
-  background: linear-gradient(135deg, var(--color-indigo), var(--color-violet));
+  background: var(--color-violet);
 }
 
 .app-checkbox-input:focus-visible + .app-checkbox-box {

@@ -12,8 +12,10 @@ import type {
   DatabaseObject,
   DatabaseObjectKind,
 } from "@/types/database";
+import type { SavedDatabaseQuery } from "@/types/database-query";
 import { cn } from "@/utils/cn";
 import DatabaseObjectCategory from "./DatabaseObjectCategory.vue";
+import DatabaseSavedQueryCategory from "./DatabaseSavedQueryCategory.vue";
 
 const props = defineProps<{
   databaseName: string;
@@ -21,6 +23,8 @@ const props = defineProps<{
   activeDatabase: string;
   databaseNames: readonly string[];
   objects: DatabaseObject[];
+  savedQueries: readonly SavedDatabaseQuery[];
+  selectedSavedQueryId: string;
   columnsByObject: Record<string, DatabaseColumn[] | undefined>;
   inspectingKeys: Set<string>;
   loading: boolean;
@@ -41,17 +45,23 @@ const emit = defineEmits<{
   removeDatabase: [name: string];
   renameObject: [object: DatabaseObject];
   removeObject: [object: DatabaseObject];
+  createSavedQuery: [database: string];
+  openSavedQuery: [query: SavedDatabaseQuery];
+  renameSavedQuery: [query: SavedDatabaseQuery];
+  removeSavedQuery: [query: SavedDatabaseQuery];
+  duplicateSavedQuery: [query: SavedDatabaseQuery];
 }>();
 
 interface SchemaGroup {
   name: string;
+  queries: SavedDatabaseQuery[];
   tables: DatabaseObject[];
   views: DatabaseObject[];
   procedures: DatabaseObject[];
   functions: DatabaseObject[];
 }
 
-type ContextTarget = "root" | "database" | "category" | "object";
+type ContextTarget = "root" | "database" | "category" | "object" | "query-category" | "saved-query";
 
 const expanded = reactive(new Set<string>());
 const selectedKey = shallowRef("");
@@ -64,10 +74,11 @@ const context = reactive({
   database: "",
   category: "table" as DatabaseObjectKind,
   object: null as DatabaseObject | null,
+  savedQuery: null as SavedDatabaseQuery | null,
 });
 
 function emptySchema(name: string): SchemaGroup {
-  return { name, tables: [], views: [], procedures: [], functions: [] };
+  return { name, queries: [], tables: [], views: [], procedures: [], functions: [] };
 }
 
 const schemas = computed<SchemaGroup[]>(() => {
@@ -96,9 +107,18 @@ const schemas = computed<SchemaGroup[]>(() => {
     groups.set(object.schema, group);
   }
 
+  for (const query of props.savedQueries) {
+    const searchable = `${query.database}.${query.name} ${query.sql}`.toLocaleLowerCase();
+    if (term && !searchable.includes(term)) continue;
+    const group = groups.get(query.database) ?? emptySchema(query.database);
+    group.queries.push(query);
+    groups.set(query.database, group);
+  }
+
   return [...groups.values()]
     .map((group) => ({
       ...group,
+      queries: [...group.queries].sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name)),
       tables: [...group.tables].sort((a, b) => a.name.localeCompare(b.name)),
       views: [...group.views].sort((a, b) => a.name.localeCompare(b.name)),
       procedures: [...group.procedures].sort((a, b) => a.name.localeCompare(b.name)),
@@ -162,6 +182,24 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     ];
   }
 
+  if (context.target === "query-category") {
+    return [
+      { id: "create-saved-query", label: "新建已保存查询", icon: "lucide:file-plus-2", iconTone: "blue", groupLabel: `${context.database} / Queries` },
+      { id: "new-query", label: "新建临时查询", icon: "lucide:square-terminal" },
+    ];
+  }
+
+  if (context.target === "saved-query") {
+    const query = context.savedQuery;
+    if (!query) return [];
+    return [
+      { id: "open-saved-query", label: "打开查询", icon: "lucide:file-code-2", iconTone: "blue", groupLabel: query.name },
+      { id: "duplicate-saved-query", label: "创建副本", icon: "lucide:copy-plus" },
+      { id: "rename-saved-query", label: "重命名…", icon: "lucide:pencil", separatorBefore: true },
+      { id: "remove-saved-query", label: "删除查询…", icon: "lucide:trash-2", iconTone: "danger", danger: true },
+    ];
+  }
+
   const object = context.object;
   if (!object) return [];
   const relation = object.kind === "table" || object.kind === "view";
@@ -196,7 +234,7 @@ function selectObject(object: DatabaseObject): void {
 function showContext(
   event: MouseEvent,
   target: ContextTarget,
-  options: { database?: string; category?: DatabaseObjectKind; object?: DatabaseObject } = {},
+  options: { database?: string; category?: DatabaseObjectKind; object?: DatabaseObject; savedQuery?: SavedDatabaseQuery } = {},
 ): void {
   context.x = event.clientX;
   context.y = event.clientY;
@@ -204,15 +242,22 @@ function showContext(
   context.database = options.database ?? "";
   context.category = options.category ?? "table";
   context.object = options.object ?? null;
+  context.savedQuery = options.savedQuery ?? null;
   if (options.object) selectedKey.value = databaseObjectKey(options.object);
   context.open = true;
 }
 
 function handleContextAction(id: string): void {
   const object = context.object;
+  const savedQuery = context.savedQuery;
   if (id === "create-database") emit("createDatabase");
   else if (id === "activate-database" && context.database) emit("selectDatabase", context.database);
   else if (id === "new-query") emit("newQuery", context.database || undefined);
+  else if (id === "create-saved-query") emit("createSavedQuery", context.database);
+  else if (id === "open-saved-query" && savedQuery) emit("openSavedQuery", savedQuery);
+  else if (id === "duplicate-saved-query" && savedQuery) emit("duplicateSavedQuery", savedQuery);
+  else if (id === "rename-saved-query" && savedQuery) emit("renameSavedQuery", savedQuery);
+  else if (id === "remove-saved-query" && savedQuery) emit("removeSavedQuery", savedQuery);
   else if (id === "create-current-object") emit("createObject", context.database, context.category);
   else if (id.startsWith("create-")) {
     const separator = id.indexOf(":");
@@ -248,14 +293,14 @@ function handleContextAction(id: string): void {
     </div>
 
     <div class="shrink-0 border-b border-line-soft p-1.5">
-      <SearchField v-model="search" icon="lucide:search" placeholder="搜索表、视图或存储过程" />
+      <SearchField v-model="search" icon="lucide:search" placeholder="搜索查询、表、视图或存储过程" />
     </div>
 
     <div class="flex-1 overflow-y-auto p-1.5 scroll-thin">
-      <div v-if="loading && !objects.length" class="px-2 py-3 text-[11px] text-txt-4">
+      <div v-if="loading && !objects.length && !savedQueries.length" class="px-2 py-3 text-[11px] text-txt-4">
         正在读取数据库结构…
       </div>
-      <div v-else-if="error && !objects.length" class="px-2 py-3 text-[11px] leading-5 text-danger">
+      <div v-else-if="error && !objects.length && !savedQueries.length" class="px-2 py-3 text-[11px] leading-5 text-danger">
         {{ error }}
       </div>
       <div v-else-if="!schemas.length" class="px-2 py-3 text-[11px] text-txt-4">
@@ -278,6 +323,7 @@ function handleContextAction(id: string): void {
         </button>
 
         <template v-if="expanded.has(`schema:${schema.name}`)">
+         
           <DatabaseObjectCategory
             :schema="schema.name"
             kind="table"
@@ -293,6 +339,16 @@ function handleContextAction(id: string): void {
             @open="emit('open', $event)"
             @context="(event, object) => showContext(event, 'object', { database: object.schema, object })"
             @category-context="(event, database, category) => showContext(event, 'category', { database, category })"
+          />
+           <DatabaseSavedQueryCategory
+            :database="schema.name"
+            :queries="schema.queries"
+            :selected-id="selectedSavedQueryId"
+            :default-expanded="schema.name === activeDatabase && schema.queries.length > 0"
+            @create="emit('createSavedQuery', $event)"
+            @open="emit('openSavedQuery', $event)"
+            @context="(event, query) => showContext(event, 'saved-query', { database: query.database, savedQuery: query })"
+            @category-context="(event, database) => showContext(event, 'query-category', { database })"
           />
           <DatabaseObjectCategory
             :schema="schema.name"

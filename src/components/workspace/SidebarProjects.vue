@@ -124,8 +124,8 @@ function toggleGroup(groupId: string): void {
   state.collapsed[groupId] = !state.collapsed[groupId];
 }
 
-function toneOf(connection: SavedConnection): "accent" | "amber" | "txt-3" {
-  if (props.connectedIds.has(connection.id)) return "accent";
+function toneOf(connection: SavedConnection): "success" | "amber" | "txt-3" {
+  if (props.connectedIds.has(connection.id)) return "success";
   return props.openIds.has(connection.id) ? "amber" : "txt-3";
 }
 

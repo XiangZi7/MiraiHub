@@ -6,7 +6,6 @@ import type { SshSessionStatus } from '@/types/ssh'
 
 defineProps<{
   status: SshSessionStatus
-  error: string
   needsPassword: boolean
 }>()
 
@@ -29,9 +28,6 @@ const password = defineModel<string>('password', { required: true })
       </div>
       <p class="text-sm text-txt-2">
         {{ status === 'connecting' ? '正在连接数据库…' : '数据库连接未建立' }}
-      </p>
-      <p v-if="error" class="max-w-full text-xs leading-5 text-danger">
-        {{ error }}
       </p>
       <AppTextField
         v-if="needsPassword"

@@ -35,11 +35,13 @@
   --color-txt-3: oklch(56% 0.012 285); /* 弱文本 */
   --color-txt-4: oklch(43% 0.012 285); /* 占位 / 禁用 */
 
-  /* ---------- 语义强调色 ---------- */
-  --color-accent: oklch(84% 0.18 148); /* 主强调：在线绿 */
-  --color-accent-deep: oklch(72% 0.19 150);
-  /* 品牌紫使用 UI 稿里的深色区间；按钮、开关、勾选框等基础组件统一消费 */
+  /* ---------- 品牌与语义色 ---------- */
+  /* 品牌紫是唯一主交互色；accent 统一引用它，避免按钮、选中态和焦点环混入绿色。 */
   --color-violet: oklch(61% 0.19 295);
+  --color-accent: var(--color-violet);
+  --color-accent-deep: oklch(54% 0.19 292);
+  /* 绿色只表示连接成功、任务完成等状态，不再用于主交互。 */
+  --color-success: oklch(78% 0.17 148);
   --color-indigo: oklch(50% 0.18 278);
   --color-blue: oklch(74% 0.14 250);
   --color-cyan: oklch(80% 0.13 200);
@@ -205,11 +207,7 @@
   .btn-primary {
     @apply text-white;
     border-color: color-mix(in oklch, var(--color-violet) 65%, white 8%);
-    background: linear-gradient(
-      135deg,
-      var(--color-indigo),
-      var(--color-violet)
-    );
+    background: var(--color-violet);
     box-shadow: 0 5px 18px
       color-mix(in oklch, var(--color-violet) 24%, transparent);
     transition:
