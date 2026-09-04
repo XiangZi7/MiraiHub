@@ -72,6 +72,8 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Dwm",
     "Win32_UI_Controls",
 ] }
+# 通过 RtlGetVersion 读取真实系统 build，避免兼容模式影响版本判断。
+windows-version = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

@@ -47,7 +47,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </script>
 
 <template>
-  <WindowFrame ambient surface="dialog" class="h-screen w-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <WindowFrame class="h-screen w-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header class="settings-titlebar" data-tauri-drag-region>
       <h1 id="settings-title" class="text-[13px] font-semibold tracking-tight text-txt" data-tauri-drag-region>
         设置

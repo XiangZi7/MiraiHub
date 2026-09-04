@@ -55,6 +55,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::Manager;
 
     if let Some(main) = app.get_webview_window("main") {
+        platform::window::enable_window_material(&main);
         platform::window::enable_window_shadow(&main);
     }
 

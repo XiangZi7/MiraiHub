@@ -90,7 +90,7 @@
   }
 
   body {
-    /* 主窗口保持透明以透出系统材质；对话框由 .win-dialog 自己铺满不透明背景。 */
+    /* 所有 Tauri 窗口保持透明，由系统 Blur / Acrylic 材质打底。 */
     background-color: transparent;
     color: var(--color-txt);
     font-family: var(--font-sans);
@@ -159,26 +159,6 @@
   /* Tauri 已由 DWM 的原生窗口材质提供模糊；再对整个 WebView 做实时模糊会在拖窗时
      触发双重合成。关闭重复滤镜后保留半透明分层与环境光，但移动走纯原生合成路径。 */
   html.is-tauri .win {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-
-  /* 设置与连接子窗口使用静态仿材质背景。
-     最底层渐变完全不透明，避免桌面实时采样；其余层只在这张静态表面内合成，
-     拖窗时不触发 Acrylic 那种持续的背景模糊。 */
-  .win-dialog {
-    background:
-      radial-gradient(
-        88% 72% at 18% -12%,
-        color-mix(in oklch, var(--color-violet) 18%, transparent) 0%,
-        transparent 66%
-      ),
-      radial-gradient(
-        68% 90% at 108% 92%,
-        color-mix(in oklch, var(--color-blue) 9%, transparent) 0%,
-        transparent 72%
-      ),
-      linear-gradient(138deg, oklch(18% 0.018 286), oklch(12.5% 0.012 274) 72%);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }

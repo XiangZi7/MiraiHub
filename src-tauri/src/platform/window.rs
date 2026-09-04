@@ -7,10 +7,55 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder}
 
 use crate::error::{AppError, AppResult};
 
+#[cfg(windows)]
+use tauri::window::{Effect, EffectsBuilder};
+
 /// 连接配置窗口的 label。
 const CONNECTION_WINDOW: &str = "connection";
 /// 设置窗口的 label。
 const SETTINGS_WINDOW: &str = "settings";
+
+/// Windows 11 的首个正式版 build。
+#[cfg(windows)]
+const WINDOWS_11_MIN_BUILD: u32 = 22_000;
+
+/// 按 Windows 版本选择与系统匹配的窗口材质。
+///
+/// Windows 10 使用传统 Blur；Windows 11 及后续版本使用 Acrylic。
+/// `windows-version` 通过 RtlGetVersion 读取真实 build，不受应用清单和兼容模式影响。
+#[cfg(windows)]
+fn windows_window_effect() -> Effect {
+    let version = windows_version::OsVersion::current();
+    window_effect_for_version(version.major, version.build)
+}
+
+#[cfg(windows)]
+fn window_effect_for_version(major: u32, build: u32) -> Effect {
+    if major > 10 || (major == 10 && build >= WINDOWS_11_MIN_BUILD) {
+        Effect::Acrylic
+    } else {
+        Effect::Blur
+    }
+}
+
+#[cfg(windows)]
+fn windows_window_effects() -> tauri::utils::config::WindowEffectsConfig {
+    EffectsBuilder::new()
+        .effect(windows_window_effect())
+        .build()
+}
+
+/// 给主窗口应用与 Rust 子窗口相同的原生材质。
+#[cfg(windows)]
+pub fn enable_window_material(window: &WebviewWindow) {
+    if let Err(error) = window.set_effects(windows_window_effects()) {
+        log::warn!("应用 Windows 窗口材质失败: {error}");
+    }
+}
+
+/// 非 Windows 平台不应用 Windows 专属材质。
+#[cfg(not(windows))]
+pub fn enable_window_material(_window: &WebviewWindow) {}
 
 /// 给无边框窗口补上 DWM 原生阴影。
 ///
@@ -96,10 +141,9 @@ pub fn open_connection_window(
             .minimizable(false)
             .maximizable(false)
             .decorations(false)
-            // 固定尺寸对话框使用前端静态渐变背景，不启用 Acrylic/Mica。
-            // 不透明窗口不需要桌面实时采样，拖动和表单输入时更省 GPU。
-            .transparent(false)
-            .background_color(tauri::webview::Color(18, 18, 27, 255))
+            // 原生材质需要窗口层和 WebView 都透明，内容区再用半透明 UI 分层保证可读性。
+            .transparent(true)
+            .background_color(tauri::webview::Color(0, 0, 0, 0))
             // 与主窗口一致：关闭 Tauri 自带阴影，构建后统一交给
             // enable_window_shadow() 用 DWM 绘制，避免无边框窗口出现亮色描边。
             .shadow(false)
@@ -108,6 +152,11 @@ pub fn open_connection_window(
 
     if let Some(parent) = main.as_ref() {
         builder = builder.parent(parent).map_err(to_app_error)?;
+    }
+
+    #[cfg(windows)]
+    {
+        builder = builder.effects(windows_window_effects());
     }
 
     let dialog = builder.build().map_err(to_app_error)?;
@@ -165,15 +214,20 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
     .minimizable(false)
     .maximizable(false)
     .decorations(false)
-    // 设置窗口与连接窗口使用同一套低开销静态背景。
-    .transparent(false)
-    .background_color(tauri::webview::Color(18, 18, 27, 255))
+    // 与主窗口一致：透明 WebView 透出 Windows Blur / Acrylic。
+    .transparent(true)
+    .background_color(tauri::webview::Color(0, 0, 0, 0))
     .shadow(false)
     .skip_taskbar(true)
     .center();
 
     if let Some(parent) = main.as_ref() {
         builder = builder.parent(parent).map_err(to_app_error)?;
+    }
+
+    #[cfg(windows)]
+    {
+        builder = builder.effects(windows_window_effects());
     }
 
     let dialog = builder.build().map_err(to_app_error)?;
@@ -200,4 +254,23 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
 
 fn to_app_error(err: tauri::Error) -> AppError {
     AppError::internal(err.to_string())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_10_uses_blur() {
+        assert_eq!(window_effect_for_version(10, 19_045), Effect::Blur);
+    }
+
+    #[test]
+    fn windows_11_uses_acrylic() {
+        assert_eq!(
+            window_effect_for_version(10, WINDOWS_11_MIN_BUILD),
+            Effect::Acrylic
+        );
+        assert_eq!(window_effect_for_version(11, 0), Effect::Acrylic);
+    }
 }

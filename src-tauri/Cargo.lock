@@ -2807,6 +2807,7 @@ dependencies = [
  "tokio",
  "uuid",
  "windows 0.61.3",
+ "windows-version",
 ]
 
 [[package]]
