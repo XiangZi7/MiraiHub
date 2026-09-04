@@ -1,94 +1,254 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, watch } from 'vue'
-import AppIcon from '@/components/ui/AppIcon.vue'
-import IconButton from '@/components/ui/IconButton.vue'
-import { databaseObjectKey } from '@/composables/useDatabaseSession'
-import type { DatabaseColumn, DatabaseObject } from '@/types/database'
-import { cn } from '@/utils/cn'
+import { computed, reactive, shallowRef, watch } from "vue";
+import AppContextMenu from "@/components/ui/AppContextMenu.vue";
+import AppIcon from "@/components/ui/AppIcon.vue";
+import IconButton from "@/components/ui/IconButton.vue";
+import SearchField from "@/components/ui/SearchField.vue";
+import { databaseObjectKey } from "@/composables/useDatabaseSession";
+import type { ContextMenuItem } from "@/types/context-menu";
+import type {
+  DatabaseColumn,
+  DatabaseKind,
+  DatabaseObject,
+  DatabaseObjectKind,
+} from "@/types/database";
+import { cn } from "@/utils/cn";
+import DatabaseObjectCategory from "./DatabaseObjectCategory.vue";
 
 const props = defineProps<{
-  databaseName: string
-  objects: DatabaseObject[]
-  columnsByObject: Record<string, DatabaseColumn[] | undefined>
-  inspectingKeys: Set<string>
-  loading: boolean
-  error: string
-}>()
+  databaseName: string;
+  databaseKind: DatabaseKind;
+  activeDatabase: string;
+  databaseNames: readonly string[];
+  objects: DatabaseObject[];
+  columnsByObject: Record<string, DatabaseColumn[] | undefined>;
+  inspectingKeys: Set<string>;
+  loading: boolean;
+  error: string;
+}>();
 
 const emit = defineEmits<{
-  refresh: []
-  inspect: [object: DatabaseObject]
-  open: [object: DatabaseObject]
-}>()
+  refresh: [];
+  inspect: [object: DatabaseObject];
+  open: [object: DatabaseObject, panel?: "data" | "columns"];
+  query: [object: DatabaseObject];
+  copy: [object: DatabaseObject];
+  selectDatabase: [name: string];
+  createDatabase: [];
+  createObject: [schema: string, kind: DatabaseObjectKind];
+  newQuery: [schema?: string];
+  renameDatabase: [name: string];
+  removeDatabase: [name: string];
+  renameObject: [object: DatabaseObject];
+  removeObject: [object: DatabaseObject];
+}>();
 
 interface SchemaGroup {
-  name: string
-  tables: DatabaseObject[]
-  views: DatabaseObject[]
+  name: string;
+  tables: DatabaseObject[];
+  views: DatabaseObject[];
+  procedures: DatabaseObject[];
+  functions: DatabaseObject[];
 }
 
-const expanded = reactive(new Set<string>(['database']))
-const selectedKey = shallowRef('')
+type ContextTarget = "root" | "database" | "category" | "object";
+
+const expanded = reactive(new Set<string>());
+const selectedKey = shallowRef("");
+const search = shallowRef("");
+const context = reactive({
+  open: false,
+  x: 0,
+  y: 0,
+  target: "root" as ContextTarget,
+  database: "",
+  category: "table" as DatabaseObjectKind,
+  object: null as DatabaseObject | null,
+});
+
+function emptySchema(name: string): SchemaGroup {
+  return { name, tables: [], views: [], procedures: [], functions: [] };
+}
 
 const schemas = computed<SchemaGroup[]>(() => {
-  const groups = new Map<string, SchemaGroup>()
-  for (const object of props.objects) {
-    const group = groups.get(object.schema) ?? { name: object.schema, tables: [], views: [] }
-    if (object.kind === 'view')
-      group.views.push(object)
-    else
-      group.tables.push(object)
-    groups.set(object.schema, group)
+  const term = search.value.trim().toLocaleLowerCase();
+  const groups = new Map<string, SchemaGroup>();
+
+  for (const name of props.databaseNames) {
+    if (!term || name.toLocaleLowerCase().includes(term)) {
+      groups.set(name, emptySchema(name));
+    }
   }
-  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
-})
+
+  for (const object of props.objects) {
+    const key = databaseObjectKey(object);
+    const matchesColumn = (props.columnsByObject[key] ?? []).some((column) =>
+      column.name.toLocaleLowerCase().includes(term),
+    );
+    const searchable = `${object.schema}.${object.name} ${object.identity}`.toLocaleLowerCase();
+    if (term && !searchable.includes(term) && !matchesColumn) continue;
+
+    const group = groups.get(object.schema) ?? emptySchema(object.schema);
+    if (object.kind === "view") group.views.push(object);
+    else if (object.kind === "procedure") group.procedures.push(object);
+    else if (object.kind === "function") group.functions.push(object);
+    else group.tables.push(object);
+    groups.set(object.schema, group);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      tables: [...group.tables].sort((a, b) => a.name.localeCompare(b.name)),
+      views: [...group.views].sort((a, b) => a.name.localeCompare(b.name)),
+      procedures: [...group.procedures].sort((a, b) => a.name.localeCompare(b.name)),
+      functions: [...group.functions].sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+});
 
 watch(
   schemas,
   (next) => {
-    if (!next.length)
-      return
-    const first = next[0]
-    expanded.add(`schema:${first.name}`)
-    expanded.add(`tables:${first.name}`)
+    const preferred = next.find((schema) => schema.name === props.activeDatabase) ?? next[0];
+    if (preferred) expanded.add(`schema:${preferred.name}`);
   },
   { immediate: true },
-)
+);
+
+function createObjectItems(schema: string): ContextMenuItem[] {
+  return [
+    { id: `create-table:${schema}`, label: "新建表", icon: "lucide:table-2", iconTone: "blue" },
+    { id: `create-view:${schema}`, label: "新建视图", icon: "lucide:eye", iconTone: "violet" },
+    { id: `create-procedure:${schema}`, label: "新建存储过程", icon: "lucide:workflow", iconTone: "violet" },
+    { id: `create-function:${schema}`, label: "新建函数", icon: "lucide:braces", iconTone: "amber" },
+  ];
+}
+
+const contextItems = computed<ContextMenuItem[]>(() => {
+  if (context.target === "root") {
+    return [
+      { id: "create-database", label: "新建数据库", icon: "lucide:database", iconTone: "violet" },
+      { id: "new-query", label: "新建查询", icon: "lucide:square-terminal", iconTone: "blue" },
+      { id: "refresh", label: "刷新数据库列表", icon: "lucide:rotate-cw", separatorBefore: true },
+    ];
+  }
+
+  if (context.target === "database") {
+    if (props.databaseKind === "postgresql") {
+      return [
+        { id: "schema-label", label: "Schema", icon: "lucide:layers-3", disabled: true, groupLabel: context.database },
+        { id: "new-query", label: "新建查询", icon: "lucide:square-terminal", iconTone: "blue" },
+        { id: "create-object", label: "新建对象", icon: "lucide:plus", children: createObjectItems(context.database) },
+        { id: "refresh", label: "刷新对象树", icon: "lucide:rotate-cw", separatorBefore: true },
+      ];
+    }
+    const active = context.database === props.activeDatabase;
+    return [
+      { id: "activate-database", label: active ? "当前数据库" : "设为当前数据库", icon: "lucide:circle-check", checked: active, disabled: active, groupLabel: context.database },
+      { id: "new-query", label: "新建查询", icon: "lucide:square-terminal", iconTone: "blue" },
+      { id: "create-object", label: "新建对象", icon: "lucide:plus", children: createObjectItems(context.database) },
+      { id: "rename-database", label: props.databaseKind === "mysql" ? "迁移/重命名数据库…" : "重命名数据库…", icon: "lucide:pencil", separatorBefore: true },
+      { id: "refresh", label: "刷新", icon: "lucide:rotate-cw" },
+      { id: "remove-database", label: "删除数据库…", icon: "lucide:trash-2", iconTone: "danger", danger: true, separatorBefore: true },
+    ];
+  }
+
+  if (context.target === "category") {
+    return [
+      { id: "create-current-object", label: `新建${kindLabel(context.category)}`, icon: "lucide:plus", iconTone: "violet", groupLabel: `${context.database} / ${kindLabel(context.category)}` },
+      { id: "new-query", label: "新建查询", icon: "lucide:square-terminal" },
+      { id: "refresh", label: "刷新对象树", icon: "lucide:rotate-cw", separatorBefore: true },
+    ];
+  }
+
+  const object = context.object;
+  if (!object) return [];
+  const relation = object.kind === "table" || object.kind === "view";
+  return [
+    { id: "open-object", label: object.kind === "table" ? "浏览数据" : "打开对象", icon: relation ? "lucide:table-2" : "lucide:file-code-2", groupLabel: `${object.schema}.${object.name}` },
+    { id: "query-object", label: relation ? "生成 SELECT 查询" : object.kind === "procedure" ? "生成 CALL 查询" : "生成函数查询", icon: "lucide:square-terminal" },
+    { id: "structure-object", label: "查看结构", icon: "lucide:columns-3", disabled: !relation },
+    { id: "copy-object", label: "复制限定名称", icon: "lucide:copy", separatorBefore: true },
+    { id: "rename-object", label: "重命名…", icon: "lucide:pencil" },
+    { id: "refresh", label: "刷新对象树", icon: "lucide:rotate-cw" },
+    { id: "remove-object", label: `删除${kindLabel(object.kind)}…`, icon: "lucide:trash-2", iconTone: "danger", danger: true, separatorBefore: true },
+  ];
+});
+
+function kindLabel(kind: DatabaseObjectKind): string {
+  if (kind === "table") return "表";
+  if (kind === "view") return "视图";
+  if (kind === "procedure") return "存储过程";
+  return "函数";
+}
 
 function toggle(key: string): void {
-  if (expanded.has(key))
-    expanded.delete(key)
-  else
-    expanded.add(key)
+  if (expanded.has(key)) expanded.delete(key);
+  else expanded.add(key);
 }
 
 function selectObject(object: DatabaseObject): void {
-  const key = databaseObjectKey(object)
-  selectedKey.value = key
-  toggle(`object:${key}`)
-  if (expanded.has(`object:${key}`))
-    emit('inspect', object)
+  selectedKey.value = databaseObjectKey(object);
+  if (object.kind === "table" || object.kind === "view") emit("inspect", object);
 }
 
-function columnsFor(object: DatabaseObject): DatabaseColumn[] {
-  return props.columnsByObject[databaseObjectKey(object)] ?? []
+function showContext(
+  event: MouseEvent,
+  target: ContextTarget,
+  options: { database?: string; category?: DatabaseObjectKind; object?: DatabaseObject } = {},
+): void {
+  context.x = event.clientX;
+  context.y = event.clientY;
+  context.target = target;
+  context.database = options.database ?? "";
+  context.category = options.category ?? "table";
+  context.object = options.object ?? null;
+  if (options.object) selectedKey.value = databaseObjectKey(options.object);
+  context.open = true;
+}
+
+function handleContextAction(id: string): void {
+  const object = context.object;
+  if (id === "create-database") emit("createDatabase");
+  else if (id === "activate-database" && context.database) emit("selectDatabase", context.database);
+  else if (id === "new-query") emit("newQuery", context.database || undefined);
+  else if (id === "create-current-object") emit("createObject", context.database, context.category);
+  else if (id.startsWith("create-")) {
+    const separator = id.indexOf(":");
+    if (separator > 0) emit("createObject", id.slice(separator + 1), id.slice(7, separator) as DatabaseObjectKind);
+  } else if (id === "rename-database") emit("renameDatabase", context.database);
+  else if (id === "remove-database") emit("removeDatabase", context.database);
+  else if (id === "open-object" && object) emit("open", object);
+  else if (id === "query-object" && object) emit("query", object);
+  else if (id === "structure-object" && object) {
+    emit("inspect", object);
+    emit("open", object, "columns");
+  } else if (id === "copy-object" && object) emit("copy", object);
+  else if (id === "rename-object" && object) emit("renameObject", object);
+  else if (id === "remove-object" && object) emit("removeObject", object);
+  else if (id === "refresh") emit("refresh");
 }
 </script>
 
 <template>
-  <nav class="flex w-[224px] shrink-0 flex-col border-r border-line-soft bg-panel">
+  <nav
+    class="flex w-[248px] shrink-0 flex-col border-r border-line-soft bg-panel"
+    aria-label="数据库对象"
+    @contextmenu.prevent="showContext($event, 'root')"
+  >
     <div class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft px-2">
       <AppIcon name="lucide:database" :size="14" class="ml-1 text-pink" />
       <span class="min-w-0 flex-1 truncate px-1 text-xs text-txt-2" :title="databaseName">
         {{ databaseName }}
       </span>
-      <IconButton
-        icon="lucide:rotate-cw"
-        :size="13"
-        title="刷新对象树"
-        :disabled="loading"
-        @click="emit('refresh')"
-      />
+      <IconButton icon="lucide:square-terminal" :size="13" title="在当前数据库中新建查询" @click.stop="emit('newQuery', activeDatabase || undefined)" />
+      <IconButton icon="lucide:plus" :size="13" title="新建数据库" @click.stop="emit('createDatabase')" />
+      <IconButton icon="lucide:rotate-cw" :size="13" title="刷新对象树" :disabled="loading" @click.stop="emit('refresh')" />
+    </div>
+
+    <div class="shrink-0 border-b border-line-soft p-1.5">
+      <SearchField v-model="search" icon="lucide:search" placeholder="搜索表、视图或存储过程" />
     </div>
 
     <div class="flex-1 overflow-y-auto p-1.5 scroll-thin">
@@ -99,141 +259,101 @@ function columnsFor(object: DatabaseObject): DatabaseColumn[] {
         {{ error }}
       </div>
       <div v-else-if="!schemas.length" class="px-2 py-3 text-[11px] text-txt-4">
-        当前数据库中没有表或视图
+        当前连接中没有可显示的数据库对象
       </div>
 
       <template v-for="schema in schemas" :key="schema.name">
         <button
           type="button"
-          class="nav-item h-7 w-full gap-1.5 text-xs"
-          @click="toggle(`schema:${schema.name}`)"
+          :class="cn('nav-item h-7 w-full gap-1.5 text-xs', schema.name === activeDatabase && 'text-txt')"
+          :aria-expanded="expanded.has(`schema:${schema.name}`)"
+          @click.stop="toggle(`schema:${schema.name}`)"
+          @dblclick.stop="databaseKind === 'mysql' && emit('selectDatabase', schema.name)"
+          @contextmenu.prevent.stop="showContext($event, 'database', { database: schema.name })"
         >
-          <AppIcon
-            name="lucide:chevron-right"
-            :size="12"
-            :class="cn('text-txt-4 transition-transform', expanded.has(`schema:${schema.name}`) && 'rotate-90')"
-          />
+          <AppIcon name="lucide:chevron-right" :size="12" :class="cn('text-txt-4 transition-transform', expanded.has(`schema:${schema.name}`) && 'rotate-90')" />
           <AppIcon name="lucide:layers-3" :size="13" class="text-txt-3" />
           <span class="truncate">{{ schema.name }}</span>
+          <span v-if="databaseKind === 'mysql' && schema.name === activeDatabase" class="ml-auto size-1.5 rounded-full bg-accent shadow-[0_0_7px_var(--color-accent)]" title="当前数据库" />
         </button>
 
         <template v-if="expanded.has(`schema:${schema.name}`)">
-          <button
-            v-if="schema.tables.length"
-            type="button"
-            class="nav-item h-7 w-full gap-1.5 pl-6 text-xs"
-            @click="toggle(`tables:${schema.name}`)"
-          >
-            <AppIcon
-              name="lucide:chevron-right"
-              :size="12"
-              :class="cn('text-txt-4 transition-transform', expanded.has(`tables:${schema.name}`) && 'rotate-90')"
-            />
-            <AppIcon name="lucide:table-2" :size="13" class="text-txt-3" />
-            <span>Tables</span>
-            <span class="ml-auto text-[10px] text-txt-4">{{ schema.tables.length }}</span>
-          </button>
-
-          <template v-if="expanded.has(`tables:${schema.name}`)">
-            <template v-for="object in schema.tables" :key="databaseObjectKey(object)">
-              <button
-                type="button"
-                :class="cn(
-                  'nav-item h-7 w-full gap-1.5 pl-10 text-xs',
-                  selectedKey === databaseObjectKey(object) && 'nav-item-active',
-                )"
-                :title="`${object.schema}.${object.name}（双击生成查询）`"
-                @click="selectObject(object)"
-                @dblclick="emit('open', object)"
-              >
-                <AppIcon
-                  name="lucide:chevron-right"
-                  :size="11"
-                  :class="cn('text-txt-4 transition-transform', expanded.has(`object:${databaseObjectKey(object)}`) && 'rotate-90')"
-                />
-                <AppIcon name="lucide:table" :size="12" class="text-blue" />
-                <span class="truncate">{{ object.name }}</span>
-              </button>
-
-              <template v-if="expanded.has(`object:${databaseObjectKey(object)}`)">
-                <div
-                  v-if="inspectingKeys.has(databaseObjectKey(object))"
-                  class="py-1 pl-15 text-[10.5px] text-txt-4"
-                >
-                  读取字段…
-                </div>
-                <div
-                  v-for="column in columnsFor(object)"
-                  :key="`${databaseObjectKey(object)}:${column.name}`"
-                  class="flex h-6 items-center gap-1.5 pr-2 pl-15 text-[10.5px] text-txt-3"
-                  :title="`${column.dataType}${column.nullable ? ' · nullable' : ''}`"
-                >
-                  <AppIcon name="lucide:columns-3" :size="10" class="shrink-0 text-txt-4" />
-                  <span class="min-w-0 flex-1 truncate">{{ column.name }}</span>
-                  <span class="max-w-18 truncate font-mono text-[9.5px] text-txt-4">{{ column.dataType }}</span>
-                </div>
-              </template>
-            </template>
-          </template>
-
-          <button
-            v-if="schema.views.length"
-            type="button"
-            class="nav-item h-7 w-full gap-1.5 pl-6 text-xs"
-            @click="toggle(`views:${schema.name}`)"
-          >
-            <AppIcon
-              name="lucide:chevron-right"
-              :size="12"
-              :class="cn('text-txt-4 transition-transform', expanded.has(`views:${schema.name}`) && 'rotate-90')"
-            />
-            <AppIcon name="lucide:eye" :size="13" class="text-txt-3" />
-            <span>Views</span>
-            <span class="ml-auto text-[10px] text-txt-4">{{ schema.views.length }}</span>
-          </button>
-
-          <template v-if="expanded.has(`views:${schema.name}`)">
-            <template v-for="object in schema.views" :key="databaseObjectKey(object)">
-              <button
-                type="button"
-                :class="cn(
-                  'nav-item h-7 w-full gap-1.5 pl-10 text-xs',
-                  selectedKey === databaseObjectKey(object) && 'nav-item-active',
-                )"
-                :title="`${object.schema}.${object.name}（双击生成查询）`"
-                @click="selectObject(object)"
-                @dblclick="emit('open', object)"
-              >
-                <AppIcon
-                  name="lucide:chevron-right"
-                  :size="11"
-                  :class="cn('text-txt-4 transition-transform', expanded.has(`object:${databaseObjectKey(object)}`) && 'rotate-90')"
-                />
-                <AppIcon name="lucide:eye" :size="12" class="text-violet" />
-                <span class="truncate">{{ object.name }}</span>
-              </button>
-              <template v-if="expanded.has(`object:${databaseObjectKey(object)}`)">
-                <div
-                  v-if="inspectingKeys.has(databaseObjectKey(object))"
-                  class="py-1 pl-15 text-[10.5px] text-txt-4"
-                >
-                  读取字段…
-                </div>
-                <div
-                  v-for="column in columnsFor(object)"
-                  :key="`${databaseObjectKey(object)}:${column.name}`"
-                  class="flex h-6 items-center gap-1.5 pr-2 pl-15 text-[10.5px] text-txt-3"
-                  :title="`${column.dataType}${column.nullable ? ' · nullable' : ''}`"
-                >
-                  <AppIcon name="lucide:columns-3" :size="10" class="shrink-0 text-txt-4" />
-                  <span class="min-w-0 flex-1 truncate">{{ column.name }}</span>
-                  <span class="max-w-18 truncate font-mono text-[9.5px] text-txt-4">{{ column.dataType }}</span>
-                </div>
-              </template>
-            </template>
-          </template>
+          <DatabaseObjectCategory
+            :schema="schema.name"
+            kind="table"
+            label="Tables"
+            icon="lucide:table-2"
+            icon-class="text-blue"
+            :objects="schema.tables"
+            :selected-key="selectedKey"
+            :columns-by-object="columnsByObject"
+            :inspecting-keys="inspectingKeys"
+            :default-expanded="schema.name === activeDatabase"
+            @select="selectObject"
+            @open="emit('open', $event)"
+            @context="(event, object) => showContext(event, 'object', { database: object.schema, object })"
+            @category-context="(event, database, category) => showContext(event, 'category', { database, category })"
+          />
+          <DatabaseObjectCategory
+            :schema="schema.name"
+            kind="view"
+            label="Views"
+            icon="lucide:eye"
+            icon-class="text-accent"
+            :objects="schema.views"
+            :selected-key="selectedKey"
+            :columns-by-object="columnsByObject"
+            :inspecting-keys="inspectingKeys"
+            :default-expanded="schema.name === activeDatabase && schema.views.length > 0"
+            @select="selectObject"
+            @open="emit('open', $event)"
+            @context="(event, object) => showContext(event, 'object', { database: object.schema, object })"
+            @category-context="(event, database, category) => showContext(event, 'category', { database, category })"
+          />
+          <DatabaseObjectCategory
+            :schema="schema.name"
+            kind="procedure"
+            label="Stored Procedures"
+            icon="lucide:workflow"
+            icon-class="text-violet"
+            :objects="schema.procedures"
+            :selected-key="selectedKey"
+            :columns-by-object="columnsByObject"
+            :inspecting-keys="inspectingKeys"
+            :default-expanded="schema.name === activeDatabase && schema.procedures.length > 0"
+            @select="selectObject"
+            @open="emit('open', $event)"
+            @context="(event, object) => showContext(event, 'object', { database: object.schema, object })"
+            @category-context="(event, database, category) => showContext(event, 'category', { database, category })"
+          />
+          <DatabaseObjectCategory
+            :schema="schema.name"
+            kind="function"
+            label="Functions"
+            icon="lucide:braces"
+            icon-class="text-amber"
+            :objects="schema.functions"
+            :selected-key="selectedKey"
+            :columns-by-object="columnsByObject"
+            :inspecting-keys="inspectingKeys"
+            :default-expanded="schema.name === activeDatabase && schema.functions.length > 0"
+            @select="selectObject"
+            @open="emit('open', $event)"
+            @context="(event, object) => showContext(event, 'object', { database: object.schema, object })"
+            @category-context="(event, database, category) => showContext(event, 'category', { database, category })"
+          />
         </template>
       </template>
     </div>
+
+    <AppContextMenu
+      :open="context.open"
+      :x="context.x"
+      :y="context.y"
+      :items="contextItems"
+      label="数据库对象操作"
+      @close="context.open = false"
+      @select="handleContextAction"
+    />
   </nav>
 </template>

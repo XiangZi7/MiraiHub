@@ -12,6 +12,8 @@ import type { ContextMenuItem } from '@/types/context-menu'
 import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
 import { openConnectionWindow, openSettingsWindow } from '@/utils/window'
+import DatabaseTransferDialog from './database/DatabaseTransferDialog.vue'
+import type { DatabaseTransferMode } from './database/DatabaseTransferDialog.vue'
 import SidebarProjects from './SidebarProjects.vue'
 
 // 当前选中的主视图，由 MainWindow 通过 v-model:active 控制
@@ -22,6 +24,10 @@ const collapsed = defineModel<boolean>('collapsed', { default: false })
 const emit = defineEmits<{
   /** 请求打开某条连接 */
   open: [connection: SavedConnection]
+  /** 在数据库连接的默认数据库中新建查询 */
+  newDatabaseQuery: [connection: SavedConnection]
+  /** SQL 导入完成，请求对应数据库工作区刷新对象树 */
+  databaseImported: [connectionId: string]
 }>()
 
 const {
@@ -43,12 +49,19 @@ const state = reactive({
   addMenuOpen: false,
   addMenuX: 0,
   addMenuY: 0,
+  transferConnection: null as SavedConnection | null,
+  transferMode: 'export' as DatabaseTransferMode,
 })
 
 const addMenuItems: ContextMenuItem[] = [
   { id: 'ssh', label: 'SSH Connection', icon: 'lucide:server' },
   { id: 'local', label: 'Local Terminal', icon: 'lucide:square-terminal' },
-  { id: 'database', label: 'Database Connection', icon: 'lucide:database', separatorBefore: true },
+  {
+    id: 'database',
+    label: 'Database Connection',
+    icon: 'lucide:database',
+    separatorBefore: true,
+  },
 ]
 
 /**
@@ -69,15 +82,26 @@ const groupsLabel = computed(() =>
 )
 
 const currentGroupKind = computed(() =>
-  active.value === 'databases' ? 'database' as const : 'ssh' as const,
+  active.value === 'databases' ? ('database' as const) : ('ssh' as const),
 )
 
 /** 已打开且连上的连接 id，用来给节点点亮绿点 */
 const connectedIds = computed(
-  () => new Set(tabs.filter(tab => tab.status === 'connected').map(tab => tab.id)),
+  () =>
+    new Set(
+      tabs.filter((tab) => tab.status === 'connected').map((tab) => tab.id),
+    ),
 )
 
-const openIds = computed(() => new Set(tabs.map(tab => tab.id)))
+const openIds = computed(() => new Set(tabs.map((tab) => tab.id)))
+
+const transferSessionId = computed(() => {
+  const connectionId = state.transferConnection?.id
+  return (
+    tabs.find((tab) => tab.id === connectionId && tab.status === 'connected')
+      ?.sessionId ?? ''
+  )
+})
 
 /** 新建连接时带上当前视图对应的类型，省一次手动切换 */
 function addConnection(): void {
@@ -100,12 +124,17 @@ function editConnection(connection: SavedConnection): void {
   openConnectionWindow(
     connection.kind === 'local'
       ? 'local'
-      : connection.kind === 'ssh' ? 'ssh' : 'database',
+      : connection.kind === 'ssh'
+        ? 'ssh'
+        : 'database',
     connection.id,
   )
 }
 
-async function moveConnection(connectionId: string, groupName: string): Promise<void> {
+async function moveConnection(
+  connectionId: string,
+  groupName: string,
+): Promise<void> {
   await updateConnection(connectionId, { group: groupName })
 }
 
@@ -134,6 +163,23 @@ function requestRemoveGroup(group: ConnectionGroupView): void {
   state.pendingGroup = group
 }
 
+function openDatabaseTransfer(
+  connection: SavedConnection,
+  mode: DatabaseTransferMode,
+): void {
+  state.transferConnection = connection
+  state.transferMode = mode
+}
+
+function closeDatabaseTransfer(): void {
+  state.transferConnection = null
+}
+
+function handleDatabaseTransferFinished(mode: DatabaseTransferMode): void {
+  if (mode === 'import' && state.transferConnection)
+    emit('databaseImported', state.transferConnection.id)
+}
+
 function closeConfirmation(): void {
   state.pendingConnection = null
   state.pendingGroup = null
@@ -144,10 +190,8 @@ async function confirmRemoval(): Promise<void> {
   const group = state.pendingGroup
   closeConfirmation()
 
-  if (connection)
-    await removeConnection(connection.id)
-  else if (group)
-    await removeGroup(group.id)
+  if (connection) await removeConnection(connection.id)
+  else if (group) await removeGroup(group.id)
 }
 </script>
 
@@ -158,9 +202,18 @@ async function confirmRemoval(): Promise<void> {
     aria-label="主侧边栏"
   >
     <!-- 顶部工具条 -->
-    <div :class="['flex h-11 shrink-0 items-center gap-1 border-b border-line-soft', collapsed ? 'justify-center px-1.5' : 'px-2.5']">
+    <div
+      :class="[
+        'flex h-11 shrink-0 items-center gap-1 border-b border-line-soft',
+        collapsed ? 'justify-center px-1.5' : 'px-2.5',
+      ]"
+    >
       <template v-if="!collapsed">
-        <IconButton icon="lucide:panel-left" title="侧边栏" @click="collapsed = true" />
+        <IconButton
+          icon="lucide:panel-left"
+          title="侧边栏"
+          @click="collapsed = true"
+        />
         <IconButton icon="lucide:layout-grid" title="布局" />
         <div class="flex-1" />
       </template>
@@ -171,17 +224,26 @@ async function confirmRemoval(): Promise<void> {
       />
     </div>
 
-    <div :class="['flex-1 overflow-y-auto py-3 scroll-thin', collapsed ? 'px-1.5' : 'px-2']">
+    <div
+      :class="[
+        'flex-1 overflow-y-auto py-3 scroll-thin',
+        collapsed ? 'px-1.5' : 'px-2',
+      ]"
+    >
       <!-- 工作区 -->
-      <p v-if="!collapsed" class="group-label mb-1.5">
-        Workspace
-      </p>
+      <p v-if="!collapsed" class="group-label mb-1.5">Workspace</p>
       <nav class="space-y-0.5">
         <button
           v-for="item in NAV_ITEMS"
           :key="item.id"
           type="button"
-          :class="cn('nav-item w-full', collapsed && 'justify-center px-0', active === item.id && 'nav-item-active')"
+          :class="
+            cn(
+              'nav-item w-full',
+              collapsed && 'justify-center px-0',
+              active === item.id && 'nav-item-active',
+            )
+          "
           :title="collapsed ? item.label : undefined"
           @click="active = item.id"
         >
@@ -206,12 +268,20 @@ async function confirmRemoval(): Promise<void> {
         @move="moveConnection"
         @edit="editConnection"
         @duplicate="duplicateConnection"
+        @new-database-query="emit('newDatabaseQuery', $event)"
+        @export-database="openDatabaseTransfer($event, 'export')"
+        @import-database="openDatabaseTransfer($event, 'import')"
         @remove="requestRemoveConnection"
       />
     </div>
 
     <!-- 底部操作 -->
-    <div :class="['flex shrink-0 items-center gap-2 border-t border-line-soft', collapsed ? 'flex-col p-1.5' : 'p-2.5']">
+    <div
+      :class="[
+        'flex shrink-0 items-center gap-2 border-t border-line-soft',
+        collapsed ? 'flex-col p-1.5' : 'p-2.5',
+      ]"
+    >
       <button
         type="button"
         :class="['btn', collapsed ? 'size-7 px-0' : 'flex-1']"
@@ -221,16 +291,22 @@ async function confirmRemoval(): Promise<void> {
         <AppIcon name="lucide:plus" :size="14" />
         <span v-if="!collapsed">Add Connection</span>
       </button>
-      <IconButton icon="lucide:settings" title="设置" @click="openSettingsWindow" />
+      <IconButton
+        icon="lucide:settings"
+        title="设置"
+        @click="openSettingsWindow"
+      />
     </div>
   </aside>
 
   <AppConfirmDialog
     :open="Boolean(state.pendingConnection || state.pendingGroup)"
     :title="state.pendingConnection ? '删除连接' : '删除分组'"
-    :description="state.pendingConnection
-      ? `确定删除“${state.pendingConnection.name}”吗？此操作不会删除服务器上的任何数据。`
-      : `确定删除“${state.pendingGroup?.name ?? ''}”吗？其中的连接会移到 Ungrouped。`"
+    :description="
+      state.pendingConnection
+        ? `确定删除“${state.pendingConnection.name}”吗？此操作不会删除服务器上的任何数据。`
+        : `确定删除“${state.pendingGroup?.name ?? ''}”吗？其中的连接会移到 Ungrouped。`
+    "
     confirm-label="删除"
     danger
     @close="closeConfirmation"
@@ -245,6 +321,15 @@ async function confirmRemoval(): Promise<void> {
     label="新建连接"
     @select="selectConnectionKind"
     @close="state.addMenuOpen = false"
+  />
+
+  <DatabaseTransferDialog
+    :open="Boolean(state.transferConnection)"
+    :mode="state.transferMode"
+    :connection="state.transferConnection"
+    :session-id="transferSessionId"
+    @close="closeDatabaseTransfer"
+    @finished="handleDatabaseTransferFinished"
   />
 </template>
 

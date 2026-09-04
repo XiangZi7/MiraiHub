@@ -1,11 +1,17 @@
 import { computed, shallowRef } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
+import type {
+  ConnectionGroupKind,
+  ConnectionGroupView,
+  SavedConnection,
+} from '@/types/connection'
+import { groupKindOf } from '@/types/connection'
 
 interface DragPayload {
   connectionId: string
   label: string
   sourceGroupId: string
+  groupKind: ConnectionGroupKind
 }
 
 interface ConnectionGroupDragOptions {
@@ -48,7 +54,11 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
 
     if (!groupId) return undefined
 
-    return options.groups().find((group) => group.id === groupId && group.kind === 'ssh')
+    return options
+      .groups()
+      .find(
+        (group) => group.id === groupId && group.kind === payload?.groupKind,
+      )
   }
 
   function reset(): void {
@@ -66,8 +76,6 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
     sourceGroup: ConnectionGroupView,
   ): void {
     if (event.button !== 0 || !event.isPrimary) return
-    if (connection.kind !== 'ssh' && connection.kind !== 'local') return
-
     activePointerId = event.pointerId
     startX = event.clientX
     startY = event.clientY
@@ -77,6 +85,7 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
       connectionId: connection.id,
       label: connection.name,
       sourceGroupId: sourceGroup.id,
+      groupKind: groupKindOf(connection.kind),
     }
 
     const target = event.currentTarget as HTMLElement
@@ -90,7 +99,10 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
     pointerY.value = event.clientY
 
     if (!dragging.value) {
-      const distance = Math.hypot(event.clientX - startX, event.clientY - startY)
+      const distance = Math.hypot(
+        event.clientX - startX,
+        event.clientY - startY,
+      )
       if (distance < DRAG_THRESHOLD_PX) return
 
       dragging.value = true
@@ -100,7 +112,8 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
 
     event.preventDefault()
     const group = groupAtPoint(event.clientX, event.clientY)
-    targetGroupId.value = group && group.id !== payload.sourceGroupId ? group.id : ''
+    targetGroupId.value =
+      group && group.id !== payload.sourceGroupId ? group.id : ''
   }
 
   function finish(event: PointerEvent): void {
@@ -108,7 +121,9 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
 
     const currentPayload = payload
     const wasDragging = dragging.value
-    const group = wasDragging ? groupAtPoint(event.clientX, event.clientY) : undefined
+    const group = wasDragging
+      ? groupAtPoint(event.clientX, event.clientY)
+      : undefined
 
     if (wasDragging) {
       suppressedClickId = currentPayload.connectionId

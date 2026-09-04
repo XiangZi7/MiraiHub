@@ -29,6 +29,10 @@ import TerminalPanel from './TerminalPanel.vue'
 import TransferCenter from './TransferCenter.vue'
 
 const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
+const databaseViews = useTemplateRef<Array<{
+  refreshForConnection: (connectionId: string) => void
+  newQueryForConnection: (connectionId: string, database: string) => Promise<void>
+}>>('databaseViews')
 const { width: viewportWidth } = useWindowSize()
 
 const SIDEBAR_MIN_WIDTH = 184
@@ -220,6 +224,22 @@ function openConnection(connection: SavedConnection): void {
   void touch(connection.id)
 }
 
+/** 从左侧连接列表新建查询：先打开连接，再让查询绑定到连接配置的默认数据库。 */
+async function newDatabaseQuery(connection: SavedConnection): Promise<void> {
+  if (!isDatabaseConnection(connection))
+    return
+
+  openConnection(connection)
+  await nextTick()
+  for (const view of databaseViews.value ?? [])
+    await view.newQueryForConnection(connection.id, connection.settings.database)
+}
+
+function refreshImportedDatabase(connectionId: string): void {
+  for (const view of databaseViews.value ?? [])
+    view.refreshForConnection(connectionId)
+}
+
 /**
  * 切换标签时同步主视图。
  * 标签栏是跨类型的（SSH 和数据库标签排在一起），
@@ -362,6 +382,8 @@ function runCommand(item: CommandItem): void {
         v-model:collapsed="sidebarCollapsed"
         @update:active="selectNav"
         @open="openConnection"
+        @new-database-query="newDatabaseQuery"
+        @database-imported="refreshImportedDatabase"
       />
       <AppResizeHandle
         v-if="!sidebarCollapsed"
@@ -449,6 +471,7 @@ function runCommand(item: CommandItem): void {
             <DatabaseView
               v-for="tab in databaseTabViews"
               v-show="activeId === tab.id"
+              ref="databaseViews"
               :key="tab.id"
               :connection="tab.connection"
               @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"

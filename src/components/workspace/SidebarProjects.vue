@@ -7,7 +7,7 @@ import IconButton from "@/components/ui/IconButton.vue";
 import StatusDot from "@/components/ui/StatusDot.vue";
 import type { ConnectionGroupView, SavedConnection } from "@/types/connection";
 import type { ContextMenuItem } from "@/types/context-menu";
-import { endpointOf } from "@/types/connection";
+import { endpointOf, isDatabaseConnection } from "@/types/connection";
 import { connectionTagColorCss } from "@/constants/connection";
 import { useConnectionGroupDrag } from "@/composables/useConnectionGroupDrag";
 import { cn } from "@/utils/cn";
@@ -31,6 +31,9 @@ const emit = defineEmits<{
   move: [connectionId: string, groupName: string];
   edit: [connection: SavedConnection];
   duplicate: [connection: SavedConnection];
+  newDatabaseQuery: [connection: SavedConnection];
+  exportDatabase: [connection: SavedConnection];
+  importDatabase: [connection: SavedConnection];
   remove: [connection: SavedConnection];
 }>();
 
@@ -47,10 +50,50 @@ const state = reactive({
 
 const contextItems = computed<ContextMenuItem[]>(() => {
   if (state.menuConnection) {
+    const connection = state.menuConnection;
+    const database = isDatabaseConnection(connection);
+    const connected = props.connectedIds.has(connection.id);
+
     return [
-      { id: "open", label: "打开连接", icon: "lucide:square-terminal" },
+      {
+        id: "open",
+        label: props.openIds.has(connection.id) ? "切换到连接" : "打开连接",
+        icon: database ? "lucide:database" : "lucide:square-terminal",
+      },
+      ...(database
+        ? [{
+            id: "new-database-query",
+            label: "新建查询",
+            icon: "lucide:square-terminal",
+            iconTone: "blue" as const,
+          }]
+        : []),
       { id: "edit", label: "编辑连接", icon: "lucide:pencil" },
       { id: "duplicate", label: "复制连接", icon: "lucide:copy" },
+      ...(database
+        ? [
+            {
+              id: "database-transfer",
+              label: "导入 / 导出",
+              icon: "lucide:arrow-left-right",
+              separatorBefore: true,
+              children: [
+                {
+                  id: "export-database",
+                  label: connected ? "导出为 SQL…" : "导出为 SQL（请先连接）",
+                  icon: "lucide:database-backup",
+                  disabled: !connected,
+                },
+                {
+                  id: "import-database",
+                  label: connected ? "从 SQL 导入…" : "从 SQL 导入（请先连接）",
+                  icon: "lucide:file-input",
+                  disabled: !connected,
+                },
+              ],
+            } satisfies ContextMenuItem,
+          ]
+        : []),
       {
         id: "delete",
         label: "删除连接",
@@ -121,8 +164,6 @@ function openConnectionMenu(
   event: MouseEvent,
   connection: SavedConnection,
 ): void {
-  if (connection.kind !== "ssh" && connection.kind !== "local") return;
-
   const point = eventPoint(event);
   state.menuConnection = connection;
   state.menuGroup = null;
@@ -146,8 +187,11 @@ function runContextAction(action: string): void {
   const connection = state.menuConnection;
   if (connection) {
     if (action === "open") emit("open", connection);
+    else if (action === "new-database-query") emit("newDatabaseQuery", connection);
     else if (action === "edit") emit("edit", connection);
     else if (action === "duplicate") emit("duplicate", connection);
+    else if (action === "export-database") emit("exportDatabase", connection);
+    else if (action === "import-database") emit("importDatabase", connection);
     else if (action === "delete") emit("remove", connection);
     return;
   }
@@ -231,8 +275,7 @@ function runContextAction(action: string): void {
             :class="
               cn(
                 'connection-node w-full pl-7',
-                (node.kind === 'ssh' || node.kind === 'local') &&
-                  'connection-node-draggable',
+                'connection-node-draggable',
                 groupDrag.draggedConnectionId.value === node.id &&
                   'connection-node-dragging',
                 activeId === node.id && 'nav-item-active',
@@ -345,7 +388,7 @@ function runContextAction(action: string): void {
 }
 
 .connection-node-draggable:active {
-    cursor: default;
+  cursor: default;
 }
 
 .connection-node-dragging {

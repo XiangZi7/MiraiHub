@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /* ==========================================================================
    设计令牌 —— 所有值自动映射为 CSS 变量与 Tailwind 工具类
@@ -7,11 +7,11 @@
 @theme {
   /* ---------- 字体（均已本地内置，见 main.ts 的 @fontsource 引入） ---------- */
   --font-sans:
-    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
   --font-mono:
-    'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Cascadia Code',
-    'Menlo', 'Consolas', monospace;
+    "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "Cascadia Code",
+    "Menlo", "Consolas", monospace;
 
   /* ---------- 表面层级（半透明，靠 backdrop-filter 透出系统 acrylic） ----------
      alpha 由深到浅递减：越"靠上"的层越亮、越不透明 */
@@ -205,8 +205,13 @@
   .btn-primary {
     @apply text-white;
     border-color: color-mix(in oklch, var(--color-violet) 65%, white 8%);
-    background: linear-gradient(135deg, var(--color-indigo), var(--color-violet));
-    box-shadow: 0 5px 18px color-mix(in oklch, var(--color-violet) 24%, transparent);
+    background: linear-gradient(
+      135deg,
+      var(--color-indigo),
+      var(--color-violet)
+    );
+    box-shadow: 0 5px 18px
+      color-mix(in oklch, var(--color-violet) 24%, transparent);
     transition:
       border-color 150ms ease,
       filter 150ms ease;
@@ -216,7 +221,8 @@
   .btn-primary:focus-visible {
     border-color: var(--color-line-strong);
     outline: none;
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+    box-shadow: 0 0 0 3px
+      color-mix(in oklch, var(--color-violet) 12%, transparent);
   }
 
   .btn-primary:hover,
@@ -243,7 +249,7 @@
 
   /* 侧栏导航项 */
   .nav-item {
-    @apply flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[13px] text-txt-2
+    @apply flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] text-txt-2
            transition-colors duration-150 hover:bg-hover hover:text-txt;
   }
 
@@ -328,7 +334,7 @@
   isolation: isolate;
 
   &::before {
-    content: '';
+    content: "";
     position: absolute;
     inset: 0;
     z-index: 0;

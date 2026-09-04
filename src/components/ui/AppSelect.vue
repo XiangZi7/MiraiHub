@@ -8,6 +8,7 @@ interface SelectOption {
   value: string
   label: string
   description?: string
+  group?: string
   disabled?: boolean
 }
 
@@ -21,18 +22,23 @@ const props = withDefaults(defineProps<{
   hideLabel?: boolean
   /** 28px 高的紧凑规格，用于设置面板等高密度界面。 */
   compact?: boolean
+  /** 显示搜索框；选项超过 7 个时也会自动开启。 */
+  searchable?: boolean
 }>(), {
   placeholder: '请选择',
   required: false,
   disabled: false,
   hideLabel: false,
   compact: false,
+  searchable: false,
 })
 
 const model = defineModel<string>({ required: true })
 const trigger = useTemplateRef<HTMLButtonElement>('trigger')
 const menu = useTemplateRef<HTMLElement>('menu')
+const searchInput = useTemplateRef<HTMLInputElement>('searchInput')
 const open = shallowRef(false)
+const search = shallowRef('')
 const activeIndex = shallowRef(-1)
 const menuStyle = shallowRef<CSSProperties>({})
 const triggerId = useId()
@@ -42,6 +48,17 @@ const listboxId = useId()
 const selectedOption = computed(() => (
   props.options.find(option => option.value === model.value)
 ))
+const showSearch = computed(() => props.searchable || props.options.length > 7)
+const visibleOptions = computed(() => {
+  const term = search.value.trim().toLocaleLowerCase()
+  if (!term)
+    return props.options
+  return props.options.filter(option => (
+    option.label.toLocaleLowerCase().includes(term)
+    || option.description?.toLocaleLowerCase().includes(term)
+    || option.group?.toLocaleLowerCase().includes(term)
+  ))
+})
 
 const activeOptionId = computed(() => (
   open.value && activeIndex.value >= 0
@@ -50,13 +67,13 @@ const activeOptionId = computed(() => (
 ))
 
 function enabledIndexFrom(start: number, step: 1 | -1): number {
-  if (!props.options.length)
+  if (!visibleOptions.value.length)
     return -1
 
   let index = start
-  for (let checked = 0; checked < props.options.length; checked += 1) {
-    index = (index + step + props.options.length) % props.options.length
-    if (!props.options[index]?.disabled)
+  for (let checked = 0; checked < visibleOptions.value.length; checked += 1) {
+    index = (index + step + visibleOptions.value.length) % visibleOptions.value.length
+    if (!visibleOptions.value[index]?.disabled)
       return index
   }
 
@@ -64,7 +81,7 @@ function enabledIndexFrom(start: number, step: 1 | -1): number {
 }
 
 function setInitialActiveIndex(): void {
-  const selectedIndex = props.options.findIndex(option => option.value === model.value && !option.disabled)
+  const selectedIndex = visibleOptions.value.findIndex(option => option.value === model.value && !option.disabled)
   activeIndex.value = selectedIndex >= 0 ? selectedIndex : enabledIndexFrom(-1, 1)
 }
 
@@ -76,12 +93,12 @@ function updatePosition(): void {
   const rect = element.getBoundingClientRect()
   const viewportPadding = 8
   const gap = 6
-  const desiredHeight = Math.min(240, props.options.length * 38 + 8)
+  const desiredHeight = Math.min(280, visibleOptions.value.length * 38 + (showSearch.value ? 48 : 8))
   const roomBelow = window.innerHeight - rect.bottom - viewportPadding - gap
   const roomAbove = rect.top - viewportPadding - gap
   const placeAbove = roomBelow < Math.min(120, desiredHeight) && roomAbove > roomBelow
   const availableHeight = Math.max(72, placeAbove ? roomAbove : roomBelow)
-  const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2)
+  const width = Math.min(Math.max(rect.width, 196), window.innerWidth - viewportPadding * 2)
   const left = Math.min(
     Math.max(viewportPadding, rect.left),
     window.innerWidth - viewportPadding - width,
@@ -90,7 +107,7 @@ function updatePosition(): void {
   menuStyle.value = {
     left: `${left}px`,
     width: `${width}px`,
-    maxHeight: `${Math.min(240, availableHeight)}px`,
+    maxHeight: `${Math.min(280, availableHeight)}px`,
     ...(placeAbove
       ? { bottom: `${window.innerHeight - rect.top + gap}px` }
       : { top: `${rect.bottom + gap}px` }),
@@ -101,10 +118,13 @@ async function openMenu(): Promise<void> {
   if (props.disabled || !props.options.length)
     return
 
+  search.value = ''
   setInitialActiveIndex()
   open.value = true
   await nextTick()
   updatePosition()
+  if (showSearch.value)
+    searchInput.value?.focus()
 }
 
 function closeMenu(): void {
@@ -162,7 +182,7 @@ function handleKeydown(event: KeyboardEvent): void {
         void openMenu()
       }
       else {
-        const option = props.options[activeIndex.value]
+        const option = visibleOptions.value[activeIndex.value]
         if (option)
           selectOption(option)
       }
@@ -190,6 +210,17 @@ useEventListener(document, 'pointerdown', (event: PointerEvent) => {
 
 useEventListener(window, 'resize', updatePosition)
 useEventListener(window, 'scroll', updatePosition, { capture: true, passive: true })
+
+watch(activeIndex, async (index) => {
+  if (!open.value || index < 0)
+    return
+  await nextTick()
+  document.getElementById(`${listboxId}-option-${index}`)?.scrollIntoView({ block: 'nearest' })
+})
+
+watch(search, () => {
+  activeIndex.value = enabledIndexFrom(-1, 1)
+})
 
 watch(() => props.disabled, (disabled) => {
   if (disabled)
@@ -246,37 +277,40 @@ watch(() => props.disabled, (disabled) => {
           role="listbox"
           :aria-labelledby="labelId"
           :style="menuStyle"
-          class="app-select-menu fixed z-100 overflow-y-auto border border-line-strong p-1 shadow-pop scroll-thin"
+          class="app-select-menu fixed z-100 overflow-y-auto p-1.5 scroll-thin"
+          @keydown="handleKeydown"
         >
-          <div
-            v-for="(option, index) in options"
-            :id="`${listboxId}-option-${index}`"
-            :key="option.value"
-            role="option"
-            :aria-selected="model === option.value"
-            :aria-disabled="option.disabled || undefined"
-            :class="[
-              'app-select-option flex min-h-8 items-center gap-2 px-2 py-1.5 text-left',
-              index === activeIndex && 'app-select-option-active',
-              model === option.value && 'app-select-option-selected',
-              option.disabled && 'pointer-events-none opacity-40',
-            ]"
-            @pointerenter="!option.disabled && (activeIndex = index)"
-            @pointerdown.prevent="selectOption(option)"
-          >
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-xs text-txt">{{ option.label }}</span>
-              <span v-if="option.description" class="mt-0.5 block truncate text-[10px] text-txt-3">
-                {{ option.description }}
+          <label v-if="showSearch" class="app-select-search sticky top-0 z-10 mb-1 flex h-8 items-center gap-2 rounded-md border border-line-soft bg-card px-2">
+            <AppIcon name="lucide:search" :size="12" class="text-txt-4" />
+            <input ref="searchInput" v-model="search" class="min-w-0 flex-1 bg-transparent text-[11px] text-txt outline-none" placeholder="搜索选项" @keydown.space.stop>
+          </label>
+          <template v-for="(option, index) in visibleOptions" :key="option.value">
+            <div v-if="option.group && option.group !== visibleOptions[index - 1]?.group" class="app-select-group">
+              {{ option.group }}
+            </div>
+            <div
+              :id="`${listboxId}-option-${index}`"
+              role="option"
+              :aria-selected="model === option.value"
+              :aria-disabled="option.disabled || undefined"
+              :class="[
+                'app-select-option flex min-h-9 items-center gap-2 px-2.5 py-1.5 text-left',
+                index === activeIndex && 'app-select-option-active',
+                model === option.value && 'app-select-option-selected',
+                option.disabled && 'pointer-events-none opacity-40',
+              ]"
+              @pointerenter="!option.disabled && (activeIndex = index)"
+              @pointerdown.prevent="selectOption(option)"
+            >
+              <span class="app-select-indicator" aria-hidden="true" />
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-xs text-txt">{{ option.label }}</span>
+                <span v-if="option.description" class="mt-0.5 block truncate text-[10px] text-txt-3">{{ option.description }}</span>
               </span>
-            </span>
-            <AppIcon
-              v-if="model === option.value"
-              name="lucide:check"
-              :size="13"
-              class="shrink-0 text-violet"
-            />
-          </div>
+              <AppIcon v-if="model === option.value" name="lucide:check" :size="13" class="shrink-0 text-violet" />
+            </div>
+          </template>
+          <div v-if="!visibleOptions.length" class="px-2.5 py-5 text-center text-[11px] text-txt-4">没有匹配项</div>
         </div>
       </Transition>
     </Teleport>
@@ -304,38 +338,72 @@ watch(() => props.disabled, (disabled) => {
 }
 
 .app-select-menu {
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--color-panel) 90%, transparent);
-  backdrop-filter: blur(24px) saturate(165%);
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  border: 1px solid color-mix(in oklch, var(--color-line-strong) 88%, white 5%);
+  border-radius: 11px;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, white 3%, transparent), transparent 32%),
+    color-mix(in oklch, var(--color-panel) 94%, transparent);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 34%), 0 3px 12px rgb(0 0 0 / 22%), inset 0 1px rgb(255 255 255 / 4%);
+  backdrop-filter: blur(28px) saturate(175%);
+  -webkit-backdrop-filter: blur(28px) saturate(175%);
 }
 
 .app-select-option {
+  position: relative;
   cursor: pointer;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
   color: var(--color-txt-2);
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.app-select-indicator {
+  width: 2px;
+  height: 16px;
+  flex: none;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 150ms ease, transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform: scaleY(0.45);
+}
+
+.app-select-option-selected .app-select-indicator {
+  background: var(--color-violet);
+  transform: scaleY(1);
+}
+
+.app-select-group {
+  padding: 7px 9px 3px;
+  color: var(--color-txt-4);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .app-select-option-active {
   background: var(--color-hover);
+  border-color: color-mix(in oklch, var(--color-line-strong) 65%, transparent);
 }
 
 .app-select-option-selected {
   background: color-mix(in oklch, var(--color-violet) 12%, var(--color-card));
+  color: var(--color-txt);
 }
 
 .app-select-pop-enter-active,
 .app-select-pop-leave-active {
-  transition: opacity 120ms ease;
+  transition: opacity 140ms ease, transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .app-select-pop-enter-from,
 .app-select-pop-leave-to {
   opacity: 0;
+  transform: translateY(-3px) scale(0.985);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-select-indicator,
   .app-select-option,
   .app-select-pop-enter-active,
   .app-select-pop-leave-active {

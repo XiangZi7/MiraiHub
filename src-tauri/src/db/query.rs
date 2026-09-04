@@ -1,4 +1,9 @@
-//! 数据库元数据读取与动态 SQL 结果解码。
+//! SQL 执行与动态结果解码。
+//!
+//! 提交的脚本先在 `sql::split_statements` 里按方言切分，再逐条在同一条
+//! 连接上执行 —— 这样 `USE`、`SET`、临时表这类带会话状态的语句对后续语句
+//! 依然生效。执行走简单查询协议（`raw_sql`），预处理协议撑不住 `USE` /
+//! `SHOW` 这类语句；列信息在结果为空时才补一次 `describe`，正常路径没有额外往返。
 
 use std::time::Instant;
 
@@ -6,305 +11,303 @@ use base64::Engine;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use futures_util::TryStreamExt;
 use rust_decimal::Decimal;
-use sqlx::mysql::{MySqlPool, MySqlRow};
-use sqlx::postgres::{PgPool, PgRow};
-use sqlx::{Column, Executor, Row, TypeInfo, ValueRef};
+use sqlx::mysql::MySqlRow;
+use sqlx::postgres::PgRow;
+use sqlx::{Column, Either, Executor, Row, TypeInfo, ValueRef};
 use uuid::Uuid;
 
 use super::error::{DatabaseError, DatabaseResult};
-use super::manager::DatabasePool;
-use super::models::{
-    DatabaseColumn, DatabaseObject, DatabaseObjectKind, DatabaseQueryColumn, DatabaseQueryResult,
-};
+use super::manager::{DatabaseConnection, DatabaseManager, RunningQuery};
+use super::models::{DatabaseExecution, DatabaseQueryColumn, DatabaseStatementResult};
+use super::sql;
 
-const MAX_RESULT_ROWS: usize = 1_000;
+/// 单次请求能带回的最大行数上限，防止前端被撑爆。
+pub const MAX_RESULT_ROWS: usize = 200_000;
+pub const DEFAULT_RESULT_ROWS: usize = 500;
 
-pub async fn list_objects(pool: &DatabasePool) -> DatabaseResult<Vec<DatabaseObject>> {
-    match pool {
-        DatabasePool::Mysql(pool) => list_mysql_objects(pool).await,
-        DatabasePool::Postgresql(pool) => list_postgresql_objects(pool).await,
+/// 一条语句跑完后的原始产出，还没包装成对前端的模型。
+struct StatementOutcome {
+    columns: Vec<DatabaseQueryColumn>,
+    rows: Vec<Vec<Option<String>>>,
+    rows_affected: u64,
+    truncated: bool,
+}
+
+impl StatementOutcome {
+    fn empty() -> Self {
+        Self {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            rows_affected: 0,
+            truncated: false,
+        }
     }
 }
 
-async fn list_mysql_objects(pool: &MySqlPool) -> DatabaseResult<Vec<DatabaseObject>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
-        FROM information_schema.tables
-        WHERE TABLE_SCHEMA = DATABASE()
-           OR (
-             DATABASE() IS NULL
-             AND TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
-           )
-        ORDER BY TABLE_SCHEMA, TABLE_TYPE, TABLE_NAME
-        "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(DatabaseError::Query)?;
+/// 执行一段可能包含多条语句的 SQL。
+///
+/// 任意一条报错就停下并把错误挂在那条语句上，前面已经成功的结果照常返回 ——
+/// 脚本跑到一半失败时，用户需要看到失败点之前发生了什么。
+pub async fn execute(
+    manager: &DatabaseManager,
+    session_id: &str,
+    sql_text: &str,
+    max_rows: usize,
+) -> DatabaseResult<DatabaseExecution> {
+    let pool = manager.pool(session_id).await?;
+    let kind = pool.kind();
+    let statements = sql::split_statements(sql_text, kind);
 
-    rows.into_iter()
-        .map(|row| {
-            let table_type: String = row.try_get("TABLE_TYPE").map_err(DatabaseError::Query)?;
-            Ok(DatabaseObject {
-                schema: row.try_get("TABLE_SCHEMA").map_err(DatabaseError::Query)?,
-                name: row.try_get("TABLE_NAME").map_err(DatabaseError::Query)?,
-                kind: if table_type.eq_ignore_ascii_case("VIEW") {
-                    DatabaseObjectKind::View
-                } else {
-                    DatabaseObjectKind::Table
-                },
-            })
-        })
-        .collect()
-}
-
-async fn list_postgresql_objects(pool: &PgPool) -> DatabaseResult<Vec<DatabaseObject>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT table_schema, table_name, table_type
-        FROM information_schema.tables
-        WHERE table_catalog = current_database()
-          AND table_schema NOT IN ('pg_catalog', 'information_schema')
-        ORDER BY table_schema, table_type, table_name
-        "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(DatabaseError::Query)?;
-
-    rows.into_iter()
-        .map(|row| {
-            let table_type: String = row.try_get("table_type").map_err(DatabaseError::Query)?;
-            Ok(DatabaseObject {
-                schema: row.try_get("table_schema").map_err(DatabaseError::Query)?,
-                name: row.try_get("table_name").map_err(DatabaseError::Query)?,
-                kind: if table_type.eq_ignore_ascii_case("VIEW") {
-                    DatabaseObjectKind::View
-                } else {
-                    DatabaseObjectKind::Table
-                },
-            })
-        })
-        .collect()
-}
-
-pub async fn describe_object(
-    pool: &DatabasePool,
-    schema: &str,
-    name: &str,
-) -> DatabaseResult<Vec<DatabaseColumn>> {
-    if schema.trim().is_empty() || name.trim().is_empty() {
+    if statements.is_empty() {
         return Err(DatabaseError::InvalidInput(
-            "schema 与对象名不能为空".to_owned(),
+            "没有可执行的 SQL 语句".to_owned(),
         ));
     }
 
-    match pool {
-        DatabasePool::Mysql(pool) => describe_mysql_object(pool, schema, name).await,
-        DatabasePool::Postgresql(pool) => describe_postgresql_object(pool, schema, name).await,
-    }
-}
-
-async fn describe_mysql_object(
-    pool: &MySqlPool,
-    schema: &str,
-    name: &str,
-) -> DatabaseResult<Vec<DatabaseColumn>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, ORDINAL_POSITION
-        FROM information_schema.columns
-        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-        ORDER BY ORDINAL_POSITION
-        "#,
-    )
-    .bind(schema)
-    .bind(name)
-    .fetch_all(pool)
-    .await
-    .map_err(DatabaseError::Query)?;
-
-    rows.into_iter()
-        .map(|row| {
-            let nullable: String = row.try_get("IS_NULLABLE").map_err(DatabaseError::Query)?;
-            Ok(DatabaseColumn {
-                name: row.try_get("COLUMN_NAME").map_err(DatabaseError::Query)?,
-                data_type: row.try_get("COLUMN_TYPE").map_err(DatabaseError::Query)?,
-                nullable: nullable.eq_ignore_ascii_case("YES"),
-                default_value: row
-                    .try_get("COLUMN_DEFAULT")
-                    .map_err(DatabaseError::Query)?,
-                ordinal: row
-                    .try_get::<u32, _>("ORDINAL_POSITION")
-                    .map_err(DatabaseError::Query)? as i32,
-            })
-        })
-        .collect()
-}
-
-async fn describe_postgresql_object(
-    pool: &PgPool,
-    schema: &str,
-    name: &str,
-) -> DatabaseResult<Vec<DatabaseColumn>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT column_name, data_type, is_nullable, column_default, ordinal_position
-        FROM information_schema.columns
-        WHERE table_schema = $1 AND table_name = $2
-        ORDER BY ordinal_position
-        "#,
-    )
-    .bind(schema)
-    .bind(name)
-    .fetch_all(pool)
-    .await
-    .map_err(DatabaseError::Query)?;
-
-    rows.into_iter()
-        .map(|row| {
-            let nullable: String = row.try_get("is_nullable").map_err(DatabaseError::Query)?;
-            Ok(DatabaseColumn {
-                name: row.try_get("column_name").map_err(DatabaseError::Query)?,
-                data_type: row.try_get("data_type").map_err(DatabaseError::Query)?,
-                nullable: nullable.eq_ignore_ascii_case("YES"),
-                default_value: row
-                    .try_get("column_default")
-                    .map_err(DatabaseError::Query)?,
-                ordinal: row
-                    .try_get("ordinal_position")
-                    .map_err(DatabaseError::Query)?,
-            })
-        })
-        .collect()
-}
-
-pub async fn execute(pool: &DatabasePool, sql: &str) -> DatabaseResult<DatabaseQueryResult> {
-    let statement = sql.trim();
-    if statement.is_empty() {
-        return Err(DatabaseError::InvalidInput("SQL 不能为空".to_owned()));
-    }
-
-    match pool {
-        DatabasePool::Mysql(pool) => execute_mysql(pool, statement).await,
-        DatabasePool::Postgresql(pool) => execute_postgresql(pool, statement).await,
-    }
-}
-
-async fn execute_mysql(pool: &MySqlPool, statement: &str) -> DatabaseResult<DatabaseQueryResult> {
+    let max_rows = max_rows.clamp(1, MAX_RESULT_ROWS);
     let started = Instant::now();
-    let description = pool
-        .describe(statement)
-        .await
-        .map_err(DatabaseError::Query)?;
-    let columns = description
-        .columns()
-        .iter()
-        .map(|column| DatabaseQueryColumn {
-            name: column.name().to_owned(),
-            data_type: column.type_info().name().to_owned(),
-        })
-        .collect::<Vec<_>>();
+    let mut connection = pool.acquire().await?;
+    let backend_id = connection.backend_id().await?;
+    let running = manager.begin_query(session_id, backend_id).await;
 
-    if columns.is_empty() {
-        let result = sqlx::query(statement)
-            .execute(pool)
-            .await
-            .map_err(DatabaseError::Query)?;
-        return Ok(write_result(result.rows_affected(), started));
-    }
+    let mut results = Vec::with_capacity(statements.len());
+    let mut cancelled = false;
 
-    let mut stream = sqlx::query(statement).fetch(pool);
-    let mut rows = Vec::new();
-    let mut truncated = false;
+    for statement in statements {
+        let statement_started = Instant::now();
+        let outcome = run_statement(&mut connection, &statement.text, max_rows, &running).await;
+        let elapsed_ms = elapsed_millis(statement_started);
 
-    while let Some(row) = stream.try_next().await.map_err(DatabaseError::Query)? {
-        if rows.len() == MAX_RESULT_ROWS {
-            truncated = true;
-            break;
+        match outcome {
+            Ok(outcome) => results.push(finish_statement(&statement, outcome, elapsed_ms)),
+            Err(DatabaseError::Cancelled) => {
+                cancelled = true;
+                results.push(cancelled_statement(&statement, elapsed_ms));
+                break;
+            }
+            Err(_) if running.is_cancelled() => {
+                // 服务端取消和本地通知存在竞速：即使先收到驱动错误，也应向前端报告为取消。
+                cancelled = true;
+                results.push(cancelled_statement(&statement, elapsed_ms));
+                break;
+            }
+            Err(error) => {
+                results.push(failed_statement(&statement, error, elapsed_ms));
+                break;
+            }
         }
-        rows.push(decode_mysql_row(&row));
     }
 
-    Ok(read_result(columns, rows, truncated, started))
+    manager.end_query(session_id).await;
+
+    Ok(DatabaseExecution {
+        statements: results,
+        elapsed_ms: elapsed_millis(started),
+        cancelled,
+    })
 }
 
-async fn execute_postgresql(pool: &PgPool, statement: &str) -> DatabaseResult<DatabaseQueryResult> {
-    let started = Instant::now();
-    let description = pool
-        .describe(statement)
-        .await
-        .map_err(DatabaseError::Query)?;
-    let columns = description
-        .columns()
-        .iter()
-        .map(|column| DatabaseQueryColumn {
-            name: column.name().to_owned(),
-            data_type: column.type_info().name().to_owned(),
-        })
-        .collect::<Vec<_>>();
-
-    if columns.is_empty() {
-        let result = sqlx::query(statement)
-            .execute(pool)
-            .await
-            .map_err(DatabaseError::Query)?;
-        return Ok(write_result(result.rows_affected(), started));
-    }
-
-    let mut stream = sqlx::query(statement).fetch(pool);
-    let mut rows = Vec::new();
-    let mut truncated = false;
-
-    while let Some(row) = stream.try_next().await.map_err(DatabaseError::Query)? {
-        if rows.len() == MAX_RESULT_ROWS {
-            truncated = true;
-            break;
+fn finish_statement(
+    statement: &sql::Statement,
+    outcome: StatementOutcome,
+    elapsed_ms: u64,
+) -> DatabaseStatementResult {
+    let returns_rows = !outcome.columns.is_empty();
+    let message = if returns_rows {
+        if outcome.truncated {
+            format!("已返回前 {} 行（结果被截断）", outcome.rows.len())
+        } else {
+            format!("返回 {} 行", outcome.rows.len())
         }
-        rows.push(decode_postgresql_row(&row));
-    }
+    } else {
+        format!("执行成功，影响 {} 行", outcome.rows_affected)
+    };
 
-    Ok(read_result(columns, rows, truncated, started))
+    DatabaseStatementResult {
+        statement: statement.text.clone(),
+        offset: statement.offset,
+        columns: outcome.columns,
+        rows: outcome.rows,
+        rows_affected: outcome.rows_affected,
+        elapsed_ms,
+        truncated: outcome.truncated,
+        message,
+        error: None,
+    }
 }
 
-fn write_result(rows_affected: u64, started: Instant) -> DatabaseQueryResult {
-    DatabaseQueryResult {
+fn failed_statement(
+    statement: &sql::Statement,
+    error: DatabaseError,
+    elapsed_ms: u64,
+) -> DatabaseStatementResult {
+    let message = error.to_string();
+    DatabaseStatementResult {
+        statement: statement.text.clone(),
+        offset: statement.offset,
         columns: Vec::new(),
         rows: Vec::new(),
-        rows_affected,
-        elapsed_ms: elapsed_millis(started),
+        rows_affected: 0,
+        elapsed_ms,
         truncated: false,
-        message: format!("执行成功，影响 {rows_affected} 行"),
+        message: message.clone(),
+        error: Some(message),
     }
 }
 
-fn read_result(
-    columns: Vec<DatabaseQueryColumn>,
-    rows: Vec<Vec<Option<String>>>,
-    truncated: bool,
-    started: Instant,
-) -> DatabaseQueryResult {
-    let row_count = rows.len();
-    DatabaseQueryResult {
-        columns,
-        rows,
-        rows_affected: row_count as u64,
-        elapsed_ms: elapsed_millis(started),
-        truncated,
-        message: if truncated {
-            format!("已显示前 {MAX_RESULT_ROWS} 行")
-        } else {
-            format!("返回 {row_count} 行")
-        },
+fn cancelled_statement(statement: &sql::Statement, elapsed_ms: u64) -> DatabaseStatementResult {
+    DatabaseStatementResult {
+        statement: statement.text.clone(),
+        offset: statement.offset,
+        columns: Vec::new(),
+        rows: Vec::new(),
+        rows_affected: 0,
+        elapsed_ms,
+        truncated: false,
+        message: "已取消".to_owned(),
+        error: Some("查询已被取消".to_owned()),
     }
 }
 
-fn elapsed_millis(started: Instant) -> u64 {
+async fn run_statement(
+    connection: &mut DatabaseConnection,
+    statement: &str,
+    max_rows: usize,
+    running: &RunningQuery,
+) -> DatabaseResult<StatementOutcome> {
+    if running.is_cancelled() {
+        return Err(DatabaseError::Cancelled);
+    }
+
+    match connection {
+        DatabaseConnection::Mysql(conn) => run_mysql(conn, statement, max_rows, running).await,
+        DatabaseConnection::Postgresql(conn) => {
+            run_postgresql(conn, statement, max_rows, running).await
+        }
+    }
+}
+
+/// 结果集为空时列信息也拿不到，这里按首关键字判断是否值得再问一次表头。
+fn returns_rows(statement: &str) -> bool {
+    matches!(
+        sql::leading_keyword(statement).as_str(),
+        "SELECT" | "WITH" | "SHOW" | "EXPLAIN" | "DESC" | "DESCRIBE" | "TABLE" | "VALUES"
+    )
+}
+
+macro_rules! run_dialect {
+    ($conn:expr, $statement:expr, $max_rows:expr, $running:expr, $columns_of:path, $decode_row:path) => {{
+        let conn = $conn;
+        let mut outcome = StatementOutcome::empty();
+        let mut stream = sqlx::raw_sql($statement).fetch_many(&mut **conn);
+
+        loop {
+            let next = tokio::select! {
+                biased;
+                _ = $running.wait_cancelled() => return Err(DatabaseError::Cancelled),
+                item = stream.try_next() => item,
+            };
+
+            let Some(item) = next.map_err(DatabaseError::Query)? else {
+                break;
+            };
+
+            match item {
+                Either::Left(result) => outcome.rows_affected += result.rows_affected(),
+                Either::Right(row) => {
+                    if outcome.columns.is_empty() {
+                        outcome.columns = $columns_of(&row);
+                    }
+                    if outcome.rows.len() >= $max_rows {
+                        outcome.truncated = true;
+                        break;
+                    }
+                    outcome.rows.push($decode_row(&row));
+                }
+            }
+        }
+
+        drop(stream);
+
+        if outcome.columns.is_empty() && outcome.rows_affected == 0 && returns_rows($statement) {
+            // 空结果集补一次预处理，只为拿到表头 —— 失败就算了，不影响执行结果。
+            if let Ok(described) = (&mut **conn).describe($statement).await {
+                outcome.columns = described
+                    .columns()
+                    .iter()
+                    .map(|column| DatabaseQueryColumn {
+                        name: column.name().to_owned(),
+                        data_type: column.type_info().name().to_owned(),
+                    })
+                    .collect();
+            }
+        }
+
+        Ok(outcome)
+    }};
+}
+
+async fn run_mysql(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::MySql>,
+    statement: &str,
+    max_rows: usize,
+    running: &RunningQuery,
+) -> DatabaseResult<StatementOutcome> {
+    run_dialect!(
+        conn,
+        statement,
+        max_rows,
+        running,
+        mysql_columns,
+        decode_mysql_row
+    )
+}
+
+async fn run_postgresql(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
+    statement: &str,
+    max_rows: usize,
+    running: &RunningQuery,
+) -> DatabaseResult<StatementOutcome> {
+    run_dialect!(
+        conn,
+        statement,
+        max_rows,
+        running,
+        postgresql_columns,
+        decode_postgresql_row
+    )
+}
+
+pub(crate) fn elapsed_millis(started: Instant) -> u64 {
     started.elapsed().as_millis().min(u64::MAX as u128) as u64
 }
 
-fn decode_mysql_row(row: &MySqlRow) -> Vec<Option<String>> {
+// ---------------------------------------------------------------------------
+// 结果解码
+// ---------------------------------------------------------------------------
+
+pub(super) fn mysql_columns(row: &MySqlRow) -> Vec<DatabaseQueryColumn> {
+    row.columns()
+        .iter()
+        .map(|column| DatabaseQueryColumn {
+            name: column.name().to_owned(),
+            data_type: column.type_info().name().to_owned(),
+        })
+        .collect()
+}
+
+pub(super) fn postgresql_columns(row: &PgRow) -> Vec<DatabaseQueryColumn> {
+    row.columns()
+        .iter()
+        .map(|column| DatabaseQueryColumn {
+            name: column.name().to_owned(),
+            data_type: column.type_info().name().to_owned(),
+        })
+        .collect()
+}
+
+pub(super) fn decode_mysql_row(row: &MySqlRow) -> Vec<Option<String>> {
     row.columns()
         .iter()
         .enumerate()
@@ -313,11 +316,7 @@ fn decode_mysql_row(row: &MySqlRow) -> Vec<Option<String>> {
 }
 
 fn decode_mysql_value(row: &MySqlRow, index: usize, type_name: &str) -> Option<String> {
-    if row
-        .try_get_raw(index)
-        .map(|value| value.is_null())
-        .unwrap_or(false)
-    {
+    if is_null(row.try_get_raw(index).ok()) {
         return None;
     }
 
@@ -360,10 +359,15 @@ fn decode_mysql_value(row: &MySqlRow, index: usize, type_name: &str) -> Option<S
         _ => row.try_get::<String, _>(index),
     };
 
-    decoded.ok().or_else(|| Some(format!("<{type_name}>")))
+    decoded
+        .ok()
+        // 类型映射没覆盖到时退回文本，再退回字节 —— 好过给用户一个 `<TYPE>` 占位符。
+        .or_else(|| row.try_get::<String, _>(index).ok())
+        .or_else(|| row.try_get::<Vec<u8>, _>(index).ok().map(format_binary))
+        .or_else(|| Some(format!("<{type_name}>")))
 }
 
-fn decode_postgresql_row(row: &PgRow) -> Vec<Option<String>> {
+pub(super) fn decode_postgresql_row(row: &PgRow) -> Vec<Option<String>> {
     row.columns()
         .iter()
         .enumerate()
@@ -372,11 +376,7 @@ fn decode_postgresql_row(row: &PgRow) -> Vec<Option<String>> {
 }
 
 fn decode_postgresql_value(row: &PgRow, index: usize, type_name: &str) -> Option<String> {
-    if row
-        .try_get_raw(index)
-        .map(|value| value.is_null())
-        .unwrap_or(false)
-    {
+    if is_null(row.try_get_raw(index).ok()) {
         return None;
     }
 
@@ -410,7 +410,15 @@ fn decode_postgresql_value(row: &PgRow, index: usize, type_name: &str) -> Option
         _ => row.try_get::<String, _>(index),
     };
 
-    decoded.ok().or_else(|| Some(format!("<{type_name}>")))
+    decoded
+        .ok()
+        .or_else(|| row.try_get::<String, _>(index).ok())
+        .or_else(|| row.try_get::<Vec<u8>, _>(index).ok().map(format_binary))
+        .or_else(|| Some(format!("<{type_name}>")))
+}
+
+fn is_null<'r, V: ValueRef<'r>>(value: Option<V>) -> bool {
+    value.map(|value| value.is_null()).unwrap_or(false)
 }
 
 fn format_binary(bytes: Vec<u8>) -> String {
@@ -427,5 +435,14 @@ mod tests {
     #[test]
     fn binary_values_are_labeled() {
         assert_eq!(format_binary(vec![0, 1, 2]), "base64:AAEC");
+    }
+
+    #[test]
+    fn detects_row_returning_statements() {
+        assert!(returns_rows("select 1"));
+        assert!(returns_rows("  WITH x AS (SELECT 1) SELECT * FROM x"));
+        assert!(returns_rows("SHOW TABLES"));
+        assert!(!returns_rows("INSERT INTO t VALUES (1)"));
+        assert!(!returns_rows("CREATE TABLE t (id int)"));
     }
 }

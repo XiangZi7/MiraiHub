@@ -4,8 +4,9 @@ import type { SavedConnection } from '@/types/connection'
 import { isDatabaseConnection, toDatabaseConfig } from '@/types/connection'
 import type {
   DatabaseColumn,
+  DatabaseExecution,
   DatabaseObject,
-  DatabaseQueryResult,
+  DatabaseSession,
 } from '@/types/database'
 import type { SshSessionStatus } from '@/types/ssh'
 
@@ -13,8 +14,11 @@ interface UseDatabaseSessionOptions {
   onStatus?: (status: SshSessionStatus, sessionId: string) => void
 }
 
-export function databaseObjectKey(object: Pick<DatabaseObject, 'schema' | 'name'>): string {
-  return `${object.schema}\u0000${object.name}`
+export function databaseObjectKey(
+  object: Pick<DatabaseObject, 'schema' | 'name'>
+    & Partial<Pick<DatabaseObject, 'kind' | 'identity'>>,
+): string {
+  return `${object.schema}\u0000${object.kind ?? ''}\u0000${object.name}\u0000${object.identity ?? ''}`
 }
 
 /**
@@ -27,15 +31,18 @@ export function useDatabaseSession(
 ) {
   const state = reactive({
     sessionId: '',
+    session: null as DatabaseSession | null,
     status: 'disconnected' as SshSessionStatus,
     connectionError: '',
     needsPassword: false,
+    databases: [] as string[],
+    databasesLoading: false,
     objects: [] as DatabaseObject[],
     objectsLoading: false,
     objectsError: '',
     columnsByObject: {} as Record<string, DatabaseColumn[] | undefined>,
     inspectingKeys: new Set<string>(),
-    queryResult: null as DatabaseQueryResult | null,
+    queryExecution: null as DatabaseExecution | null,
     queryLoading: false,
     queryError: '',
   })
@@ -52,6 +59,8 @@ export function useDatabaseSession(
   function setStatus(status: SshSessionStatus, sessionId = ''): void {
     state.status = status
     state.sessionId = status === 'connected' ? sessionId : ''
+    if (status !== 'connected')
+      state.session = null
     emitStatus()
   }
 
@@ -70,11 +79,13 @@ export function useDatabaseSession(
 
   function resetData(): void {
     state.objects = []
+    state.databases = []
+    state.databasesLoading = false
     state.objectsLoading = false
     state.objectsError = ''
     state.columnsByObject = {}
     state.inspectingKeys.clear()
-    state.queryResult = null
+    state.queryExecution = null
     state.queryLoading = false
     state.queryError = ''
   }
@@ -97,14 +108,15 @@ export function useDatabaseSession(
     }
 
     try {
-      const sessionId = await database.connect(toDatabaseConfig(target, runtimePassword))
+      const session = await database.connect(toDatabaseConfig(target, runtimePassword))
       if (request !== generation) {
-        void release(sessionId)
+        void release(session.sessionId)
         return
       }
 
-      setStatus('connected', sessionId)
-      await refreshObjects()
+      state.session = session
+      setStatus('connected', session.sessionId)
+      await Promise.all([refreshDatabases(), refreshObjects()])
     }
     catch (error) {
       if (request !== generation)
@@ -146,6 +158,52 @@ export function useDatabaseSession(
     }
   }
 
+  async function refreshDatabases(): Promise<void> {
+    const sessionId = state.sessionId
+    if (!sessionId)
+      return
+
+    state.databasesLoading = true
+    try {
+      const databases = await database.listDatabases(sessionId)
+      if (state.sessionId === sessionId)
+        state.databases = databases
+    }
+    catch (error) {
+      if (state.sessionId === sessionId)
+        state.objectsError = database.errorMessage(error)
+    }
+    finally {
+      if (state.sessionId === sessionId)
+        state.databasesLoading = false
+    }
+  }
+
+  async function switchDatabase(name: string): Promise<void> {
+    const sessionId = state.sessionId
+    if (!sessionId || !name || name === state.session?.database)
+      return
+
+    state.objectsLoading = true
+    state.objectsError = ''
+    try {
+      const session = await database.useDatabase(sessionId, name)
+      if (state.sessionId !== sessionId)
+        return
+      state.session = session
+      state.columnsByObject = {}
+      await refreshObjects()
+    }
+    catch (error) {
+      if (state.sessionId === sessionId)
+        state.objectsError = database.errorMessage(error)
+    }
+    finally {
+      if (state.sessionId === sessionId)
+        state.objectsLoading = false
+    }
+  }
+
   async function inspectObject(object: DatabaseObject): Promise<void> {
     const sessionId = state.sessionId
     const key = databaseObjectKey(object)
@@ -174,15 +232,15 @@ export function useDatabaseSession(
 
     state.queryLoading = true
     state.queryError = ''
-    state.queryResult = null
+    state.queryExecution = null
     try {
       const result = await database.execute(sessionId, sql)
       if (state.sessionId !== sessionId)
         return
 
-      state.queryResult = result
+      state.queryExecution = result
       // DDL/DML 可能改变对象结构；异步刷新，不阻塞结果展示。
-      if (!result.columns.length)
+      if (result.statements.some(statement => !statement.error && !statement.columns.length))
         void refreshObjects()
     }
     catch (error) {
@@ -192,6 +250,18 @@ export function useDatabaseSession(
     finally {
       if (state.sessionId === sessionId)
         state.queryLoading = false
+    }
+  }
+
+  async function cancelQuery(): Promise<void> {
+    if (!state.sessionId || !state.queryLoading)
+      return
+
+    try {
+      await database.cancelQuery(state.sessionId)
+    }
+    catch (error) {
+      state.queryError = database.errorMessage(error)
     }
   }
 
@@ -212,7 +282,10 @@ export function useDatabaseSession(
     connect,
     disconnect,
     refreshObjects,
+    refreshDatabases,
+    switchDatabase,
     inspectObject,
     executeSql,
+    cancelQuery,
   }
 }

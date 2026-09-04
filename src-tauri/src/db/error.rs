@@ -20,6 +20,17 @@ pub enum DatabaseError {
     #[error("SQL 执行失败：{0}")]
     Query(#[source] sqlx::Error),
 
+    #[error("{operation}文件 {path} 失败：{source}")]
+    Io {
+        operation: &'static str,
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("查询已被取消")]
+    Cancelled,
+
     #[error("数据库会话 {0} 不存在或已断开")]
     SessionNotFound(String),
 }
@@ -30,7 +41,9 @@ impl From<DatabaseError> for AppError {
             DatabaseError::InvalidInput(_) => ErrorKind::InvalidInput,
             DatabaseError::Timeout { .. } => ErrorKind::Network,
             DatabaseError::SessionNotFound(_) => ErrorKind::NotFound,
+            DatabaseError::Cancelled => ErrorKind::Internal,
             DatabaseError::Query(_) => ErrorKind::InvalidInput,
+            DatabaseError::Io { .. } => ErrorKind::Internal,
             DatabaseError::Connect { source, .. } => connect_error_kind(source),
         };
 
