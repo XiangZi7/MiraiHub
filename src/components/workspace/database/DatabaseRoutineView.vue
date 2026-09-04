@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
 import * as database from "@/api/database";
+import AppButton from "@/components/ui/AppButton.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import IconButton from "@/components/ui/IconButton.vue";
+import { toast } from "@/composables/useToast";
 import type { DatabaseKind, DatabaseObject, DatabaseRoutineDetail } from "@/types/database";
 import { cn } from "@/utils/cn";
 
@@ -46,6 +48,7 @@ async function loadDetail(): Promise<void> {
   } catch (error) {
     state.error = database.errorMessage(error);
     state.detail = null;
+    toast.error({ title: `读取${kindLabel.value}失败`, description: state.error });
   } finally {
     state.loading = false;
   }
@@ -53,6 +56,7 @@ async function loadDetail(): Promise<void> {
 
 async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value);
+  toast.success(`${kindLabel.value}定义已复制`);
 }
 
 function queryTemplate(): string {
@@ -96,22 +100,22 @@ watch(
     <div class="flex min-h-0 flex-1">
       <div class="flex min-w-0 flex-1 flex-col">
         <div class="flex h-9 shrink-0 items-end gap-1 border-b border-line-soft px-3">
-          <button
+          <AppButton
             v-for="panel in panels"
             :key="panel.id"
-            type="button"
+            variant="bare"
             :class="cn('relative h-full px-2.5 text-[11px] text-txt-3 transition-colors hover:text-txt', state.activePanel === panel.id && 'text-accent after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:rounded-full after:bg-accent')"
             @click="state.activePanel = panel.id"
           >
             {{ panel.label }}
-          </button>
+          </AppButton>
         </div>
 
         <div v-if="state.loading" class="grid flex-1 place-items-center text-xs text-txt-4">
           <span class="flex items-center gap-2"><AppIcon name="lucide:loader-circle" :size="14" class="animate-spin text-accent" />正在读取{{ kindLabel }}…</span>
         </div>
-        <div v-else-if="state.error" class="m-4 rounded-lg border border-danger/30 bg-danger/8 p-3 text-[11px] leading-5 text-danger">
-          {{ state.error }}
+        <div v-else-if="state.error" class="grid flex-1 place-items-center text-center text-xs text-txt-4">
+          <div><p>详情读取失败</p><AppButton class="mt-3" @click="loadDetail">重新加载</AppButton></div>
         </div>
 
         <div v-else-if="state.detail && state.activePanel === 'parameters'" class="min-h-0 flex-1 overflow-auto p-3 scroll-thin">
@@ -137,9 +141,9 @@ watch(
         </div>
 
         <div v-else-if="state.detail" class="relative min-h-0 flex-1 overflow-auto bg-[#0d0f14] p-4 scroll-thin">
-          <button type="button" class="btn absolute top-3 right-3 z-10 h-7 px-2 text-[10.5px]" @click="copyText(code)">
+          <AppButton size="sm" class="absolute top-3 right-3 z-10 h-7" @click="copyText(code)">
             <AppIcon name="lucide:copy" :size="11" />复制
-          </button>
+          </AppButton>
           <pre class="whitespace-pre-wrap pr-22 font-mono text-[11.5px] leading-5 text-term-fg">{{ code || '没有可用的定义' }}</pre>
         </div>
       </div>

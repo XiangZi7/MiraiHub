@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
+import AppInput from "@/components/ui/AppInput.vue";
+import AppSelect from "@/components/ui/AppSelect.vue";
+import IconButton from "@/components/ui/IconButton.vue";
 import type { DatabaseKind } from "@/types/database";
 import type { TableDesignerColumn, TableDesignerIndex } from "@/types/database-designer";
 
@@ -12,6 +17,16 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [indexes: TableDesignerIndex[]];
 }>();
+
+const kindOptions = computed(() => [
+  { value: "index", label: "普通索引" },
+  { value: "unique", label: "唯一索引" },
+  ...(props.databaseKind === "mysql" ? [{ value: "fulltext", label: "全文索引" }] : []),
+]);
+const methodOptions = [
+  { value: "btree", label: "BTREE" },
+  { value: "hash", label: "HASH" },
+] as const;
 
 function newId(): string {
   return `index-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -48,25 +63,25 @@ function removeIndex(id: string): void {
   <section class="designer-section">
     <div class="designer-section-heading">
       <div><h3>索引配置</h3><p>支持普通、唯一和 MySQL 全文索引，可组合多个字段。</p></div>
-      <button type="button" class="btn h-7 px-2 text-[10.5px]" @click="addIndex"><AppIcon name="lucide:plus" :size="11" />添加索引</button>
+      <AppButton size="sm" @click="addIndex"><AppIcon name="lucide:plus" :size="11" />添加索引</AppButton>
     </div>
 
     <div class="index-list scroll-thin">
       <article v-for="index in modelValue" :key="index.id" class="index-card">
         <div class="index-card-heading">
           <span class="index-icon"><AppIcon name="lucide:list-key" :size="14" /></span>
-          <label class="field-label">索引名<input :value="index.name" class="field h-8 px-2 font-mono text-[10.5px]" @input="updateIndex(index.id, { name: ($event.target as HTMLInputElement).value })"></label>
-          <label class="field-label">类型<select :value="index.kind" class="field h-8 px-2 text-[10.5px]" @change="updateIndex(index.id, { kind: ($event.target as HTMLSelectElement).value as TableDesignerIndex['kind'] })"><option value="index">普通索引</option><option value="unique">唯一索引</option><option v-if="databaseKind === 'mysql'" value="fulltext">全文索引</option></select></label>
-          <label class="field-label">方法<select :value="index.method" class="field h-8 px-2 text-[10.5px]" :disabled="index.kind === 'fulltext'" @change="updateIndex(index.id, { method: ($event.target as HTMLSelectElement).value as TableDesignerIndex['method'] })"><option value="btree">BTREE</option><option value="hash">HASH</option></select></label>
-          <button type="button" class="remove-button" title="删除索引" @click="removeIndex(index.id)"><AppIcon name="lucide:trash-2" :size="12" /></button>
+          <label class="field-label">索引名<AppInput :model-value="index.name" monospace @update:model-value="updateIndex(index.id, { name: $event })" /></label>
+          <div class="field-label"><span>类型</span><AppSelect :model-value="index.kind" label="索引类型" :options="kindOptions" hide-label compact @update:model-value="updateIndex(index.id, { kind: $event as TableDesignerIndex['kind'] })" /></div>
+          <div class="field-label"><span>方法</span><AppSelect :model-value="index.method" label="索引方法" :options="methodOptions" hide-label compact :disabled="index.kind === 'fulltext'" @update:model-value="updateIndex(index.id, { method: $event as TableDesignerIndex['method'] })" /></div>
+          <IconButton icon="lucide:trash-2" :size="12" class="size-7 text-danger hover:text-danger" title="删除索引" @click="removeIndex(index.id)" />
         </div>
         <div class="mt-3">
           <p class="field-label mb-1.5">索引字段（点击选择，选择顺序即索引顺序）</p>
           <div class="column-picker">
-            <button v-for="column in columns" :key="column.id" type="button" :class="['column-chip', index.columns.includes(column.name) && 'column-chip-active']" @click="toggleColumn(index, column.name)">
+            <AppButton v-for="column in columns" :key="column.id" variant="bare" :class="['column-chip', index.columns.includes(column.name) && 'column-chip-active']" @click="toggleColumn(index, column.name)">
               <AppIcon :name="index.columns.includes(column.name) ? 'lucide:check' : 'lucide:plus'" :size="10" />{{ column.name || '未命名字段' }}
               <span v-if="index.columns.includes(column.name)" class="order-badge">{{ index.columns.indexOf(column.name) + 1 }}</span>
-            </button>
+            </AppButton>
             <span v-if="!columns.length" class="text-[10px] text-txt-4">请先添加字段</span>
           </div>
         </div>
@@ -91,8 +106,6 @@ function removeIndex(id: string): void {
 .column-chip:hover, .column-chip:focus-visible { border-color: var(--color-line-strong); color: var(--color-txt); }
 .column-chip-active { border-color: color-mix(in oklch, var(--color-accent) 38%, transparent); background: color-mix(in oklch, var(--color-accent) 9%, transparent); color: var(--color-accent); }
 .order-badge { display: grid; min-width: 14px; height: 14px; place-items: center; border-radius: 999px; background: color-mix(in oklch, var(--color-accent) 15%, transparent); font-size: 8px; }
-.remove-button { display: grid; width: 28px; height: 28px; cursor: pointer; place-items: center; border-radius: 6px; color: var(--color-txt-4); outline: none; }
-.remove-button:hover, .remove-button:focus-visible { background: color-mix(in oklch, var(--color-danger) 10%, transparent); color: var(--color-danger); }
 .empty-state { display: grid; min-height: 230px; place-items: center; align-content: center; gap: 7px; color: var(--color-txt-4); font-size: 11px; text-align: center; }
 .empty-state span { font-size: 9.5px; }
 @media (max-width: 900px) { .index-card-heading { grid-template-columns: 32px 1fr 110px 28px; } .index-card-heading > :nth-child(4) { display: none; } }

@@ -6,6 +6,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSshTerminal } from '@/composables/useSshTerminal'
 import { useSshShellCompletion } from '@/composables/useSshShellCompletion'
+import { toast } from '@/composables/useToast'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from './TerminalSuggestions.vue'
@@ -39,6 +40,7 @@ const {
   term,
   status,
   sessionId,
+  error,
   inputLine,
   mount,
   connect,
@@ -65,6 +67,9 @@ let mounted = false
 
 /** 状态变化即上报，让标签页的状态点跟着走 */
 watch(status, value => emit('status', value, sessionId.value), { immediate: true })
+watch(error, (message) => {
+  if (message) toast.error({ title: 'SSH 终端连接失败', description: message })
+})
 
 /** 工具条上的连接状态文案与配色 */
 const statusMeta = computed(() => {

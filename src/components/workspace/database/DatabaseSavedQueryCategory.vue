@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive, watch } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import type { SavedDatabaseQuery } from "@/types/database-query";
 import { cn } from "@/utils/cn";
@@ -29,8 +30,8 @@ watch(
 </script>
 
 <template>
-  <button
-    type="button"
+  <AppButton
+    variant="bare"
     class="nav-item h-7 w-full gap-1.5 pl-6 text-xs"
     :aria-expanded="state.expanded"
     @click="state.expanded = !state.expanded"
@@ -40,16 +41,16 @@ watch(
     <AppIcon name="lucide:notebook-tabs" :size="13" class="text-cyan" />
     <span>Queries</span>
     <span class="ml-auto text-[10px] text-txt-4">{{ queries.length }}</span>
-  </button>
+  </AppButton>
 
   <template v-if="state.expanded">
-    <button v-if="!queries.length" type="button" class="nav-item h-7 w-full gap-1.5 pl-10 text-[10.5px] text-txt-4" @click="emit('create', database)">
+    <AppButton v-if="!queries.length" variant="bare" class="nav-item h-7 w-full gap-1.5 pl-10 text-[10.5px] text-txt-4" @click="emit('create', database)">
       <AppIcon name="lucide:plus" :size="11" /><span>新建已保存查询</span>
-    </button>
-    <button
+    </AppButton>
+    <AppButton
       v-for="query in queries"
       :key="query.id"
-      type="button"
+      variant="bare"
       :class="cn('nav-item h-7 w-full gap-1.5 pl-10 text-xs', selectedId === query.id && 'nav-item-active')"
       :title="`${query.name}\n${query.database} · 点击打开`"
       @click="emit('open', query)"
@@ -58,7 +59,7 @@ watch(
       <AppIcon name="lucide:file-code-2" :size="12" class="shrink-0 text-cyan" />
       <span class="min-w-0 flex-1 truncate text-left">{{ query.name }}</span>
       <span class="query-saved-dot" title="已保存" />
-    </button>
+    </AppButton>
   </template>
 </template>
 

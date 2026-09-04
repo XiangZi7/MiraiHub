@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useToast, type ToastTone } from '@/composables/useToast'
 
@@ -12,13 +11,11 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
   info: { icon: 'lucide:info', label: '提示' },
 }
 
-const hasToasts = computed(() => toasts.length > 0)
 </script>
 
 <template>
   <Teleport to="body">
     <section
-      v-if="hasToasts"
       class="toast-viewport"
       aria-label="通知"
       aria-live="polite"
@@ -30,6 +27,7 @@ const hasToasts = computed(() => toasts.length > 0)
           :key="item.id"
           :class="['toast-card', `toast-card-${item.tone}`]"
           :role="item.tone === 'error' ? 'alert' : 'status'"
+          aria-atomic="true"
           @mouseenter="pause(item.id)"
           @mouseleave="resume(item.id)"
         >
@@ -118,6 +116,8 @@ const hasToasts = computed(() => toasts.length > 0)
 }
 
 .toast-description {
+  max-height: 112px;
+  overflow-y: auto;
   margin-top: 3px;
   color: var(--color-txt-3);
   font-size: 10.5px;

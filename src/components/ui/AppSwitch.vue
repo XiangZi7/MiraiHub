@@ -64,7 +64,7 @@ const descriptionId = useId()
 
 .app-switch-track-on {
   border-color: color-mix(in oklch, var(--color-violet) 72%, white 6%);
-  background-color: color-mix(in oklch, var(--color-indigo) 68%, var(--color-violet));
+  background-color: var(--color-violet);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.14),
     0 3px 9px color-mix(in oklch, var(--color-violet) 20%, transparent);

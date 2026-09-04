@@ -5,6 +5,7 @@ import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { useConnections } from '@/composables/useConnections'
+import { toast } from '@/composables/useToast'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { NAV_ITEMS } from '@/constants/workspace'
 import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
@@ -135,22 +136,54 @@ async function moveConnection(
   connectionId: string,
   groupName: string,
 ): Promise<void> {
-  await updateConnection(connectionId, { group: groupName })
+  try {
+    await updateConnection(connectionId, { group: groupName })
+    toast.success(groupName ? `连接已移动到“${groupName}”` : '连接已移到 Ungrouped')
+  }
+  catch (error) {
+    toast.error({ title: '移动连接失败', description: error instanceof Error ? error.message : String(error) })
+  }
 }
 
 async function duplicateConnection(connection: SavedConnection): Promise<void> {
-  await createConnection({
-    name: `${connection.name} Copy`,
-    kind: connection.kind,
-    host: connection.host,
-    port: connection.port,
-    username: connection.username,
-    group: connection.group,
-    description: connection.description,
-    tags: [...connection.tags],
-    tagColor: connection.tagColor,
-    settings: structuredClone(toRaw(connection.settings)),
-  })
+  try {
+    await createConnection({
+      name: `${connection.name} Copy`,
+      kind: connection.kind,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      group: connection.group,
+      description: connection.description,
+      tags: [...connection.tags],
+      tagColor: connection.tagColor,
+      settings: structuredClone(toRaw(connection.settings)),
+    })
+    toast.success(`连接“${connection.name}”已复制`)
+  }
+  catch (error) {
+    toast.error({ title: '复制连接失败', description: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+async function handleCreateGroup(name: string): Promise<void> {
+  try {
+    await createGroup(currentGroupKind.value, name)
+    toast.success(`分组“${name}”已创建`)
+  }
+  catch (error) {
+    toast.error({ title: '创建分组失败', description: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+async function handleRenameGroup(groupId: string, name: string): Promise<void> {
+  try {
+    await renameGroup(groupId, name)
+    toast.success(`分组已重命名为“${name}”`)
+  }
+  catch (error) {
+    toast.error({ title: '重命名分组失败', description: error instanceof Error ? error.message : String(error) })
+  }
 }
 
 function requestRemoveConnection(connection: SavedConnection): void {
@@ -190,8 +223,19 @@ async function confirmRemoval(): Promise<void> {
   const group = state.pendingGroup
   closeConfirmation()
 
-  if (connection) await removeConnection(connection.id)
-  else if (group) await removeGroup(group.id)
+  try {
+    if (connection) {
+      await removeConnection(connection.id)
+      toast.success(`连接“${connection.name}”已删除`)
+    }
+    else if (group) {
+      await removeGroup(group.id)
+      toast.success(`分组“${group.name}”已删除`)
+    }
+  }
+  catch (error) {
+    toast.error({ title: '删除失败', description: error instanceof Error ? error.message : String(error) })
+  }
 }
 </script>
 
@@ -262,8 +306,8 @@ async function confirmRemoval(): Promise<void> {
         :open-ids="openIds"
         @open="emit('open', $event)"
         @add-connection="addConnection"
-        @create-group="createGroup(currentGroupKind, $event)"
-        @rename-group="renameGroup"
+        @create-group="handleCreateGroup"
+        @rename-group="handleRenameGroup"
         @remove-group="requestRemoveGroup"
         @move="moveConnection"
         @edit="editConnection"

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed, shallowRef, toRef, watch } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SparkLine from '@/components/ui/SparkLine.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSystemStats } from '@/composables/useSystemStats'
+import { toast } from '@/composables/useToast'
 import { QUICK_ACTIONS } from '@/constants/workspace'
 import type { SavedConnection } from '@/types/connection'
 import { formatRate, formatUptime, percent, splitKb } from '@/utils/format'
@@ -22,6 +23,18 @@ const props = defineProps<{
 }>()
 
 const { stats, loading, error, history, ready } = useSystemStats(toRef(props, 'sessionId'))
+const lastNotifiedError = shallowRef('')
+
+watch(error, (message) => {
+  if (!message || message === lastNotifiedError.value)
+    return
+  lastNotifiedError.value = message
+  toast.error({ title: '采集系统信息失败', description: message })
+})
+
+watch(() => props.sessionId, () => {
+  lastNotifiedError.value = ''
+})
 
 /** 是否已连上。没连上就没有指标可言，展示引导而不是一排 0 */
 const connected = computed(() => Boolean(props.sessionId))
@@ -137,14 +150,6 @@ const facts = computed(() => {
 
       <IconButton icon="lucide:ellipsis" title="更多" />
     </header>
-
-    <!-- 采集失败：给出原因，别让曲线停着不动却不说为什么 -->
-    <p
-      v-if="error"
-      class="mb-4 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] text-danger"
-    >
-      采集系统信息失败：{{ error }}
-    </p>
 
     <!-- 资源指标 -->
     <div v-if="ready" class="mb-6 grid grid-cols-4 gap-2.5">

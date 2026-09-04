@@ -4,6 +4,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
+import { toast } from '@/composables/useToast'
 import { RSA_BITS_OPTIONS, SSH_KEY_KIND_OPTIONS } from '@/constants/ssh-keys'
 import type { GenerateKeyRequest, SshKeyKind } from '@/types/ssh'
 import { cn } from '@/utils/cn'
@@ -39,7 +40,6 @@ const form = reactive({
 
 // 提交中：生成 RSA-4096 要几秒，期间禁掉按钮避免连点生成出重名冲突
 const submitting = shallowRef(false)
-const error = shallowRef('')
 
 /** RSA 之外的算法位数固定，选项藏起来免得让人以为可调 */
 const showBits = computed(() => form.kind === 'rsa')
@@ -56,29 +56,27 @@ function selectKind(kind: SshKeyKind): void {
 
 /** 校验并提交 */
 function submit(): void {
-  error.value = ''
-
   const label = form.label.trim()
 
   if (!label) {
-    error.value = '请填写密钥名'
+    toast.warning('请填写密钥名')
     return
   }
 
   // 与 Rust 侧 validate_label 保持一致。前端先挡一道是为了即时反馈，
   // 后端那道才是真正的防线 —— 这里的校验绕过去也没用
   if (label.includes('/') || label.includes('\\') || label.includes('..')) {
-    error.value = '密钥名不能包含路径分隔符或 ..'
+    toast.warning('密钥名不能包含路径分隔符或 ..')
     return
   }
 
   if (label.endsWith('.pub')) {
-    error.value = '密钥名不能以 .pub 结尾，公钥会自动生成'
+    toast.warning('密钥名不能以 .pub 结尾，公钥会自动生成')
     return
   }
 
   if (form.passphrase !== form.confirm) {
-    error.value = '两次输入的口令不一致'
+    toast.warning('两次输入的口令不一致')
     return
   }
 
@@ -95,10 +93,9 @@ function submit(): void {
   })
 }
 
-/** 生成失败时由父组件调回来，把按钮解锁并显示原因 */
-function fail(message: string): void {
+/** 生成失败时由父组件调回来，解除提交锁定；错误由全局 Toast 展示。 */
+function fail(): void {
   submitting.value = false
-  error.value = message
 }
 
 defineExpose({ fail })
@@ -199,9 +196,6 @@ defineExpose({ fail })
         <span>不设口令的私钥，任何拿到文件的人都能直接登录你的服务器</span>
       </p>
 
-      <p v-if="error" class="card border-danger/30 bg-danger/10 px-2.5 py-2 text-[11px] text-danger" role="alert">
-        {{ error }}
-      </p>
     </form>
 
     <template #footer>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, watch } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
 import AppContextMenu from "@/components/ui/AppContextMenu.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import IconButton from "@/components/ui/IconButton.vue";
@@ -300,16 +301,16 @@ function handleContextAction(id: string): void {
       <div v-if="loading && !objects.length && !savedQueries.length" class="px-2 py-3 text-[11px] text-txt-4">
         正在读取数据库结构…
       </div>
-      <div v-else-if="error && !objects.length && !savedQueries.length" class="px-2 py-3 text-[11px] leading-5 text-danger">
-        {{ error }}
+      <div v-else-if="error && !objects.length && !savedQueries.length" class="px-2 py-3 text-[11px] leading-5 text-txt-4">
+        对象列表加载失败，请刷新重试
       </div>
       <div v-else-if="!schemas.length" class="px-2 py-3 text-[11px] text-txt-4">
         当前连接中没有可显示的数据库对象
       </div>
 
       <template v-for="schema in schemas" :key="schema.name">
-        <button
-          type="button"
+        <AppButton
+          variant="bare"
           :class="cn('nav-item h-7 w-full gap-1.5 text-xs', schema.name === activeDatabase && 'text-txt')"
           :aria-expanded="expanded.has(`schema:${schema.name}`)"
           @click.stop="toggle(`schema:${schema.name}`)"
@@ -320,7 +321,7 @@ function handleContextAction(id: string): void {
           <AppIcon name="lucide:layers-3" :size="13" class="text-txt-3" />
           <span class="truncate">{{ schema.name }}</span>
           <span v-if="databaseKind === 'mysql' && schema.name === activeDatabase" class="ml-auto size-1.5 rounded-full bg-accent shadow-[0_0_7px_var(--color-accent)]" title="当前数据库" />
-        </button>
+        </AppButton>
 
         <template v-if="expanded.has(`schema:${schema.name}`)">
          

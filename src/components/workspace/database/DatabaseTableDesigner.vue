@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import * as database from "@/api/database";
+import AppButton from "@/components/ui/AppButton.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
+import AppInput from "@/components/ui/AppInput.vue";
+import AppSelect from "@/components/ui/AppSelect.vue";
 import { toast } from "@/composables/useToast";
 import type { DatabaseKind, DatabaseObject } from "@/types/database";
 import type { TableDesignerDraft } from "@/types/database-designer";
@@ -66,6 +69,8 @@ const panelItems = computed(() => [
   { id: "foreignKeys" as const, label: "外键", icon: "lucide:link-2", count: draft.foreignKeys.length },
   { id: "sql" as const, label: "SQL 预览", icon: "lucide:code-2", count: null },
 ]);
+const engineOptions = ["InnoDB", "MyISAM", "MEMORY"].map(value => ({ value, label: value }));
+const charsetOptions = ["utf8mb4", "utf8", "latin1", "ascii"].map(value => ({ value, label: value }));
 
 async function inspectReference(schema: string, table: string): Promise<void> {
   const key = `${schema}.${table}`;
@@ -119,23 +124,23 @@ async function createTable(): Promise<void> {
         <div><h2>新建数据表</h2><p>{{ databaseKind === "mysql" ? "MySQL 数据库" : "PostgreSQL Schema" }} · {{ schema }}</p></div>
       </div>
       <div class="header-actions">
-        <button type="button" class="btn h-7 px-2.5 text-[10.5px]" :disabled="!validation.valid" @click="openSqlQuery"><AppIcon name="lucide:square-terminal" :size="11" />在查询中打开</button>
-        <button type="button" class="create-button" :disabled="creating || !validation.valid" @click="createTable"><AppIcon :name="creating ? 'lucide:loader-circle' : 'lucide:check'" :size="12" :class="creating && 'animate-spin'" />{{ creating ? "正在创建…" : "创建表" }}</button>
+        <AppButton size="sm" class="h-7" :disabled="!validation.valid" @click="openSqlQuery"><AppIcon name="lucide:square-terminal" :size="11" />在查询中打开</AppButton>
+        <AppButton variant="primary" size="sm" class="h-7" :disabled="creating || !validation.valid" @click="createTable"><AppIcon :name="creating ? 'lucide:loader-circle' : 'lucide:check'" :size="12" :class="creating && 'animate-spin'" />{{ creating ? "正在创建…" : "创建表" }}</AppButton>
       </div>
     </header>
 
     <section class="general-card">
-      <label class="field-label table-name">表名<input v-model="draft.name" class="field h-8 px-2 font-mono text-[10.5px]" autocomplete="off" spellcheck="false"></label>
-      <label class="field-label">数据库 / Schema<input v-model="draft.schema" class="field h-8 px-2 font-mono text-[10.5px]" autocomplete="off" spellcheck="false"></label>
-      <label v-if="databaseKind === 'mysql'" class="field-label">存储引擎<select v-model="draft.engine" class="field h-8 px-2 text-[10.5px]"><option>InnoDB</option><option>MyISAM</option><option>MEMORY</option></select></label>
-      <label v-if="databaseKind === 'mysql'" class="field-label">字符集<select v-model="draft.charset" class="field h-8 px-2 text-[10.5px]"><option>utf8mb4</option><option>utf8</option><option>latin1</option><option>ascii</option></select></label>
-      <label class="field-label comment-field">表备注<input v-model="draft.comment" class="field h-8 px-2 text-[10.5px]" placeholder="可选，用于说明表的用途"></label>
+      <label class="field-label table-name">表名<AppInput v-model="draft.name" size="sm" monospace autocomplete="off" spellcheck="false" aria-label="表名" /></label>
+      <label class="field-label">数据库 / Schema<AppInput v-model="draft.schema" size="sm" monospace autocomplete="off" spellcheck="false" aria-label="数据库或 Schema" /></label>
+      <div v-if="databaseKind === 'mysql'" class="field-label"><span>存储引擎</span><AppSelect v-model="draft.engine" label="存储引擎" :options="engineOptions" hide-label compact /></div>
+      <div v-if="databaseKind === 'mysql'" class="field-label"><span>字符集</span><AppSelect v-model="draft.charset" label="字符集" :options="charsetOptions" hide-label compact /></div>
+      <label class="field-label comment-field">表备注<AppInput v-model="draft.comment" size="sm" placeholder="可选，用于说明表的用途" aria-label="表备注" /></label>
     </section>
 
     <nav class="designer-tabs" aria-label="建表配置">
-      <button v-for="item in panelItems" :key="item.id" type="button" :class="['designer-tab', activePanel === item.id && 'designer-tab-active']" @click="activePanel = item.id">
+      <AppButton v-for="item in panelItems" :key="item.id" variant="bare" :class="['designer-tab', activePanel === item.id && 'designer-tab-active']" @click="activePanel = item.id">
         <AppIcon :name="item.icon" :size="12" /><span>{{ item.label }}</span><span v-if="item.count !== null" class="tab-count">{{ item.count }}</span>
-      </button>
+      </AppButton>
     </nav>
 
     <main class="designer-body">
@@ -143,7 +148,7 @@ async function createTable(): Promise<void> {
       <DatabaseTableIndexesEditor v-show="activePanel === 'indexes'" v-model="draft.indexes" :columns="draft.columns" :database-kind="databaseKind" />
       <DatabaseTableForeignKeysEditor v-show="activePanel === 'foreignKeys'" v-model="draft.foreignKeys" :columns="draft.columns" :schema="draft.schema" :tables="tableObjects" :referenced-columns="referencedColumns" :loading-reference="loadingReference" @inspect-table="inspectReference" />
       <section v-show="activePanel === 'sql'" class="sql-panel">
-        <div class="sql-heading"><div><h3>SQL 预览</h3><p>根据当前配置实时生成，可复制或转到查询页继续编辑。</p></div><button type="button" class="btn h-7 px-2 text-[10.5px]" :disabled="!validation.valid" @click="copySql"><AppIcon name="lucide:copy" :size="11" />复制 SQL</button></div>
+        <div class="sql-heading"><div><h3>SQL 预览</h3><p>根据当前配置实时生成，可复制或转到查询页继续编辑。</p></div><AppButton size="sm" class="h-7" :disabled="!validation.valid" @click="copySql"><AppIcon name="lucide:copy" :size="11" />复制 SQL</AppButton></div>
         <pre class="sql-preview scroll-thin"><code>{{ sqlPreview }}</code></pre>
       </section>
     </main>
@@ -163,9 +168,6 @@ async function createTable(): Promise<void> {
 .title-icon { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid color-mix(in oklch, var(--color-accent) 32%, var(--color-line)); border-radius: 9px; background: color-mix(in oklch, var(--color-accent) 9%, transparent); color: var(--color-accent); box-shadow: inset 0 1px rgb(255 255 255 / 5%); }
 .title-group h2 { color: var(--color-txt); font-size: 13px; font-weight: 600; }
 .title-group p { margin-top: 2px; color: var(--color-txt-4); font-size: 9.5px; }
-.create-button { display: flex; height: 29px; cursor: pointer; align-items: center; gap: 5px; border-radius: 6px; background: var(--color-accent-deep); padding: 0 11px; color: white; font-size: 10.5px; font-weight: 600; outline: none; transition: filter 150ms ease, opacity 150ms ease; }
-.create-button:hover:not(:disabled), .create-button:focus-visible { filter: brightness(1.13); }
-.create-button:disabled { cursor: default; opacity: 0.38; }
 .general-card { display: grid; flex: none; grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 1fr) 120px 120px minmax(180px, 1.4fr); gap: 8px; border-bottom: 1px solid var(--color-line-soft); padding: 10px 12px; background: linear-gradient(110deg, rgb(255 255 255 / 2.5%), transparent 45%), color-mix(in oklch, var(--color-card) 66%, transparent); }
 .field-label { display: grid; gap: 4px; color: var(--color-txt-4); font-size: 9.5px; }
 .designer-tabs { display: flex; height: 36px; flex: none; align-items: stretch; gap: 1px; border-bottom: 1px solid var(--color-line-soft); padding: 0 10px; background: color-mix(in oklch, var(--color-panel) 54%, transparent); }
@@ -187,5 +189,4 @@ async function createTable(): Promise<void> {
 .validation-error { max-width: 48%; overflow: hidden; color: var(--color-danger); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) { .general-card { grid-template-columns: 1fr 1fr 100px 100px; } .comment-field { grid-column: 1 / -1; } }
 @media (max-width: 760px) { .general-card { grid-template-columns: 1fr 1fr; } .table-name, .comment-field { grid-column: 1 / -1; } .designer-header { align-items: flex-start; } .header-actions .btn { display: none; } }
-@media (prefers-reduced-motion: reduce) { .create-button { transition: none; } }
 </style>

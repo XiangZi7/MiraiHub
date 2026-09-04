@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, shallowRef, watch } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import type { DatabaseExecution } from '@/types/database'
@@ -75,10 +76,10 @@ async function copyResult(): Promise<void> {
 <template>
   <div class="flex min-h-0 flex-1 flex-col border-t border-line">
     <div class="flex h-8 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-line-soft px-2 scroll-none">
-      <button
+      <AppButton
         v-for="(statement, index) in execution?.statements ?? []"
         :key="`${statement.offset}:${index}`"
-        type="button"
+        variant="bare"
         :title="statement.statement"
         :class="cn(
           'shrink-0 rounded px-2 py-1 font-mono text-[10px] transition-colors',
@@ -88,13 +89,13 @@ async function copyResult(): Promise<void> {
         @click="activeStatement = index"
       >
         {{ statementLabel(statement.statement, index) }}
-      </button>
+      </AppButton>
       <span v-if="execution?.statements.length" class="mx-1 h-4 w-px shrink-0 bg-line-soft" />
       <div class="flex-1" />
-      <button
+      <AppButton
         v-for="tab in ([{ id: 'results', label: 'Results' }, { id: 'messages', label: 'Messages' }] as const)"
         :key="tab.id"
-        type="button"
+        variant="bare"
         :class="cn(
           'rounded px-2.5 py-1 text-[11px] transition-colors',
           activeTab === tab.id ? 'bg-raised text-txt' : 'text-txt-3 hover:text-txt-2',
@@ -102,7 +103,7 @@ async function copyResult(): Promise<void> {
         @click="activeTab = tab.id"
       >
         {{ tab.label }}
-      </button>
+      </AppButton>
     </div>
 
     <div v-if="activeTab === 'messages'" class="min-h-0 flex-1 overflow-auto p-3 font-mono text-[11px] leading-5 scroll-thin">

@@ -4,6 +4,7 @@ import { useResizeObserver } from '@vueuse/core'
 import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useLocalTerminal } from '@/composables/useLocalTerminal'
+import { toast } from '@/composables/useToast'
 import type { LocalConnectionSettings } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
@@ -18,7 +19,7 @@ const emit = defineEmits<{
 }>()
 
 const containerRef = useTemplateRef<HTMLElement>('terminal')
-const { status, sessionId, mount, connect, resize } = useLocalTerminal()
+const { status, sessionId, error, mount, connect, resize } = useLocalTerminal()
 let mounted = false
 
 const shellLabel = computed(() => ({
@@ -36,6 +37,9 @@ const statusMeta = computed(() => {
 })
 
 watch(status, value => emit('status', value, sessionId.value), { immediate: true })
+watch(error, (message) => {
+  if (message) toast.error({ title: '启动本地终端失败', description: message })
+})
 
 watch(
   () => props.settings,

@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, reactive, toRefs } from 'vue'
+import { computed, reactive, shallowRef, toRefs } from 'vue'
+import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import { useConnections } from '@/composables/useConnections'
+import { toast } from '@/composables/useToast'
 import { RECENT_BUCKETS, RECENT_FILTERS, SESSION_KIND_META } from '@/constants/recent'
 import type { RecentFilter, RecentGroup, SessionKind } from '@/types'
 import type { SavedConnection } from '@/types/connection'
@@ -35,6 +37,7 @@ const state = reactive({
 })
 
 const { filter, keyword } = toRefs(state)
+const clearConfirmOpen = shallowRef(false)
 
 /** 连接类型 → 会话类型。数据库的三种协议在这里都归为 database */
 function kindOf(connection: SavedConnection): SessionKind {
@@ -107,12 +110,16 @@ function reopen(id: string): void {
 
 /** 清空记录：把 lastUsedAt 归零，连接本身保留 */
 async function clearHistory(): Promise<void> {
-  if (!window.confirm('清空最近会话记录？连接配置本身会保留。'))
-    return
-
-  await Promise.all(
-    usedConnections.value.map(item => update(item.id, { lastUsedAt: 0 })),
-  )
+  clearConfirmOpen.value = false
+  try {
+    await Promise.all(
+      usedConnections.value.map(item => update(item.id, { lastUsedAt: 0 })),
+    )
+    toast.success('最近会话记录已清空')
+  }
+  catch (error) {
+    toast.error({ title: '清空最近会话失败', description: error instanceof Error ? error.message : String(error) })
+  }
 }
 </script>
 
@@ -142,7 +149,7 @@ async function clearHistory(): Promise<void> {
         icon="lucide:trash-2"
         :size="14"
         title="清空记录"
-        @click="clearHistory"
+        @click="clearConfirmOpen = true"
       />
     </header>
 
@@ -218,5 +225,14 @@ async function clearHistory(): Promise<void> {
       <div class="flex-1" />
       <span>点击 Reconnect 回到该连接</span>
     </footer>
+    <AppConfirmDialog
+      :open="clearConfirmOpen"
+      title="清空最近会话？"
+      description="仅清除最近使用时间，已经保存的连接配置会保留。"
+      confirm-label="确认清空"
+      danger
+      @close="clearConfirmOpen = false"
+      @confirm="clearHistory"
+    />
   </div>
 </template>

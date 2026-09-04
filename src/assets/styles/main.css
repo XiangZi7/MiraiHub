@@ -39,7 +39,7 @@
   /* 品牌紫是唯一主交互色；accent 统一引用它，避免按钮、选中态和焦点环混入绿色。 */
   --color-violet: oklch(61% 0.19 295);
   --color-accent: var(--color-violet);
-  --color-accent-deep: oklch(54% 0.19 292);
+  --color-accent-deep: var(--color-violet);
   /* 绿色只表示连接成功、任务完成等状态，不再用于主交互。 */
   --color-success: oklch(78% 0.17 148);
   --color-indigo: oklch(50% 0.18 278);

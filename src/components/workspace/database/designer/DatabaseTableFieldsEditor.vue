@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
+import AppCheckbox from "@/components/ui/AppCheckbox.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
+import AppInput from "@/components/ui/AppInput.vue";
+import AppSelect from "@/components/ui/AppSelect.vue";
+import IconButton from "@/components/ui/IconButton.vue";
 import type { DatabaseKind } from "@/types/database";
 import type { TableDesignerColumn } from "@/types/database-designer";
 import { columnTypes } from "@/utils/database-ddl";
@@ -14,7 +19,7 @@ const emit = defineEmits<{
   "update:modelValue": [columns: TableDesignerColumn[]];
 }>();
 
-const types = computed(() => columnTypes(props.databaseKind));
+const typeOptions = computed(() => columnTypes(props.databaseKind).map(value => ({ value, label: value })));
 
 function newId(): string {
   return `column-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -63,9 +68,9 @@ function moveColumn(index: number, direction: -1 | 1): void {
         <h3>字段定义</h3>
         <p>配置字段类型、长度、主键、默认值与自动递增。</p>
       </div>
-      <button type="button" class="btn h-7 px-2 text-[10.5px]" @click="addColumn">
+      <AppButton size="sm" @click="addColumn">
         <AppIcon name="lucide:plus" :size="11" />添加字段
-      </button>
+      </AppButton>
     </div>
 
     <div class="designer-table-wrap scroll-thin">
@@ -82,25 +87,23 @@ function moveColumn(index: number, direction: -1 | 1): void {
           <tr v-for="(column, index) in modelValue" :key="column.id">
             <td>
               <div class="flex justify-center gap-0.5">
-                <button type="button" class="designer-icon-button" title="上移" :disabled="index === 0" @click="moveColumn(index, -1)"><AppIcon name="lucide:chevron-up" :size="11" /></button>
-                <button type="button" class="designer-icon-button" title="下移" :disabled="index === modelValue.length - 1" @click="moveColumn(index, 1)"><AppIcon name="lucide:chevron-down" :size="11" /></button>
+                <IconButton icon="lucide:chevron-up" :size="11" class="size-6" title="上移" :disabled="index === 0" @click="moveColumn(index, -1)" />
+                <IconButton icon="lucide:chevron-down" :size="11" class="size-6" title="下移" :disabled="index === modelValue.length - 1" @click="moveColumn(index, 1)" />
               </div>
             </td>
-            <td><input :value="column.name" class="designer-cell-input font-mono" aria-label="字段名" @input="updateColumn(column.id, { name: ($event.target as HTMLInputElement).value })"></td>
+            <td><AppInput :model-value="column.name" variant="cell" monospace aria-label="字段名" @update:model-value="updateColumn(column.id, { name: $event })" /></td>
             <td>
-              <select :value="column.dataType" class="designer-cell-input" aria-label="字段类型" @change="updateColumn(column.id, { dataType: ($event.target as HTMLSelectElement).value })">
-                <option v-for="type in types" :key="type" :value="type">{{ type }}</option>
-              </select>
+              <AppSelect :model-value="column.dataType" label="字段类型" :options="typeOptions" hide-label compact @update:model-value="updateColumn(column.id, { dataType: $event })" />
             </td>
-            <td><input :value="column.length" class="designer-cell-input font-mono" placeholder="255 / 10,2" aria-label="长度或精度" @input="updateColumn(column.id, { length: ($event.target as HTMLInputElement).value })"></td>
-            <td><input type="checkbox" :checked="column.nullable" class="designer-checkbox" aria-label="允许为空" :disabled="column.primaryKey" @change="updateColumn(column.id, { nullable: ($event.target as HTMLInputElement).checked })"></td>
-            <td><input type="checkbox" :checked="column.primaryKey" class="designer-checkbox" aria-label="主键" @change="updateColumn(column.id, { primaryKey: ($event.target as HTMLInputElement).checked, nullable: ($event.target as HTMLInputElement).checked ? false : column.nullable })"></td>
-            <td><input type="checkbox" :checked="column.unique" class="designer-checkbox" aria-label="唯一" @change="updateColumn(column.id, { unique: ($event.target as HTMLInputElement).checked })"></td>
-            <td v-if="databaseKind === 'mysql'"><input type="checkbox" :checked="column.unsigned" class="designer-checkbox" aria-label="无符号" @change="updateColumn(column.id, { unsigned: ($event.target as HTMLInputElement).checked })"></td>
-            <td><input type="checkbox" :checked="column.autoIncrement" class="designer-checkbox" aria-label="自动递增" @change="updateColumn(column.id, { autoIncrement: ($event.target as HTMLInputElement).checked })"></td>
-            <td><input :value="column.defaultValue" class="designer-cell-input font-mono" placeholder="NULL / CURRENT_TIMESTAMP" aria-label="默认值表达式" :disabled="column.autoIncrement" @input="updateColumn(column.id, { defaultValue: ($event.target as HTMLInputElement).value })"></td>
-            <td><input :value="column.comment" class="designer-cell-input" placeholder="字段说明" aria-label="字段备注" @input="updateColumn(column.id, { comment: ($event.target as HTMLInputElement).value })"></td>
-            <td><button type="button" class="designer-icon-button text-danger" title="删除字段" @click="removeColumn(column.id)"><AppIcon name="lucide:trash-2" :size="11" /></button></td>
+            <td><AppInput :model-value="column.length" variant="cell" monospace placeholder="255 / 10,2" aria-label="长度或精度" @update:model-value="updateColumn(column.id, { length: $event })" /></td>
+            <td><div class="flex justify-center"><AppCheckbox :model-value="column.nullable" label="允许为空" hide-label :disabled="column.primaryKey" @update:model-value="updateColumn(column.id, { nullable: $event })" /></div></td>
+            <td><div class="flex justify-center"><AppCheckbox :model-value="column.primaryKey" label="主键" hide-label @update:model-value="updateColumn(column.id, { primaryKey: $event, nullable: $event ? false : column.nullable })" /></div></td>
+            <td><div class="flex justify-center"><AppCheckbox :model-value="column.unique" label="唯一" hide-label @update:model-value="updateColumn(column.id, { unique: $event })" /></div></td>
+            <td v-if="databaseKind === 'mysql'"><div class="flex justify-center"><AppCheckbox :model-value="column.unsigned" label="无符号" hide-label @update:model-value="updateColumn(column.id, { unsigned: $event })" /></div></td>
+            <td><div class="flex justify-center"><AppCheckbox :model-value="column.autoIncrement" label="自动递增" hide-label @update:model-value="updateColumn(column.id, { autoIncrement: $event })" /></div></td>
+            <td><AppInput :model-value="column.defaultValue" variant="cell" monospace placeholder="NULL / CURRENT_TIMESTAMP" aria-label="默认值表达式" :disabled="column.autoIncrement" @update:model-value="updateColumn(column.id, { defaultValue: $event })" /></td>
+            <td><AppInput :model-value="column.comment" variant="cell" placeholder="字段说明" aria-label="字段备注" @update:model-value="updateColumn(column.id, { comment: $event })" /></td>
+            <td><IconButton icon="lucide:trash-2" :size="11" class="size-6 text-danger hover:text-danger" title="删除字段" @click="removeColumn(column.id)" /></td>
           </tr>
           <tr v-if="!modelValue.length"><td :colspan="databaseKind === 'mysql' ? 12 : 11" class="h-28 text-center text-txt-4">尚未添加字段</td></tr>
         </tbody>
@@ -119,12 +122,4 @@ function moveColumn(index: number, direction: -1 | 1): void {
 .designer-table th { position: sticky; z-index: 2; top: 0; border-right: 1px solid var(--color-line-soft); border-bottom: 1px solid var(--color-line-soft); background: color-mix(in oklch, var(--color-panel) 94%, transparent); padding: 7px 6px; color: var(--color-txt-3); font-weight: 500; text-align: left; }
 .designer-table td { height: 36px; border-right: 1px solid var(--color-line-soft); border-bottom: 1px solid var(--color-line-soft); padding: 3px; color: var(--color-txt-2); }
 .designer-table tr:hover td { background: color-mix(in oklch, var(--color-hover) 72%, transparent); }
-.designer-cell-input { width: 100%; height: 28px; min-width: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; padding: 0 6px; color: var(--color-txt-2); outline: none; }
-.designer-cell-input:hover { border-color: var(--color-line-soft); background: color-mix(in oklch, var(--color-panel) 54%, transparent); }
-.designer-cell-input:focus { border-color: color-mix(in oklch, var(--color-accent) 50%, var(--color-line)); background: var(--color-panel); box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-accent) 10%, transparent); }
-.designer-cell-input:disabled { opacity: 0.45; }
-.designer-checkbox { display: block; width: 14px; height: 14px; margin: auto; accent-color: var(--color-accent); }
-.designer-icon-button { display: inline-grid; width: 24px; height: 24px; cursor: pointer; place-items: center; border-radius: 5px; color: var(--color-txt-4); outline: none; }
-.designer-icon-button:hover:not(:disabled), .designer-icon-button:focus-visible { background: var(--color-hover); color: var(--color-txt); }
-.designer-icon-button:disabled { cursor: default; opacity: 0.25; }
 </style>

@@ -6,9 +6,12 @@ withDefaults(defineProps<{
   label: string
   description?: string
   disabled?: boolean
+  /** 仅显示复选框本体，文字仍作为屏幕阅读器标签。 */
+  hideLabel?: boolean
 }>(), {
   description: '',
   disabled: false,
+  hideLabel: false,
 })
 
 const model = defineModel<boolean>({ required: true })
@@ -35,7 +38,7 @@ const descriptionId = useId()
     >
       <AppIcon v-if="model" name="lucide:check" :size="12" />
     </span>
-    <span class="min-w-0">
+    <span :class="hideLabel ? 'sr-only' : 'min-w-0'">
       <span class="block whitespace-nowrap text-[11px] leading-4 text-txt-2">{{ label }}</span>
       <span v-if="description" :id="descriptionId" class="mt-0.5 block text-[10px] leading-4 text-txt-3">
         {{ description }}

@@ -3,6 +3,7 @@ import { computed, reactive, shallowRef, toRef, watch } from "vue";
 import { useDebounceFn, useEventListener, useStorage } from "@vueuse/core";
 import * as database from "@/api/database";
 import { addQueryHistory, clearQueryHistory, listQueryHistory } from "@/api/database-history";
+import AppButton from "@/components/ui/AppButton.vue";
 import AppConfirmDialog from "@/components/ui/AppConfirmDialog.vue";
 import AppContextMenu from "@/components/ui/AppContextMenu.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
@@ -675,7 +676,7 @@ watch(() => props.connection?.id, (id) => {
       <div class="grid size-14 place-items-center rounded-2xl border border-line bg-card text-txt-3"><AppIcon name="lucide:database" :size="26" /></div>
       <p class="text-sm text-txt-2">还没有打开数据库</p>
       <p class="max-w-70 text-xs text-txt-4">从左侧选一个数据库连接，或新建一个</p>
-      <button type="button" class="btn mt-1" @click="openConnectionWindow('database')"><AppIcon name="lucide:plus" :size="13" /><span>新建数据库连接</span></button>
+      <AppButton class="mt-1" @click="openConnectionWindow('database')"><AppIcon name="lucide:plus" :size="13" /><span>新建数据库连接</span></AppButton>
     </div>
   </div>
 
@@ -718,13 +719,11 @@ watch(() => props.connection?.id, (id) => {
       </div>
 
       <div class="flex h-9 shrink-0 items-center gap-1.5 border-b border-line-soft px-2.5">
-        <button v-if="activeQuery" type="button" class="grid size-6 place-items-center rounded bg-accent-deep text-white transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-35" title="执行选中内容或全部 SQL（Ctrl+Enter）" :disabled="!canRun" @click="runQuery()">
-          <AppIcon :name="queryLoading ? 'lucide:loader-circle' : 'lucide:play'" :size="12" :class="queryLoading && 'animate-spin'" />
-        </button>
+        <IconButton v-if="activeQuery" :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'" :size="12" :class="['size-6 bg-accent-deep text-white hover:bg-accent hover:text-white', queryLoading && '[&_svg]:animate-spin']" title="执行选中内容或全部 SQL（Ctrl+Enter）" :disabled="!canRun" @click="runQuery()" />
         <IconButton :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'" :size="13" :title="connected ? '断开连接' : '重新连接'" :disabled="status === 'connecting'" @click="connected ? disconnect() : connect()" />
-        <button v-if="activeQuery" type="button" class="icon-btn" title="查询历史" @click="showHistory"><AppIcon name="lucide:history" :size="13" /></button>
+        <IconButton v-if="activeQuery" icon="lucide:history" :size="13" title="查询历史" @click="showHistory" />
         <IconButton v-if="activeQuery" :icon="activeQuery.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'" :size="13" :title="activeQuery.savedQueryId ? '立即保存查询（Ctrl+S）' : '保存到 Queries（Ctrl+S）'" @click="saveActiveQuery" />
-        <button v-if="queryLoading" type="button" class="flex h-6 cursor-pointer items-center gap-1 rounded border border-danger/30 bg-danger/8 px-2 text-[10.5px] text-danger transition-colors hover:bg-danger/15 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-danger" title="取消当前查询" @click="cancelQuery"><AppIcon name="lucide:square" :size="10" /><span>停止</span></button>
+        <AppButton v-if="queryLoading" variant="danger" size="sm" class="h-6" title="取消当前查询" @click="cancelQuery"><AppIcon name="lucide:square" :size="10" /><span>停止</span></AppButton>
         <span v-if="activeObject" class="min-w-0 truncate text-[11px] text-txt-3">{{ activeObject.object.schema }}.<span class="text-txt-2">{{ activeObject.object.name }}</span></span>
         <span v-else-if="activeDesigner" class="min-w-0 truncate text-[11px] text-txt-3">{{ activeDesigner.schema }}.<span class="text-txt-2">新建表</span></span>
         <span v-else-if="activeQuery?.savedQueryId" class="flex items-center gap-1 text-[9.5px] text-cyan"><AppIcon name="lucide:cloud-check" :size="10" />自动保存</span>

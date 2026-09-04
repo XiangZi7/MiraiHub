@@ -2,6 +2,7 @@
 import { nextTick, onMounted, shallowRef, useTemplateRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
+import { toast } from '@/composables/useToast'
 
 const props = defineProps<{ name: string }>()
 const emit = defineEmits<{
@@ -11,12 +12,11 @@ const emit = defineEmits<{
 
 const value = shallowRef(props.name)
 const input = useTemplateRef<HTMLInputElement>('input')
-const error = shallowRef('')
 
 function submit(): void {
   const name = value.value.trim()
   if (!name || name === '.' || name === '..' || /[\\/]/.test(name)) {
-    error.value = '请输入不含斜杠的有效文件名'
+    toast.warning('请输入不含斜杠的有效文件名')
     return
   }
   emit('submit', name)
@@ -38,9 +38,7 @@ onMounted(() => void nextTick(() => {
         v-model="value"
         class="rename-input mt-1.5"
         autocomplete="off"
-        @input="error = ''"
       >
-      <p v-if="error" class="mt-1.5 text-[10px] text-danger">{{ error }}</p>
     </form>
 
     <template #footer>

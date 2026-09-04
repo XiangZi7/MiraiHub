@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, toRef, useTemplateRef } from 'vue'
+import { computed, reactive, shallowRef, toRef, useTemplateRef, watch } from 'vue'
 import { useClipboard } from '@vueuse/core'
 import { open as openFileDialog, save as saveFileDialog } from '@tauri-apps/plugin-dialog'
 import { openPath } from '@tauri-apps/plugin-opener'
@@ -11,6 +11,7 @@ import * as ssh from '@/api/ssh'
 import { useFileTransfers } from '@/composables/useFileTransfers'
 import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
 import { useRemoteFiles } from '@/composables/useRemoteFiles'
+import { toast } from '@/composables/useToast'
 import { FILE_KIND_META, extensionOf } from '@/constants/files'
 import type { ContextMenuItem } from '@/types/context-menu'
 import type { SshRemoteFile } from '@/types/ssh'
@@ -50,7 +51,6 @@ const {
 const transfers = useFileTransfers()
 const dropZone = useTemplateRef<HTMLElement>('dropZone')
 const browserDragging = shallowRef(false)
-const operationError = shallowRef('')
 const state = reactive({
   menuOpen: false,
   menuX: 0,
@@ -70,8 +70,16 @@ const { isDragging: nativeDragging } = useNativeFileDrop(dropZone, paths => void
 const dropActive = computed(() => nativeDragging.value || browserDragging.value)
 const connected = computed(() => Boolean(props.sessionId))
 const selectedFile = computed(() => entries.value.find(file => file.path === selected.value))
-const displayError = computed(() => operationError.value || error.value)
 const pathClip = useClipboard({ copiedDuring: 1600 })
+
+watch(error, (message) => {
+  if (message) toast.error({ title: '读取远端文件失败', description: message })
+})
+
+async function copyPath(): Promise<void> {
+  await pathClip.copy(path.value)
+  toast.success('远端路径已复制')
+}
 
 const contextItems = computed<ContextMenuItem[]>(() => {
   const file = state.menuFile
@@ -136,7 +144,6 @@ async function uploadPaths(localPaths: readonly string[]): Promise<void> {
   if (!connected.value || !localPaths.length)
     return
 
-  operationError.value = ''
   let policy: Exclude<ConflictAction, 'cancel'> | undefined
   let changed = false
 
@@ -152,7 +159,7 @@ async function uploadPaths(localPaths: readonly string[]): Promise<void> {
       if (exists) {
         const existingEntry = entries.value.find(entry => entry.name === localName(localPath))
         if (existingEntry?.kind === 'directory') {
-          operationError.value = `无法上传“${localName(localPath)}”：远端已有同名目录`
+          toast.error(`无法上传“${localName(localPath)}”：远端已有同名目录`)
           continue
         }
         if (policy) {
@@ -179,7 +186,7 @@ async function uploadPaths(localPaths: readonly string[]): Promise<void> {
       }) || changed
     }
     catch (uploadError) {
-      operationError.value = ssh.errorMessage(uploadError)
+      toast.error({ title: `上传“${localName(localPath)}”失败`, description: ssh.errorMessage(uploadError) })
     }
   }
 
@@ -197,7 +204,6 @@ async function pickUploadFiles(): Promise<void> {
 async function download(file: SshRemoteFile): Promise<void> {
   if (file.kind === 'directory')
     return
-  operationError.value = ''
   const destination = await saveFileDialog({ title: `下载 ${file.name}`, defaultPath: file.name })
   if (!destination)
     return
@@ -216,7 +222,6 @@ async function openRemote(file: SshRemoteFile): Promise<void> {
     return
   }
 
-  operationError.value = ''
   const localPath = await transfers.download({
     sessionId: props.sessionId,
     connectionName: props.connectionName,
@@ -253,13 +258,13 @@ async function renameFile(name: string): Promise<void> {
   state.renaming = null
   if (!file || name === file.name)
     return
-  operationError.value = ''
   try {
     await ssh.renamePath(props.sessionId, file.path, remoteChildPath(name))
     await refresh()
+    toast.success(`已重命名为“${name}”`)
   }
   catch (renameError) {
-    operationError.value = ssh.errorMessage(renameError)
+    toast.error({ title: '重命名失败', description: ssh.errorMessage(renameError) })
   }
 }
 
@@ -268,13 +273,13 @@ async function confirmDelete(): Promise<void> {
   state.pendingDelete = null
   if (!file)
     return
-  operationError.value = ''
   try {
     await ssh.deletePath(props.sessionId, file.path, file.kind === 'directory')
     await refresh()
+    toast.success(`已删除“${file.name}”`)
   }
   catch (deleteError) {
-    operationError.value = ssh.errorMessage(deleteError)
+    toast.error({ title: '删除失败', description: ssh.errorMessage(deleteError) })
   }
 }
 
@@ -305,15 +310,11 @@ function handleBrowserDrop(event: DragEvent): void {
 
       <RemotePathInput :path="path" :entries="sortedEntries" :connected="connected" :loading="loading" @navigate="load" />
 
-      <IconButton :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'" :size="14" title="复制路径" :disabled="!path" @click="pathClip.copy(path)" />
+      <IconButton :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'" :size="14" title="复制路径" :disabled="!path" @click="copyPath" />
       <IconButton icon="lucide:upload" :size="14" title="上传文件" :disabled="!connected" @click="pickUploadFiles" />
       <IconButton icon="lucide:download" :size="14" title="下载选中文件" :disabled="!selectedFile || selectedFile.kind === 'directory'" @click="selectedFile && download(selectedFile)" />
       <IconButton icon="lucide:rotate-cw" :size="14" title="刷新" :disabled="!connected" @click="refresh" />
     </div>
-
-    <p v-if="displayError" class="shrink-0 border-b border-line-soft bg-danger/10 px-3 py-1.5 text-[11px] text-danger">
-      {{ displayError }}
-    </p>
 
     <div class="grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b border-line-soft px-3 py-1.5 text-[11px] font-medium text-txt-3">
       <span>Name</span>
@@ -343,7 +344,7 @@ function handleBrowserDrop(event: DragEvent): void {
 
       <p v-if="loading" class="py-8 text-center text-xs text-txt-4">正在读取目录…</p>
       <p v-else-if="!connected" class="py-8 text-center text-xs text-txt-4">连上服务器后可以浏览远端文件</p>
-      <p v-else-if="!sortedEntries.length && !displayError" class="py-8 text-center text-xs text-txt-4">这个目录是空的</p>
+      <p v-else-if="!sortedEntries.length && !error" class="py-8 text-center text-xs text-txt-4">这个目录是空的</p>
     </div>
 
     <footer class="flex h-7 shrink-0 items-center gap-3 border-t border-line-soft px-3 text-[11px] text-txt-3">

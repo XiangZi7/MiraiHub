@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, shallowRef, useTemplateRef } from 'vue'
 import { useClipboard } from '@vueuse/core'
+import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import { usePrivateKeys } from '@/composables/usePrivateKeys'
 import { useSshKeys } from '@/composables/useSshKeys'
+import { toast } from '@/composables/useToast'
 import { SSH_KEY_KIND_META } from '@/constants/ssh-keys'
 import type { GenerateKeyRequest } from '@/types/ssh'
 import { formatDate, formatRelative } from '@/utils/time'
@@ -22,10 +24,11 @@ const { keys, selected, keyword, loading, error, visibleKeys, current, refresh, 
   = useSshKeys()
 const { defaultPath: defaultPrivateKey, setDefault: setDefaultPrivateKey } = usePrivateKeys()
 
-onMounted(refresh)
+onMounted(refreshKeys)
 
 // 生成密钥对话框是否打开
 const generateOpen = shallowRef(false)
+const pendingDelete = shallowRef<{ id: string, label: string } | null>(null)
 // 拿到对话框实例，生成失败时把错误回传给它显示在表单里
 const dialogRef = useTemplateRef<InstanceType<typeof GenerateKeyDialog>>('generateDialog')
 
@@ -35,13 +38,48 @@ const fingerprintClip = useClipboard({ copiedDuring: 1600 })
 const publicKeyClip = useClipboard({ copiedDuring: 1600 })
 
 /** 删除前确认：密钥删掉就找不回来了，且远端的 authorized_keys 还留着废条目 */
-async function confirmDelete(keyId: string, label: string): Promise<void> {
-  if (!window.confirm(`确定删除密钥 ${label} 吗？私钥与公钥文件都会从 ~/.ssh 移除，且无法恢复。`))
+function requestDelete(keyId: string, label: string): void {
+  pendingDelete.value = { id: keyId, label }
+}
+
+async function confirmDelete(): Promise<void> {
+  const target = pendingDelete.value
+  pendingDelete.value = null
+  if (!target)
     return
 
-  await remove(keyId).catch(() => {
-    // 失败原因已存进 error 并展示在列表顶部
-  })
+  try {
+    await remove(target.id)
+    toast.success(`密钥“${target.label}”已删除`)
+  }
+  catch (caught) {
+    toast.error({ title: '删除 SSH 密钥失败', description: error.value || String(caught) })
+  }
+}
+
+async function refreshKeys(): Promise<void> {
+  await refresh()
+  if (error.value)
+    toast.error({ title: '扫描 SSH 密钥失败', description: error.value })
+}
+
+async function copyFingerprint(): Promise<void> {
+  if (!current.value)
+    return
+  await fingerprintClip.copy(current.value.fingerprint)
+  toast.success('SSH 指纹已复制')
+}
+
+async function copyPublicKey(): Promise<void> {
+  if (!current.value)
+    return
+  await publicKeyClip.copy(current.value.publicKey)
+  toast.success('SSH 公钥已复制')
+}
+
+function makeDefault(path: string): void {
+  setDefaultPrivateKey(path)
+  toast.success('默认私钥已更新')
 }
 
 /**
@@ -54,11 +92,16 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
   try {
     await generate(request)
     generateOpen.value = false
+    toast.success(`SSH 密钥“${request.label}”已生成`)
   }
   catch (err) {
     // Tauri 的结构化 AppError 是普通对象，String(err) 只会得到 [object Object]。
     // composable 已用统一的 errorMessage 提取过可读文案，优先回传那一份。
-    dialogRef.value?.fail(error.value || (err instanceof Error ? err.message : String(err)))
+    dialogRef.value?.fail()
+    toast.error({
+      title: '生成 SSH 密钥失败',
+      description: error.value || (err instanceof Error ? err.message : String(err)),
+    })
   }
 }
 </script>
@@ -72,18 +115,13 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           Keys
           <span class="text-txt-4">({{ keys.length }})</span>
         </p>
-        <IconButton icon="lucide:refresh-cw" :size="14" title="重新扫描" @click="refresh" />
+        <IconButton icon="lucide:refresh-cw" :size="14" title="重新扫描" @click="refreshKeys" />
         <IconButton icon="lucide:plus" :size="14" title="生成新密钥" @click="generateOpen = true" />
       </header>
 
       <div class="shrink-0 px-2 pb-1 pt-2">
         <SearchField v-model="keyword" icon="lucide:search" placeholder="搜索密钥…" />
       </div>
-
-      <!-- 扫描失败：给出原因，而不是让列表静默空着 -->
-      <p v-if="error" class="mx-2 mb-1 rounded border border-danger/30 bg-danger/10 px-2 py-1.5 text-[11px] text-danger">
-        {{ error }}
-      </p>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-1.5 scroll-thin">
         <button
@@ -144,13 +182,13 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           :title="defaultPrivateKey === current.id ? '当前默认私钥' : '设为默认私钥'"
           :disabled="defaultPrivateKey === current.id"
           :class="defaultPrivateKey === current.id ? 'text-violet opacity-100' : ''"
-          @click="setDefaultPrivateKey(current.id)"
+          @click="makeDefault(current.id)"
         />
         <IconButton
           icon="lucide:trash-2"
           :size="14"
           title="删除密钥"
-          @click="confirmDelete(current.id, current.label)"
+          @click="requestDelete(current.id, current.label)"
         />
       </header>
 
@@ -217,7 +255,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
               :icon="fingerprintClip.copied.value ? 'lucide:check' : 'lucide:copy'"
               :size="13"
               title="复制指纹"
-              @click="fingerprintClip.copy(current.fingerprint)"
+              @click="copyFingerprint"
             />
           </div>
         </section>
@@ -231,7 +269,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
             <button
               type="button"
               class="btn px-2 py-1 text-[11px]"
-              @click="publicKeyClip.copy(current.publicKey)"
+              @click="copyPublicKey"
             >
               <AppIcon :name="publicKeyClip.copied.value ? 'lucide:check' : 'lucide:copy'" :size="12" />
               <span>{{ publicKeyClip.copied.value ? '已复制' : '复制' }}</span>
@@ -266,6 +304,15 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
       ref="generateDialog"
       @close="generateOpen = false"
       @submit="handleGenerate"
+    />
+    <AppConfirmDialog
+      :open="Boolean(pendingDelete)"
+      title="删除 SSH 密钥？"
+      :description="`将从 ~/.ssh 永久删除密钥“${pendingDelete?.label ?? ''}”及其公钥文件，此操作无法撤销。`"
+      confirm-label="确认删除"
+      danger
+      @close="pendingDelete = null"
+      @confirm="confirmDelete"
     />
   </div>
 </template>

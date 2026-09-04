@@ -20,6 +20,7 @@ interface ToastTimer {
   handle: ReturnType<typeof setTimeout>
   remaining: number
   startedAt: number
+  paused: boolean
 }
 
 const DEFAULT_DURATIONS: Record<ToastTone, number> = {
@@ -54,24 +55,24 @@ function startTimer(id: string, duration: number): void {
     handle: setTimeout(() => dismiss(id), duration),
     remaining: duration,
     startedAt: Date.now(),
+    paused: false,
   }
   timers.set(id, timer)
 }
 
 function pause(id: string): void {
   const timer = timers.get(id)
-  if (!timer)
+  if (!timer || timer.paused)
     return
 
   clearTimeout(timer.handle)
   timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt))
-  timers.delete(id)
-  timers.set(id, timer)
+  timer.paused = true
 }
 
 function resume(id: string): void {
   const timer = timers.get(id)
-  if (!timer)
+  if (!timer || !timer.paused)
     return
 
   if (timer.remaining <= 0) {
@@ -80,6 +81,7 @@ function resume(id: string): void {
   }
 
   timer.startedAt = Date.now()
+  timer.paused = false
   timer.handle = setTimeout(() => dismiss(id), timer.remaining)
 }
 

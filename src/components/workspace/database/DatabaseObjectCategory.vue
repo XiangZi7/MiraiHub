@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive, watch } from "vue";
+import AppButton from "@/components/ui/AppButton.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import { databaseObjectKey } from "@/composables/useDatabaseSession";
 import type {
@@ -58,8 +59,8 @@ watch(
 </script>
 
 <template>
-  <button
-    type="button"
+  <AppButton
+    variant="bare"
     class="nav-item h-7 w-full gap-1.5 pl-6 text-xs"
     :aria-expanded="state.expanded"
     @click="state.expanded = !state.expanded"
@@ -73,7 +74,7 @@ watch(
     <AppIcon :name="icon" :size="13" :class="iconClass" />
     <span>{{ label }}</span>
     <span class="ml-auto text-[10px] text-txt-4">{{ objects.length }}</span>
-  </button>
+  </AppButton>
 
   <template v-if="state.expanded">
     <div
@@ -84,8 +85,8 @@ watch(
     </div>
 
     <template v-for="object in objects" :key="databaseObjectKey(object)">
-      <button
-        type="button"
+      <AppButton
+        variant="bare"
         :class="
           cn(
             'nav-item h-7 w-full gap-1.5 pl-10 text-xs',
@@ -121,7 +122,7 @@ watch(
         <span v-else-if="object.rowEstimate !== null" class="text-[9px] text-txt-4">
           {{ object.rowEstimate.toLocaleString() }}
         </span>
-      </button>
+      </AppButton>
 
       <template v-if="hasColumns() && state.expandedObjects.has(databaseObjectKey(object))">
         <div

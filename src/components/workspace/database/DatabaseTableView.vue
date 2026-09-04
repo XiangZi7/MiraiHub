@@ -140,8 +140,10 @@ async function loadDetailAndRows(): Promise<void> {
     await loadRows()
   }
   catch (error) {
-    if (revision === loadRevision)
+    if (revision === loadRevision) {
       state.error = database.errorMessage(error)
+      toast.error({ title: '读取表结构失败', description: state.error })
+    }
   }
   finally {
     if (revision === loadRevision)
@@ -168,8 +170,10 @@ async function loadRows(): Promise<void> {
       state.page = page
   }
   catch (error) {
-    if (revision === pageRevision)
+    if (revision === pageRevision) {
       state.error = database.errorMessage(error)
+      toast.error({ title: '读取表数据失败', description: state.error })
+    }
   }
   finally {
     if (revision === pageRevision)
@@ -399,7 +403,9 @@ watch(() => state.pageSize, () => {
     <div v-if="state.loading && !state.detail" class="grid min-h-0 flex-1 place-items-center text-xs text-txt-3">
       <span class="flex items-center gap-2"><AppIcon name="lucide:loader-circle" :size="14" class="animate-spin" />读取表结构…</span>
     </div>
-    <div v-else-if="state.error && !state.detail" class="p-4 text-xs leading-5 text-danger">{{ state.error }}</div>
+    <div v-else-if="state.error && !state.detail" class="grid min-h-0 flex-1 place-items-center text-center text-xs text-txt-4">
+      <div><p>表结构读取失败</p><button type="button" class="btn mt-3" @click="loadDetailAndRows">重新加载</button></div>
+    </div>
 
     <div v-else-if="state.detail" class="flex min-h-0 flex-1">
       <div class="flex min-w-0 flex-1 flex-col">

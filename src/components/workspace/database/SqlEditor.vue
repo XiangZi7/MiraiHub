@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CSSProperties } from 'vue'
 import { computed, nextTick, reactive, shallowRef, useTemplateRef } from 'vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { cn } from '@/utils/cn'
 
@@ -233,10 +234,10 @@ defineExpose({ runnableSql })
       />
 
       <div v-if="autocompleteOpen && filteredSuggestions.length" class="absolute z-30 w-52 overflow-hidden rounded-lg border border-line-strong bg-panel/96 p-1 shadow-pop backdrop-blur-xl" :style="autocompleteStyle" role="listbox">
-        <button
+        <AppButton
           v-for="(suggestion, index) in filteredSuggestions"
           :key="suggestion"
-          type="button"
+          variant="bare"
           :class="cn('flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px]', index === activeSuggestion ? 'bg-hover text-txt' : 'text-txt-2')"
           tabindex="-1"
           @pointerdown.prevent="insertSuggestion(suggestion)"
@@ -245,7 +246,7 @@ defineExpose({ runnableSql })
           <AppIcon :name="keywordSet.has(suggestion.toUpperCase()) ? 'lucide:case-upper' : 'lucide:braces'" :size="11" :class="keywordSet.has(suggestion.toUpperCase()) ? 'text-violet' : 'text-blue'" />
           <span class="min-w-0 flex-1 truncate">{{ suggestion }}</span>
           <span class="text-[9px] text-txt-4">{{ keywordSet.has(suggestion.toUpperCase()) ? 'KEYWORD' : 'OBJECT' }}</span>
-        </button>
+        </AppButton>
       </div>
     </div>
   </div>
