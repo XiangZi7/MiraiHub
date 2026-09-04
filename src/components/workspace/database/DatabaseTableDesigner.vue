@@ -9,6 +9,7 @@ import { toast } from "@/composables/useToast";
 import type { DatabaseKind, DatabaseObject } from "@/types/database";
 import type { TableDesignerDraft } from "@/types/database-designer";
 import { buildCreateTableSql, validateTableDraft } from "@/utils/database-ddl";
+import { copyText } from "@/utils/clipboard";
 import DatabaseTableFieldsEditor from "./designer/DatabaseTableFieldsEditor.vue";
 import DatabaseTableForeignKeysEditor from "./designer/DatabaseTableForeignKeysEditor.vue";
 import DatabaseTableIndexesEditor from "./designer/DatabaseTableIndexesEditor.vue";
@@ -88,7 +89,7 @@ async function inspectReference(schema: string, table: string): Promise<void> {
 
 async function copySql(): Promise<void> {
   if (!validation.value.valid) return;
-  await navigator.clipboard.writeText(sqlPreview.value);
+  await copyText(sqlPreview.value);
   toast.success("建表 SQL 已复制");
 }
 

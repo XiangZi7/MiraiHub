@@ -21,6 +21,8 @@ export interface SshConfig {
   timeoutSecs?: number
   /** keepalive 间隔秒数，0 表示不发，缺省 30 */
   keepaliveSecs?: number
+  /** 使用 ~/.ssh/known_hosts 验证主机密钥；首次连接采用 TOFU 记录 */
+  verifyHostKey?: boolean
 }
 
 /** 打开交互式 shell 的终端参数 */

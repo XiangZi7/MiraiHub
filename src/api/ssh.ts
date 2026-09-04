@@ -172,6 +172,7 @@ export async function uploadFile(options: {
   localPath: string
   remotePath: string
   overwrite: boolean
+  bufferSizeKb: number
 }): Promise<string> {
   ensureTauri()
   return invoke<string>('ssh_upload_file', { request: options })
@@ -183,6 +184,7 @@ export async function downloadFile(options: {
   remotePath: string
   localPath: string
   overwrite: boolean
+  bufferSizeKb: number
 }): Promise<string> {
   ensureTauri()
   return invoke<string>('ssh_download_file', { request: options })

@@ -121,6 +121,19 @@ export async function setTrayVisible(visible: boolean): Promise<void> {
   }
 }
 
+/** 设置关闭主窗口时是否隐藏到托盘。 */
+export async function setMinimizeToTray(enabled: boolean): Promise<void> {
+  if (!IS_TAURI)
+    return
+
+  try {
+    await invoke('set_minimize_to_tray', { enabled })
+  }
+  catch (error) {
+    console.warn('切换最小化到托盘失败：', error)
+  }
+}
+
 /** 写入或移除开机自启动注册表项。失败时抛出，调用方决定是否提示。 */
 export async function setLaunchAtStartup(enabled: boolean): Promise<void> {
   if (!IS_TAURI)

@@ -143,6 +143,26 @@
     background-color: color-mix(in oklch, var(--color-accent) 30%, transparent);
     color: var(--color-txt);
   }
+
+  /* 用户主动关闭透明材质时，所有层级都改成不透明，避免桌面内容穿透。 */
+  html.material-solid {
+    --color-window: oklch(14.5% 0.012 278);
+    --color-panel: oklch(19% 0.01 285);
+    --color-pane: oklch(21% 0.01 285);
+    --color-card: oklch(26% 0.012 285);
+    --color-raised: oklch(32% 0.014 285);
+    --color-hover: oklch(36% 0.016 285);
+    --color-terminal: oklch(11% 0.007 285);
+  }
+
+  html.reduce-motion *,
+  html.reduce-motion *::before,
+  html.reduce-motion *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ==========================================================================
@@ -279,6 +299,25 @@
   .row-item {
     @apply flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5
            transition-colors duration-150 hover:bg-hover;
+  }
+
+  /* 紧凑布局只收紧高频控件与导航，不缩放文字，仍保持可读性。 */
+  html.compact .win-bar {
+    height: 38px;
+  }
+
+  html.compact .nav-item,
+  html.compact .field {
+    height: 28px;
+  }
+
+  html.compact .row-item {
+    padding-block: 4px;
+  }
+
+  html.compact .btn,
+  html.compact .btn-primary {
+    padding-block: 4px;
   }
 }
 

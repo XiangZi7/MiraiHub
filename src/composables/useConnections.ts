@@ -8,6 +8,7 @@
 
 import { computed, reactive, readonly } from 'vue'
 import * as store from '@/api/connections'
+import { settingsSnapshot } from '@/composables/useSettings'
 import type {
   ConnectionGroup,
   ConnectionGroupKind,
@@ -155,6 +156,8 @@ export function useConnections() {
 
     /** 记一次使用，仅供 Recent 视图按最近时间排序 */
     async touch(id: string): Promise<void> {
+      if (!settingsSnapshot().saveSessionHistory)
+        return
       await store.touch(id)
       await refresh()
     },

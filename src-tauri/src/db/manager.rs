@@ -19,9 +19,6 @@ use tokio::sync::{Notify, RwLock};
 use super::error::{DatabaseError, DatabaseResult};
 use super::models::{DatabaseConfig, DatabaseKind, DatabaseSession, DatabaseSslMode};
 
-/// 池上限比并发查询数留出余量：取消操作要能再取一条连接去发 KILL。
-const MAX_POOL_CONNECTIONS: u32 = 8;
-
 #[derive(Clone)]
 pub(crate) enum DatabasePool {
     Mysql(MySqlPool),
@@ -182,7 +179,8 @@ async fn connect_mysql(config: &DatabaseConfig) -> Result<MySqlPool, sqlx::Error
     }
 
     MySqlPoolOptions::new()
-        .max_connections(MAX_POOL_CONNECTIONS)
+        // 至少留一条额外连接给取消查询命令，避免执行连接占满池后无法发 KILL。
+        .max_connections(config.max_connections.clamp(2, 50))
         .min_connections(1)
         .acquire_timeout(Duration::from_secs(config.timeout_secs.max(1)))
         .connect_with(options)
@@ -212,7 +210,7 @@ async fn connect_postgresql(config: &DatabaseConfig) -> Result<PgPool, sqlx::Err
     }
 
     PgPoolOptions::new()
-        .max_connections(MAX_POOL_CONNECTIONS)
+        .max_connections(config.max_connections.clamp(2, 50))
         .min_connections(1)
         .acquire_timeout(Duration::from_secs(config.timeout_secs.max(1)))
         .connect_with(options)
@@ -490,6 +488,7 @@ mod tests {
             client_certificate: String::new(),
             client_key: String::new(),
             timeout_secs: 20,
+            max_connections: 8,
         }
     }
 

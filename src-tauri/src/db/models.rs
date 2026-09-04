@@ -41,10 +41,16 @@ pub struct DatabaseConfig {
     pub client_key: String,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
+    #[serde(default = "default_max_connections")]
+    pub max_connections: u32,
 }
 
 fn default_timeout_secs() -> u64 {
     20
+}
+
+fn default_max_connections() -> u32 {
+    8
 }
 
 impl DatabaseConfig {

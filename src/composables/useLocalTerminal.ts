@@ -1,4 +1,4 @@
-import { onBeforeUnmount, reactive, shallowRef, toRefs } from 'vue'
+import { onBeforeUnmount, reactive, shallowRef, toRefs, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { FitAddon } from '@xterm/addon-fit'
@@ -6,12 +6,22 @@ import { Terminal } from '@xterm/xterm'
 import * as localTerminal from '@/api/local-terminal'
 import { errorMessage } from '@/api/ssh'
 import { TERMINAL_THEME } from '@/constants/terminal'
+import { settingNumber, settings } from '@/composables/useSettings'
 import type { LocalConnectionSettings } from '@/types/connection'
 import type {
   LocalTerminalOutputEvent,
   LocalTerminalStatusEvent,
 } from '@/types/local-terminal'
 import type { SshSessionStatus } from '@/types/ssh'
+
+function terminalFontFamily(): string {
+  const families: Record<string, string> = {
+    'jetbrains-mono': '"JetBrains Mono Variable", ui-monospace, monospace',
+    'cascadia-code': '"Cascadia Code", ui-monospace, monospace',
+    'consolas': 'Consolas, ui-monospace, monospace',
+  }
+  return families[settings.terminalFont] ?? families['jetbrains-mono']!
+}
 
 export function useLocalTerminal() {
   const term = shallowRef<Terminal>()
@@ -29,11 +39,12 @@ export function useLocalTerminal() {
 
   function mount(container: HTMLElement): void {
     const terminal = new Terminal({
-      fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace',
-      fontSize: 12.5,
+      fontFamily: terminalFontFamily(),
+      fontSize: settingNumber('terminalFontSize', 13),
       lineHeight: 1.4,
-      cursorBlink: true,
-      scrollback: 10000,
+      cursorStyle: settings.terminalCursor as 'block' | 'bar' | 'underline',
+      cursorBlink: settings.terminalCursorBlink,
+      scrollback: settingNumber('terminalScrollback', 5000),
       theme: TERMINAL_THEME,
       macOptionIsMeta: true,
     })
@@ -49,6 +60,27 @@ export function useLocalTerminal() {
     term.value = terminal
     fitAddon.value = fit
   }
+
+  const stopSettingsWatch = watch(
+    () => [
+      settings.terminalFont,
+      settings.terminalFontSize,
+      settings.terminalCursor,
+      settings.terminalCursorBlink,
+      settings.terminalScrollback,
+    ] as const,
+    () => {
+      const terminal = term.value
+      if (!terminal)
+        return
+      terminal.options.fontFamily = terminalFontFamily()
+      terminal.options.fontSize = settingNumber('terminalFontSize', 13)
+      terminal.options.cursorStyle = settings.terminalCursor as 'block' | 'bar' | 'underline'
+      terminal.options.cursorBlink = settings.terminalCursorBlink
+      terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
+      resize()
+    },
+  )
 
   async function connect(settings: LocalConnectionSettings): Promise<void> {
     const terminal = term.value
@@ -165,6 +197,7 @@ export function useLocalTerminal() {
   }
 
   onBeforeUnmount(() => {
+    stopSettingsWatch()
     disposed = true
     void disconnect()
     term.value?.dispose()

@@ -265,7 +265,7 @@ pub async fn import_sql(
     // 与编辑器复用完全相同的串行执行器：USE / SET 等会话状态能传给后续语句，
     // 取消信号和服务端 KILL 也只维护一套实现。结果行最多保留一行，避免导入文件
     // 中意外夹带 SELECT 时把大量数据经 IPC 返回。
-    let execution = query::execute(manager, session_id, &contents, 1).await?;
+    let execution = query::execute(manager, session_id, &contents, 1, 300).await?;
     if execution.cancelled {
         return Err(DatabaseError::Cancelled);
     }

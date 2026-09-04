@@ -8,7 +8,7 @@
  * 事件订阅、生命周期清理都在这里收口。
  */
 
-import { onBeforeUnmount, reactive, shallowRef, toRefs } from 'vue'
+import { onBeforeUnmount, reactive, shallowRef, toRefs, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { FitAddon } from '@xterm/addon-fit'
@@ -16,6 +16,16 @@ import { Terminal } from '@xterm/xterm'
 import * as ssh from '@/api/ssh'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import { TERMINAL_THEME } from '@/constants/terminal'
+import { settingNumber, settings } from '@/composables/useSettings'
+
+function terminalFontFamily(): string {
+  const families: Record<string, string> = {
+    'jetbrains-mono': '"JetBrains Mono Variable", ui-monospace, monospace',
+    'cascadia-code': '"Cascadia Code", ui-monospace, monospace',
+    'consolas': 'Consolas, ui-monospace, monospace',
+  }
+  return families[settings.terminalFont] ?? families['jetbrains-mono']!
+}
 
 interface TerminalConnectOptions {
   terminalType?: string
@@ -59,12 +69,13 @@ export function useSshTerminal() {
    */
   function mount(container: HTMLElement): void {
     const terminal = new Terminal({
-      fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace',
-      fontSize: 12.5,
+      fontFamily: terminalFontFamily(),
+      fontSize: settingNumber('terminalFontSize', 13),
       lineHeight: 1.4,
-      cursorBlink: true,
+      cursorStyle: settings.terminalCursor as 'block' | 'bar' | 'underline',
+      cursorBlink: settings.terminalCursorBlink,
       // 回滚缓冲给足：排查日志时经常要往回翻很多屏
-      scrollback: 10000,
+      scrollback: settingNumber('terminalScrollback', 5000),
       theme: TERMINAL_THEME,
       // 让 xterm 自己吞掉 Ctrl+C 之类的组合键交给远端，而不是被浏览器截走
       macOptionIsMeta: true,
@@ -94,6 +105,27 @@ export function useSshTerminal() {
       sendInput(data)
     })
   }
+
+  const stopSettingsWatch = watch(
+    () => [
+      settings.terminalFont,
+      settings.terminalFontSize,
+      settings.terminalCursor,
+      settings.terminalCursorBlink,
+      settings.terminalScrollback,
+    ] as const,
+    () => {
+      const terminal = term.value
+      if (!terminal)
+        return
+      terminal.options.fontFamily = terminalFontFamily()
+      terminal.options.fontSize = settingNumber('terminalFontSize', 13)
+      terminal.options.cursorStyle = settings.terminalCursor as 'block' | 'bar' | 'underline'
+      terminal.options.cursorBlink = settings.terminalCursorBlink
+      terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
+      resize()
+    },
+  )
 
   /** 建立连接并打开交互式 shell */
   async function connect(
@@ -321,6 +353,7 @@ export function useSshTerminal() {
   // 组件卸载时必须清理：xterm 持有 DOM 引用，事件订阅握着 Tauri 侧的回调，
   // 漏掉任何一个都会在反复开关标签页时累积泄漏
   onBeforeUnmount(() => {
+    stopSettingsWatch()
     disposed = true
     void disconnect()
     term.value?.dispose()

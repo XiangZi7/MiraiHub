@@ -6,6 +6,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSshTerminal } from '@/composables/useSshTerminal'
 import { useSshShellCompletion } from '@/composables/useSshShellCompletion'
+import { settings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
@@ -64,9 +65,24 @@ let anchorFrame = 0
 // xterm 是否已挂到容器上。挂载只做一次，重连复用同一个实例。
 // 用普通变量而非响应式：模板不读它，只是 watch 内部的一次性标记
 let mounted = false
+let disposed = false
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+let reconnectAttempts = 0
+let intentionalReconnect = false
 
 /** 状态变化即上报，让标签页的状态点跟着走 */
-watch(status, value => emit('status', value, sessionId.value), { immediate: true })
+watch(status, (value, previous) => {
+  emit('status', value, sessionId.value)
+  if (value === 'connected') {
+    reconnectAttempts = 0
+    if (reconnectTimer)
+      clearTimeout(reconnectTimer)
+    reconnectTimer = undefined
+  }
+  else if (!intentionalReconnect && previous === 'connected' && value === 'disconnected') {
+    scheduleAutoReconnect()
+  }
+}, { immediate: true })
 watch(error, (message) => {
   if (message) toast.error({ title: 'SSH 终端连接失败', description: message })
 })
@@ -118,12 +134,19 @@ watch(
       mounted = true
     }
 
-    await connect(config, {
-      terminalType: props.terminalType,
-      startupCommand: props.startupCommand,
-    }).catch(() => {
+    intentionalReconnect = true
+    try {
+      await connect(config, {
+        terminalType: props.terminalType,
+        startupCommand: props.startupCommand,
+      })
+    }
+    catch {
       // 失败原因已经写进终端并存到 composable 的 error，这里只是别让 rejection 逃逸
-    })
+    }
+    finally {
+      intentionalReconnect = false
+    }
   },
   { immediate: true, flush: 'post' },
 )
@@ -191,17 +214,50 @@ watch(term, (terminal, _previous, onCleanup) => {
   onCleanup(() => disposable?.dispose())
 }, { immediate: true })
 
-onBeforeUnmount(() => cancelAnimationFrame(anchorFrame))
+onBeforeUnmount(() => {
+  disposed = true
+  cancelAnimationFrame(anchorFrame)
+  if (reconnectTimer)
+    clearTimeout(reconnectTimer)
+})
+
+function scheduleAutoReconnect(): void {
+  if (disposed || !settings.autoReconnect || !props.config || reconnectAttempts >= 3 || reconnectTimer)
+    return
+
+  reconnectAttempts += 1
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = undefined
+    if (disposed || !settings.autoReconnect || !props.config)
+      return
+    await connect(props.config, {
+      terminalType: props.terminalType,
+      startupCommand: props.startupCommand,
+    }).catch(scheduleAutoReconnect)
+  }, reconnectAttempts * 1500)
+}
 
 /** 重连：先断干净再按原配置连一次 */
 async function reconnect(): Promise<void> {
   if (!props.config)
     return
 
-  await connect(props.config, {
-    terminalType: props.terminalType,
-    startupCommand: props.startupCommand,
-  }).catch(() => {})
+  reconnectAttempts = 0
+  if (reconnectTimer)
+    clearTimeout(reconnectTimer)
+  reconnectTimer = undefined
+
+  intentionalReconnect = true
+  try {
+    await connect(props.config, {
+      terminalType: props.terminalType,
+      startupCommand: props.startupCommand,
+    })
+  }
+  catch {}
+  finally {
+    intentionalReconnect = false
+  }
 }
 
 function currentToken(line: string): string {

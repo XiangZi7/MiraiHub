@@ -15,6 +15,9 @@ const CONNECTION_WINDOW: &str = "connection";
 /// 设置窗口的 label。
 const SETTINGS_WINDOW: &str = "settings";
 
+/// 启动画面的 label。
+pub const SPLASH_WINDOW: &str = "splash";
+
 /// Windows 11 的首个正式版 build。
 #[cfg(windows)]
 const WINDOWS_11_MIN_BUILD: u32 = 22_000;
@@ -51,6 +54,33 @@ pub fn enable_window_material(window: &WebviewWindow) {
     if let Err(error) = window.set_effects(windows_window_effects()) {
         log::warn!("应用 Windows 窗口材质失败: {error}");
     }
+}
+
+/// 按用户设置切换窗口材质。
+#[cfg(windows)]
+pub fn set_window_material(window: &WebviewWindow, material: &str) -> AppResult<()> {
+    let effects = match material {
+        "solid" => None,
+        "mica" => Some(EffectsBuilder::new().effect(Effect::Mica).build()),
+        "acrylic" => Some(
+            EffectsBuilder::new()
+                .effect(windows_window_effect())
+                .build(),
+        ),
+        other => {
+            return Err(AppError::invalid_input(format!(
+                "不支持的窗口材质：{other}"
+            )))
+        }
+    };
+
+    window.set_effects(effects).map_err(to_app_error)
+}
+
+/// 非 Windows 平台没有对应材质，保留命令为安全的空操作。
+#[cfg(not(windows))]
+pub fn set_window_material(_window: &WebviewWindow, _material: &str) -> AppResult<()> {
+    Ok(())
 }
 
 /// 非 Windows 平台不应用 Windows 专属材质。

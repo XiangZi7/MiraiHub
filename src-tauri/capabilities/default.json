@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main, connection, and settings windows",
-  "windows": ["main", "connection", "settings"],
+  "description": "Capability for the main, splash, connection, and settings windows",
+  "windows": ["main", "splash", "connection", "settings"],
   "permissions": [
     "core:default",
     "opener:default",

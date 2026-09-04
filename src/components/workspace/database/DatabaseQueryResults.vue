@@ -4,6 +4,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import type { DatabaseExecution } from '@/types/database'
+import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
 
 const props = defineProps<{
@@ -69,7 +70,7 @@ function exportResult(format: 'csv' | 'json'): void {
 }
 
 async function copyResult(): Promise<void> {
-  await navigator.clipboard.writeText(resultPayload('csv'))
+  await copyText(resultPayload('csv'))
 }
 </script>
 

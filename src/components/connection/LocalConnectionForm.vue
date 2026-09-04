@@ -7,6 +7,7 @@ import AppTextField from '@/components/ui/AppTextField.vue'
 import * as connectionsStore from '@/api/connections'
 import { errorMessage } from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
+import { settings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { LOCAL_SHELL_OPTIONS } from '@/constants/connection'
 import type {
@@ -30,7 +31,7 @@ const loading = shallowRef(Boolean(props.connectionId))
 const form = reactive({
   name: '',
   group: '',
-  shell: 'powershell' as LocalShellKind,
+  shell: settings.terminalShell as LocalShellKind,
   workingDirectory: '',
   tags: '',
   tagColor: 'violet' as ConnectionTagColor,

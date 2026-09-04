@@ -9,6 +9,7 @@ import AppTextarea from '@/components/ui/AppTextarea.vue'
 import * as connectionsStore from '@/api/connections'
 import * as databaseApi from '@/api/database'
 import { useConnections } from '@/composables/useConnections'
+import { settingNumber, settings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { NewConnection } from '@/types/connection'
 import { isDatabaseConnection } from '@/types/connection'
@@ -36,7 +37,7 @@ const testing = shallowRef(false)
 // 保存中，避免重复提交存出两条一样的连接
 const saving = shallowRef(false)
 const loadingConnection = shallowRef(Boolean(props.connectionId))
-const savePassword = shallowRef(false)
+const savePassword = shallowRef<boolean>(settings.rememberPasswords)
 const databaseKinds: Array<{ id: DatabaseKind, label: string, icon: string }> = [
   { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
   { id: 'postgresql', label: 'PostgreSQL', icon: 'lucide:cylinder' },
@@ -178,7 +179,8 @@ function buildConfig(): DatabaseConfig {
     caCertificate: form.caCertificate.trim(),
     clientCertificate: form.clientCertificate.trim(),
     clientKey: form.clientKey.trim(),
-    timeoutSecs: 20,
+    timeoutSecs: settingNumber('databaseTimeout', 30),
+    maxConnections: settingNumber('maxDatabaseConnections', 10),
   }
 }
 
@@ -344,7 +346,12 @@ async function saveConnection(): Promise<void> {
             placeholder="Enter password"
             autocomplete="current-password"
           />
-          <AppCheckbox v-model="savePassword" label="Save password" class="mb-2" />
+          <AppCheckbox
+            v-model="savePassword"
+            label="Save password"
+            :disabled="!settings.rememberPasswords"
+            class="mb-2"
+          />
         </div>
 
         <AppTextarea v-model="form.description" label="Description (Optional)" :rows="2" class="resize-none" placeholder="Add a description for this connection…" />

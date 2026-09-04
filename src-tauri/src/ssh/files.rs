@@ -16,7 +16,9 @@ use super::session::SshSession;
 use super::shell::quote;
 use super::transfers::{TransferControl, TransferManager};
 
-const TRANSFER_BUFFER_SIZE: usize = 128 * 1024;
+fn transfer_buffer_size(size_kb: usize) -> usize {
+    size_kb.clamp(32, 256) * 1024
+}
 
 /// 目录项类型。前端据此选图标，也决定双击是进目录还是打开文件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,7 +189,7 @@ async fn upload_inner(
     let mut source = tokio::fs::File::open(&request.local_path).await?;
     let mut target = sftp.create(&temp_path).await.map_err(sftp_error)?;
     let result: SshResult<()> = async {
-        let mut buffer = vec![0_u8; TRANSFER_BUFFER_SIZE];
+        let mut buffer = vec![0_u8; transfer_buffer_size(request.buffer_size_kb)];
         let mut transferred = 0_u64;
         emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
 
@@ -321,7 +323,7 @@ async fn download_inner(
     let mut source = sftp.open(&request.remote_path).await.map_err(sftp_error)?;
     let mut target = tokio::fs::File::create(temp_path).await?;
     let result: SshResult<()> = async {
-        let mut buffer = vec![0_u8; TRANSFER_BUFFER_SIZE];
+        let mut buffer = vec![0_u8; transfer_buffer_size(request.buffer_size_kb)];
         let mut transferred = 0_u64;
         emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
 

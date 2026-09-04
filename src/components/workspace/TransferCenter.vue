@@ -80,7 +80,7 @@ const groups = computed<TransferGroupView[]>(() => {
 })
 
 const aggregate = computed(() => {
-  const current = [...tasks]
+  const current = activeTasks.value.length ? [...activeTasks.value] : [...tabTasks.value]
   const totalBytes = current.reduce((sum, task) => sum + task.totalBytes, 0)
   const transferredBytes = current.reduce((sum, task) => {
     if (!task.totalBytes)

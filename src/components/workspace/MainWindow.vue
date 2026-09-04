@@ -11,12 +11,23 @@ import TabBar from '@/components/ui/TabBar.vue'
 import WindowControls from '@/components/ui/WindowControls.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { useConnections } from '@/composables/useConnections'
+import { settings } from '@/composables/useSettings'
+import { toast } from '@/composables/useToast'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { COMMAND_TARGETS } from '@/constants/workspace'
 import type { CommandItem, MachineViewId, NavId } from '@/types'
 import type { LocalConnectionSettings, SavedConnection } from '@/types/connection'
 import { isDatabaseConnection, isLocalConnection, toSshConfig } from '@/types/connection'
-import { openConnectionWindow, toggleMaximizeWindow } from '@/utils/window'
+import { formatShortcut, matchesShortcut } from '@/utils/shortcut'
+import {
+  launchAtStartupEnabled,
+  openConnectionWindow,
+  setLaunchAtStartup,
+  setMinimizeToTray,
+  setTrayVisible,
+  setWindowMaterial,
+  toggleMaximizeWindow,
+} from '@/utils/window'
 import AppSidebar from './AppSidebar.vue'
 import CommandPalette from './CommandPalette.vue'
 import DatabaseView from './DatabaseView.vue'
@@ -44,7 +55,7 @@ const DEFAULT_MACHINE_WIDTH = Math.min(
   Math.max(MACHINE_MIN_WIDTH, (window.innerWidth - DEFAULT_SIDEBAR_WIDTH - 20) * 0.42),
 )
 
-const { connections, touch } = useConnections()
+const { connections, loaded: connectionsLoaded, touch } = useConnections()
 const {
   tabs: openTabs,
   activeId,
@@ -54,7 +65,42 @@ const {
   activate,
   reorder: reorderWorkspaceTabs,
   setStatus,
+  restore,
 } = useWorkspaceTabs()
+
+watch(connectionsLoaded, (loaded) => {
+  if (loaded)
+    restore(connections)
+}, { immediate: true })
+
+watch(
+  () => settings.windowMaterial,
+  material => void setWindowMaterial(material),
+  { immediate: true },
+)
+
+watch(
+  () => [settings.showTrayIcon, settings.minimizeToTray] as const,
+  ([showTray, minimizeToTray]) => {
+    void setTrayVisible(showTray)
+    void setMinimizeToTray(showTray && minimizeToTray)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => settings.launchAtStartup,
+  async (enabled) => {
+    try {
+      if (await launchAtStartupEnabled() !== enabled)
+        await setLaunchAtStartup(enabled)
+    }
+    catch (error) {
+      toast.error({ title: '更新开机启动失败', description: error instanceof Error ? error.message : String(error) })
+    }
+  },
+  { immediate: true },
+)
 
 const cachedActiveNav = useStorage<NavId>('miraihub:workspace-route', 'servers')
 
@@ -200,11 +246,36 @@ watch(
   },
 )
 
-/** 全局快捷键：⌘K / Ctrl+K 开合命令面板，Esc 关闭 */
+/** 用户可配置的全局快捷键；Esc 始终关闭命令面板。 */
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+  if (matchesShortcut(event, settings.shortcutPalette)) {
     event.preventDefault()
     state.paletteOpen = !state.paletteOpen
+    return
+  }
+
+  if (matchesShortcut(event, settings.shortcutTerminal)) {
+    event.preventDefault()
+    openConnectionWindow('local')
+    return
+  }
+
+  if (matchesShortcut(event, settings.shortcutSearch)) {
+    event.preventDefault()
+    void nextTick(() => searchRef.value?.focus())
+    return
+  }
+
+  if (matchesShortcut(event, settings.shortcutFiles)) {
+    event.preventDefault()
+    if (activeSshTab.value) {
+      state.activeNav = 'servers'
+      state.machineOpen = true
+      state.machineView = 'files'
+    }
+    else {
+      toast.info('请先打开一个 SSH 连接')
+    }
     return
   }
 
@@ -303,7 +374,17 @@ function handleSshStatus(
   status: Parameters<typeof setStatus>[1],
   sessionId: string,
 ): void {
+  const previous = openTabs.find(tab => tab.id === tabId)?.status
   setStatus(tabId, status, sessionId)
+
+  if (!settings.notifyConnectionChanges || previous === status)
+    return
+
+  const name = openTabs.find(tab => tab.id === tabId)?.connection.name ?? '连接'
+  if (status === 'connected')
+    toast.success(`${name} 已连接`)
+  else if (previous === 'connected' && status === 'disconnected')
+    toast.warning(`${name} 已断开`)
 }
 
 /** 当前主视图决定“新建”打开 SSH 表单还是数据库表单。 */
@@ -359,12 +440,12 @@ function runCommand(item: CommandItem): void {
         v-model="keyword"
         icon="lucide:search"
         placeholder="搜索服务器、文件、命令…"
-        shortcut="⌘K"
+        :shortcut="formatShortcut(settings.shortcutPalette)"
         class="w-75"
       />
 
       <div class="flex items-center gap-1.5">
-        <IconButton icon="lucide:command" title="命令面板 (⌘K)" @click="paletteOpen = true" />
+        <IconButton icon="lucide:command" :title="`命令面板 (${formatShortcut(settings.shortcutPalette)})`" @click="paletteOpen = true" />
         <IconButton icon="lucide:plus" title="新建连接" @click="addConnection" />
         <TransferCenter />
         <IconButton icon="lucide:bell" title="通知" />

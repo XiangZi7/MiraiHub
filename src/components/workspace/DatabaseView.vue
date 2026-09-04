@@ -25,6 +25,7 @@ import type {
 } from "@/types/database";
 import type { PersistedDatabaseQueryTab, SavedDatabaseQuery } from "@/types/database-query";
 import type { SshSessionStatus } from "@/types/ssh";
+import { copyText } from "@/utils/clipboard";
 import { openConnectionWindow } from "@/utils/window";
 import DatabaseConnectionState from "./database/DatabaseConnectionState.vue";
 import DatabaseObjectNameDialog from "./database/DatabaseObjectNameDialog.vue";
@@ -515,7 +516,7 @@ function openObject(object: DatabaseObject, panel: "data" | "columns" = "data"):
 }
 
 async function copyObjectName(object: DatabaseObject): Promise<void> {
-  await navigator.clipboard.writeText(qualifiedName(object));
+  await copyText(qualifiedName(object));
   toast.success("已复制限定名称");
 }
 

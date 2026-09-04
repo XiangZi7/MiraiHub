@@ -16,6 +16,7 @@ export interface DatabaseConfig {
   clientCertificate: string
   clientKey: string
   timeoutSecs: number
+  maxConnections: number
 }
 
 export interface DatabaseSession {

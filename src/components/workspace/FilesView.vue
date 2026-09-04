@@ -11,11 +11,13 @@ import * as ssh from '@/api/ssh'
 import { useFileTransfers } from '@/composables/useFileTransfers'
 import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
 import { useRemoteFiles } from '@/composables/useRemoteFiles'
+import { settings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { FILE_KIND_META, extensionOf } from '@/constants/files'
 import type { ContextMenuItem } from '@/types/context-menu'
 import type { SshRemoteFile } from '@/types/ssh'
 import { cn } from '@/utils/cn'
+import { scheduleClipboardClear } from '@/utils/clipboard'
 import { formatBytes } from '@/utils/format'
 import { formatDateTime } from '@/utils/time'
 import FileConflictDialog from './FileConflictDialog.vue'
@@ -70,7 +72,13 @@ const { isDragging: nativeDragging } = useNativeFileDrop(dropZone, paths => void
 const dropActive = computed(() => nativeDragging.value || browserDragging.value)
 const connected = computed(() => Boolean(props.sessionId))
 const selectedFile = computed(() => entries.value.find(file => file.path === selected.value))
+const visibleEntries = computed(() => sortedEntries.value.filter(file => settings.showHiddenFiles || !file.name.startsWith('.')))
 const pathClip = useClipboard({ copiedDuring: 1600 })
+
+watch(visibleEntries, (files) => {
+  if (selected.value && !files.some(file => file.path === selected.value))
+    selected.value = ''
+})
 
 watch(error, (message) => {
   if (message) toast.error({ title: '读取远端文件失败', description: message })
@@ -78,6 +86,7 @@ watch(error, (message) => {
 
 async function copyPath(): Promise<void> {
   await pathClip.copy(path.value)
+  scheduleClipboardClear(path.value)
   toast.success('远端路径已复制')
 }
 
@@ -111,8 +120,8 @@ function modifiedOf(file: SshRemoteFile): string {
 }
 
 const summary = computed(() => {
-  const dirs = sortedEntries.value.filter(item => item.kind === 'directory').length
-  return `${dirs} 个目录，${sortedEntries.value.length - dirs} 个文件`
+  const dirs = visibleEntries.value.filter(item => item.kind === 'directory').length
+  return `${dirs} 个目录，${visibleEntries.value.length - dirs} 个文件`
 })
 
 function remoteChildPath(name: string): string {
@@ -121,6 +130,28 @@ function remoteChildPath(name: string): string {
 
 function localName(localPath: string): string {
   return localPath.split(/[\\/]/).filter(Boolean).at(-1) ?? localPath
+}
+
+async function availableRemotePath(fileName: string): Promise<string> {
+  const dot = fileName.lastIndexOf('.')
+  const hasExtension = dot > 0
+  const base = hasExtension ? fileName.slice(0, dot) : fileName
+  const extension = hasExtension ? fileName.slice(dot) : ''
+
+  for (let index = 1; index < 10_000; index++) {
+    const candidate = remoteChildPath(`${base} (${index})${extension}`)
+    if (!await ssh.pathExists(props.sessionId, candidate))
+      return candidate
+  }
+  throw new Error('无法为上传文件生成可用名称')
+}
+
+function defaultDownloadPath(fileName: string): string {
+  const directory = settings.defaultDownloadDirectory.trim()
+  if (!directory)
+    return fileName
+  const separator = directory.includes('\\') ? '\\' : '/'
+  return `${directory.replace(/[\\/]$/, '')}${separator}${fileName}`
 }
 
 function askConflict(fileName: string, remaining: number): Promise<{ action: ConflictAction, always: boolean }> {
@@ -151,18 +182,24 @@ async function uploadPaths(localPaths: readonly string[]): Promise<void> {
     const localPath = localPaths[index]
     if (!localPath)
       continue
-    const remotePath = remoteChildPath(localName(localPath))
+    let remotePath = remoteChildPath(localName(localPath))
 
     try {
       let action: Exclude<ConflictAction, 'cancel'> = 'overwrite'
       const exists = await ssh.pathExists(props.sessionId, remotePath)
       if (exists) {
         const existingEntry = entries.value.find(entry => entry.name === localName(localPath))
-        if (existingEntry?.kind === 'directory') {
+        if (settings.overwriteBehavior === 'rename') {
+          remotePath = await availableRemotePath(localName(localPath))
+        }
+        else if (existingEntry?.kind === 'directory') {
           toast.error(`无法上传“${localName(localPath)}”：远端已有同名目录`)
           continue
         }
-        if (policy) {
+        else if (settings.overwriteBehavior === 'overwrite') {
+          action = 'overwrite'
+        }
+        else if (policy) {
           action = policy
         } else {
           const decision = await askConflict(localName(localPath), localPaths.length - index - 1)
@@ -174,7 +211,7 @@ async function uploadPaths(localPaths: readonly string[]): Promise<void> {
         }
       }
 
-      if (exists && action === 'skip')
+      if (exists && settings.overwriteBehavior !== 'rename' && action === 'skip')
         continue
 
       changed = await transfers.upload({
@@ -182,7 +219,7 @@ async function uploadPaths(localPaths: readonly string[]): Promise<void> {
         connectionName: props.connectionName,
         localPath,
         remotePath,
-        overwrite: exists && action === 'overwrite',
+        overwrite: exists && settings.overwriteBehavior !== 'rename' && action === 'overwrite',
       }) || changed
     }
     catch (uploadError) {
@@ -204,7 +241,7 @@ async function pickUploadFiles(): Promise<void> {
 async function download(file: SshRemoteFile): Promise<void> {
   if (file.kind === 'directory')
     return
-  const destination = await saveFileDialog({ title: `下载 ${file.name}`, defaultPath: file.name })
+  const destination = await saveFileDialog({ title: `下载 ${file.name}`, defaultPath: defaultDownloadPath(file.name) })
   if (!destination)
     return
   await transfers.download({
@@ -249,8 +286,12 @@ function runContextAction(action: string): void {
     void download(file)
   else if (action === 'rename')
     state.renaming = file
-  else if (action === 'delete')
-    state.pendingDelete = file
+  else if (action === 'delete') {
+    if (settings.confirmFileDelete)
+      state.pendingDelete = file
+    else
+      void deleteFile(file)
+  }
 }
 
 async function renameFile(name: string): Promise<void> {
@@ -268,11 +309,7 @@ async function renameFile(name: string): Promise<void> {
   }
 }
 
-async function confirmDelete(): Promise<void> {
-  const file = state.pendingDelete
-  state.pendingDelete = null
-  if (!file)
-    return
+async function deleteFile(file: SshRemoteFile): Promise<void> {
   try {
     await ssh.deletePath(props.sessionId, file.path, file.kind === 'directory')
     await refresh()
@@ -281,6 +318,14 @@ async function confirmDelete(): Promise<void> {
   catch (deleteError) {
     toast.error({ title: '删除失败', description: ssh.errorMessage(deleteError) })
   }
+}
+
+
+async function confirmDelete(): Promise<void> {
+  const file = state.pendingDelete
+  state.pendingDelete = null
+  if (file)
+    await deleteFile(file)
 }
 
 function handleBrowserDrop(event: DragEvent): void {
@@ -308,7 +353,7 @@ function handleBrowserDrop(event: DragEvent): void {
       <IconButton icon="lucide:arrow-right" :size="14" title="前进" :disabled="!canGoForward" @click="goForward" />
       <IconButton icon="lucide:arrow-up" :size="14" title="上一级" :disabled="!connected || path === '/'" @click="goUp" />
 
-      <RemotePathInput :path="path" :entries="sortedEntries" :connected="connected" :loading="loading" @navigate="load" />
+      <RemotePathInput :path="path" :entries="visibleEntries" :connected="connected" :loading="loading" @navigate="load" />
 
       <IconButton :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'" :size="14" title="复制路径" :disabled="!path" @click="copyPath" />
       <IconButton icon="lucide:upload" :size="14" title="上传文件" :disabled="!connected" @click="pickUploadFiles" />
@@ -324,7 +369,7 @@ function handleBrowserDrop(event: DragEvent): void {
 
     <div class="min-h-0 flex-1 overflow-y-auto py-1 scroll-thin">
       <button
-        v-for="file in sortedEntries"
+        v-for="file in visibleEntries"
         :key="file.path"
         type="button"
         :class="cn('grid w-full grid-cols-[1fr_80px_130px] items-center gap-3 px-3 py-1.75 text-left text-xs transition-colors', selected === file.path ? 'bg-raised' : 'hover:bg-hover')"
@@ -344,7 +389,7 @@ function handleBrowserDrop(event: DragEvent): void {
 
       <p v-if="loading" class="py-8 text-center text-xs text-txt-4">正在读取目录…</p>
       <p v-else-if="!connected" class="py-8 text-center text-xs text-txt-4">连上服务器后可以浏览远端文件</p>
-      <p v-else-if="!sortedEntries.length && !error" class="py-8 text-center text-xs text-txt-4">这个目录是空的</p>
+      <p v-else-if="!visibleEntries.length && !error" class="py-8 text-center text-xs text-txt-4">{{ entries.length ? '隐藏文件已在设置中隐藏' : '这个目录是空的' }}</p>
     </div>
 
     <footer class="flex h-7 shrink-0 items-center gap-3 border-t border-line-soft px-3 text-[11px] text-txt-3">

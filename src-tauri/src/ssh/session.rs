@@ -8,7 +8,10 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use russh::client::{self, Handle, Msg};
-use russh::keys::{load_secret_key, PrivateKeyWithHashAlg, PublicKey};
+use russh::keys::{
+    known_hosts::{check_known_hosts_path, learn_known_hosts_path},
+    load_secret_key, PrivateKeyWithHashAlg, PublicKey,
+};
 use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect};
 use russh_sftp::client::SftpSession;
 use tauri::AppHandle;
@@ -20,10 +23,12 @@ use super::models::{AuthMethod, CommandOutput, PtyOptions, SshConfig};
 
 /// 连接事件处理器。
 ///
-/// 主机密钥校验目前一律放行：`known_hosts` 的信任决策需要一整套
-/// "首次连接确认 / 密钥变更告警"的前端交互，属于独立的一块。
-/// 在那之前，先明确记录风险，避免默默当成已验证。
-struct ClientHandler;
+/// 主机密钥采用 TOFU：首次写入 ~/.ssh/known_hosts，之后严格比对。
+struct ClientHandler {
+    host: String,
+    port: u16,
+    verify_host_key: bool,
+}
 
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
@@ -32,10 +37,27 @@ impl client::Handler for ClientHandler {
         &mut self,
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        // TODO(known_hosts): 接入 known_hosts 校验与首连确认弹窗后改为按需拒绝
-        log::warn!(
-            "跳过主机密钥校验（尚未接入 known_hosts），指纹：{}",
-            server_public_key.fingerprint(Default::default())
+        let fingerprint = server_public_key.fingerprint(Default::default());
+        if !self.verify_host_key {
+            log::warn!(
+                "已按设置跳过 {}:{} 的主机密钥校验（{fingerprint}）",
+                self.host,
+                self.port
+            );
+            return Ok(true);
+        }
+
+        let home = dirs::home_dir().ok_or(russh::keys::Error::NoHomeDir)?;
+        let known_hosts = home.join(".ssh").join("known_hosts");
+        if check_known_hosts_path(&self.host, self.port, server_public_key, &known_hosts)? {
+            return Ok(true);
+        }
+
+        learn_known_hosts_path(&self.host, self.port, server_public_key, &known_hosts)?;
+        log::info!(
+            "首次信任并记录 {}:{} 的主机密钥（{fingerprint}）",
+            self.host,
+            self.port
         );
         Ok(true)
     }
@@ -69,7 +91,15 @@ impl SshSession {
         };
 
         let addr = (config.host.as_str(), config.port);
-        let connect_fut = client::connect(Arc::new(ssh_config), addr, ClientHandler);
+        let connect_fut = client::connect(
+            Arc::new(ssh_config),
+            addr,
+            ClientHandler {
+                host: config.host.clone(),
+                port: config.port,
+                verify_host_key: config.verify_host_key,
+            },
+        );
 
         // russh 自身没有连接超时，靠外层 timeout 兜住：
         // 否则连一个丢包的地址会一直挂着，用户只看到界面卡住
@@ -411,6 +441,7 @@ mod tests {
             auth: AuthMethod::Agent,
             timeout_secs: 20,
             keepalive_secs: 30,
+            verify_host_key: true,
         }
     }
 

@@ -53,6 +53,9 @@ pub struct SshConfig {
     /// 长时间挂着不动的会话很容易被中间的 NAT/防火墙静默掐掉
     #[serde(default = "default_keepalive_secs")]
     pub keepalive_secs: u64,
+    /// 是否按 ~/.ssh/known_hosts 校验主机密钥。
+    #[serde(default = "default_verify_host_key")]
+    pub verify_host_key: bool,
 }
 
 fn default_timeout_secs() -> u64 {
@@ -61,6 +64,10 @@ fn default_timeout_secs() -> u64 {
 
 fn default_keepalive_secs() -> u64 {
     30
+}
+
+fn default_verify_host_key() -> bool {
+    true
 }
 
 impl SshConfig {
@@ -135,6 +142,8 @@ pub struct UploadFileRequest {
     pub local_path: String,
     pub remote_path: String,
     pub overwrite: bool,
+    #[serde(default = "default_transfer_buffer_size_kb")]
+    pub buffer_size_kb: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -145,6 +154,12 @@ pub struct DownloadFileRequest {
     pub remote_path: String,
     pub local_path: String,
     pub overwrite: bool,
+    #[serde(default = "default_transfer_buffer_size_kb")]
+    pub buffer_size_kb: usize,
+}
+
+fn default_transfer_buffer_size_kb() -> usize {
+    128
 }
 
 /// SSH 密钥算法。

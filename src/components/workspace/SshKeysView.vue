@@ -12,6 +12,7 @@ import { SSH_KEY_KIND_META } from '@/constants/ssh-keys'
 import type { GenerateKeyRequest } from '@/types/ssh'
 import { formatDate, formatRelative } from '@/utils/time'
 import { cn } from '@/utils/cn'
+import { scheduleClipboardClear } from '@/utils/clipboard'
 import GenerateKeyDialog from './GenerateKeyDialog.vue'
 
 /**
@@ -67,6 +68,7 @@ async function copyFingerprint(): Promise<void> {
   if (!current.value)
     return
   await fingerprintClip.copy(current.value.fingerprint)
+  scheduleClipboardClear(current.value.fingerprint)
   toast.success('SSH 指纹已复制')
 }
 
@@ -74,6 +76,7 @@ async function copyPublicKey(): Promise<void> {
   if (!current.value)
     return
   await publicKeyClip.copy(current.value.publicKey)
+  scheduleClipboardClear(current.value.publicKey)
   toast.success('SSH 公钥已复制')
 }
 

@@ -18,6 +18,7 @@ import type {
   RowPageRequest,
 } from '@/types/database'
 import { IS_TAURI } from '@/utils/window'
+import { settingNumber } from '@/composables/useSettings'
 export { errorMessage, isAppError } from './ssh'
 
 function ensureTauri(): void {
@@ -190,7 +191,12 @@ export async function execute(
   maxRows = 500,
 ): Promise<DatabaseExecution> {
   ensureTauri()
-  return invoke<DatabaseExecution>('db_execute', { sessionId, sql, maxRows })
+  return invoke<DatabaseExecution>('db_execute', {
+    sessionId,
+    sql,
+    maxRows,
+    timeoutSecs: settingNumber('sqlExecutionTimeout', 300),
+  })
 }
 
 export async function cancelQuery(sessionId: string): Promise<boolean> {

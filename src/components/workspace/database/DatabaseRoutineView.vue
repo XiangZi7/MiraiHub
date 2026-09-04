@@ -6,6 +6,7 @@ import AppIcon from "@/components/ui/AppIcon.vue";
 import IconButton from "@/components/ui/IconButton.vue";
 import { toast } from "@/composables/useToast";
 import type { DatabaseKind, DatabaseObject, DatabaseRoutineDetail } from "@/types/database";
+import { copyText as copyClipboardText } from "@/utils/clipboard";
 import { cn } from "@/utils/cn";
 
 type RoutinePanel = "definition" | "parameters" | "ddl";
@@ -55,7 +56,7 @@ async function loadDetail(): Promise<void> {
 }
 
 async function copyText(value: string): Promise<void> {
-  await navigator.clipboard.writeText(value);
+  await copyClipboardText(value);
   toast.success(`${kindLabel.value}定义已复制`);
 }
 

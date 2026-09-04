@@ -7,6 +7,7 @@
 
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
 import type { DatabaseConfig, DatabaseKind, DatabaseSslMode } from '@/types/database'
+import { settingNumber, settingsSnapshot } from '@/composables/useSettings'
 
 /** 连接协议。SSH 与数据库共用一套存储，靠这个字段分流 */
 export type ConnectionKind = 'ssh' | 'local' | DatabaseKind
@@ -155,6 +156,7 @@ export function toSshConfig(connection: SavedConnection): SshConfig {
     auth: settings.auth,
     timeoutSecs: settings.timeoutSecs,
     keepaliveSecs: settings.keepaliveSecs,
+    verifyHostKey: settingsSnapshot().verifyHostKey,
   }
 }
 
@@ -178,7 +180,8 @@ export function toDatabaseConfig(
     caCertificate: settings.caCertificate ?? '',
     clientCertificate: settings.clientCertificate ?? '',
     clientKey: settings.clientKey ?? '',
-    timeoutSecs: 20,
+    timeoutSecs: settingNumber('databaseTimeout', 30),
+    maxConnections: settingNumber('maxDatabaseConnections', 10),
   }
 }
 

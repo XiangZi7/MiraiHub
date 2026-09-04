@@ -5,6 +5,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import { useConnections } from '@/composables/useConnections'
+import { settingNumber, settings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { RECENT_BUCKETS, RECENT_FILTERS, SESSION_KIND_META } from '@/constants/recent'
 import type { RecentFilter, RecentGroup, SessionKind } from '@/types'
@@ -49,9 +50,15 @@ function kindOf(connection: SavedConnection): SessionKind {
 /** 用过的连接，按最近使用倒序 */
 const usedConnections = computed(() =>
   connections
-    .filter(item => item.lastUsedAt > 0)
+    .filter((item) => {
+      if (item.lastUsedAt <= 0)
+        return false
+      const retentionMs = settingNumber('historyRetention', 30) * 24 * 60 * 60 * 1000
+      return Date.now() - item.lastUsedAt < retentionMs
+    })
     .slice()
-    .sort((a, b) => b.lastUsedAt - a.lastUsedAt),
+    .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
+    .slice(0, settingNumber('maxRecentItems', 50)),
 )
 
 /** 按类型 + 关键词过滤后再分时间段，空分组不占位 */
@@ -213,7 +220,7 @@ async function clearHistory(): Promise<void> {
             {{ hasHistory ? '没有匹配的会话' : '还没有会话记录' }}
           </p>
           <p class="max-w-70 text-xs text-txt-4">
-            {{ hasHistory ? '换个关键词，或把筛选切回 All' : '打开一个连接后，这里会记下来' }}
+            {{ hasHistory ? '换个关键词，或把筛选切回 All' : settings.saveSessionHistory ? '打开一个连接后，这里会记下来' : '会话历史已在设置中关闭' }}
           </p>
         </div>
       </div>

@@ -1,5 +1,7 @@
 import { computed, reactive, readonly, watch } from 'vue'
 import * as ssh from '@/api/ssh'
+import { settingNumber, settings } from '@/composables/useSettings'
+import { toast } from '@/composables/useToast'
 import type { SshTransferEvent, SshTransferStatus } from '@/types/ssh'
 import { IS_TAURI } from '@/utils/window'
 
@@ -58,6 +60,15 @@ function loadTransferHistory(): FileTransferTask[] {
 
 const state = reactive({ items: loadTransferHistory() })
 let listenerReady: Promise<void> | undefined
+let runningJobs = 0
+
+interface PendingJob {
+  taskId: string
+  run: () => Promise<void>
+  cancel: () => void
+}
+
+const pendingJobs: PendingJob[] = []
 
 const settledSnapshot = computed(() => state.items
   .filter(task => SETTLED_STATUSES.includes(task.status))
@@ -137,6 +148,45 @@ function createTask(input: Pick<FileTransferTask, 'direction' | 'fileName' | 'so
   return task
 }
 
+function pumpQueue(): void {
+  const limit = Math.max(1, settingNumber('maxFileTransfers', 3))
+  while (runningJobs < limit && pendingJobs.length) {
+    const job = pendingJobs.shift()
+    if (!job)
+      return
+    const task = findTask(job.taskId)
+    if (!task || task.status === 'cancelled') {
+      job.cancel()
+      continue
+    }
+
+    runningJobs += 1
+    task.status = 'running'
+    void job.run().finally(() => {
+      runningJobs -= 1
+      pumpQueue()
+    })
+  }
+}
+
+watch(() => settings.maxFileTransfers, pumpQueue)
+
+function notifyFinished(task: FileTransferTask): void {
+  if (settings.notifyTransferComplete) {
+    toast.success({
+      title: task.direction === 'upload' ? '上传完成' : '下载完成',
+      description: task.fileName,
+    })
+  }
+}
+
+function notifyFailed(task: FileTransferTask): void {
+  toast.error({
+    title: task.direction === 'upload' ? '上传失败' : '下载失败',
+    description: task.error || task.fileName,
+  })
+}
+
 async function upload(options: UploadOptions): Promise<boolean> {
   await ensureListener()
   const task = createTask({
@@ -146,31 +196,42 @@ async function upload(options: UploadOptions): Promise<boolean> {
     target: options.remotePath,
     connectionName: options.connectionName ?? '',
   })
-  task.status = 'running'
 
-  try {
-    await ssh.uploadFile({
-      sessionId: options.sessionId,
+  return new Promise<boolean>((resolve) => {
+    pendingJobs.push({
       taskId: task.id,
-      localPath: options.localPath,
-      remotePath: options.remotePath,
-      overwrite: options.overwrite ?? false,
+      cancel: () => resolve(false),
+      run: async () => {
+        try {
+          await ssh.uploadFile({
+            sessionId: options.sessionId,
+            taskId: task.id,
+            localPath: options.localPath,
+            remotePath: options.remotePath,
+            overwrite: options.overwrite ?? false,
+            bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
+          })
+          if (findTask(task.id)?.status !== 'cancelled') {
+            task.status = 'completed'
+            task.transferredBytes = task.totalBytes
+            task.completedAt = Date.now()
+            notifyFinished(task)
+          }
+          resolve(findTask(task.id)?.status === 'completed')
+        }
+        catch (error) {
+          if (findTask(task.id)?.status !== 'cancelled') {
+            task.status = 'error'
+            task.error = ssh.errorMessage(error)
+            task.completedAt = Date.now()
+            notifyFailed(task)
+          }
+          resolve(false)
+        }
+      },
     })
-    if (findTask(task.id)?.status !== 'cancelled') {
-      task.status = 'completed'
-      task.transferredBytes = task.totalBytes
-      task.completedAt = Date.now()
-    }
-    return findTask(task.id)?.status === 'completed'
-  }
-  catch (error) {
-    if (findTask(task.id)?.status !== 'cancelled') {
-      task.status = 'error'
-      task.error = ssh.errorMessage(error)
-      task.completedAt = Date.now()
-    }
-    return false
-  }
+    pumpQueue()
+  })
 }
 
 async function download(options: DownloadOptions): Promise<string | null> {
@@ -182,33 +243,46 @@ async function download(options: DownloadOptions): Promise<string | null> {
     target: options.localPath || '临时目录',
     connectionName: options.connectionName ?? '',
   })
-  task.status = 'running'
 
-  try {
-    const localPath = await ssh.downloadFile({
-      sessionId: options.sessionId,
+  return new Promise<string | null>((resolve) => {
+    pendingJobs.push({
       taskId: task.id,
-      remotePath: options.remotePath,
-      localPath: options.localPath ?? '',
-      overwrite: options.overwrite ?? false,
+      cancel: () => resolve(null),
+      run: async () => {
+        try {
+          const localPath = await ssh.downloadFile({
+            sessionId: options.sessionId,
+            taskId: task.id,
+            remotePath: options.remotePath,
+            localPath: options.localPath ?? '',
+            overwrite: options.overwrite ?? false,
+            bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
+          })
+          if (findTask(task.id)?.status === 'cancelled') {
+            resolve(null)
+            return
+          }
+          task.status = 'completed'
+          task.transferredBytes = task.totalBytes
+          task.localPath = localPath
+          task.target = localPath
+          task.completedAt = Date.now()
+          notifyFinished(task)
+          resolve(localPath)
+        }
+        catch (error) {
+          if (findTask(task.id)?.status !== 'cancelled') {
+            task.status = 'error'
+            task.error = ssh.errorMessage(error)
+            task.completedAt = Date.now()
+            notifyFailed(task)
+          }
+          resolve(null)
+        }
+      },
     })
-    if (findTask(task.id)?.status === 'cancelled')
-      return null
-    task.status = 'completed'
-    task.transferredBytes = task.totalBytes
-    task.localPath = localPath
-    task.target = localPath
-    task.completedAt = Date.now()
-    return localPath
-  }
-  catch (error) {
-    if (findTask(task.id)?.status !== 'cancelled') {
-      task.status = 'error'
-      task.error = ssh.errorMessage(error)
-      task.completedAt = Date.now()
-    }
-    return null
-  }
+    pumpQueue()
+  })
 }
 
 async function pause(taskId: string): Promise<void> {
@@ -246,15 +320,17 @@ async function cancel(taskId: string): Promise<void> {
   const previous = task.status
   task.status = 'cancelled'
   task.completedAt = Date.now()
+  if (previous === 'queued') {
+    const index = pendingJobs.findIndex(job => job.taskId === taskId)
+    const [job] = index >= 0 ? pendingJobs.splice(index, 1) : []
+    job?.cancel()
+    return
+  }
   try {
     await ssh.cancelTransfer(taskId)
   }
   catch (error) {
-    // 极短任务可能恰好已经完成，按后端最终结果恢复，不把控制命令失败算传输失败。
-    if (task.status === 'cancelled') {
-      task.status = previous
-      task.completedAt = 0
-    }
+    // 极短任务可能恰好已经结束；保留取消态，后端若已完成会用最终事件覆盖。
     task.error = ssh.errorMessage(error)
   }
 }

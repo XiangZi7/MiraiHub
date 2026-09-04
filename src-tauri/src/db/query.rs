@@ -5,6 +5,7 @@
 //! 依然生效。执行走简单查询协议（`raw_sql`），预处理协议撑不住 `USE` /
 //! `SHOW` 这类语句；列信息在结果为空时才补一次 `describe`，正常路径没有额外往返。
 
+use std::time::Duration;
 use std::time::Instant;
 
 use base64::Engine;
@@ -53,6 +54,7 @@ pub async fn execute(
     session_id: &str,
     sql_text: &str,
     max_rows: usize,
+    timeout_secs: u64,
 ) -> DatabaseResult<DatabaseExecution> {
     let pool = manager.pool(session_id).await?;
     let kind = pool.kind();
@@ -75,7 +77,18 @@ pub async fn execute(
 
     for statement in statements {
         let statement_started = Instant::now();
-        let outcome = run_statement(&mut connection, &statement.text, max_rows, &running).await;
+        let outcome = match tokio::time::timeout(
+            Duration::from_secs(timeout_secs.clamp(1, 86_400)),
+            run_statement(&mut connection, &statement.text, max_rows, &running),
+        )
+        .await
+        {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                let _ = manager.cancel(session_id).await;
+                Err(DatabaseError::StatementTimeout { secs: timeout_secs })
+            }
+        };
         let elapsed_ms = elapsed_millis(statement_started);
 
         match outcome {
@@ -83,6 +96,10 @@ pub async fn execute(
             Err(DatabaseError::Cancelled) => {
                 cancelled = true;
                 results.push(cancelled_statement(&statement, elapsed_ms));
+                break;
+            }
+            Err(error @ DatabaseError::StatementTimeout { .. }) => {
+                results.push(failed_statement(&statement, error, elapsed_ms));
                 break;
             }
             Err(_) if running.is_cancelled() => {

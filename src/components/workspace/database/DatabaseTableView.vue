@@ -18,6 +18,7 @@ import type {
   RowMutation,
   RowSort,
 } from '@/types/database'
+import { copyText as copyClipboardText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
 
 type DetailPanel = 'definition' | 'data' | 'columns' | 'indexes' | 'relations' | 'ddl'
@@ -355,7 +356,7 @@ async function commitChanges(): Promise<void> {
 }
 
 async function copyText(value: string): Promise<void> {
-  await navigator.clipboard.writeText(value)
+  await copyClipboardText(value)
   toast.success('已复制到剪贴板')
 }
 

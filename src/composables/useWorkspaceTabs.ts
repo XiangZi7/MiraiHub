@@ -8,7 +8,8 @@
  * 之间共享，逐层传 props 会把中间组件都变成透传管道。
  */
 
-import { computed, reactive, readonly } from 'vue'
+import { computed, reactive, readonly, watch } from 'vue'
+import { settings } from '@/composables/useSettings'
 import type { SavedConnection } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
 
@@ -32,6 +33,32 @@ const state = reactive({
   tabs: [] as WorkspaceTab[],
   activeId: '',
 })
+
+const STORAGE_KEY = 'miraihub:workspace-tabs'
+let restored = false
+
+interface PersistedWorkspace {
+  ids: string[]
+  activeId: string
+}
+
+function persist(): void {
+  if (!settings.restoreLastSession) {
+    localStorage.removeItem(STORAGE_KEY)
+    return
+  }
+
+  const payload: PersistedWorkspace = {
+    ids: state.tabs.map(tab => tab.id),
+    activeId: state.activeId,
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+}
+
+watch(
+  () => [settings.restoreLastSession, state.activeId, state.tabs.map(tab => tab.id).join(',')],
+  persist,
+)
 
 /** 当前激活的标签 */
 const active = computed(() => state.tabs.find(tab => tab.id === state.activeId))
@@ -126,6 +153,37 @@ function closeByConnection(connectionId: string): void {
   close(connectionId)
 }
 
+/**
+ * 在连接存储加载完成后恢复上次标签；只恢复视图，不自动建立网络连接。
+ */
+function restore(connections: readonly SavedConnection[]): void {
+  if (restored)
+    return
+  restored = true
+
+  if (!settings.restoreLastSession) {
+    localStorage.removeItem(STORAGE_KEY)
+    return
+  }
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as PersistedWorkspace
+    const byId = new Map(connections.map(connection => [connection.id, connection]))
+    const restoredConnections = Array.isArray(saved.ids)
+      ? saved.ids.map(id => byId.get(id)).filter((item): item is SavedConnection => Boolean(item))
+      : []
+
+    for (const connection of restoredConnections)
+      open(connection)
+
+    if (restoredConnections.some(connection => connection.id === saved.activeId))
+      state.activeId = saved.activeId
+  }
+  catch {
+    localStorage.removeItem(STORAGE_KEY)
+  }
+}
+
 export function useWorkspaceTabs() {
   return {
     tabs: readonly(state).tabs,
@@ -137,5 +195,6 @@ export function useWorkspaceTabs() {
     reorder,
     setStatus,
     closeByConnection,
+    restore,
   }
 }

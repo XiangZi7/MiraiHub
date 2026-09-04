@@ -9,6 +9,7 @@ import * as privateKeysStore from '@/api/private-keys'
 import * as ssh from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
 import { usePrivateKeys } from '@/composables/usePrivateKeys'
+import { settingNumber, settings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { ConnectionTagColor, NewConnection } from '@/types/connection'
 import { isSshConnection } from '@/types/connection'
@@ -71,7 +72,7 @@ const testing = shallowRef(false)
 const saving = shallowRef(false)
 const browsingPrivateKeys = shallowRef(false)
 const loadingConnection = shallowRef(Boolean(props.connectionId))
-const savePassword = shallowRef(false)
+const savePassword = shallowRef<boolean>(settings.rememberPasswords)
 const form = reactive({
   name: '',
   group: '',
@@ -83,8 +84,8 @@ const form = reactive({
   authentication: 'private-key',
   password: '',
   description: '',
-  timeout: '30',
-  keepAlive: '60',
+  timeout: String(settingNumber('sshTimeout', 30)),
+  keepAlive: settings.keepConnectionAlive ? '60' : '0',
   terminalType: 'xterm-256color',
   startupCommand: '',
   privateKey: defaultPrivateKey.value,
@@ -207,6 +208,7 @@ function buildConfig(): SshConfig {
     auth: buildAuth(),
     timeoutSecs,
     keepaliveSecs,
+    verifyHostKey: settings.verifyHostKey,
   }
 }
 
@@ -441,7 +443,12 @@ async function saveConnection(): Promise<void> {
               placeholder="Enter password"
               autocomplete="current-password"
             />
-            <AppCheckbox v-model="savePassword" label="Save password" class="mb-2" />
+            <AppCheckbox
+              v-model="savePassword"
+              label="Save password"
+              :disabled="!settings.rememberPasswords"
+              class="mb-2"
+            />
           </div>
         </template>
 

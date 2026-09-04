@@ -222,12 +222,14 @@ pub async fn db_execute(
     session_id: String,
     sql: String,
     max_rows: Option<usize>,
+    timeout_secs: Option<u64>,
 ) -> AppResult<DatabaseExecution> {
     Ok(query::execute(
         &manager,
         &session_id,
         &sql,
         max_rows.unwrap_or(DEFAULT_RESULT_ROWS),
+        timeout_secs.unwrap_or(300),
     )
     .await?)
 }

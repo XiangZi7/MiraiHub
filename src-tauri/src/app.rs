@@ -3,7 +3,13 @@
 //! 每一块都是独立的小函数，新增模块时在对应的函数里加一行即可，
 //! 不必读懂整条 builder 链。命令清单在 `crate::ipc`。
 
-use tauri::{App, AppHandle, Builder, RunEvent, Wry};
+use std::sync::atomic::Ordering;
+
+use tauri::{
+    menu::MenuBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    App, AppHandle, Builder, RunEvent, Wry,
+};
 
 use crate::{db, ipc, local_terminal, platform, ssh};
 
@@ -48,6 +54,7 @@ fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
         .manage(ssh::TransferManager::new())
         .manage(db::DatabaseManager::new())
         .manage(local_terminal::LocalTerminalManager::new())
+        .manage(platform::commands::WindowPreferences::default())
 }
 
 /// 启动后的一次性初始化。
@@ -57,9 +64,67 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(main) = app.get_webview_window("main") {
         platform::window::enable_window_material(&main);
         platform::window::enable_window_shadow(&main);
+
+        let minimize_to_tray = app
+            .state::<platform::commands::WindowPreferences>()
+            .minimize_to_tray();
+        let main_for_close = main.clone();
+        main.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if minimize_to_tray.load(Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = main_for_close.hide();
+                }
+            }
+        });
     }
 
+    let tray_menu = MenuBuilder::new(app)
+        .text("show", "打开 MiraiHub")
+        .separator()
+        .quit()
+        .build()?;
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("MiraiHub")
+        .menu(&tray_menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "show" {
+                show_main_window(app);
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            let should_show = matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } | TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                }
+            );
+            if should_show {
+                show_main_window(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+
     Ok(())
+}
+
+fn show_main_window(app: &AppHandle) {
+    use tauri::Manager;
+
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.unminimize();
+        let _ = main.set_focus();
+    }
 }
 
 /// 应用级事件。

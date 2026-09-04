@@ -10,6 +10,9 @@ pub enum DatabaseError {
     #[error("连接 {endpoint} 超时（{secs}s）")]
     Timeout { endpoint: String, secs: u64 },
 
+    #[error("SQL 执行超时（{secs}s）")]
+    StatementTimeout { secs: u64 },
+
     #[error("连接 {endpoint} 失败：{source}")]
     Connect {
         endpoint: String,
@@ -39,7 +42,9 @@ impl From<DatabaseError> for AppError {
     fn from(error: DatabaseError) -> Self {
         let kind = match &error {
             DatabaseError::InvalidInput(_) => ErrorKind::InvalidInput,
-            DatabaseError::Timeout { .. } => ErrorKind::Network,
+            DatabaseError::Timeout { .. } | DatabaseError::StatementTimeout { .. } => {
+                ErrorKind::Network
+            }
             DatabaseError::SessionNotFound(_) => ErrorKind::NotFound,
             DatabaseError::Cancelled => ErrorKind::Internal,
             DatabaseError::Query(_) => ErrorKind::InvalidInput,

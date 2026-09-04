@@ -21,6 +21,12 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         // ---------- 平台 / 窗口 ----------
         platform::commands::open_connection_window,
         platform::commands::open_settings_window,
+        platform::commands::app_ready,
+        platform::commands::set_window_material,
+        platform::commands::set_tray_visible,
+        platform::commands::set_minimize_to_tray,
+        platform::commands::set_launch_at_startup,
+        platform::commands::launch_at_startup_enabled,
         // ---------- SSH：会话 ----------
         ssh::commands::ssh_connect,
         ssh::commands::ssh_disconnect,
