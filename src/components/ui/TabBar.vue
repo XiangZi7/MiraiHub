@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed, useTemplateRef } from 'vue'
 import AppIcon from './AppIcon.vue'
 import StatusDot from './StatusDot.vue'
+import { useTabReorder } from '@/composables/useTabReorder'
 import { cn } from '@/utils/cn'
 
 export interface TabItem {
@@ -18,8 +20,8 @@ export interface TabItem {
   closable?: boolean
 }
 
-defineProps<{
-  tabs: TabItem[]
+const props = defineProps<{
+  tabs: readonly TabItem[]
   /** 是否显示新建按钮 */
   addable?: boolean
 }>()
@@ -28,30 +30,65 @@ const emit = defineEmits<{
   add: []
   /** 请求关闭某个标签 */
   close: [id: string]
+  /** 请求父组件将标签从一个索引移动到另一个索引 */
+  reorder: [fromIndex: number, toIndex: number]
 }>()
 
 const active = defineModel<string>('active', { required: true })
+const tabList = useTemplateRef<HTMLElement>('tabList')
+const reorder = useTabReorder({
+  tabs: () => props.tabs,
+  container: () => tabList.value,
+  onReorder: (fromIndex, toIndex) => emit('reorder', fromIndex, toIndex),
+})
+const draggedTab = computed(() => props.tabs.find(tab => tab.id === reorder.draggedId.value))
+
+function activateTab(id: string): void {
+  if (reorder.consumeSuppressedClick(id)) return
+  active.value = id
+}
+
+function handleTabKeydown(event: KeyboardEvent, id: string): void {
+  if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    event.preventDefault()
+    event.stopPropagation()
+    reorder.moveByKeyboard(id, event.key === 'ArrowLeft' ? -1 : 1)
+    return
+  }
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    active.value = id
+  }
+}
 </script>
 
 <template>
-  <div class="flex min-w-0 h-full items-center gap-0.5 overflow-x-auto scroll-none">
+  <div ref="tabList" role="tablist" aria-label="打开的标签" class="flex min-w-0 h-full items-center gap-0.5 overflow-x-auto scroll-none">
     <!-- 关闭按钮嵌在标签里，所以外层用 div 而不是 button：button 不能嵌套 -->
     <div
-      v-for="tab in tabs"
+      v-for="(tab, index) in tabs"
       :key="tab.id"
       role="tab"
       tabindex="0"
+      :data-reorderable-tab-id="tab.id"
       :aria-selected="active === tab.id"
+      :aria-posinset="index + 1"
+      :aria-setsize="tabs.length"
+      :title="`${tab.label} · 拖动排序，Alt + ←/→ 键可调整位置`"
       :style="active === tab.id ? { borderBottomColor: tab.accent || 'var(--color-accent)' } : undefined"
       :class="cn(
-        'group flex h-full shrink-0 cursor-pointer items-center gap-2 rounded-t-lg border-b-2 px-3 text-xs transition-colors duration-150',
+        'tab-item group flex h-full shrink-0 items-center gap-2 rounded-t-lg border-b-2 px-3 text-xs transition-colors duration-150 motion-reduce:transition-none',
         active === tab.id
           ? 'border-transparent bg-card text-txt'
           : 'border-transparent text-txt-3 hover:bg-panel hover:text-txt-2',
+        reorder.draggedId.value === tab.id && 'tab-item-dragging',
+        reorder.targetId.value === tab.id && reorder.targetPosition.value === 'before' && 'tab-drop-before',
+        reorder.targetId.value === tab.id && reorder.targetPosition.value === 'after' && 'tab-drop-after',
       )"
-      @click="active = tab.id"
-      @keydown.enter="active = tab.id"
-      @keydown.space.prevent="active = tab.id"
+      @click="activateTab(tab.id)"
+      @keydown="handleTabKeydown($event, tab.id)"
+      @pointerdown="reorder.start($event, tab.id)"
     >
       <StatusDot v-if="tab.dot" :tone="tab.dot" :size="6" :glow="tab.dot !== 'txt-3'" />
       <AppIcon v-else-if="tab.icon" :name="tab.icon" :size="13" />
@@ -61,6 +98,7 @@ const active = defineModel<string>('active', { required: true })
       <button
         v-if="tab.closable"
         type="button"
+        data-tab-action
         class="-mr-1 grid size-4 shrink-0 place-items-center rounded opacity-0 transition-opacity hover:bg-hover group-hover:opacity-60 hover:opacity-100!"
         :title="`关闭 ${tab.label}`"
         @click.stop="emit('close', tab.id)"
@@ -72,11 +110,73 @@ const active = defineModel<string>('active', { required: true })
     <button
       v-if="addable"
       type="button"
+      data-tab-action
       class="icon-btn ml-1"
       title="新建"
       @click="emit('add')"
     >
       <AppIcon name="lucide:plus" :size="14" />
     </button>
+
+    <Teleport to="body">
+      <div v-if="reorder.dragging.value && draggedTab" class="tab-drag-ghost" :style="reorder.dragStyle.value" aria-hidden="true">
+        <StatusDot v-if="draggedTab.dot" :tone="draggedTab.dot" :size="6" :glow="draggedTab.dot !== 'txt-3'" />
+        <AppIcon v-else-if="draggedTab.icon" :name="draggedTab.icon" :size="13" />
+        <span>{{ draggedTab.label }}</span>
+      </div>
+    </Teleport>
   </div>
 </template>
+
+<style scoped>
+.tab-item {
+  position: relative;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.tab-item-dragging {
+  background: var(--color-hover);
+  opacity: 0.42;
+}
+
+.tab-drop-before::before,
+.tab-drop-after::after {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--color-violet);
+  box-shadow: 0 0 9px color-mix(in oklch, var(--color-violet) 55%, transparent);
+  content: '';
+}
+
+.tab-drop-before::before {
+  left: -2px;
+}
+
+.tab-drop-after::after {
+  right: -2px;
+}
+
+.tab-drag-ghost {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  max-width: 260px;
+  pointer-events: none;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in oklch, var(--color-violet) 48%, var(--color-line));
+  border-radius: 7px;
+  background: var(--color-panel);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
+  padding: 7px 10px;
+  color: var(--color-txt);
+  font-size: 11.5px;
+  line-height: 1;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+</style>

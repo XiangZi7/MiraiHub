@@ -52,6 +52,7 @@ const {
   open,
   close,
   activate,
+  reorder: reorderWorkspaceTabs,
   setStatus,
 } = useWorkspaceTabs()
 
@@ -221,7 +222,7 @@ function handleTitleBarDblClick(event: MouseEvent): void {
 }
 
 /**
- * 打开一条连接：建标签、切到对应视图、记一次使用。
+ * 打开一条连接：建标签、切到对应视图、记录最近使用时间（不改变侧栏顺序）。
  * 数据库连接落到 Databases 视图，SSH 落到 Servers。
  */
 function openConnection(connection: SavedConnection): void {
@@ -412,6 +413,7 @@ function runCommand(item: CommandItem): void {
             @update:active="selectTab"
             @add="addConnection"
             @close="closeTab"
+            @reorder="reorderWorkspaceTabs"
           />
           <div class="flex items-center gap-0.5 pb-1.5">
             <IconButton

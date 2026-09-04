@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef, watch } from 'vue'
 import * as database from '@/api/database'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { toast } from '@/composables/useToast'
@@ -379,10 +381,10 @@ watch(() => state.pageSize, () => {
 <template>
   <section class="flex min-h-0 flex-1 flex-col bg-terminal">
     <header class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft px-2.5">
-      <button
+      <AppButton
         v-for="panel in panels"
         :key="panel.id"
-        type="button"
+        variant="bare"
         :class="cn(
           'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors',
           state.activePanel === panel.id ? 'bg-raised text-txt' : 'text-txt-3 hover:bg-hover hover:text-txt-2',
@@ -392,7 +394,7 @@ watch(() => state.pageSize, () => {
         <AppIcon :name="panel.icon" :size="12" />
         {{ panel.label }}
         <span v-if="panel.id === 'columns' && state.detail" class="text-[9px] text-txt-4">{{ state.detail.columns.length }}</span>
-      </button>
+      </AppButton>
       <div class="flex-1" />
       <span v-if="!canEditExisting && state.detail?.kind === 'table'" class="mr-1 text-[10px] text-amber" title="当前表没有主键，现有行无法安全定位">
         无主键 · 只读行
@@ -404,7 +406,7 @@ watch(() => state.pageSize, () => {
       <span class="flex items-center gap-2"><AppIcon name="lucide:loader-circle" :size="14" class="animate-spin" />读取表结构…</span>
     </div>
     <div v-else-if="state.error && !state.detail" class="grid min-h-0 flex-1 place-items-center text-center text-xs text-txt-4">
-      <div><p>表结构读取失败</p><button type="button" class="btn mt-3" @click="loadDetailAndRows">重新加载</button></div>
+      <div><p>表结构读取失败</p><AppButton class="mt-3" @click="loadDetailAndRows">重新加载</AppButton></div>
     </div>
 
     <div v-else-if="state.detail" class="flex min-h-0 flex-1">
@@ -417,24 +419,25 @@ watch(() => state.pageSize, () => {
           <div class="w-24">
             <AppSelect v-model="filterDraft.operator" label="筛选方式" :options="operatorOptions" hide-label compact />
           </div>
-          <input
+          <AppInput
             v-if="filterNeedsValue"
             v-model="filterDraft.value"
-            class="field h-7 min-w-28 flex-1 px-2 text-[11px]"
+            size="sm"
+            class="min-w-28 flex-1"
             placeholder="筛选值"
             @keydown.enter="applyFilter"
-          >
-          <button type="button" class="btn h-7 px-2 text-[10.5px]" @click="applyFilter">
+          />
+          <AppButton size="sm" @click="applyFilter">
             <AppIcon name="lucide:filter" :size="11" />筛选
-          </button>
+          </AppButton>
           <IconButton icon="lucide:list-filter-plus" :size="12" title="清除筛选" :disabled="!state.filters.length && !filterDraft.value" @click="clearFilter" />
           <span class="mx-0.5 h-4 w-px bg-line-soft" />
-          <button v-if="canInsert" type="button" class="btn h-7 px-2 text-[10.5px]" @click="insertedRows.push({})">
+          <AppButton v-if="canInsert" size="sm" @click="insertedRows.push({})">
             <AppIcon name="lucide:plus" :size="11" />新增行
-          </button>
-          <button type="button" class="btn h-7 px-2 text-[10.5px]" :disabled="!pendingMutationCount || state.mutationLoading" @click="requestSave">
+          </AppButton>
+          <AppButton size="sm" :disabled="!pendingMutationCount || state.mutationLoading" @click="requestSave">
             <AppIcon name="lucide:save" :size="11" />提交 <span v-if="pendingMutationCount">({{ pendingMutationCount }})</span>
-          </button>
+          </AppButton>
           <IconButton icon="lucide:undo-2" :size="12" title="放弃未提交改动" :disabled="!pendingMutationCount && !insertedRows.length" @click="clearChanges" />
         </div>
 
@@ -473,9 +476,7 @@ watch(() => state.pageSize, () => {
               >
                 <td class="border-r border-b border-line-soft px-1.5 py-1 text-right text-txt-4">{{ state.offset + rowIndex + 1 }}</td>
                 <td v-if="canInsert" class="border-r border-b border-line-soft p-0.5 text-center">
-                  <button v-if="canEditExisting" type="button" class="icon-btn size-6 text-txt-4 hover:text-danger" :title="deletedRows.has(rowIndex) ? '撤销删除' : '标记删除'" @click="toggleDelete(rowIndex)">
-                    <AppIcon :name="deletedRows.has(rowIndex) ? 'lucide:undo-2' : 'lucide:trash-2'" :size="11" />
-                  </button>
+                  <IconButton v-if="canEditExisting" :icon="deletedRows.has(rowIndex) ? 'lucide:undo-2' : 'lucide:trash-2'" :size="11" class="size-6 text-txt-4 hover:text-danger" :title="deletedRows.has(rowIndex) ? '撤销删除' : '标记删除'" @click="toggleDelete(rowIndex)" />
                 </td>
                 <td
                   v-for="(_, columnIndex) in gridColumns"
@@ -483,18 +484,19 @@ watch(() => state.pageSize, () => {
                   :class="cn('group/cell relative border-r border-b border-line-soft p-0 last:border-r-0', edits.has(cellKey(rowIndex, columnIndex)) && 'bg-violet/8')"
                 >
                   <template v-if="canEditExisting && !deletedRows.has(rowIndex)">
-                    <input
-                      :value="cellValue(rowIndex, columnIndex) ?? ''"
-                      class="h-7 w-full min-w-36 bg-transparent px-2.5 text-inherit outline-none focus:bg-card focus:ring-1 focus:ring-inset focus:ring-violet/45"
+                    <AppInput
+                      :model-value="cellValue(rowIndex, columnIndex) ?? ''"
+                      variant="cell"
+                      monospace
                       :placeholder="cellValue(rowIndex, columnIndex) === null ? 'NULL' : ''"
-                      @input="setCellValue(rowIndex, columnIndex, ($event.target as HTMLInputElement).value)"
-                    >
-                    <button
-                      type="button"
+                      @update:model-value="setCellValue(rowIndex, columnIndex, $event)"
+                    />
+                    <AppButton
+                      variant="bare"
                       class="absolute top-1/2 right-1 hidden -translate-y-1/2 rounded bg-raised px-1 text-[9px] text-txt-4 group-focus-within/cell:block hover:text-violet"
                       title="设为 NULL"
                       @click="setCellValue(rowIndex, columnIndex, null)"
-                    >NULL</button>
+                    >NULL</AppButton>
                   </template>
                   <span v-else-if="row[columnIndex] === null" class="block h-7 min-w-36 px-2.5 py-1.5 italic text-txt-4">NULL</span>
                   <span v-else class="block h-7 min-w-36 max-w-80 truncate px-2.5 py-1.5" :title="row[columnIndex] ?? ''">{{ row[columnIndex] }}</span>
@@ -504,24 +506,23 @@ watch(() => state.pageSize, () => {
               <tr v-for="(_, rowIndex) in insertedRows" :key="`new:${rowIndex}`" class="bg-accent/5 text-txt-2">
                 <td class="border-r border-b border-line-soft px-1.5 py-1 text-right text-accent">NEW</td>
                 <td v-if="canInsert" class="border-r border-b border-line-soft p-0.5 text-center">
-                  <button type="button" class="icon-btn size-6 text-txt-4 hover:text-danger" title="移除新增行" @click="insertedRows.splice(rowIndex, 1)">
-                    <AppIcon name="lucide:x" :size="11" />
-                  </button>
+                  <IconButton icon="lucide:x" :size="11" class="size-6 text-txt-4 hover:text-danger" title="移除新增行" @click="insertedRows.splice(rowIndex, 1)" />
                 </td>
                 <td v-for="column in state.detail.columns" :key="column.name" class="group/cell relative border-r border-b border-line-soft p-0 last:border-r-0">
-                  <input
-                    :value="insertedValue(rowIndex, column.name) ?? ''"
-                    class="h-7 w-full min-w-36 bg-transparent px-2.5 text-inherit outline-none focus:bg-card focus:ring-1 focus:ring-inset focus:ring-accent/45"
+                  <AppInput
+                    :model-value="insertedValue(rowIndex, column.name) ?? ''"
+                    variant="cell"
+                    monospace
                     :placeholder="column.autoIncrement ? '自动生成' : insertedValue(rowIndex, column.name) === null ? 'NULL' : ''"
-                    @input="setInsertedValue(rowIndex, column.name, ($event.target as HTMLInputElement).value)"
-                  >
-                  <button
+                    @update:model-value="setInsertedValue(rowIndex, column.name, $event)"
+                  />
+                  <AppButton
                     v-if="column.nullable"
-                    type="button"
+                    variant="bare"
                     class="absolute top-1/2 right-1 hidden -translate-y-1/2 rounded bg-raised px-1 text-[9px] text-txt-4 group-focus-within/cell:block hover:text-violet"
                     title="设为 NULL"
                     @click="setInsertedValue(rowIndex, column.name, null)"
-                  >NULL</button>
+                  >NULL</AppButton>
                 </td>
               </tr>
             </tbody>
@@ -541,13 +542,13 @@ watch(() => state.pageSize, () => {
           <span class="ml-1 text-txt-4">
             {{ state.page?.rows.length ?? 0 }} 行 · {{ state.page?.elapsedMs ?? 0 }} ms
           </span>
-          <button type="button" class="ml-1 rounded px-1.5 py-1 text-txt-4 hover:bg-hover hover:text-txt-2" :disabled="state.countLoading" @click="calculateCount">
+          <AppButton variant="bare" class="ml-1 rounded px-1.5 py-1 text-txt-4 hover:bg-hover hover:text-txt-2" :disabled="state.countLoading" @click="calculateCount">
             {{ state.countLoading ? '统计中…' : state.exactCount !== null ? `精确 ${state.exactCount.toLocaleString()} 行` : estimatedCount !== null && estimatedCount !== undefined ? `约 ${estimatedCount.toLocaleString()} 行 · 点此精确统计` : '统计总行数' }}
-          </button>
+          </AppButton>
           <div class="flex-1" />
-          <button v-if="state.page?.sql" type="button" class="rounded px-1.5 py-1 font-mono text-txt-4 hover:bg-hover hover:text-txt-2" title="复制本页实际 SQL" @click="copyText(state.page.sql)">
+          <AppButton v-if="state.page?.sql" variant="bare" class="rounded px-1.5 py-1 font-mono text-txt-4 hover:bg-hover hover:text-txt-2" title="复制本页实际 SQL" @click="copyText(state.page.sql)">
             SQL
-          </button>
+          </AppButton>
           <IconButton v-if="state.page?.sql" icon="lucide:external-link" :size="11" title="发送到查询编辑器" @click="emit('query', state.page.sql)" />
         </footer>
       </template>
@@ -584,7 +585,7 @@ watch(() => state.pageSize, () => {
       </div>
 
       <div v-else class="relative min-h-0 flex-1 overflow-auto bg-[#0d0f14] p-4 scroll-thin">
-        <button type="button" class="absolute top-3 right-3 btn h-7 px-2 text-[10.5px]" @click="copyText(state.detail.ddl)"><AppIcon name="lucide:copy" :size="11" />复制 DDL</button>
+        <AppButton size="sm" class="absolute top-3 right-3" @click="copyText(state.detail.ddl)"><AppIcon name="lucide:copy" :size="11" />复制 DDL</AppButton>
         <pre class="whitespace-pre-wrap pr-24 font-mono text-[11.5px] leading-5 text-term-fg">{{ state.detail.ddl || '无法生成 DDL' }}</pre>
       </div>
       </div>

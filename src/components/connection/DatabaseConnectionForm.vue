@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, shallowRef, useId } from 'vue'
+import { computed, onMounted, reactive, shallowRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
+import AppTextarea from '@/components/ui/AppTextarea.vue'
 import * as connectionsStore from '@/api/connections'
 import * as databaseApi from '@/api/database'
 import { useConnections } from '@/composables/useConnections'
@@ -12,6 +13,7 @@ import { toast } from '@/composables/useToast'
 import type { NewConnection } from '@/types/connection'
 import { isDatabaseConnection } from '@/types/connection'
 import type { DatabaseConfig, DatabaseKind, DatabaseSslMode } from '@/types/database'
+import ConnectionFilePathField from './ConnectionFilePathField.vue'
 
 type SectionId = 'general' | 'ssl'
 
@@ -46,6 +48,8 @@ const sslModeOptions = [
   { value: 'verify-ca', label: 'Verify CA' },
   { value: 'verify-full', label: 'Verify Full' },
 ] as const
+const certificateExtensions = ['pem', 'crt', 'cer'] as const
+const privateKeyExtensions = ['pem', 'key'] as const
 const portForKind = (value: DatabaseKind): string => value === 'mysql' ? '3306' : '5432'
 const defaultPort = computed(() => portForKind(kind.value))
 const databaseLabel = computed(() => kind.value === 'mysql' ? 'MySQL' : 'PostgreSQL')
@@ -64,8 +68,6 @@ const form = reactive({
   clientCertificate: '',
   clientKey: '',
 })
-
-const descriptionId = useId()
 
 const isReady = computed<boolean>(() => (
   form.name.trim().length > 0
@@ -125,6 +127,18 @@ function selectKind(nextKind: DatabaseKind): void {
 
 }
 
+function selectedFileName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+}
+
+function handleSslFileSelected(label: string, path: string): void {
+  toast.success({ title: `已选择${label}`, description: selectedFileName(path) })
+}
+
+function handleSslFileError(message: string): void {
+  toast.error({ title: '选择 SSL 文件失败', description: message })
+}
+
 /** 校验必填项，不通过则跳回 General 并提示 */
 function validate(): boolean {
   if (!isReady.value) {
@@ -137,6 +151,15 @@ function validate(): boolean {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     activeSection.value = 'general'
     toast.warning('端口必须是 1–65535 之间的整数')
+    return false
+  }
+
+  if (
+    form.sslMode !== 'disable'
+    && Boolean(form.clientCertificate.trim()) !== Boolean(form.clientKey.trim())
+  ) {
+    activeSection.value = 'ssl'
+    toast.warning('客户端证书和客户端私钥需要同时选择')
     return false
   }
 
@@ -232,17 +255,17 @@ async function saveConnection(): Promise<void> {
 <template>
   <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="saveConnection">
     <div class="connection-tabs" role="tablist" :aria-label="`${databaseLabel} connection settings`">
-      <button
+      <AppButton
         v-for="section in ([{ id: 'general', label: 'General' }, { id: 'ssl', label: 'SSL' }] as const)"
         :key="section.id"
-        type="button"
+        variant="bare"
         role="tab"
         :aria-selected="activeSection === section.id"
         :class="['connection-tab', activeSection === section.id && 'connection-tab-active']"
         @click="activeSection = section.id"
       >
         {{ section.label }}
-      </button>
+      </AppButton>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin">
@@ -252,10 +275,10 @@ async function saveConnection(): Promise<void> {
             Connection Type
           </legend>
           <div class="database-kinds" role="radiogroup" aria-label="Database type">
-            <button
+            <AppButton
               v-for="option in databaseKinds"
               :key="option.id"
-              type="button"
+              variant="bare"
               role="radio"
               :aria-checked="kind === option.id"
               :class="['database-kind', kind === option.id && 'database-kind-active']"
@@ -263,7 +286,7 @@ async function saveConnection(): Promise<void> {
             >
               <AppIcon :name="option.icon" :size="13" />
               <span>{{ option.label }}</span>
-            </button>
+            </AppButton>
           </div>
         </fieldset>
 
@@ -324,16 +347,7 @@ async function saveConnection(): Promise<void> {
           <AppCheckbox v-model="savePassword" label="Save password" class="mb-2" />
         </div>
 
-        <div class="space-y-1.5">
-          <label :for="descriptionId" class="connection-label">Description (Optional)</label>
-          <textarea
-            :id="descriptionId"
-            v-model="form.description"
-            class="connection-textarea"
-            rows="2"
-            placeholder="Add a description for this connection…"
-          />
-        </div>
+        <AppTextarea v-model="form.description" label="Description (Optional)" :rows="2" class="resize-none" placeholder="Add a description for this connection…" />
       </div>
 
       <div v-else class="grid gap-3.5">
@@ -344,20 +358,35 @@ async function saveConnection(): Promise<void> {
         <AppSelect v-model="form.sslMode" label="SSL Mode" :options="sslModeOptions" />
 
         <template v-if="form.sslMode !== 'disable'">
-          <AppTextField
+          <ConnectionFilePathField
             v-model="form.caCertificate"
             label="CA Certificate"
-            placeholder="Path to CA certificate"
+            placeholder="选择或输入 CA 证书路径"
+            dialog-title="选择 CA 证书"
+            filter-name="CA 证书"
+            :extensions="certificateExtensions"
+            @selected="handleSslFileSelected('CA 证书', $event)"
+            @error="handleSslFileError"
           />
-          <AppTextField
+          <ConnectionFilePathField
             v-model="form.clientCertificate"
             label="Client Certificate"
-            placeholder="Optional client certificate"
+            placeholder="可选：选择客户端证书"
+            dialog-title="选择客户端证书"
+            filter-name="客户端证书"
+            :extensions="certificateExtensions"
+            @selected="handleSslFileSelected('客户端证书', $event)"
+            @error="handleSslFileError"
           />
-          <AppTextField
+          <ConnectionFilePathField
             v-model="form.clientKey"
             label="Client Key"
-            placeholder="Optional client key"
+            placeholder="可选：选择客户端私钥"
+            dialog-title="选择客户端私钥"
+            filter-name="客户端私钥"
+            :extensions="privateKeyExtensions"
+            @selected="handleSslFileSelected('客户端私钥', $event)"
+            @error="handleSslFileError"
           />
         </template>
       </div>
@@ -392,6 +421,7 @@ async function saveConnection(): Promise<void> {
 .connection-tab {
   position: relative;
   min-width: 74px;
+  justify-content: center;
   cursor: pointer;
   padding: 0 12px;
   color: var(--color-txt-3);
@@ -465,28 +495,6 @@ async function saveConnection(): Promise<void> {
   background: color-mix(in oklch, var(--color-violet) 14%, var(--color-card));
   color: var(--color-txt);
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-violet) 12%, transparent);
-}
-
-.connection-textarea {
-  width: 100%;
-  resize: none;
-  border: 1px solid var(--color-line);
-  border-radius: 7px;
-  background: color-mix(in oklch, var(--color-panel) 88%, transparent);
-  padding: 8px 10px;
-  color: var(--color-txt);
-  font-size: 12px;
-  outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.connection-textarea::placeholder {
-  color: var(--color-txt-4);
-}
-
-.connection-textarea:focus {
-  border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
 .connection-section-copy {

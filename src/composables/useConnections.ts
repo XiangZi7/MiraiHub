@@ -153,7 +153,7 @@ export function useConnections() {
       await refresh()
     },
 
-    /** 记一次使用，驱动"最近"排序 */
+    /** 记一次使用，仅供 Recent 视图按最近时间排序 */
     async touch(id: string): Promise<void> {
       await store.touch(id)
       await refresh()

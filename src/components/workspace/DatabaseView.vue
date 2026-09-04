@@ -325,6 +325,18 @@ function closeTab(id: string): void {
   if (queryState.activeId === id) queryState.activeId = (queryState.tabs[index] ?? queryState.tabs[index - 1]).id;
 }
 
+function reorderTabs(fromIndex: number, toIndex: number): void {
+  if (
+    fromIndex === toIndex
+    || fromIndex < 0
+    || toIndex < 0
+    || fromIndex >= queryState.tabs.length
+    || toIndex >= queryState.tabs.length
+  ) return;
+  const [tab] = queryState.tabs.splice(fromIndex, 1);
+  if (tab) queryState.tabs.splice(toIndex, 0, tab);
+}
+
 function closeObjectTab(object: DatabaseObject): void {
   const id = objectTabId(object);
   if (queryState.tabs.some((tab) => tab.id === id)) closeTab(id);
@@ -715,7 +727,7 @@ watch(() => props.connection?.id, (id) => {
 
     <div class="flex min-w-0 flex-1 flex-col">
       <div class="flex h-10 shrink-0 items-end border-b border-line-soft px-2">
-        <TabBar v-model:active="queryState.activeId" :tabs="queryState.tabs" addable @add="addQueryTab()" @close="closeTab" />
+        <TabBar v-model:active="queryState.activeId" :tabs="queryState.tabs" addable @add="addQueryTab()" @close="closeTab" @reorder="reorderTabs" />
       </div>
 
       <div class="flex h-9 shrink-0 items-center gap-1.5 border-b border-line-soft px-2.5">

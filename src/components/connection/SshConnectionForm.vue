@@ -449,11 +449,15 @@ async function saveConnection(): Promise<void> {
           <AppTextField
             v-model="form.privateKey"
             label="Private Key"
-            placeholder="Select a private key in the SSH Key tab"
+            placeholder="选择或输入私钥路径（支持 PEM）"
+            action-icon="lucide:folder-open"
+            :action-title="browsingPrivateKeys ? '正在打开文件选择器…' : '选择 SSH 私钥文件'"
+            :action-disabled="browsingPrivateKeys"
+            @action="browsePrivateKeys"
           />
-          <button type="button" class="text-left text-[11px] text-violet hover:text-txt" @click="activeSection = 'ssh-key'">
+          <AppButton variant="bare" class="w-fit text-left text-[11px] text-violet hover:text-txt" @click="activeSection = 'ssh-key'">
             Configure private key →
-          </button>
+          </AppButton>
         </div>
 
         <div class="space-y-1.5">

@@ -191,9 +191,14 @@ function newId(): string {
   return `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-/** 列出全部连接，按最近使用倒序 —— 常用的排前面 */
+/**
+ * 按持久化顺序列出全部连接。
+ *
+ * 最近使用时间只用于 Recent 视图；不能在这里排序，否则每次打开连接都会让
+ * 侧栏项目跳到分组首位，破坏稳定的位置记忆和手动整理后的顺序。
+ */
 export async function list(): Promise<SavedConnection[]> {
-  return readAll().sort((a, b) => b.lastUsedAt - a.lastUsedAt)
+  return readAll()
 }
 
 export async function listGroups(): Promise<ConnectionGroup[]> {

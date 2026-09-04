@@ -88,6 +88,20 @@ function activate(id: string): void {
     state.activeId = id
 }
 
+/** 按标签栏给出的最终索引移动标签，不改变当前激活项或会话实例。 */
+function reorder(fromIndex: number, toIndex: number): void {
+  if (
+    fromIndex === toIndex
+    || fromIndex < 0
+    || toIndex < 0
+    || fromIndex >= state.tabs.length
+    || toIndex >= state.tabs.length
+  ) return
+
+  const [tab] = state.tabs.splice(fromIndex, 1)
+  if (tab) state.tabs.splice(toIndex, 0, tab)
+}
+
 /**
  * 更新标签的会话状态，由终端面板在连上 / 断开时回调。
  *
@@ -120,6 +134,7 @@ export function useWorkspaceTabs() {
     open,
     close,
     activate,
+    reorder,
     setStatus,
     closeByConnection,
   }

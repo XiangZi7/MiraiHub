@@ -319,8 +319,8 @@ function handleContextAction(id: string): void {
         >
           <AppIcon name="lucide:chevron-right" :size="12" :class="cn('text-txt-4 transition-transform', expanded.has(`schema:${schema.name}`) && 'rotate-90')" />
           <AppIcon name="lucide:layers-3" :size="13" class="text-txt-3" />
-          <span class="truncate">{{ schema.name }}</span>
-          <span v-if="databaseKind === 'mysql' && schema.name === activeDatabase" class="ml-auto size-1.5 rounded-full bg-accent shadow-[0_0_7px_var(--color-accent)]" title="当前数据库" />
+          <span class="min-w-0 flex-1 truncate text-left">{{ schema.name }}</span>
+          <span v-if="databaseKind === 'mysql' && schema.name === activeDatabase" class="size-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_7px_var(--color-accent)]" title="当前数据库" />
         </AppButton>
 
         <template v-if="expanded.has(`schema:${schema.name}`)">
