@@ -52,6 +52,7 @@ fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
     builder
         .manage(agent::AgentManager::default())
         .manage(ssh::editor::EditorManager::default())
+        .manage(platform::remote_editor::RemoteEditorWindows::default())
         .manage(ssh::tunnels::TunnelManager::default())
         .manage(ssh::batch::BatchManager::default())
         .manage(ssh::SessionManager::new())
@@ -142,6 +143,23 @@ fn show_main_window(app: &AppHandle) {
 fn on_run_event(app: &AppHandle, event: RunEvent) {
     use tauri::Manager;
 
+    // Native editor drafts outlive the main webview. Tray quit must also respect them.
+    if let RunEvent::ExitRequested { ref api, .. } = event {
+        if let Some(label) = app
+            .state::<platform::remote_editor::RemoteEditorWindows>()
+            .needs_attention()
+        {
+            api.prevent_exit();
+            if let Some(editor) = app.get_webview_window(&label) {
+                use tauri::Emitter;
+                let _ = editor.show();
+                let _ = editor.unminimize();
+                let _ = editor.set_focus();
+                let _ = editor.emit(platform::remote_editor::CLOSE_EVENT, ());
+            }
+            return;
+        }
+    }
     // 退出前给每条连接发一个正常的 disconnect，
     // 否则远端要等 TCP 超时才回收 session
     if let RunEvent::Exit = event {

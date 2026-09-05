@@ -68,7 +68,7 @@ pub async fn app_ready(app: AppHandle) -> AppResult<()> {
 #[tauri::command]
 pub async fn set_window_material(app: AppHandle, material: String) -> AppResult<()> {
     for (label, webview) in app.webview_windows() {
-        if label != window::SPLASH_WINDOW {
+        if label != window::SPLASH_WINDOW && !label.starts_with(super::remote_editor::PREFIX) {
             window::set_window_material(&webview, &material)?;
         }
     }

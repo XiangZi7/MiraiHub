@@ -9,8 +9,13 @@ import {
 import { useEventListener } from "@vueuse/core";
 import IconButton from "@/components/ui/IconButton.vue";
 const props = withDefaults(
-  defineProps<{ title: string; wide?: boolean; busy?: boolean }>(),
-  { wide: false, busy: false },
+  defineProps<{
+    title: string;
+    wide?: boolean;
+    busy?: boolean;
+    standalone?: boolean;
+  }>(),
+  { wide: false, busy: false, standalone: false },
 );
 const emit = defineEmits<{ close: [] }>();
 const titleId = useId();
@@ -52,14 +57,14 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
 });
 </script>
 <template>
-  <Teleport to="body"
-    ><div class="operation-backdrop">
+  <Teleport to="body" :disabled="standalone"
+    ><div class="operation-backdrop" :class="standalone && 'operation-window'">
       <section
         ref="dialog"
         class="operation-dialog"
         :class="wide && 'wide'"
-        role="dialog"
-        aria-modal="true"
+        :role="standalone ? 'region' : 'dialog'"
+        :aria-modal="standalone ? undefined : true"
         :aria-labelledby="titleId"
         tabindex="-1"
       >
@@ -125,5 +130,28 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
   flex-direction: column;
   gap: 14px;
   font-size: 12px;
+}
+.operation-window {
+  position: static;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: var(--color-panel);
+  backdrop-filter: none;
+}
+.operation-window .operation-dialog.wide {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+@media (max-width: 700px) {
+  .operation-window .operation-body {
+    padding: 12px;
+    gap: 10px;
+  }
 }
 </style>

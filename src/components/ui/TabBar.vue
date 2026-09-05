@@ -113,6 +113,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       @keydown="handleTabKeydown($event, tab.id)"
       @pointerdown="reorder.start($event, tab.id)"
       @contextmenu="menu.show($event, tab.id)"
+      @mousedown.middle.prevent
       @auxclick.middle.stop.prevent="closeFromPointer(tab.id)"
     >
       <StatusDot v-if="tab.dot" :tone="tab.dot" :size="6" :glow="tab.dot !== 'txt-3'" />

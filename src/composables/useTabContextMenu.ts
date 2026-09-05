@@ -80,30 +80,36 @@ export function useTabContextMenu(options: Options) {
         : rect.bottom - 2;
     state.open = true;
   }
+  function focusTab(): void {
+    const tabs = [
+      ...(options.container()?.querySelectorAll<HTMLElement>('[role="tab"]') ??
+        []),
+    ];
+    (
+      tabs.find((tab) => tab.dataset.reorderableTabId === state.id) ??
+      tabs.find((tab) => tab.dataset.reorderableTabId === options.active()) ??
+      tabs[0]
+    )?.focus();
+  }
   function dismiss(): void {
     state.open = false;
-    // Only restore keyboard focus when the menu held it; do not steal an outside click.
-    if (document.activeElement?.closest('[role="menu"]'))
-      void nextTick(() => {
-        const tabs = [
-          ...(options
-            .container()
-            ?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []),
-        ];
-        (
-          tabs.find((tab) => tab.dataset.reorderableTabId === state.id) ??
-          tabs.find(
-            (tab) => tab.dataset.reorderableTabId === options.active(),
-          ) ??
-          tabs[0]
-        )?.focus();
-      });
+    // Restore before opening a dialog so it remembers the tab, not a removed menu item.
+    if (!document.activeElement?.closest('[role="menu"]')) return;
+    focusTab();
+    void nextTick(() => {
+      // Closing a tab removes the focused node. Never steal focus from a new dialog.
+      if (document.activeElement === document.body) focusTab();
+    });
   }
   async function select(action: string): Promise<void> {
     const id = state.id,
       tab = target.value;
-    if (!tab || items.value.find((item) => item.id === action)?.disabled)
+    if (
+      !tab ||
+      !items.value.some((item) => item.id === action && !item.disabled)
+    )
       return;
+    dismiss();
     const scope = scopes.find((item) => `tabs:${item.scope}` === action)?.scope;
     if (scope) {
       const ids = tabCloseTargets(options.tabs(), id, scope);

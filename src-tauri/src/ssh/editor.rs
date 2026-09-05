@@ -1,16 +1,16 @@
 //! UTF-8 editing with optimistic conflict checks, a retained backup and atomic replacement.
-use super::{
-    tunnels::{main_window, random_id},
-    SessionManager,
+use super::{tunnels::random_id, SessionManager};
+use crate::{
+    error::{AppError, AppResult},
+    platform::remote_editor::RemoteEditorWindows,
 };
-use crate::error::{AppError, AppResult};
 use russh_sftp::{
     client::SftpSession,
     protocol::{FileAttributes, OpenFlags, Packet, StatusCode},
 };
 use serde::Serialize;
 use std::{collections::HashMap, time::Duration};
-use tauri::{State, WebviewWindow};
+use tauri::{Manager, State, WebviewWindow};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::Mutex,
@@ -29,6 +29,7 @@ pub struct TextDocument {
     pub backup_path: Option<String>,
 }
 struct Document {
+    owner: String,
     view: TextDocument,
     original: Vec<u8>,
     attrs: FileAttributes,
@@ -36,6 +37,20 @@ struct Document {
 #[derive(Default)]
 pub struct EditorManager {
     documents: Mutex<HashMap<String, Document>>,
+}
+impl EditorManager {
+    pub async fn close_window(&self, label: &str) {
+        self.documents
+            .lock()
+            .await
+            .retain(|_, document| document.owner != label);
+    }
+}
+fn authorize_document(owner: &str, label: &str) -> AppResult<()> {
+    if owner != label {
+        return Err(AppError::invalid_input("不能访问其他窗口的远端编辑会话"));
+    }
+    Ok(())
 }
 fn sftp_error(error: impl std::fmt::Display) -> AppError {
     AppError::internal(format!("SFTP：{error}"))
@@ -166,7 +181,10 @@ pub async fn ssh_text_open(
     session_id: String,
     path: String,
 ) -> AppResult<TextDocument> {
-    main_window(&window)?;
+    window
+        .state::<RemoteEditorWindows>()
+        .authorize(window.label(), &session_id, &path)?;
+    let requested_path = path.clone();
     if !path.starts_with('/') || path.len() > 4096 || path.contains('\0') {
         return Err(AppError::invalid_input("请提供有效的远端绝对路径"));
     }
@@ -197,6 +215,12 @@ pub async fn ssh_text_open(
         backup_path: None,
     };
     let mut documents = editor.documents.lock().await;
+    // The window may have closed while its SFTP read was in flight.
+    window.state::<RemoteEditorWindows>().authorize(
+        window.label(),
+        &view.session_id,
+        &requested_path,
+    )?;
     if documents.len() >= 32 {
         return Err(AppError::invalid_input(
             "打开的远端文件过多，请关闭部分编辑器",
@@ -205,6 +229,7 @@ pub async fn ssh_text_open(
     documents.insert(
         view.id.clone(),
         Document {
+            owner: window.label().to_owned(),
             view: view.clone(),
             original,
             attrs,
@@ -220,12 +245,12 @@ pub async fn ssh_text_save(
     id: String,
     text: String,
 ) -> AppResult<TextDocument> {
-    main_window(&window)?;
     // Serialize saves from this app; each document retains the exact bytes it originally read.
     let mut documents = editor.documents.lock().await;
     let document = documents
         .get_mut(&id)
         .ok_or_else(|| AppError::not_found("编辑会话已关闭，请重新打开文件"))?;
+    authorize_document(&document.owner, window.label())?;
     let bytes = encode(&text, &document.view.line_ending, document.view.bom)?;
     let session = manager.get(&document.view.session_id).await?;
     let path = document.view.path.clone();
@@ -321,13 +346,23 @@ pub async fn ssh_text_close(
     editor: State<'_, EditorManager>,
     id: String,
 ) -> AppResult<()> {
-    main_window(&window)?;
-    editor.documents.lock().await.remove(&id);
+    let mut documents = editor.documents.lock().await;
+    if let Some(document) = documents.get(&id) {
+        authorize_document(&document.owner, window.label())?;
+    }
+    documents.remove(&id);
     Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn documents_cannot_be_saved_or_closed_by_another_window() {
+        assert!(authorize_document("remote-editor-a", "remote-editor-a").is_ok());
+        assert!(authorize_document("remote-editor-a", "remote-editor-b").is_err());
+        assert!(authorize_document("remote-editor-a", "main").is_err());
+        assert!(authorize_document("main", "remote-editor-a").is_err());
+    }
     #[test]
     fn preserves_bom_crlf_and_unicode() {
         let original = b"\xef\xbb\xbfhello\r\nworld\r\n";

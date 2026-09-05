@@ -2,3 +2,5 @@
 
 pub mod commands;
 pub mod window;
+
+pub mod remote_editor;

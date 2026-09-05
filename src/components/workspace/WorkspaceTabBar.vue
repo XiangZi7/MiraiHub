@@ -79,7 +79,10 @@ function contextItems(id: string): ContextMenuItem[] {
 }
 async function action(id: string, action: string): Promise<void> {
   const tab = props.tabs.find((tab) => tab.id === id);
-  if (!tab || contextItems(id).find((item) => item.id === action)?.disabled)
+  if (
+    !tab ||
+    !contextItems(id).some((item) => item.id === action && !item.disabled)
+  )
     return;
   if (action === "edit") {
     openConnectionWindow(

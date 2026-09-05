@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { RemoteEditRequest } from "@/composables/useRemoteEditor";
 import { IS_TAURI } from "@/utils/window";
 export { errorMessage } from "./ssh";
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -71,3 +72,11 @@ export const writeBackup = (path: string, payload: unknown, password: string) =>
   call<void>("connection_backup_write", { path, payload, password });
 export const readBackup = (path: string, password: string) =>
   call<unknown>("connection_backup_read", { path, password });
+
+export const openRemoteEditorWindow = (request: RemoteEditRequest) =>
+  call<void>("open_remote_editor_window", { request });
+export const remoteEditorTarget = () =>
+  call<RemoteEditRequest>("remote_editor_target");
+export const remoteEditorStatus = (dirty: boolean, busy: boolean) =>
+  call<void>("remote_editor_status", { dirty, busy });
+export const finishRemoteEditor = () => call<void>("remote_editor_finish");

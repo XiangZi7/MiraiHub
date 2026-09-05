@@ -1,0 +1,167 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已推送到仓库的版本标签，例如 v0.2.0 或 v0.2.0-beta.1"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      CARGO_TERM_COLOR: always
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      commit: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22.22.2"
+          package-manager-cache: false
+
+      - name: Validate tag and synchronize application version
+        id: version
+        run: node scripts/release-version.mjs "$env:RELEASE_TAG" --github-output
+
+      - name: Record source commit
+        id: commit
+        run: |
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve release commit' }
+          "sha=$commit" >> $env:GITHUB_OUTPUT
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          run_install: false
+          cache: true
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw 'Rust installation failed' }
+          rustup default 1.96.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: false
+
+      - name: Test frontend utilities and release version logic
+        run: pnpm test
+
+      - name: Test Rust backend
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+
+      - name: Build application and NSIS installer
+        run: pnpm release:build
+
+      - name: Collect installer, portable archive and checksums
+        env:
+          RELEASE_COMMIT: ${{ steps.commit.outputs.sha }}
+        run: ./scripts/package-windows.ps1 -Tag $env:RELEASE_TAG -Commit $env:RELEASE_COMMIT
+
+      - name: Upload release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-x64-release
+          path: release-output/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    needs: build-windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.build-windows.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.build-windows.outputs.version }}
+      RELEASE_PRERELEASE: ${{ needs.build-windows.outputs.prerelease }}
+      RELEASE_COMMIT: ${{ needs.build-windows.outputs.commit }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download tested build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-x64-release
+          path: release-output
+
+      - name: Verify files and publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd release-output
+          setup="MiraiHub_${RELEASE_VERSION}_windows_x64_setup.exe"
+          portable="MiraiHub_${RELEASE_VERSION}_windows_x64_portable.zip"
+          for asset in "$setup" "$portable" version.json SHA256SUMS.txt; do
+            test -s "$asset"
+          done
+          sha256sum --check --strict SHA256SUMS.txt
+          jq -e --arg tag "$RELEASE_TAG" --arg version "$RELEASE_VERSION" --arg commit "$RELEASE_COMMIT" \
+            '.tag == $tag and .version == $version and .commit == $commit and .platform == "windows" and .arch == "x64"' version.json
+
+          # Check the remote tag still identifies the tested commit (including annotated tags).
+          object=$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object')
+          for attempt in 1 2 3 4 5; do
+            if [ "$(jq -r '.type' <<< "$object")" != tag ]; then break; fi
+            sha=$(jq -r '.sha' <<< "$object")
+            object=$(gh api "repos/$GH_REPO/git/tags/$sha" --jq '.object')
+          done
+          test "$(jq -r '.type' <<< "$object")" = commit
+          test "$(jq -r '.sha' <<< "$object")" = "$RELEASE_COMMIT"
+
+          if existing=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft'); then
+            if [ "$existing" != true ]; then
+              echo 'This version is already published. Create a new version tag instead of overwriting it.' >&2
+              exit 1
+            fi
+          else
+            # Keep the release in draft until every attachment has uploaded successfully.
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "MiraiHub $RELEASE_TAG" --generate-notes \
+              --prerelease="$RELEASE_PRERELEASE" \
+              --notes 'Windows x64：setup.exe 为安装版；portable.zip 解压后运行 miraihub.exe（需要 WebView2 Runtime）。SHA256SUMS.txt 用于校验下载文件，version.json 记录版本与源码提交。'
+          fi
+          gh release upload "$RELEASE_TAG" "$setup" "$portable" version.json SHA256SUMS.txt --clobber
+          latest=true
+          if [ "$RELEASE_PRERELEASE" = true ]; then latest=false; fi
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease="$RELEASE_PRERELEASE" --latest="$latest"
+          gh release view "$RELEASE_TAG" --json url --jq '.url' >> "$GITHUB_STEP_SUMMARY"

@@ -1,29 +1,32 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, toRefs } from "vue";
-import { useClipboard, useEventListener } from "@vueuse/core";
-import * as api from "@/api/operations";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { IS_TAURI } from "@/utils/window";
+import { toRefs } from "vue";
+import { useRemoteTextDocument } from "@/composables/useRemoteTextDocument";
+import type { RemoteEditRequest } from "@/composables/useRemoteEditor";
 import OperationDialog from "./OperationDialog.vue";
 import AppButton from "@/components/ui/AppButton.vue";
 import AppConfirmDialog from "@/components/ui/AppConfirmDialog.vue";
-import { scheduleClipboardClear } from "@/utils/clipboard";
-const props = defineProps<{
-  sessionId: string;
-  path: string;
-  connectionName: string;
+const props = defineProps<RemoteEditRequest & { standalone?: boolean }>();
+const emit = defineEmits<{
+  close: [];
+  status: [dirty: boolean, busy: boolean];
 }>();
-const emit = defineEmits<{ close: [] }>();
-const state = reactive({
-  document: null as api.TextDocument | null,
-  draft: "",
-  busy: false,
-  error: "",
-  message: "",
-  reviewing: false,
-  reviewedText: "",
-  discard: "" as "" | "close" | "reload",
-});
+const {
+  state,
+  dirty,
+  lines,
+  bytes,
+  requestClose,
+  requestReload,
+  confirmDiscard,
+  review,
+  save,
+  copyDraft,
+} = useRemoteTextDocument(
+  props,
+  !!props.standalone,
+  () => emit("close"),
+  (dirty, busy) => emit("status", dirty, busy),
+);
 const {
   document: remote,
   draft,
@@ -34,131 +37,13 @@ const {
   reviewedText,
   discard,
 } = toRefs(state);
-const dirty = computed(
-  () => !!state.document && state.draft !== state.document.text,
-);
-const lines = computed(() => state.draft.split("\n").length);
-const bytes = computed(() => new TextEncoder().encode(state.draft).length);
-const { copy } = useClipboard();
-let alive = true;
-let unlistenClose: (() => void) | undefined;
-async function load(): Promise<void> {
-  if (state.busy) return;
-  state.busy = true;
-  state.error = "";
-  state.message = "";
-  state.reviewing = false;
-  try {
-    const doc = await api.openText(props.sessionId, props.path);
-    if (!alive) {
-      void api.closeText(doc.id).catch(() => {});
-      return;
-    }
-    const previous = state.document;
-    state.document = doc;
-    state.draft = doc.text;
-    if (previous) void api.closeText(previous.id).catch(() => {});
-  } catch (error) {
-    if (alive) state.error = api.errorMessage(error);
-  } finally {
-    state.busy = false;
-  }
-}
-function review(): void {
-  if (!dirty.value || state.busy) return;
-  if (bytes.value > 1024 * 1024) {
-    state.error = "草稿超过 1 MB，请缩短后再保存";
-    return;
-  }
-  state.reviewedText = state.draft;
-  state.reviewing = true;
-  state.error = "";
-  state.message = "";
-}
-async function save(): Promise<void> {
-  if (!state.reviewing || !state.document || state.busy) return;
-  state.busy = true;
-  state.error = "";
-  try {
-    const doc = await api.saveText(state.document.id, state.reviewedText);
-    state.document = doc;
-    state.draft = doc.text;
-    state.reviewing = false;
-    state.message = doc.backupPath
-      ? `已保存。原内容备份：${doc.backupPath}`
-      : "内容没有变化";
-  } catch (error) {
-    state.error = api.errorMessage(error);
-    state.reviewing = false;
-  } finally {
-    state.busy = false;
-  }
-}
-function requestClose(): void {
-  if (!state.busy) {
-    if (dirty.value) state.discard = "close";
-    else emit("close");
-  }
-}
-function requestReload(): void {
-  if (dirty.value) state.discard = "reload";
-  else void load();
-}
-function confirmDiscard(): void {
-  const action = state.discard;
-  state.discard = "";
-  if (action === "close") emit("close");
-  else if (action === "reload") void load();
-}
-async function copyDraft(): Promise<void> {
-  try {
-    await copy(state.draft);
-    scheduleClipboardClear(state.draft);
-    state.message = "草稿已复制";
-  } catch (error) {
-    state.error = api.errorMessage(error);
-  }
-}
-useEventListener(window, "keydown", (event: KeyboardEvent) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!state.discard && !state.reviewing) review();
-  }
-});
-useEventListener(window, "beforeunload", (event: BeforeUnloadEvent) => {
-  if (dirty.value || state.busy) {
-    event.preventDefault();
-    event.returnValue = "";
-  }
-});
-onMounted(() => {
-  void load();
-  if (IS_TAURI)
-    void getCurrentWindow()
-      .onCloseRequested((event) => {
-        if (dirty.value || state.busy) {
-          event.preventDefault();
-          state.message =
-            "请先保存草稿，或关闭编辑器并确认放弃修改，再退出程序。";
-        }
-      })
-      .then((unlisten) => {
-        if (alive) unlistenClose = unlisten;
-        else unlisten();
-      })
-      .catch(() => {});
-});
-onBeforeUnmount(() => {
-  alive = false;
-  unlistenClose?.();
-  if (state.document) void api.closeText(state.document.id).catch(() => {});
-});
+defineExpose({ requestClose });
 </script>
 <template>
   <OperationDialog
     title="远端文本编辑器"
     wide
+    :standalone="standalone"
     :busy="busy"
     @close="requestClose"
   >
@@ -168,10 +53,11 @@ onBeforeUnmount(() => {
     </div>
     <div class="editor-toolbar">
       <span
-        >{{ dirty ? "未保存" : "已同步" }} · UTF-8{{
-          remote?.bom ? " BOM" : ""
+        >{{
+          busy ? "处理中" : !remote ? "未加载" : dirty ? "未保存" : "已同步"
         }}
-        · {{ remote?.lineEnding || "LF" }} · {{ lines }} 行 ·
+        · UTF-8{{ remote?.bom ? " BOM" : "" }} ·
+        {{ remote?.lineEnding || "LF" }} · {{ lines }} 行 ·
         {{ (bytes / 1024).toFixed(1) }} KB</span
       >
       <div class="flex-1" />
