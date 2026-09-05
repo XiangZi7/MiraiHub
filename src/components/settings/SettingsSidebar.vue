@@ -7,20 +7,29 @@ import type { SettingsPageId } from '@/types/settings'
 defineProps<{
   active: SettingsPageId
 }>()
-
 </script>
 
 <template>
   <aside class="settings-sidebar scroll-thin">
-    <nav class="space-y-1 p-3" aria-label="设置分类">
+    <nav
+      class="space-y-1 p-3"
+      aria-label="设置分类"
+    >
       <RouterLink
         v-for="page in SETTINGS_PAGES"
         :key="page.id"
         :to="{ name: 'settings', params: { section: page.id } }"
         :aria-current="active === page.id ? 'page' : undefined"
-        :class="['settings-nav-item', active === page.id && 'settings-nav-item-active']"
+        :class="[
+          'settings-nav-item',
+          active === page.id && 'settings-nav-item-active',
+        ]"
       >
-        <AppIcon :name="page.icon" :size="14" class="shrink-0" />
+        <AppIcon
+          :name="page.icon"
+          :size="14"
+          class="shrink-0"
+        />
         <span>{{ page.label }}</span>
       </RouterLink>
     </nav>
@@ -50,7 +59,9 @@ defineProps<{
   color: var(--color-txt-3);
   font-size: 11.5px;
   text-align: left;
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .settings-nav-item:hover,

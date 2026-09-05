@@ -7,41 +7,41 @@ import {
   toRefs,
   useTemplateRef,
   watch,
-} from "vue";
-import { useEventListener } from "@vueuse/core";
-import { storeToRefs } from "pinia";
-import { RouterView } from "vue-router";
-import BrandLogo from "@/components/ui/BrandLogo.vue";
-import IconButton from "@/components/ui/IconButton.vue";
-import AppResizeHandle from "@/components/ui/AppResizeHandle.vue";
-import SearchField from "@/components/ui/SearchField.vue";
-import WindowControls from "@/components/ui/WindowControls.vue";
-import WindowFrame from "@/components/ui/WindowFrame.vue";
-import WorkspaceTabBar from "@/components/workspace/WorkspaceTabBar.vue";
-import NavigationControls from "@/components/workspace/NavigationControls.vue";
-import AppSidebar from "@/components/workspace/AppSidebar.vue";
-import CommandPalette from "@/components/workspace/CommandPalette.vue";
-import NotificationCenter from "@/components/workspace/NotificationCenter.vue";
-import WorkspaceHelp from "@/components/workspace/WorkspaceHelp.vue";
-import TransferCenter from "@/components/workspace/TransferCenter.vue";
-import RemoteEditorHost from "@/components/operations/RemoteEditorHost.vue";
-import ServerOperations from "@/components/operations/ServerOperations.vue";
-import { useFullscreen } from "@/composables/useFullscreen";
-import { useWorkspaceNavigation } from "@/composables/useWorkspaceNavigation";
-import { provideWorkspaceControllers } from "@/composables/useWorkspaceControllers";
-import { useSettingsStore } from "@/stores/settings";
-import { useConnectionsStore } from "@/stores/connections";
-import { useWorkspaceStore } from "@/stores/workspace";
+} from 'vue'
+import { useEventListener } from '@vueuse/core'
+import { storeToRefs } from 'pinia'
+import { RouterView } from 'vue-router'
+import BrandLogo from '@/components/ui/BrandLogo.vue'
+import IconButton from '@/components/ui/IconButton.vue'
+import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
+import SearchField from '@/components/ui/SearchField.vue'
+import WindowControls from '@/components/ui/WindowControls.vue'
+import WindowFrame from '@/components/ui/WindowFrame.vue'
+import WorkspaceTabBar from '@/components/workspace/WorkspaceTabBar.vue'
+import NavigationControls from '@/components/workspace/NavigationControls.vue'
+import AppSidebar from '@/components/workspace/AppSidebar.vue'
+import CommandPalette from '@/components/workspace/CommandPalette.vue'
+import NotificationCenter from '@/components/workspace/NotificationCenter.vue'
+import WorkspaceHelp from '@/components/workspace/WorkspaceHelp.vue'
+import TransferCenter from '@/components/workspace/TransferCenter.vue'
+import RemoteEditorHost from '@/components/operations/RemoteEditorHost.vue'
+import ServerOperations from '@/components/operations/ServerOperations.vue'
+import { useFullscreen } from '@/composables/useFullscreen'
+import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
+import { provideWorkspaceControllers } from '@/composables/useWorkspaceControllers'
+import { useSettingsStore } from '@/stores/settings'
+import { useConnectionsStore } from '@/stores/connections'
+import { useWorkspaceStore } from '@/stores/workspace'
 import {
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_MAX_WIDTH,
   useWorkspaceLayoutStore,
-} from "@/stores/workspace-layout";
-import { toast } from "@/composables/useToast";
-import { COMMAND_TARGETS } from "@/constants/workspace";
-import type { CommandItem } from "@/types";
-import { isDatabaseConnection, type SavedConnection } from "@/types/connection";
-import { formatShortcut, matchesShortcut } from "@/utils/shortcut";
+} from '@/stores/workspace-layout'
+import { toast } from '@/composables/useToast'
+import { COMMAND_TARGETS } from '@/constants/workspace'
+import type { CommandItem } from '@/types'
+import { isDatabaseConnection, type SavedConnection } from '@/types/connection'
+import { formatShortcut, matchesShortcut } from '@/utils/shortcut'
 import {
   appReady,
   launchAtStartupEnabled,
@@ -52,169 +52,172 @@ import {
   setTrayVisible,
   setWindowMaterial,
   toggleMaximizeWindow,
-} from "@/utils/window";
+} from '@/utils/window'
 
-const settings = useSettingsStore().values;
-const connections = useConnectionsStore();
-const workspace = useWorkspaceStore();
-const openTabs = workspace.tabs;
-const { activeId, active: activeTab } = storeToRefs(workspace);
-const { reorder: reorderWorkspaceTabs } = workspace;
-const layout = useWorkspaceLayoutStore();
-const { sidebarWidth, sidebarCollapsed, machineOpen } = storeToRefs(layout);
+const settings = useSettingsStore().values
+const connections = useConnectionsStore()
+const workspace = useWorkspaceStore()
+const openTabs = workspace.tabs
+const { activeId, active: activeTab } = storeToRefs(workspace)
+const { reorder: reorderWorkspaceTabs } = workspace
+const layout = useWorkspaceLayoutStore()
+const { sidebarWidth, sidebarCollapsed, machineOpen } = storeToRefs(layout)
 const { activeNav, selectNav, openConnection, selectTab, followActiveTab } =
-  useWorkspaceNavigation();
-const controllers = provideWorkspaceControllers();
-const { fullscreen, toggleFullscreen } = useFullscreen();
-const searchRef = useTemplateRef<InstanceType<typeof SearchField>>("search");
-const state = reactive({ keyword: "", paletteOpen: false });
-const { keyword, paletteOpen } = toRefs(state);
+  useWorkspaceNavigation()
+const controllers = provideWorkspaceControllers()
+const { fullscreen, toggleFullscreen } = useFullscreen()
+const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
+const state = reactive({ keyword: '', paletteOpen: false })
+const { keyword, paletteOpen } = toRefs(state)
 const activeSshTab = computed(() =>
-  activeTab.value?.connection.kind === "ssh" ? activeTab.value : undefined,
-);
+  activeTab.value?.connection.kind === 'ssh' ? activeTab.value : undefined
+)
 const activeTerminalTab = computed(() =>
-  ["ssh", "local"].includes(activeTab.value?.connection.kind ?? "")
+  ['ssh', 'local'].includes(activeTab.value?.connection.kind ?? '')
     ? activeTab.value
-    : undefined,
-);
+    : undefined
+)
 
 onMounted(() => {
-  void appReady();
-});
+  void appReady()
+})
 watch(
   () => settings.windowMaterial,
-  (material) => void setWindowMaterial(material),
-  { immediate: true },
-);
+  material => void setWindowMaterial(material),
+  { immediate: true }
+)
 watch(
   () => [settings.showTrayIcon, settings.minimizeToTray] as const,
   ([showTray, minimize]) => {
-    void setTrayVisible(showTray);
-    void setMinimizeToTray(showTray && minimize);
+    void setTrayVisible(showTray)
+    void setMinimizeToTray(showTray && minimize)
   },
-  { immediate: true },
-);
+  { immediate: true }
+)
 watch(
   () => settings.launchAtStartup,
-  async (enabled) => {
+  async enabled => {
     try {
       if ((await launchAtStartupEnabled()) !== enabled)
-        await setLaunchAtStartup(enabled);
+        await setLaunchAtStartup(enabled)
     } catch (error) {
-      toast.error({ title: "更新开机启动失败", description: String(error) });
+      toast.error({ title: '更新开机启动失败', description: String(error) })
     }
   },
-  { immediate: true },
-);
+  { immediate: true }
+)
 
 watch(
-  () => connections.items.map((item) => item.id),
-  (ids) => {
-    if (!connections.loaded) return;
-    const alive = new Set(ids);
+  () => connections.items.map(item => item.id),
+  ids => {
+    if (!connections.loaded) return
+    const alive = new Set(ids)
     const removed = openTabs
-      .filter((tab) => !alive.has(tab.id))
-      .map((tab) => tab.id);
-    if (removed.length) closeTabs(removed);
-  },
-);
+      .filter(tab => !alive.has(tab.id))
+      .map(tab => tab.id)
+    if (removed.length) closeTabs(removed)
+  }
+)
 
 function handleTitleBarDblClick(event: MouseEvent): void {
-  if ((event.target as HTMLElement).hasAttribute("data-tauri-drag-region"))
-    toggleMaximizeWindow();
+  if ((event.target as HTMLElement).hasAttribute('data-tauri-drag-region'))
+    toggleMaximizeWindow()
 }
 function addConnection(): void {
-  openConnectionWindow(activeNav.value === "databases" ? "database" : "ssh");
+  openConnectionWindow(activeNav.value === 'databases' ? 'database' : 'ssh')
 }
 function closeTabs(ids: string[]): void {
-  const wasActive = ids.includes(activeId.value);
-  workspace.closeMany(ids);
-  if (wasActive) void followActiveTab();
+  const wasActive = ids.includes(activeId.value)
+  workspace.closeMany(ids)
+  if (wasActive) void followActiveTab()
 }
 function closeWarning(ids: string[]): string {
-  return controllers.get("databases")?.closeWarning?.(ids) ?? "";
+  return controllers.get('databases')?.closeWarning?.(ids) ?? ''
 }
 async function newDatabaseQuery(connection: SavedConnection): Promise<void> {
-  if (!isDatabaseConnection(connection)) return;
-  await openConnection(connection);
-  await nextTick();
+  if (!isDatabaseConnection(connection)) return
+  await openConnection(connection)
+  await nextTick()
   await controllers
-    .get("databases")
-    ?.newQuery?.(connection.id, connection.settings.database);
+    .get('databases')
+    ?.newQuery?.(connection.id, connection.settings.database)
 }
 function refreshImportedDatabase(id: string): void {
-  controllers.get("databases")?.refreshDatabase?.(id);
+  controllers.get('databases')?.refreshDatabase?.(id)
 }
 async function tabAction(id: string, action: string): Promise<void> {
-  const tab = openTabs.find((tab) => tab.id === id);
-  if (!tab) return;
+  const tab = openTabs.find(tab => tab.id === id)
+  if (!tab) return
   try {
-    await selectTab(id);
-    await nextTick();
+    await selectTab(id)
+    await nextTick()
     await controllers
-      .get(isDatabaseConnection(tab.connection) ? "databases" : "servers")
-      ?.action?.(id, action);
+      .get(isDatabaseConnection(tab.connection) ? 'databases' : 'servers')
+      ?.action?.(id, action)
   } catch (error) {
-    toast.error({ title: "连接操作失败", description: String(error) });
+    toast.error({ title: '连接操作失败', description: String(error) })
   }
 }
 async function runWorkspaceAction(action: string): Promise<void> {
-  if (action === "database") {
-    openConnectionWindow("database");
-    return;
+  if (action === 'database') {
+    openConnectionWindow('database')
+    return
   }
-  const tab = activeSshTab.value;
+  const tab = activeSshTab.value
   if (!tab) {
-    toast.info("请先打开一个 SSH 连接");
-    return;
+    toast.info('请先打开一个 SSH 连接')
+    return
   }
-  await tabAction(tab.id, action);
+  await tabAction(tab.id, action)
 }
 async function runCommand(item: CommandItem): Promise<void> {
-  if (item.id === "split-terminal") {
-    await runWorkspaceAction("split");
-    return;
+  if (item.id === 'split-terminal') {
+    await runWorkspaceAction('split')
+    return
   }
-  if (item.id === "upload-files") {
-    await runWorkspaceAction("upload");
-    return;
+  if (item.id === 'upload-files') {
+    await runWorkspaceAction('upload')
+    return
   }
-  const target = COMMAND_TARGETS[item.id];
-  if (!target) return;
+  const target = COMMAND_TARGETS[item.id]
+  if (!target) return
   if (target.newConnection) {
-    openConnectionWindow(target.newConnection);
-    return;
+    openConnectionWindow(target.newConnection)
+    return
   }
-  if (target.nav) await selectNav(target.nav);
+  if (target.nav) await selectNav(target.nav)
   if (target.machineView) {
-    layout.machineOpen = true;
-    layout.machineView = target.machineView;
+    layout.machineOpen = true
+    layout.machineView = target.machineView
   }
-  if (target.focusSearch) await nextTick(() => searchRef.value?.focus());
+  if (target.focusSearch) await nextTick(() => searchRef.value?.focus())
 }
 function resetLayout(): void {
-  layout.reset();
-  toast.success("已恢复默认布局");
+  layout.reset()
+  toast.success('已恢复默认布局')
 }
-useEventListener(window, "keydown", (event: KeyboardEvent) => {
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (matchesShortcut(event, settings.shortcutPalette)) {
-    event.preventDefault();
-    state.paletteOpen = !state.paletteOpen;
+    event.preventDefault()
+    state.paletteOpen = !state.paletteOpen
   } else if (matchesShortcut(event, settings.shortcutTerminal)) {
-    event.preventDefault();
-    openConnectionWindow("local");
+    event.preventDefault()
+    openConnectionWindow('local')
   } else if (matchesShortcut(event, settings.shortcutSearch)) {
-    event.preventDefault();
-    void nextTick(() => searchRef.value?.focus());
+    event.preventDefault()
+    void nextTick(() => searchRef.value?.focus())
   } else if (matchesShortcut(event, settings.shortcutFiles)) {
-    event.preventDefault();
-    void runWorkspaceAction("files");
-  } else if (event.key === "Escape") state.paletteOpen = false;
-});
+    event.preventDefault()
+    void runWorkspaceAction('files')
+  } else if (event.key === 'Escape') state.paletteOpen = false
+})
 </script>
 
 <template>
-  <WindowFrame ambient class="h-screen w-screen">
+  <WindowFrame
+    ambient
+    class="h-screen w-screen"
+  >
     <!-- 标题栏：Windows 形态 —— 品牌在左，窗口按钮贴右上角。
          带 data-tauri-drag-region 的区域可拖拽，按钮本身不带故不受影响 -->
     <header
@@ -222,15 +225,21 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
       data-tauri-drag-region
       @dblclick="handleTitleBarDblClick"
     >
-      <div class="flex items-center gap-2" data-tauri-drag-region>
+      <div
+        class="flex items-center gap-2"
+        data-tauri-drag-region
+      >
         <BrandLogo />
-        <h1 class="text-[13px] font-medium tracking-tight text-txt">
+        <h1 class="text-txt text-[13px] font-medium tracking-tight">
           MiraiHub
         </h1>
       </div>
 
       <NavigationControls />
-      <div class="flex-1" data-tauri-drag-region />
+      <div
+        class="flex-1"
+        data-tauri-drag-region
+      />
 
       <SearchField
         ref="search"
@@ -258,7 +267,7 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
 
         <button
           type="button"
-          class="ml-1 size-7 shrink-0 rounded-full border border-line-strong"
+          class="border-line-strong ml-1 size-7 shrink-0 rounded-full border"
           style="
             background: linear-gradient(
               140deg,
@@ -299,7 +308,7 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
       <div class="flex min-w-0 flex-1 flex-col">
         <!-- 连接标签栏 -->
         <div
-          class="flex h-11 shrink-0 items-end gap-2 border-b border-line-soft px-2.5"
+          class="border-line-soft flex h-11 shrink-0 items-end gap-2 border-b px-2.5"
         >
           <WorkspaceTabBar
             :active="activeId"
@@ -339,7 +348,10 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
         <div class="flex min-h-0 flex-1 p-2.5">
           <RouterView v-slot="{ Component, route }">
             <KeepAlive>
-              <component :is="Component" :key="route.name" />
+              <component
+                :is="Component"
+                :key="route.name"
+              />
             </KeepAlive>
           </RouterView>
         </div>
@@ -355,7 +367,10 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
         class="absolute inset-0 z-50 flex justify-center bg-black/45 pt-[13vh]"
         @click.self="paletteOpen = false"
       >
-        <CommandPalette @close="paletteOpen = false" @run="runCommand" />
+        <CommandPalette
+          @close="paletteOpen = false"
+          @run="runCommand"
+        />
       </div>
     </Transition>
   </WindowFrame>

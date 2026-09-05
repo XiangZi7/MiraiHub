@@ -50,8 +50,7 @@ function selectKind(kind: SshKeyKind): void {
 
   form.kind = kind
 
-  if (wasDefault)
-    form.label = DEFAULT_LABELS[kind]
+  if (wasDefault) form.label = DEFAULT_LABELS[kind]
 }
 
 /** 校验并提交 */
@@ -107,28 +106,35 @@ defineExpose({ fail })
     description="密钥会写入 ~/.ssh，私钥不会离开本机"
     @close="emit('close')"
   >
-    <form class="grid gap-3.5" @submit.prevent="submit">
+    <form
+      class="grid gap-3.5"
+      @submit.prevent="submit"
+    >
       <!-- 算法 -->
       <fieldset class="space-y-1.5">
-        <legend class="text-[11px] font-medium text-txt-2">
-          算法
-        </legend>
-        <div class="grid grid-cols-3 gap-2" role="radiogroup" aria-label="密钥算法">
+        <legend class="text-txt-2 text-[11px] font-medium">算法</legend>
+        <div
+          class="grid grid-cols-3 gap-2"
+          role="radiogroup"
+          aria-label="密钥算法"
+        >
           <AppButton
             v-for="option in SSH_KEY_KIND_OPTIONS"
             :key="option.value"
             role="radio"
             :aria-checked="form.kind === option.value"
-            :class="cn(
-              'h-auto flex-col !items-start !gap-0.5 !px-2.5 !py-2 text-left',
-              form.kind === option.value
-                ? '!border-violet/60 !bg-violet/12 !text-txt'
-                : 'text-txt-3',
-            )"
+            :class="
+              cn(
+                'h-auto flex-col !items-start !gap-0.5 !px-2.5 !py-2 text-left',
+                form.kind === option.value
+                  ? '!border-violet/60 !bg-violet/12 !text-txt'
+                  : 'text-txt-3'
+              )
+            "
             @click="selectKind(option.value)"
           >
             <span class="text-[11.5px] font-medium">{{ option.label }}</span>
-            <span class="text-[10px] text-txt-4">{{ option.hint }}</span>
+            <span class="text-txt-4 text-[10px]">{{ option.hint }}</span>
           </AppButton>
         </div>
       </fieldset>
@@ -141,22 +147,29 @@ defineExpose({ fail })
       />
 
       <!-- RSA 位数 -->
-      <fieldset v-if="showBits" class="space-y-1.5">
-        <legend class="text-[11px] font-medium text-txt-2">
-          位数
-        </legend>
-        <div class="flex gap-2" role="radiogroup" aria-label="RSA 密钥位数">
+      <fieldset
+        v-if="showBits"
+        class="space-y-1.5"
+      >
+        <legend class="text-txt-2 text-[11px] font-medium">位数</legend>
+        <div
+          class="flex gap-2"
+          role="radiogroup"
+          aria-label="RSA 密钥位数"
+        >
           <AppButton
             v-for="bits in RSA_BITS_OPTIONS"
             :key="bits"
             role="radio"
             :aria-checked="form.bits === bits"
-            :class="cn(
-              'flex-1 text-[11.5px]',
-              form.bits === bits
-                ? '!border-violet/60 !bg-violet/12 !text-txt'
-                : 'text-txt-3',
-            )"
+            :class="
+              cn(
+                'flex-1 text-[11.5px]',
+                form.bits === bits
+                  ? '!border-violet/60 !bg-violet/12 !text-txt'
+                  : 'text-txt-3'
+              )
+            "
             @click="form.bits = bits"
           >
             {{ bits }}
@@ -190,19 +203,20 @@ defineExpose({ fail })
       <!-- 不设口令的风险要说明白：私钥文件被拿走就等于服务器被拿走 -->
       <p
         v-if="!form.passphrase"
-        class="card flex items-start gap-1.5 border-amber/25 bg-amber/8 px-2.5 py-2 text-[11px] text-amber"
+        class="card border-amber/25 bg-amber/8 text-amber flex items-start gap-1.5 px-2.5 py-2 text-[11px]"
       >
-        <AppIcon name="lucide:triangle-alert" :size="13" class="mt-px shrink-0" />
+        <AppIcon
+          name="lucide:triangle-alert"
+          :size="13"
+          class="mt-px shrink-0"
+        />
         <span>不设口令的私钥，任何拿到文件的人都能直接登录你的服务器</span>
       </p>
-
     </form>
 
     <template #footer>
       <div class="flex-1" />
-      <AppButton @click="emit('close')">
-        取消
-      </AppButton>
+      <AppButton @click="emit('close')"> 取消 </AppButton>
       <AppButton
         variant="primary"
         :disabled="submitting"

@@ -30,22 +30,26 @@ const shortcuts = computed(() => [
     @click="open = true"
   />
   <Teleport to="body">
-    <AppDialog v-if="open" title="帮助与快捷键" @close="open = false">
-      <p class="mb-3 text-xs leading-relaxed text-txt-3">
+    <AppDialog
+      v-if="open"
+      title="帮助与快捷键"
+      @close="open = false"
+    >
+      <p class="text-txt-3 mb-3 text-xs leading-relaxed">
         点击左侧连接打开会话。SSH
         工作区右侧可切换系统概览和文件；文件支持双击打开、右键操作及拖入上传。
       </p>
-      <dl class="divide-y divide-line-soft">
+      <dl class="divide-line-soft divide-y">
         <div
           v-for="[label, keys] in shortcuts"
           :key="label"
           class="flex justify-between gap-4 py-2 text-xs"
         >
           <dt class="text-txt-2">{{ label }}</dt>
-          <dd class="font-mono text-txt-3">{{ keys }}</dd>
+          <dd class="text-txt-3 font-mono">{{ keys }}</dd>
         </div>
       </dl>
-      <p class="mt-3 text-[11px] leading-relaxed text-txt-3">
+      <p class="text-txt-3 mt-3 text-[11px] leading-relaxed">
         设置 → 外观可调整全局字体与界面大小；设置 →
         终端可单独调整终端字号。全局快捷键可在设置中自定义。
       </p>

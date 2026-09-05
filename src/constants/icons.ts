@@ -15,15 +15,15 @@ export const MIRAI_ICONS: IconifyJSON = {
   height: 24,
   icons: {
     /** 实心文件夹：左上一段 tab，主体从 y=6.8 起 */
-    'folder': {
+    folder: {
       body: '<path fill="currentColor" d="M4 4h4.7a2 2 0 0 1 1.6.8l1.2 1.6a1 1 0 0 0 .8.4H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/>',
     },
 
     /** 实心文件：主体 + 半透明折角，靠调用方的文字色区分类型 */
-    'file': {
+    file: {
       body:
-        '<path fill="currentColor" d="M6 2h7v5a2 2 0 0 0 2 2h5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/>'
-        + '<path fill="currentColor" opacity=".5" d="M14 2.3 19.7 8H15.5A1.5 1.5 0 0 1 14 6.5V2.3Z"/>',
+        '<path fill="currentColor" d="M6 2h7v5a2 2 0 0 0 2 2h5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/>' +
+        '<path fill="currentColor" opacity=".5" d="M14 2.3 19.7 8H15.5A1.5 1.5 0 0 1 14 6.5V2.3Z"/>',
     },
 
     /** 窗口最小化：一条水平细线 */
@@ -39,8 +39,8 @@ export const MIRAI_ICONS: IconifyJSON = {
     /** 窗口还原：两层错位方框 */
     'win-restore': {
       body:
-        '<path fill="none" stroke="currentColor" stroke-width="1.1" d="M6.5 9.5h8v8h-8z"/>'
-        + '<path fill="none" stroke="currentColor" stroke-width="1.1" d="M9.5 9.5v-3h8v8h-3"/>',
+        '<path fill="none" stroke="currentColor" stroke-width="1.1" d="M6.5 9.5h8v8h-8z"/>' +
+        '<path fill="none" stroke="currentColor" stroke-width="1.1" d="M9.5 9.5v-3h8v8h-3"/>',
     },
 
     /** 窗口关闭：直角叉 */

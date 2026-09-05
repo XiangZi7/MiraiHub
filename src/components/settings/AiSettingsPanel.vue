@@ -1,24 +1,24 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, toRefs } from "vue";
-import * as api from "@/api/agent";
-import AppButton from "@/components/ui/AppButton.vue";
-import AppSwitch from "@/components/ui/AppSwitch.vue";
-import AppIcon from "@/components/ui/AppIcon.vue";
-import { IS_TAURI } from "@/utils/window";
+import { onBeforeUnmount, onMounted, reactive, toRefs } from 'vue'
+import * as api from '@/api/agent'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import { IS_TAURI } from '@/utils/window'
 
 // 密钥仅存在于此输入框，保存后立即清空；不会回填已存储的密钥。
 const state = reactive({
   enabled: false,
-  baseUrl: "https://api.openai.com/v1",
-  model: "",
-  apiKey: "",
+  baseUrl: 'https://api.openai.com/v1',
+  model: '',
+  apiKey: '',
   hasApiKey: false,
   clearKey: false,
   busy: false,
   loading: true,
-  error: "",
-  message: "",
-});
+  error: '',
+  message: '',
+})
 const {
   enabled,
   baseUrl,
@@ -30,24 +30,24 @@ const {
   loading,
   error,
   message,
-} = toRefs(state);
+} = toRefs(state)
 onMounted(async () => {
   try {
-    if (IS_TAURI) Object.assign(state, await api.getConfig());
+    if (IS_TAURI) Object.assign(state, await api.getConfig())
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   } finally {
-    state.loading = false;
+    state.loading = false
   }
-});
+})
 onBeforeUnmount(() => {
-  state.apiKey = "";
-});
+  state.apiKey = ''
+})
 async function save(test = false): Promise<void> {
-  if (state.busy || state.loading) return;
-  state.busy = true;
-  state.error = "";
-  state.message = "";
+  if (state.busy || state.loading) return
+  state.busy = true
+  state.error = ''
+  state.message = ''
   try {
     const config = await api.saveConfig(
       {
@@ -56,24 +56,27 @@ async function save(test = false): Promise<void> {
         model: state.model,
         apiKey: state.apiKey,
       },
-      state.clearKey,
-    );
-    Object.assign(state, config);
-    state.apiKey = "";
-    state.clearKey = false;
-    state.message = "AI 设置已保存，之前的运行与待审批操作已停止。";
-    if (test) state.message = await api.testConfig();
+      state.clearKey
+    )
+    Object.assign(state, config)
+    state.apiKey = ''
+    state.clearKey = false
+    state.message = 'AI 设置已保存，之前的运行与待审批操作已停止。'
+    if (test) state.message = await api.testConfig()
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   } finally {
-    state.busy = false;
+    state.busy = false
   }
 }
-defineExpose({ save });
+defineExpose({ save })
 </script>
 
 <template>
-  <section class="ai-settings" aria-labelledby="ai-settings-title">
+  <section
+    class="ai-settings"
+    aria-labelledby="ai-settings-title"
+  >
     <div
       class="ai-settings-scroll scroll-thin"
       role="region"
@@ -82,14 +85,21 @@ defineExpose({ save });
     >
       <div class="ai-settings-content">
         <header class="ai-settings-heading">
-          <AppIcon name="lucide:bot" :size="21" class="text-accent" />
+          <AppIcon
+            name="lucide:bot"
+            :size="21"
+            class="text-accent"
+          />
           <h2 id="ai-settings-title">AI Agent</h2>
           <span class="beta">BETA</span>
         </header>
         <p class="subtitle">
           在 SSH 终端与数据库旁协作，所有增删改操作逐次审批。
         </p>
-        <p v-if="!IS_TAURI" class="notice">
+        <p
+          v-if="!IS_TAURI"
+          class="notice"
+        >
           浏览器仅预览界面。请在桌面程序中配置和使用 AI。
         </p>
         <fieldset
@@ -113,7 +123,10 @@ defineExpose({ save });
               spellcheck="false"
               aria-describedby="ai-base-url-help"
             />
-            <p id="ai-base-url-help" class="ai-field-help">
+            <p
+              id="ai-base-url-help"
+              class="ai-field-help"
+            >
               兼容 OpenAI Chat Completions 与工具调用；填写基础地址，例如以 /v1
               结尾。
             </p>
@@ -133,7 +146,11 @@ defineExpose({ save });
           <div class="ai-setting-field">
             <div class="ai-key-label">
               <label for="ai-api-key">API Key</label
-              ><span v-if="hasApiKey" class="text-success">已安全保存</span>
+              ><span
+                v-if="hasApiKey"
+                class="text-success"
+                >已安全保存</span
+              >
             </div>
             <input
               id="ai-api-key"
@@ -150,18 +167,29 @@ defineExpose({ save });
               :disabled="clearKey"
               aria-describedby="ai-key-help"
             />
-            <p id="ai-key-help" class="ai-field-help">
+            <p
+              id="ai-key-help"
+              class="ai-field-help"
+            >
               Windows 用户级加密存储，不进入聊天或普通设置备份。
             </p>
           </div>
           <label
             v-if="hasApiKey"
-            class="flex items-center gap-2 text-[11px] text-txt-3"
-            ><input v-model="clearKey" type="checkbox" />保存时清除旧密钥</label
+            class="text-txt-3 flex items-center gap-2 text-[11px]"
+            ><input
+              v-model="clearKey"
+              type="checkbox"
+            />保存时清除旧密钥</label
           >
         </fieldset>
         <div class="security-rules">
-          <h3><AppIcon name="lucide:shield-check" :size="14" />固定安全规则</h3>
+          <h3>
+            <AppIcon
+              name="lucide:shield-check"
+              :size="14"
+            />固定安全规则
+          </h3>
           <ul>
             <li>服务器状态探针、数据库结构读取可自动执行。</li>
             <li>任意自定义 Shell、SQL 均需审批；无“全部允许”。</li>
@@ -200,7 +228,7 @@ defineExpose({ save });
         <AppButton
           :disabled="busy || loading || !IS_TAURI || !enabled"
           @click="save(true)"
-          >{{ busy ? "处理中…" : "保存并测试连接" }}</AppButton
+          >{{ busy ? '处理中…' : '保存并测试连接' }}</AppButton
         >
       </div>
       <p class="ai-field-help">

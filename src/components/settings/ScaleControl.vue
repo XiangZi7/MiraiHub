@@ -27,7 +27,7 @@ function change(amount: number): void {
       @click="change(-UI_SCALE_STEP)"
     />
     <output
-      class="w-12 text-center font-mono text-xs text-txt"
+      class="text-txt w-12 text-center font-mono text-xs"
       aria-live="polite"
       >{{ percent }}%</output
     >

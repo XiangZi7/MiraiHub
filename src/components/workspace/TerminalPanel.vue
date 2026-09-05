@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  shallowRef,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
@@ -59,7 +66,11 @@ const {
 } = useSshTerminal()
 
 const completionEnabled = computed(() => status.value === 'connected')
-const completion = useSshShellCompletion({ sessionId, inputLine, enabled: completionEnabled })
+const completion = useSshShellCompletion({
+  sessionId,
+  inputLine,
+  enabled: completionEnabled,
+})
 const completionAnchor = shallowRef({
   left: 12,
   top: 40 as number | undefined,
@@ -78,19 +89,25 @@ let reconnectAttempts = 0
 let intentionalReconnect = false
 
 /** 状态变化即上报，让标签页的状态点跟着走 */
-watch(status, (value, previous) => {
-  emit('status', value, sessionId.value)
-  if (value === 'connected') {
-    reconnectAttempts = 0
-    if (reconnectTimer)
-      clearTimeout(reconnectTimer)
-    reconnectTimer = undefined
-  }
-  else if (!intentionalReconnect && previous === 'connected' && value === 'disconnected') {
-    scheduleAutoReconnect()
-  }
-}, { immediate: true })
-watch(error, (message) => {
+watch(
+  status,
+  (value, previous) => {
+    emit('status', value, sessionId.value)
+    if (value === 'connected') {
+      reconnectAttempts = 0
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      reconnectTimer = undefined
+    } else if (
+      !intentionalReconnect &&
+      previous === 'connected' &&
+      value === 'disconnected'
+    ) {
+      scheduleAutoReconnect()
+    }
+  },
+  { immediate: true }
+)
+watch(error, message => {
   if (message) toast.error({ title: 'SSH 终端连接失败', description: message })
 })
 
@@ -98,7 +115,11 @@ watch(error, (message) => {
 const statusMeta = computed(() => {
   switch (status.value) {
     case 'connected':
-      return { text: 'Connected', tone: 'text-success', dot: 'success' as const }
+      return {
+        text: 'Connected',
+        tone: 'text-success',
+        dot: 'success' as const,
+      }
     case 'connecting':
       return { text: 'Connecting…', tone: 'text-amber', dot: 'amber' as const }
     default:
@@ -108,8 +129,7 @@ const statusMeta = computed(() => {
 
 /** 标题栏展示的目标 */
 const endpoint = computed(() => {
-  if (!props.config)
-    return '未选择服务器'
+  if (!props.config) return '未选择服务器'
 
   return props.title || `${props.config.username}@${props.config.host}`
 })
@@ -119,8 +139,7 @@ const endpoint = computed(() => {
  * 这样连接完成后提示会真正移除，重连也不会把它夹在远端输出中间。
  */
 const connectingText = computed(() => {
-  if (!props.config)
-    return ''
+  if (!props.config) return ''
 
   return `正在连接 ${props.config.username}@${props.config.host}:${props.config.port} …`
 })
@@ -131,11 +150,14 @@ const connectingText = computed(() => {
  * 比较配置内容，避免标签列表重新计算出的同值对象触发其他终端重连。
  */
 watch(
-  [containerRef, () => JSON.stringify([props.config, props.terminalType, props.startupCommand])],
+  [
+    containerRef,
+    () =>
+      JSON.stringify([props.config, props.terminalType, props.startupCommand]),
+  ],
   async ([container]) => {
     const config = props.config
-    if (!config || !container)
-      return
+    if (!config || !container) return
 
     if (!mounted) {
       mount(container)
@@ -148,15 +170,13 @@ watch(
         terminalType: props.terminalType,
         startupCommand: props.startupCommand,
       })
-    }
-    catch {
+    } catch {
       // 失败原因已经写进终端并存到 composable 的 error，这里只是别让 rejection 逃逸
-    }
-    finally {
+    } finally {
       intentionalReconnect = false
     }
   },
-  { immediate: true, flush: 'post' },
+  { immediate: true, flush: 'post' }
 )
 
 /**
@@ -179,8 +199,7 @@ function updateCompletionAnchor(): void {
   const terminal = term.value
   const area = terminalAreaRef.value
   const screen = terminal?.element?.querySelector<HTMLElement>('.xterm-screen')
-  if (!terminal || !area || !screen || !completion.open.value)
-    return
+  if (!terminal || !area || !screen || !completion.open.value) return
 
   const areaRect = area.getBoundingClientRect()
   const screenRect = screen.getBoundingClientRect()
@@ -188,11 +207,12 @@ function updateCompletionAnchor(): void {
   const cellHeight = screenRect.height / Math.max(terminal.rows, 1)
   const tokenLength = [...currentToken(inputLine.value)].length
   const tokenColumn = Math.max(0, terminal.buffer.active.cursorX - tokenLength)
-  const cursorTop = screenRect.top - areaRect.top + terminal.buffer.active.cursorY * cellHeight
+  const cursorTop =
+    screenRect.top - areaRect.top + terminal.buffer.active.cursorY * cellHeight
   const desiredWidth = Math.min(440, Math.max(260, areaRect.width - 24))
   const left = Math.min(
     Math.max(12, screenRect.left - areaRect.left + tokenColumn * cellWidth),
-    Math.max(12, areaRect.width - desiredWidth - 12),
+    Math.max(12, areaRect.width - desiredWidth - 12)
   )
   const belowTop = cursorTop + cellHeight + 5
   const roomBelow = areaRect.height - belowTop - 10
@@ -210,34 +230,45 @@ function updateCompletionAnchor(): void {
 }
 
 watch(
-  [() => completion.open.value, inputLine, () => completion.suggestions.value.length],
+  [
+    () => completion.open.value,
+    inputLine,
+    () => completion.suggestions.value.length,
+  ],
   ([isOpen]) => {
-    if (isOpen)
-      void nextTick(scheduleCompletionAnchorUpdate)
-  },
+    if (isOpen) void nextTick(scheduleCompletionAnchorUpdate)
+  }
 )
 
-watch(term, (terminal, _previous, onCleanup) => {
-  const disposable = terminal?.onCursorMove(scheduleCompletionAnchorUpdate)
-  onCleanup(() => disposable?.dispose())
-}, { immediate: true })
+watch(
+  term,
+  (terminal, _previous, onCleanup) => {
+    const disposable = terminal?.onCursorMove(scheduleCompletionAnchorUpdate)
+    onCleanup(() => disposable?.dispose())
+  },
+  { immediate: true }
+)
 
 onBeforeUnmount(() => {
   disposed = true
   cancelAnimationFrame(anchorFrame)
-  if (reconnectTimer)
-    clearTimeout(reconnectTimer)
+  if (reconnectTimer) clearTimeout(reconnectTimer)
 })
 
 function scheduleAutoReconnect(): void {
-  if (disposed || !settings.autoReconnect || !props.config || reconnectAttempts >= 3 || reconnectTimer)
+  if (
+    disposed ||
+    !settings.autoReconnect ||
+    !props.config ||
+    reconnectAttempts >= 3 ||
+    reconnectTimer
+  )
     return
 
   reconnectAttempts += 1
   reconnectTimer = setTimeout(async () => {
     reconnectTimer = undefined
-    if (disposed || !settings.autoReconnect || !props.config)
-      return
+    if (disposed || !settings.autoReconnect || !props.config) return
     await connect(props.config, {
       terminalType: props.terminalType,
       startupCommand: props.startupCommand,
@@ -247,12 +278,10 @@ function scheduleAutoReconnect(): void {
 
 /** 重连：先断干净再按原配置连一次 */
 async function reconnect(): Promise<void> {
-  if (!props.config)
-    return
+  if (!props.config) return
 
   reconnectAttempts = 0
-  if (reconnectTimer)
-    clearTimeout(reconnectTimer)
+  if (reconnectTimer) clearTimeout(reconnectTimer)
   reconnectTimer = undefined
 
   intentionalReconnect = true
@@ -261,9 +290,8 @@ async function reconnect(): Promise<void> {
       terminalType: props.terminalType,
       startupCommand: props.startupCommand,
     })
-  }
-  catch {}
-  finally {
+  } catch {
+  } finally {
     intentionalReconnect = false
   }
 }
@@ -272,8 +300,11 @@ async function disconnectSession(): Promise<void> {
   intentionalReconnect = true
   if (reconnectTimer) clearTimeout(reconnectTimer)
   reconnectTimer = undefined
-  try { await disconnect() }
-  finally { intentionalReconnect = false }
+  try {
+    await disconnect()
+  } finally {
+    intentionalReconnect = false
+  }
 }
 
 function currentToken(line: string): string {
@@ -281,23 +312,21 @@ function currentToken(line: string): string {
 }
 
 function acceptSuggestion(item = completion.activeSuggestion.value): void {
-  if (!item)
-    return
+  if (!item) return
 
   const token = currentToken(inputLine.value)
   if (!item.value.toLocaleLowerCase().startsWith(token.toLocaleLowerCase()))
     return
 
-  const suffix = item.value.slice(token.length)
-    + (item.kind === 'directory' ? '' : ' ')
+  const suffix =
+    item.value.slice(token.length) + (item.kind === 'directory' ? '' : ' ')
   sendInput(suffix)
   completion.close()
   term.value?.focus()
 }
 
 function interceptTerminalInput(data: string): boolean {
-  if (!completion.open.value)
-    return false
+  if (!completion.open.value) return false
 
   if (data === '\t') {
     acceptSuggestion()
@@ -321,38 +350,67 @@ function interceptTerminalInput(data: string): boolean {
 
 setInputInterceptor(interceptTerminalInput)
 setSubmitHandler(line => void completion.trackSubmittedCommand(line))
-defineExpose({ focus: () => term.value?.focus(), reconnect, disconnect: disconnectSession })
+defineExpose({
+  focus: () => term.value?.focus(),
+  reconnect,
+  disconnect: disconnectSession,
+})
 </script>
 
 <template>
-  <section class="pane min-w-0 flex-1 bg-terminal">
+  <section class="pane bg-terminal min-w-0 flex-1">
     <!-- 会话工具条 -->
-    <div class="flex min-h-9 shrink-0 items-center gap-2.5 border-b border-line-soft px-3">
+    <div
+      class="border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
+    >
       <span :class="['flex items-center gap-1.5 text-[11px]', statusMeta.tone]">
-        <StatusDot :tone="statusMeta.dot" :size="6" :glow="status === 'connected'" />
+        <StatusDot
+          :tone="statusMeta.dot"
+          :size="6"
+          :glow="status === 'connected'"
+        />
         <span>{{ statusMeta.text }}</span>
       </span>
 
-      <span class="rounded border border-line bg-card px-1.5 py-0.5 text-[10px] font-medium text-txt-2">
+      <span
+        class="border-line bg-card text-txt-2 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+      >
         SSH
       </span>
 
-      <span class="truncate text-[11px] text-txt-2" :title="sessionId || undefined">
+      <span
+        class="text-txt-2 truncate text-[11px]"
+        :title="sessionId || undefined"
+      >
         {{ endpoint }}
       </span>
 
       <div class="flex-1" />
 
-      <TerminalActions :terminal="term" :status="status" :split="split" :available="Boolean(config)"
-        @split="emit('split')" @reconnect="reconnect" @disconnect="disconnectSession" />
+      <TerminalActions
+        :terminal="term"
+        :status="status"
+        :split="split"
+        :available="Boolean(config)"
+        @split="emit('split')"
+        @reconnect="reconnect"
+        @disconnect="disconnectSession"
+      />
     </div>
 
     <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染 -->
-    <div v-if="config" ref="terminalArea" class="relative min-h-0 flex-1 overflow-hidden">
-      <div ref="terminal" class="absolute inset-0 p-2" />
+    <div
+      v-if="config"
+      ref="terminalArea"
+      class="relative min-h-0 flex-1 overflow-hidden"
+    >
+      <div
+        ref="terminal"
+        class="absolute inset-0 p-2"
+      />
       <p
         v-if="status === 'connecting'"
-        class="pointer-events-none absolute top-2 left-2 z-10 font-mono text-xs leading-[1.4] text-txt-3"
+        class="text-txt-3 pointer-events-none absolute top-2 left-2 z-10 font-mono text-xs leading-[1.4]"
         role="status"
         aria-live="polite"
       >
@@ -372,15 +430,21 @@ defineExpose({ focus: () => term.value?.focus(), reconnect, disconnect: disconne
     </div>
 
     <!-- 还没选服务器 -->
-    <div v-else class="flex min-h-0 flex-1 items-center justify-center">
+    <div
+      v-else
+      class="flex min-h-0 flex-1 items-center justify-center"
+    >
       <div class="flex flex-col items-center gap-3 text-center">
-        <div class="grid size-14 place-items-center rounded-2xl border border-line bg-card text-txt-3">
-          <AppIcon name="lucide:square-terminal" :size="26" />
+        <div
+          class="border-line bg-card text-txt-3 grid size-14 place-items-center rounded-2xl border"
+        >
+          <AppIcon
+            name="lucide:square-terminal"
+            :size="26"
+          />
         </div>
-        <p class="text-sm text-txt-2">
-          还没有打开终端
-        </p>
-        <p class="max-w-70 text-xs text-txt-4">
+        <p class="text-txt-2 text-sm">还没有打开终端</p>
+        <p class="text-txt-4 max-w-70 text-xs">
           从左侧选一台服务器，或新建一个连接
         </p>
       </div>
@@ -410,7 +474,9 @@ defineExpose({ focus: () => term.value?.focus(), reconnect, disconnect: disconne
 
 .terminal-completion-enter-active,
 .terminal-completion-leave-active {
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
 }
 
 .terminal-completion-enter-from,

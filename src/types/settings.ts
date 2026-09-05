@@ -61,7 +61,9 @@ export const DEFAULT_SETTINGS = {
 } satisfies Record<string, SettingValue>
 
 export type SettingsValues = {
-  [K in keyof typeof DEFAULT_SETTINGS]: typeof DEFAULT_SETTINGS[K] extends boolean ? boolean : string
+  [
+    K in keyof typeof DEFAULT_SETTINGS
+  ]: (typeof DEFAULT_SETTINGS)[K] extends boolean ? boolean : string
 }
 export type SettingKey = keyof SettingsValues
 

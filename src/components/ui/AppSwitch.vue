@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 
-withDefaults(defineProps<{
-  label: string
-  description?: string
-  disabled?: boolean
-  /** 视觉上只显示开关，标签仍以隐藏文本提供给辅助技术。 */
-  hideLabel?: boolean
-}>(), {
-  description: '',
-  disabled: false,
-  hideLabel: false,
-})
+withDefaults(
+  defineProps<{
+    label: string
+    description?: string
+    disabled?: boolean
+    /** 视觉上只显示开关，标签仍以隐藏文本提供给辅助技术。 */
+    hideLabel?: boolean
+  }>(),
+  {
+    description: '',
+    disabled: false,
+    hideLabel: false,
+  }
+)
 
 const model = defineModel<boolean>({ required: true })
 const inputId = useId()
@@ -21,7 +24,10 @@ const descriptionId = useId()
 <template>
   <label
     :for="inputId"
-    :class="['app-switch inline-flex cursor-pointer items-start gap-2.5', disabled && 'pointer-events-none opacity-45']"
+    :class="[
+      'app-switch inline-flex cursor-pointer items-start gap-2.5',
+      disabled && 'pointer-events-none opacity-45',
+    ]"
   >
     <input
       :id="inputId"
@@ -31,16 +37,27 @@ const descriptionId = useId()
       :disabled="disabled"
       :aria-describedby="description ? descriptionId : undefined"
       class="app-switch-input sr-only"
-    >
+    />
     <span
-      :class="['app-switch-track mt-px inline-flex h-[18px] w-8 shrink-0 items-center p-0.5', model && 'app-switch-track-on']"
+      :class="[
+        'app-switch-track mt-px inline-flex h-[18px] w-8 shrink-0 items-center p-0.5',
+        model && 'app-switch-track-on',
+      ]"
       aria-hidden="true"
     >
-      <span :class="['app-switch-thumb size-3', model && 'app-switch-thumb-on']" />
+      <span
+        :class="['app-switch-thumb size-3', model && 'app-switch-thumb-on']"
+      />
     </span>
     <span :class="hideLabel ? 'sr-only' : 'min-w-0'">
-      <span class="block text-[11px] leading-[18px] text-txt-2">{{ label }}</span>
-      <span v-if="description" :id="descriptionId" class="mt-0.5 block text-[10px] leading-4 text-txt-3">
+      <span class="text-txt-2 block text-[11px] leading-[18px]">{{
+        label
+      }}</span>
+      <span
+        v-if="description"
+        :id="descriptionId"
+        class="text-txt-3 mt-0.5 block text-[10px] leading-4"
+      >
         {{ description }}
       </span>
     </span>
@@ -59,7 +76,11 @@ const descriptionId = useId()
 }
 
 .app-switch:hover .app-switch-track {
-  border-color: color-mix(in oklch, var(--color-violet) 48%, var(--color-line-strong));
+  border-color: color-mix(
+    in oklch,
+    var(--color-violet) 48%,
+    var(--color-line-strong)
+  );
 }
 
 .app-switch-track-on {
@@ -92,7 +113,8 @@ const descriptionId = useId()
 
 .app-switch-input:focus-visible + .app-switch-track {
   border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

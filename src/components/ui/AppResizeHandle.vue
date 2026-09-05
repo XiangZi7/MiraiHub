@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue'
 
-const props = withDefaults(defineProps<{
-  /** 被调整的面板位于分隔条哪一侧 */
-  paneSide: 'left' | 'right'
-  min: number
-  max: number
-  label: string
-  step?: number
-  overlay?: boolean
-}>(), {
-  step: 8,
-  overlay: false,
-})
+const props = withDefaults(
+  defineProps<{
+    /** 被调整的面板位于分隔条哪一侧 */
+    paneSide: 'left' | 'right'
+    min: number
+    max: number
+    label: string
+    step?: number
+    overlay?: boolean
+  }>(),
+  {
+    step: 8,
+    overlay: false,
+  }
+)
 
 const width = defineModel<number>({ required: true })
 const dragging = ref(false)
@@ -30,8 +33,7 @@ function widthFromHorizontalDelta(deltaX: number): number {
 }
 
 function startDragging(event: PointerEvent): void {
-  if (event.button !== 0)
-    return
+  if (event.button !== 0) return
 
   const handle = event.currentTarget as HTMLElement
   pointerId = event.pointerId
@@ -44,15 +46,13 @@ function startDragging(event: PointerEvent): void {
 }
 
 function drag(event: PointerEvent): void {
-  if (!dragging.value || event.pointerId !== pointerId)
-    return
+  if (!dragging.value || event.pointerId !== pointerId) return
 
   width.value = clamp(widthFromHorizontalDelta(event.clientX - startX))
 }
 
 function stopDragging(event?: PointerEvent): void {
-  if (event && event.pointerId !== pointerId)
-    return
+  if (event && event.pointerId !== pointerId) return
 
   dragging.value = false
   pointerId = -1
@@ -63,16 +63,11 @@ function handleKeydown(event: KeyboardEvent): void {
   let nextWidth = width.value
   const direction = props.paneSide === 'left' ? 1 : -1
 
-  if (event.key === 'ArrowLeft')
-    nextWidth -= props.step * direction
-  else if (event.key === 'ArrowRight')
-    nextWidth += props.step * direction
-  else if (event.key === 'Home')
-    nextWidth = props.min
-  else if (event.key === 'End')
-    nextWidth = props.max
-  else
-    return
+  if (event.key === 'ArrowLeft') nextWidth -= props.step * direction
+  else if (event.key === 'ArrowRight') nextWidth += props.step * direction
+  else if (event.key === 'Home') nextWidth = props.min
+  else if (event.key === 'End') nextWidth = props.max
+  else return
 
   event.preventDefault()
   width.value = clamp(nextWidth)
@@ -92,7 +87,10 @@ onBeforeUnmount(() => {
     :aria-valuemin="min"
     :aria-valuemax="max"
     :aria-valuenow="Math.round(width)"
-    :class="['app-resize-handle', { 'app-resize-handle-overlay': overlay, 'is-dragging': dragging }]"
+    :class="[
+      'app-resize-handle',
+      { 'app-resize-handle-overlay': overlay, 'is-dragging': dragging },
+    ]"
     @keydown="handleKeydown"
     @pointerdown="startDragging"
     @pointermove="drag"

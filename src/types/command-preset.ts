@@ -5,4 +5,3 @@ export interface StartupCommandPreset {
   createdAt: number
   updatedAt: number
 }
-

@@ -18,23 +18,56 @@ const emit = defineEmits<{
 <template>
   <header class="transfer-header">
     <div class="transfer-titlebar">
-      <AppIcon name="lucide:folder" :size="14" class="transfer-title-icon" />
+      <AppIcon
+        name="lucide:folder"
+        :size="14"
+        class="transfer-title-icon"
+      />
       <h2 class="transfer-title">File Transfer</h2>
-      <button type="button" class="transfer-close" title="Close" aria-label="Close file transfer" @click="emit('close')">
-        <AppIcon name="lucide:x" :size="14" />
+      <button
+        type="button"
+        class="transfer-close"
+        title="Close"
+        aria-label="Close file transfer"
+        @click="emit('close')"
+      >
+        <AppIcon
+          name="lucide:x"
+          :size="14"
+        />
       </button>
     </div>
 
-    <div class="transfer-overview" aria-label="Overall transfer progress">
-      <AppIcon name="lucide:folder-sync" :size="13" class="transfer-overview-icon" />
+    <div
+      class="transfer-overview"
+      aria-label="Overall transfer progress"
+    >
+      <AppIcon
+        name="lucide:folder-sync"
+        :size="13"
+        class="transfer-overview-icon"
+      />
       <span class="transfer-overview-label">{{ statusLabel }}</span>
       <span class="transfer-overview-percent">{{ progress }}%</span>
-      <div class="transfer-overview-track" role="progressbar" :aria-valuenow="progress" aria-valuemin="0" aria-valuemax="100">
-        <div class="transfer-overview-bar" :style="{ width: `${progress}%` }" />
+      <div
+        class="transfer-overview-track"
+        role="progressbar"
+        :aria-valuenow="progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <div
+          class="transfer-overview-bar"
+          :style="{ width: `${progress}%` }"
+        />
       </div>
     </div>
 
-    <nav class="transfer-tabs" role="tablist" aria-label="File transfer views">
+    <nav
+      class="transfer-tabs"
+      role="tablist"
+      aria-label="File transfer views"
+    >
       <button
         type="button"
         role="tab"
@@ -93,7 +126,9 @@ const emit = defineEmits<{
   border-radius: 5px;
   color: #89929b;
   outline: none;
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .transfer-close:hover,

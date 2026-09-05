@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { FileTransferDirection, FileTransferTask } from '@/composables/useFileTransfers'
+import type {
+  FileTransferDirection,
+  FileTransferTask,
+} from '@/composables/useFileTransfers'
 import TransferTaskCard from './TransferTaskCard.vue'
 
 const props = defineProps<{
@@ -15,16 +18,25 @@ const emit = defineEmits<{
   cancel: [taskId: string]
 }>()
 
-const completedCount = computed(() => props.tasks.filter(task => task.status === 'completed').length)
+const completedCount = computed(
+  () => props.tasks.filter(task => task.status === 'completed').length
+)
 const progress = computed(() => {
   const total = props.tasks.reduce((sum, task) => sum + task.totalBytes, 0)
   if (!total)
-    return props.tasks.length && completedCount.value === props.tasks.length ? 100 : 0
-  const transferred = props.tasks.reduce((sum, task) => sum + Math.min(task.transferredBytes, task.totalBytes), 0)
-  return Math.min(100, Math.round(transferred / total * 100))
+    return props.tasks.length && completedCount.value === props.tasks.length
+      ? 100
+      : 0
+  const transferred = props.tasks.reduce(
+    (sum, task) => sum + Math.min(task.transferredBytes, task.totalBytes),
+    0
+  )
+  return Math.min(100, Math.round((transferred / total) * 100))
 })
 
-const headingPrefix = computed(() => props.direction === 'upload' ? 'Uploading to' : 'Downloading from')
+const headingPrefix = computed(() =>
+  props.direction === 'upload' ? 'Uploading to' : 'Downloading from'
+)
 </script>
 
 <template>

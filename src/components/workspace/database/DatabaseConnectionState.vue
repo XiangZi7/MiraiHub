@@ -19,14 +19,20 @@ const password = defineModel<string>('password', { required: true })
 <template>
   <div class="grid min-h-0 flex-1 place-items-center p-6">
     <div class="flex w-full max-w-80 flex-col items-center gap-3 text-center">
-      <div class="grid size-12 place-items-center rounded-xl border border-line bg-card text-txt-3">
+      <div
+        class="border-line bg-card text-txt-3 grid size-12 place-items-center rounded-xl border"
+      >
         <AppIcon
-          :name="status === 'connecting' ? 'lucide:loader-circle' : 'lucide:database-zap'"
+          :name="
+            status === 'connecting'
+              ? 'lucide:loader-circle'
+              : 'lucide:database-zap'
+          "
           :size="22"
           :class="status === 'connecting' && 'animate-spin'"
         />
       </div>
-      <p class="text-sm text-txt-2">
+      <p class="text-txt-2 text-sm">
         {{ status === 'connecting' ? '正在连接数据库…' : '数据库连接未建立' }}
       </p>
       <AppTextField
@@ -44,7 +50,10 @@ const password = defineModel<string>('password', { required: true })
         variant="primary"
         @click="emit('connect', needsPassword ? password : undefined)"
       >
-        <AppIcon name="lucide:plug-zap" :size="13" />
+        <AppIcon
+          name="lucide:plug-zap"
+          :size="13"
+        />
         重新连接
       </AppButton>
     </div>

@@ -1,44 +1,44 @@
-import { computed, reactive, toRefs, watch } from "vue";
-import { activeAfterTabClose } from "@/utils/tab-actions";
-import { acceptHMRUpdate, defineStore } from "pinia";
-import { useSettingsStore } from "@/stores/settings";
-import type { SavedConnection } from "@/types/connection";
-import type { SshSessionStatus } from "@/types/ssh";
+import { computed, reactive, toRefs, watch } from 'vue'
+import { activeAfterTabClose } from '@/utils/tab-actions'
+import { acceptHMRUpdate, defineStore } from 'pinia'
+import { useSettingsStore } from '@/stores/settings'
+import type { SavedConnection } from '@/types/connection'
+import type { SshSessionStatus } from '@/types/ssh'
 
 /** 一个打开的标签页 */
 export interface WorkspaceTab {
   /** 标签 id。与连接 id 一致 —— 同一个连接只开一个标签 */
-  id: string;
-  connection: SavedConnection;
+  id: string
+  connection: SavedConnection
   /** SSH / 本地终端 / 数据库共享的会话状态 */
-  status: SshSessionStatus;
+  status: SshSessionStatus
   /**
    * 后端会话 id，未连上时为空。
    *
    * 由终端面板建立连接后回填 —— 机器面板要用它去查系统指标、列目录，
    * 而那两个面板是终端的兄弟节点，只能通过这份共享状态拿到。
    */
-  sessionId: string;
+  sessionId: string
 }
 
-export const useWorkspaceStore = defineStore("workspace", () => {
-  const settings = useSettingsStore().values;
+export const useWorkspaceStore = defineStore('workspace', () => {
+  const settings = useSettingsStore().values
   const state = reactive({
     tabs: [] as WorkspaceTab[],
-    activeId: "",
-  });
+    activeId: '',
+  })
 
-  const STORAGE_KEY = "miraihub:workspace-tabs";
-  let restored = false;
+  const STORAGE_KEY = 'miraihub:workspace-tabs'
+  let restored = false
 
   interface PersistedWorkspace {
-    ids: string[];
-    activeId: string;
+    ids: string[]
+    activeId: string
   }
 
   function clearPersisted(): void {
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY)
     } catch {
       /* 存储不可用时仍可使用工作区。 */
     }
@@ -46,16 +46,16 @@ export const useWorkspaceStore = defineStore("workspace", () => {
 
   function persist(): void {
     if (!settings.restoreLastSession) {
-      clearPersisted();
-      return;
+      clearPersisted()
+      return
     }
 
     const payload: PersistedWorkspace = {
-      ids: state.tabs.map((tab) => tab.id),
+      ids: state.tabs.map(tab => tab.id),
       activeId: state.activeId,
-    };
+    }
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
     } catch {
       /* 无法持久化时保留本次运行的连接标签。 */
     }
@@ -65,15 +65,15 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     () => [
       settings.restoreLastSession,
       state.activeId,
-      state.tabs.map((tab) => tab.id).join(","),
+      state.tabs.map(tab => tab.id).join(','),
     ],
-    persist,
-  );
+    persist
+  )
 
   /** 当前激活的标签 */
   const active = computed(() =>
-    state.tabs.find((tab) => tab.id === state.activeId),
-  );
+    state.tabs.find(tab => tab.id === state.activeId)
+  )
 
   /**
    * 打开连接。
@@ -82,23 +82,23 @@ export const useWorkspaceStore = defineStore("workspace", () => {
    * 否则反复点侧栏会攒出一排同名标签，而它们连的是同一台机器。
    */
   function open(connection: SavedConnection): void {
-    const existing = state.tabs.find((tab) => tab.id === connection.id);
+    const existing = state.tabs.find(tab => tab.id === connection.id)
 
     if (existing) {
       // 连接配置可能被改过（改了端口、换了密钥），用最新的覆盖
-      existing.connection = connection;
-      state.activeId = existing.id;
-      return;
+      existing.connection = connection
+      state.activeId = existing.id
+      return
     }
 
     state.tabs.push({
       id: connection.id,
       connection,
-      status: "disconnected",
-      sessionId: "",
-    });
+      status: 'disconnected',
+      sessionId: '',
+    })
 
-    state.activeId = connection.id;
+    state.activeId = connection.id
   }
 
   /**
@@ -108,21 +108,21 @@ export const useWorkspaceStore = defineStore("workspace", () => {
    * 与浏览器、编辑器的行为一致，符合肌肉记忆。
    */
   function close(id: string): void {
-    closeMany([id]);
+    closeMany([id])
   }
 
   /** 一次更新集合，避免连续关闭时短暂激活即将被移除的标签。 */
   function closeMany(ids: readonly string[]): void {
-    const closing = new Set(ids);
-    const next = activeAfterTabClose(state.tabs, state.activeId, ids);
-    const survivors = state.tabs.filter((tab) => !closing.has(tab.id));
-    state.tabs.splice(0, state.tabs.length, ...survivors);
-    state.activeId = next;
+    const closing = new Set(ids)
+    const next = activeAfterTabClose(state.tabs, state.activeId, ids)
+    const survivors = state.tabs.filter(tab => !closing.has(tab.id))
+    state.tabs.splice(0, state.tabs.length, ...survivors)
+    state.activeId = next
   }
 
   /** 切换激活标签 */
   function activate(id: string): void {
-    if (state.tabs.some((tab) => tab.id === id)) state.activeId = id;
+    if (state.tabs.some(tab => tab.id === id)) state.activeId = id
   }
 
   /** 按标签栏给出的最终索引移动标签，不改变当前激活项或会话实例。 */
@@ -134,10 +134,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
       fromIndex >= state.tabs.length ||
       toIndex >= state.tabs.length
     )
-      return;
+      return
 
-    const [tab] = state.tabs.splice(fromIndex, 1);
-    if (tab) state.tabs.splice(toIndex, 0, tab);
+    const [tab] = state.tabs.splice(fromIndex, 1)
+    if (tab) state.tabs.splice(toIndex, 0, tab)
   }
 
   /**
@@ -150,13 +150,13 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   function setStatus(
     id: string,
     status: SshSessionStatus,
-    sessionId = "",
+    sessionId = ''
   ): void {
-    const tab = state.tabs.find((item) => item.id === id);
-    if (!tab) return;
+    const tab = state.tabs.find(item => item.id === id)
+    if (!tab) return
 
-    tab.status = status;
-    tab.sessionId = status === "connected" ? sessionId : "";
+    tab.status = status
+    tab.sessionId = status === 'connected' ? sessionId : ''
   }
 
   /**
@@ -164,44 +164,42 @@ export const useWorkspaceStore = defineStore("workspace", () => {
    * 留着标签会指向一份已经不存在的配置，重连时报错莫名其妙。
    */
   function closeByConnection(connectionId: string): void {
-    close(connectionId);
+    close(connectionId)
   }
 
   /**
    * 在连接存储加载完成后恢复上次标签；只恢复视图，不自动建立网络连接。
    */
   function restore(connections: readonly SavedConnection[]): void {
-    if (restored) return;
-    restored = true;
+    if (restored) return
+    restored = true
 
     if (!settings.restoreLastSession) {
-      clearPersisted();
-      return;
+      clearPersisted()
+      return
     }
 
     try {
       const saved = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) ?? "",
-      ) as PersistedWorkspace;
+        localStorage.getItem(STORAGE_KEY) ?? ''
+      ) as PersistedWorkspace
       const byId = new Map(
-        connections.map((connection) => [connection.id, connection]),
-      );
+        connections.map(connection => [connection.id, connection])
+      )
       const restoredConnections = Array.isArray(saved.ids)
         ? saved.ids
-            .map((id) => byId.get(id))
+            .map(id => byId.get(id))
             .filter((item): item is SavedConnection => Boolean(item))
-        : [];
+        : []
 
-      for (const connection of restoredConnections) open(connection);
+      for (const connection of restoredConnections) open(connection)
 
       if (
-        restoredConnections.some(
-          (connection) => connection.id === saved.activeId,
-        )
+        restoredConnections.some(connection => connection.id === saved.activeId)
       )
-        state.activeId = saved.activeId;
+        state.activeId = saved.activeId
     } catch {
-      clearPersisted();
+      clearPersisted()
     }
   }
 
@@ -216,8 +214,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     setStatus,
     closeByConnection,
     restore,
-  };
-});
+  }
+})
 
 if (import.meta.hot)
-  import.meta.hot.accept(acceptHMRUpdate(useWorkspaceStore, import.meta.hot));
+  import.meta.hot.accept(acceptHMRUpdate(useWorkspaceStore, import.meta.hot))

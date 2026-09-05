@@ -6,18 +6,21 @@
  */
 
 /** 归类后的文件种类 */
-export type FileKindKey
-  = | 'folder'
-    | 'json'
-    | 'markdown'
-    | 'code'
-    | 'config'
-    | 'archive'
-    | 'image'
-    | 'log'
-    | 'plain'
+export type FileKindKey =
+  | 'folder'
+  | 'json'
+  | 'markdown'
+  | 'code'
+  | 'config'
+  | 'archive'
+  | 'image'
+  | 'log'
+  | 'plain'
 
-export const FILE_KIND_META: Record<FileKindKey, { icon: string, tone: string }> = {
+export const FILE_KIND_META: Record<
+  FileKindKey,
+  { icon: string; tone: string }
+> = {
   folder: { icon: 'mirai:folder', tone: 'text-blue' },
   json: { icon: 'mirai:file', tone: 'text-amber' },
   markdown: { icon: 'mirai:file', tone: 'text-orange' },
@@ -98,8 +101,7 @@ export function extensionOf(name: string): FileKindKey {
   }
 
   const dot = lower.lastIndexOf('.')
-  if (dot <= 0)
-    return 'plain'
+  if (dot <= 0) return 'plain'
 
   return EXTENSION_MAP[lower.slice(dot + 1)] ?? 'plain'
 }

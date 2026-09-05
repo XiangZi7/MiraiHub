@@ -6,10 +6,10 @@
  */
 
 /** 认证方式。tag 化联合，与 Rust 的 `#[serde(tag = "type")]` 对应 */
-export type SshAuthMethod
-  = | { type: 'password', password: string }
-    | { type: 'privateKey', path: string, passphrase?: string }
-    | { type: 'agent' }
+export type SshAuthMethod =
+  | { type: 'password'; password: string }
+  | { type: 'privateKey'; path: string; passphrase?: string }
+  | { type: 'agent' }
 
 /** 建立连接的入参 */
 export interface SshConfig {
@@ -87,13 +87,8 @@ export interface GenerateKeyRequest {
 }
 
 /** 错误分类。与 Rust 的 ErrorKind 对应 */
-export type AppErrorKind
-  = | 'invalidInput'
-    | 'network'
-    | 'auth'
-    | 'notFound'
-    | 'io'
-    | 'internal'
+export type AppErrorKind =
+  'invalidInput' | 'network' | 'auth' | 'notFound' | 'io' | 'internal'
 
 /** 跨 IPC 边界的错误载荷 */
 export interface AppError {
@@ -189,7 +184,8 @@ export interface SshDirectoryListing {
   entries: SshRemoteFile[]
 }
 
-export type SshTransferStatus = 'queued' | 'running' | 'paused' | 'completed' | 'error' | 'cancelled'
+export type SshTransferStatus =
+  'queued' | 'running' | 'paused' | 'completed' | 'error' | 'cancelled'
 
 /** Rust 侧通过 ssh://transfer 推送的增量状态。null 表示本次事件不更新该字段。 */
 export interface SshTransferEvent {

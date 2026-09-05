@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ==========================================================================
    设计令牌 —— 所有值自动映射为 CSS 变量与 Tailwind 工具类
@@ -7,11 +7,11 @@
 @theme {
   /* ---------- 字体（均已本地内置，见 main.ts 的 @fontsource 引入） ---------- */
   --font-sans:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Microsoft YaHei", sans-serif;
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
   --font-mono:
-    "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", "Cascadia Code",
-    "Menlo", "Consolas", monospace;
+    'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Cascadia Code',
+    'Menlo', 'Consolas', monospace;
 
   /* ---------- 表面层级（半透明，靠 backdrop-filter 透出系统 acrylic） ----------
      alpha 由深到浅递减：越"靠上"的层越亮、越不透明 */
@@ -172,7 +172,7 @@
   /* 窗口外壳 —— 浏览器预览时由这一层承担 backdrop-filter，内部靠半透明色分层。
      直角：无装饰窗口在系统层面就是直角，CSS 再切圆角只会露出原生底色 */
   .win {
-    @apply relative flex flex-col overflow-hidden bg-window;
+    @apply bg-window relative flex flex-col overflow-hidden;
     box-shadow: var(--shadow-win);
     backdrop-filter: blur(28px) saturate(180%);
     -webkit-backdrop-filter: blur(28px) saturate(180%);
@@ -188,40 +188,37 @@
   /* 窗口标题栏 —— Windows 形态：左侧品牌区留白，右侧窗口按钮必须贴边，
      所以这里不给 pr，由内容自己控制与按钮组的间距 */
   .win-bar {
-    @apply flex h-11 shrink-0 items-center gap-3 border-b border-line-soft pl-3;
+    @apply border-line-soft flex h-11 shrink-0 items-center gap-3 border-b pl-3;
   }
 
   /* 工作区面板 —— 主区与副面板各自成卡片，浮在窗口底色上。
      这是 window → pane → card 三级层次里的中间一级：比窗口亮、比卡片暗 */
   .pane {
-    @apply relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-pane border border-line bg-pane;
+    @apply rounded-pane border-line bg-pane relative flex min-h-0 min-w-0 flex-col overflow-hidden border;
     box-shadow: var(--shadow-pane);
   }
 
   /* 卡片 */
   .card,
   .card-action {
-    @apply rounded-card border border-line-soft bg-card;
+    @apply rounded-card border-line-soft bg-card border;
     box-shadow: var(--shadow-card);
   }
 
   /* 可交互卡片 */
   .card-action {
-    @apply cursor-pointer transition-colors duration-150 hover:border-line-strong hover:bg-raised;
+    @apply hover:border-line-strong hover:bg-raised cursor-pointer transition-colors duration-150;
   }
 
   /* 图标按钮 */
   .icon-btn {
-    @apply inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md
-           text-txt-3 transition-colors duration-150 hover:bg-hover hover:text-txt;
+    @apply text-txt-3 hover:bg-hover hover:text-txt inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150;
   }
 
   /* 主按钮 */
   .btn,
   .btn-primary {
-    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-line
-           bg-card px-3 py-1.5 text-xs font-medium text-txt-2 transition-colors duration-150
-           hover:border-line-strong hover:bg-raised hover:text-txt;
+    @apply border-line bg-card text-txt-2 hover:border-line-strong hover:bg-raised hover:text-txt inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors duration-150;
   }
 
   .btn-primary {
@@ -257,18 +254,16 @@
 
   /* 输入框 */
   .field {
-    @apply flex h-8 items-center gap-2 rounded-lg border border-line bg-panel px-2.5
-           text-txt-2 transition-colors duration-150 focus-within:border-line-strong;
+    @apply border-line bg-panel text-txt-2 focus-within:border-line-strong flex h-8 items-center gap-2 rounded-lg border px-2.5 transition-colors duration-150;
   }
 
   .field input {
-    @apply w-full bg-transparent text-xs text-txt outline-none placeholder:text-txt-4;
+    @apply text-txt placeholder:text-txt-4 w-full bg-transparent text-xs outline-none;
   }
 
   /* 侧栏导航项 */
   .nav-item {
-    @apply flex h-8 items-center justify-start gap-2.5 rounded-md px-2.5 text-[13px] text-txt-2
-           transition-colors duration-150 hover:bg-hover hover:text-txt;
+    @apply text-txt-2 hover:bg-hover hover:text-txt flex h-8 items-center justify-start gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150;
   }
 
   .nav-item-active {
@@ -277,8 +272,7 @@
 
   /* 分段切换 —— 面板内部换视图，比连接标签页轻一级 */
   .seg {
-    @apply flex h-6.5 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[11.5px]
-           text-txt-3 transition-colors duration-150 hover:text-txt;
+    @apply text-txt-3 hover:text-txt flex h-6.5 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[11.5px] transition-colors duration-150;
   }
 
   .seg-active {
@@ -287,18 +281,17 @@
 
   /* 分组标题 */
   .group-label {
-    @apply px-2.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-txt-4;
+    @apply text-txt-4 px-2.5 text-[10px] font-semibold tracking-[0.09em] uppercase;
   }
 
   /* 快捷键标签 */
   .kbd {
-    @apply inline-flex items-center gap-0.5 font-mono text-[10.5px] text-txt-4;
+    @apply text-txt-4 inline-flex items-center gap-0.5 font-mono text-[10.5px];
   }
 
   /* 列表行 */
   .row-item {
-    @apply flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5
-           transition-colors duration-150 hover:bg-hover;
+    @apply hover:bg-hover flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors duration-150;
   }
 
   /* 紧凑布局只收紧高频控件与导航，不缩放文字，仍保持可读性。 */
@@ -371,7 +364,7 @@
   isolation: isolate;
 
   &::before {
-    content: "";
+    content: '';
     position: absolute;
     inset: 0;
     z-index: 0;
@@ -404,5 +397,9 @@
 }
 
 /* CSS zoom 不会重算 vh/vw，浏览器预览时补偿窗口尺寸以保留底部操作栏。 */
-.win.h-screen { height: calc(100dvh / var(--preview-zoom, 1)); }
-.win.w-screen { width: calc(100dvw / var(--preview-zoom, 1)); }
+.win.h-screen {
+  height: calc(100dvh / var(--preview-zoom, 1));
+}
+.win.w-screen {
+  width: calc(100dvw / var(--preview-zoom, 1));
+}

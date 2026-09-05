@@ -21,17 +21,29 @@ import GenerateKeyDialog from './GenerateKeyDialog.vue'
  * 所以详情给足宽度，而不是塞进列表行里折叠展开。
  */
 
-const { keys, selected, keyword, loading, error, visibleKeys, current, refresh, generate, remove }
-  = useSshKeys()
-const { defaultPath: defaultPrivateKey, setDefault: setDefaultPrivateKey } = usePrivateKeys()
+const {
+  keys,
+  selected,
+  keyword,
+  loading,
+  error,
+  visibleKeys,
+  current,
+  refresh,
+  generate,
+  remove,
+} = useSshKeys()
+const { defaultPath: defaultPrivateKey, setDefault: setDefaultPrivateKey } =
+  usePrivateKeys()
 
 onMounted(refreshKeys)
 
 // 生成密钥对话框是否打开
 const generateOpen = shallowRef(false)
-const pendingDelete = shallowRef<{ id: string, label: string } | null>(null)
+const pendingDelete = shallowRef<{ id: string; label: string } | null>(null)
 // 拿到对话框实例，生成失败时把错误回传给它显示在表单里
-const dialogRef = useTemplateRef<InstanceType<typeof GenerateKeyDialog>>('generateDialog')
+const dialogRef =
+  useTemplateRef<InstanceType<typeof GenerateKeyDialog>>('generateDialog')
 
 // 指纹与公钥各用一份 clipboard：共用会让复制指纹时公钥按钮也跳成"已复制"。
 // copiedDuring 给到 1.6s，够看清反馈再回到默认态
@@ -46,15 +58,16 @@ function requestDelete(keyId: string, label: string): void {
 async function confirmDelete(): Promise<void> {
   const target = pendingDelete.value
   pendingDelete.value = null
-  if (!target)
-    return
+  if (!target) return
 
   try {
     await remove(target.id)
     toast.success(`密钥“${target.label}”已删除`)
-  }
-  catch (caught) {
-    toast.error({ title: '删除 SSH 密钥失败', description: error.value || String(caught) })
+  } catch (caught) {
+    toast.error({
+      title: '删除 SSH 密钥失败',
+      description: error.value || String(caught),
+    })
   }
 }
 
@@ -65,16 +78,14 @@ async function refreshKeys(): Promise<void> {
 }
 
 async function copyFingerprint(): Promise<void> {
-  if (!current.value)
-    return
+  if (!current.value) return
   await fingerprintClip.copy(current.value.fingerprint)
   scheduleClipboardClear(current.value.fingerprint)
   toast.success('SSH 指纹已复制')
 }
 
 async function copyPublicKey(): Promise<void> {
-  if (!current.value)
-    return
+  if (!current.value) return
   await publicKeyClip.copy(current.value.publicKey)
   scheduleClipboardClear(current.value.publicKey)
   toast.success('SSH 公钥已复制')
@@ -96,14 +107,14 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
     await generate(request)
     generateOpen.value = false
     toast.success(`SSH 密钥“${request.label}”已生成`)
-  }
-  catch (err) {
+  } catch (err) {
     // Tauri 的结构化 AppError 是普通对象，String(err) 只会得到 [object Object]。
     // composable 已用统一的 errorMessage 提取过可读文案，优先回传那一份。
     dialogRef.value?.fail()
     toast.error({
       title: '生成 SSH 密钥失败',
-      description: error.value || (err instanceof Error ? err.message : String(err)),
+      description:
+        error.value || (err instanceof Error ? err.message : String(err)),
     })
   }
 }
@@ -112,21 +123,37 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
 <template>
   <div class="pane flex-1 flex-row">
     <!-- 密钥列表 -->
-    <nav class="flex w-68 shrink-0 flex-col border-r border-line-soft bg-panel">
-      <header class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft pl-3 pr-2">
-        <p class="flex-1 text-[11px] font-medium text-txt-2">
+    <nav class="border-line-soft bg-panel flex w-68 shrink-0 flex-col border-r">
+      <header
+        class="border-line-soft flex h-10 shrink-0 items-center gap-1 border-b pr-2 pl-3"
+      >
+        <p class="text-txt-2 flex-1 text-[11px] font-medium">
           Keys
           <span class="text-txt-4">({{ keys.length }})</span>
         </p>
-        <IconButton icon="lucide:refresh-cw" :size="14" title="重新扫描" @click="refreshKeys" />
-        <IconButton icon="lucide:plus" :size="14" title="生成新密钥" @click="generateOpen = true" />
+        <IconButton
+          icon="lucide:refresh-cw"
+          :size="14"
+          title="重新扫描"
+          @click="refreshKeys"
+        />
+        <IconButton
+          icon="lucide:plus"
+          :size="14"
+          title="生成新密钥"
+          @click="generateOpen = true"
+        />
       </header>
 
-      <div class="shrink-0 px-2 pb-1 pt-2">
-        <SearchField v-model="keyword" icon="lucide:search" placeholder="搜索密钥…" />
+      <div class="shrink-0 px-2 pt-2 pb-1">
+        <SearchField
+          v-model="keyword"
+          icon="lucide:search"
+          placeholder="搜索密钥…"
+        />
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto p-1.5 scroll-thin">
+      <div class="scroll-thin min-h-0 flex-1 overflow-y-auto p-1.5">
         <button
           v-for="key in visibleKeys"
           :key="key.id"
@@ -140,41 +167,70 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
             :class="SSH_KEY_KIND_META[key.kind].tone"
           />
           <span class="min-w-0 flex-1 text-left">
-            <span class="block truncate text-xs text-txt">{{ key.label }}</span>
-            <span class="block truncate text-[10.5px] text-txt-4">
+            <span class="text-txt block truncate text-xs">{{ key.label }}</span>
+            <span class="text-txt-4 block truncate text-[10.5px]">
               {{ SSH_KEY_KIND_META[key.kind].label }} · {{ key.bits }} bits
             </span>
           </span>
           <!-- tooltip 挂在 span 上：SVG 元素的 title 属性不会触发浏览器提示 -->
-          <span v-if="key.encrypted" class="shrink-0" title="私钥有口令保护">
-            <AppIcon name="lucide:lock" :size="11" class="text-txt-4" />
+          <span
+            v-if="key.encrypted"
+            class="shrink-0"
+            title="私钥有口令保护"
+          >
+            <AppIcon
+              name="lucide:lock"
+              :size="11"
+              class="text-txt-4"
+            />
           </span>
-          <span v-if="defaultPrivateKey === key.id" class="shrink-0" title="默认私钥">
-            <AppIcon name="lucide:star" :size="12" class="text-violet" />
+          <span
+            v-if="defaultPrivateKey === key.id"
+            class="shrink-0"
+            title="默认私钥"
+          >
+            <AppIcon
+              name="lucide:star"
+              :size="12"
+              class="text-violet"
+            />
           </span>
         </button>
 
-        <p v-if="loading" class="py-8 text-center text-xs text-txt-4">
+        <p
+          v-if="loading"
+          class="text-txt-4 py-8 text-center text-xs"
+        >
           正在扫描 ~/.ssh …
         </p>
-        <p v-else-if="!visibleKeys.length" class="py-8 text-center text-xs text-txt-4">
+        <p
+          v-else-if="!visibleKeys.length"
+          class="text-txt-4 py-8 text-center text-xs"
+        >
           {{ keyword ? '没有匹配的密钥' : '~/.ssh 下没有找到密钥' }}
         </p>
       </div>
     </nav>
 
     <!-- 详情 -->
-    <div v-if="current" class="flex min-w-0 flex-1 flex-col">
-      <header class="flex h-10 shrink-0 items-center gap-2 border-b border-line-soft pl-3.5 pr-2">
-        <h2 class="truncate text-[13px] font-medium text-txt">
+    <div
+      v-if="current"
+      class="flex min-w-0 flex-1 flex-col"
+    >
+      <header
+        class="border-line-soft flex h-10 shrink-0 items-center gap-2 border-b pr-2 pl-3.5"
+      >
+        <h2 class="text-txt truncate text-[13px] font-medium">
           {{ current.label }}
         </h2>
-        <span class="shrink-0 rounded border border-line bg-card px-1.5 py-0.5 text-[10px] font-medium text-txt-2">
+        <span
+          class="border-line bg-card text-txt-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+        >
           {{ SSH_KEY_KIND_META[current.kind].label }}
         </span>
         <span
           v-if="defaultPrivateKey === current.id"
-          class="shrink-0 rounded bg-violet/15 px-1.5 py-0.5 text-[10px] font-medium text-violet"
+          class="bg-violet/15 text-violet shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
         >
           Default
         </span>
@@ -182,9 +238,13 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         <IconButton
           icon="lucide:star"
           :size="14"
-          :title="defaultPrivateKey === current.id ? '当前默认私钥' : '设为默认私钥'"
+          :title="
+            defaultPrivateKey === current.id ? '当前默认私钥' : '设为默认私钥'
+          "
           :disabled="defaultPrivateKey === current.id"
-          :class="defaultPrivateKey === current.id ? 'text-violet opacity-100' : ''"
+          :class="
+            defaultPrivateKey === current.id ? 'text-violet opacity-100' : ''
+          "
           @click="makeDefault(current.id)"
         />
         <IconButton
@@ -195,38 +255,34 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         />
       </header>
 
-      <div class="min-h-0 flex-1 overflow-y-auto p-4 scroll-thin">
+      <div class="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">
         <!-- 元信息 -->
         <div class="mb-5 grid grid-cols-2 gap-2.5">
           <div class="card px-3 py-2.5">
-            <p class="text-[11px] text-txt-3">
-              Modified
-            </p>
-            <p class="mt-1 text-xs text-txt" :title="formatDate(current.modifiedAt)">
+            <p class="text-txt-3 text-[11px]">Modified</p>
+            <p
+              class="text-txt mt-1 text-xs"
+              :title="formatDate(current.modifiedAt)"
+            >
               {{ formatRelative(current.modifiedAt) }}
             </p>
           </div>
           <div class="card px-3 py-2.5">
-            <p class="text-[11px] text-txt-3">
-              Comment
-            </p>
-            <p class="mt-1 truncate text-xs text-txt" :title="current.comment">
+            <p class="text-txt-3 text-[11px]">Comment</p>
+            <p
+              class="text-txt mt-1 truncate text-xs"
+              :title="current.comment"
+            >
               {{ current.comment || '—' }}
             </p>
           </div>
           <div class="card px-3 py-2.5">
-            <p class="text-[11px] text-txt-3">
-              Length
-            </p>
-            <p class="mt-1 text-xs text-txt">
-              {{ current.bits }} bits
-            </p>
+            <p class="text-txt-3 text-[11px]">Length</p>
+            <p class="text-txt mt-1 text-xs">{{ current.bits }} bits</p>
           </div>
           <div class="card px-3 py-2.5">
-            <p class="text-[11px] text-txt-3">
-              Passphrase
-            </p>
-            <p class="mt-1 flex items-center gap-1.5 text-xs text-txt">
+            <p class="text-txt-3 text-[11px]">Passphrase</p>
+            <p class="text-txt mt-1 flex items-center gap-1.5 text-xs">
               <AppIcon
                 :name="current.encrypted ? 'lucide:lock' : 'lucide:lock-open'"
                 :size="12"
@@ -239,23 +295,28 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
 
         <!-- 路径 -->
         <section class="mb-5">
-          <h3 class="mb-2 text-[13px] font-medium text-txt-2">
-            Path
-          </h3>
+          <h3 class="text-txt-2 mb-2 text-[13px] font-medium">Path</h3>
           <div class="card px-3 py-2">
-            <code class="block truncate font-mono text-[11.5px] text-txt-2" :title="current.id">{{ current.id }}</code>
+            <code
+              class="text-txt-2 block truncate font-mono text-[11.5px]"
+              :title="current.id"
+              >{{ current.id }}</code
+            >
           </div>
         </section>
 
         <!-- 指纹 -->
         <section class="mb-5">
-          <h3 class="mb-2 text-[13px] font-medium text-txt-2">
-            Fingerprint
-          </h3>
+          <h3 class="text-txt-2 mb-2 text-[13px] font-medium">Fingerprint</h3>
           <div class="card flex items-center gap-2 px-3 py-2">
-            <code class="min-w-0 flex-1 truncate font-mono text-[11.5px] text-txt-2">{{ current.fingerprint }}</code>
+            <code
+              class="text-txt-2 min-w-0 flex-1 truncate font-mono text-[11.5px]"
+              >{{ current.fingerprint }}</code
+            >
             <IconButton
-              :icon="fingerprintClip.copied.value ? 'lucide:check' : 'lucide:copy'"
+              :icon="
+                fingerprintClip.copied.value ? 'lucide:check' : 'lucide:copy'
+              "
               :size="13"
               title="复制指纹"
               @click="copyFingerprint"
@@ -266,7 +327,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         <!-- 公钥全文 -->
         <section>
           <div class="mb-2 flex items-center gap-2">
-            <h3 class="flex-1 text-[13px] font-medium text-txt-2">
+            <h3 class="text-txt-2 flex-1 text-[13px] font-medium">
               Public key
             </h3>
             <button
@@ -274,29 +335,49 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
               class="btn px-2 py-1 text-[11px]"
               @click="copyPublicKey"
             >
-              <AppIcon :name="publicKeyClip.copied.value ? 'lucide:check' : 'lucide:copy'" :size="12" />
+              <AppIcon
+                :name="
+                  publicKeyClip.copied.value ? 'lucide:check' : 'lucide:copy'
+                "
+                :size="12"
+              />
               <span>{{ publicKeyClip.copied.value ? '已复制' : '复制' }}</span>
             </button>
           </div>
-          <pre class="card overflow-x-auto whitespace-pre-wrap break-all bg-terminal px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-term-fg scroll-thin">{{ current.publicKey }}</pre>
+          <pre
+            class="card bg-terminal text-term-fg scroll-thin overflow-x-auto px-3 py-2.5 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap"
+            >{{ current.publicKey }}</pre>
         </section>
       </div>
     </div>
 
     <!-- 一把密钥都没有时的兜底 -->
-    <div v-else class="flex min-w-0 flex-1 items-center justify-center">
+    <div
+      v-else
+      class="flex min-w-0 flex-1 items-center justify-center"
+    >
       <div class="flex flex-col items-center gap-3 text-center">
-        <div class="grid size-14 place-items-center rounded-2xl border border-line bg-card text-txt-3">
-          <AppIcon name="lucide:key-round" :size="26" />
+        <div
+          class="border-line bg-card text-txt-3 grid size-14 place-items-center rounded-2xl border"
+        >
+          <AppIcon
+            name="lucide:key-round"
+            :size="26"
+          />
         </div>
-        <p class="text-sm text-txt-2">
-          还没有密钥
-        </p>
-        <p class="max-w-70 text-xs text-txt-4">
+        <p class="text-txt-2 text-sm">还没有密钥</p>
+        <p class="text-txt-4 max-w-70 text-xs">
           生成一把新密钥，或把已有的放进 ~/.ssh
         </p>
-        <button type="button" class="btn mt-1" @click="generateOpen = true">
-          <AppIcon name="lucide:plus" :size="13" />
+        <button
+          type="button"
+          class="btn mt-1"
+          @click="generateOpen = true"
+        >
+          <AppIcon
+            name="lucide:plus"
+            :size="13"
+          />
           <span>生成新密钥</span>
         </button>
       </div>

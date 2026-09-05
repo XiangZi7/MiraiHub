@@ -23,12 +23,24 @@ export const LOCAL_SHELL_OPTIONS: readonly {
   label: string
   description: string
 }[] = [
-  { value: 'powershell', label: 'Windows PowerShell', description: 'Windows 自带 PowerShell' },
+  {
+    value: 'powershell',
+    label: 'Windows PowerShell',
+    description: 'Windows 自带 PowerShell',
+  },
   { value: 'cmd', label: 'Command Prompt', description: 'Windows 命令提示符' },
-  { value: 'git-bash', label: 'Git Bash', description: 'Git for Windows 提供的 Bash' },
+  {
+    value: 'git-bash',
+    label: 'Git Bash',
+    description: 'Git for Windows 提供的 Bash',
+  },
 ]
 
-export function connectionTagColorCss(color: ConnectionTagColor | undefined): string {
-  return CONNECTION_TAG_COLORS.find(option => option.id === color)?.css
-    ?? 'var(--color-accent)'
+export function connectionTagColorCss(
+  color: ConnectionTagColor | undefined
+): string {
+  return (
+    CONNECTION_TAG_COLORS.find(option => option.id === color)?.css ??
+    'var(--color-accent)'
+  )
 }

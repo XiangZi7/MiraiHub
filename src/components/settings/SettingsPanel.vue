@@ -16,17 +16,20 @@ import { IS_TAURI } from '@/utils/window'
 import ScaleControl from './ScaleControl.vue'
 import ShortcutRecorder from './ShortcutRecorder.vue'
 
-const props = withDefaults(defineProps<{
-  page: SettingsPage
-  values: SettingsValues
-  /** 校验失败的项及原因 */
-  errors?: Partial<Record<SettingKey, string>>
-  /** 关于页等展示项的运行时取值，按 field.id 覆盖 */
-  runtimeValues?: Record<string, string>
-}>(), {
-  errors: () => ({}),
-  runtimeValues: () => ({}),
-})
+const props = withDefaults(
+  defineProps<{
+    page: SettingsPage
+    values: SettingsValues
+    /** 校验失败的项及原因 */
+    errors?: Partial<Record<SettingKey, string>>
+    /** 关于页等展示项的运行时取值，按 field.id 覆盖 */
+    runtimeValues?: Record<string, string>
+  }>(),
+  {
+    errors: () => ({}),
+    runtimeValues: () => ({}),
+  }
+)
 
 const emit = defineEmits<{
   update: [key: SettingKey, value: SettingValue]
@@ -48,7 +51,11 @@ function defaultString(key: SettingKey): string {
 
 /** 依赖的开关关闭时整行禁用，避免出现"最小化到托盘"却没有托盘的组合。 */
 function isDisabled(field: SettingField): boolean {
-  return field.control !== 'display' && Boolean(field.dependsOn) && !booleanValue(field.dependsOn!)
+  return (
+    field.control !== 'display' &&
+    Boolean(field.dependsOn) &&
+    !booleanValue(field.dependsOn!)
+  )
 }
 
 function updateText(field: EditableSettingField, event: Event): void {
@@ -67,8 +74,7 @@ function controlWidth(size: EditableSettingField['size']): string {
 }
 
 async function browseDirectory(field: EditableSettingField): Promise<void> {
-  if (!IS_TAURI)
-    return
+  if (!IS_TAURI) return
 
   const selected = await openDialog({
     directory: true,
@@ -76,30 +82,41 @@ async function browseDirectory(field: EditableSettingField): Promise<void> {
     title: field.label,
     defaultPath: stringValue(field.key) || undefined,
   })
-  if (typeof selected === 'string')
-    emit('update', field.key, selected)
+  if (typeof selected === 'string') emit('update', field.key, selected)
 }
 
 function displayValue(field: SettingField): string {
-  if (field.control !== 'display')
-    return ''
+  if (field.control !== 'display') return ''
   return (field.id && props.runtimeValues[field.id]) || field.displayValue
 }
 </script>
 
 <template>
-  <section class="flex min-h-0 flex-1 flex-col" :aria-labelledby="`settings-${page.id}-title`">
+  <section
+    class="flex min-h-0 flex-1 flex-col"
+    :aria-labelledby="`settings-${page.id}-title`"
+  >
     <header class="settings-page-header">
-      <h2 :id="`settings-${page.id}-title`" class="text-[12.5px] font-semibold text-txt">
+      <h2
+        :id="`settings-${page.id}-title`"
+        class="text-txt text-[12.5px] font-semibold"
+      >
         {{ page.title }}
       </h2>
-      <p v-if="page.description" class="mt-0.5 text-[10.5px] text-txt-4">
+      <p
+        v-if="page.description"
+        class="text-txt-4 mt-0.5 text-[10.5px]"
+      >
         {{ page.description }}
       </p>
     </header>
 
-    <div class="min-h-0 flex-1 overflow-y-auto scroll-thin">
-      <section v-for="group in page.groups" :key="group.title" class="settings-group">
+    <div class="scroll-thin min-h-0 flex-1 overflow-y-auto">
+      <section
+        v-for="group in page.groups"
+        :key="group.title"
+        class="settings-group"
+      >
         <h3 class="settings-group-title">
           {{ group.title }}
         </h3>
@@ -108,18 +125,24 @@ function displayValue(field: SettingField): string {
           <div
             v-for="field in group.fields"
             :key="field.label"
-            :class="['settings-row', isDisabled(field) && 'settings-row-disabled']"
+            :class="[
+              'settings-row',
+              isDisabled(field) && 'settings-row-disabled',
+            ]"
           >
             <div class="min-w-0 flex-1 pr-4">
-              <p class="text-[11.5px] leading-4 text-txt">
+              <p class="text-txt text-[11.5px] leading-4">
                 {{ field.label }}
               </p>
-              <p v-if="field.description" class="mt-0.5 text-[10px] leading-3.5 text-txt-4">
+              <p
+                v-if="field.description"
+                class="text-txt-4 mt-0.5 text-[10px] leading-3.5"
+              >
                 {{ field.description }}
               </p>
               <p
                 v-if="field.control !== 'display' && errors[field.key]"
-                class="mt-0.5 text-[10px] leading-3.5 text-danger"
+                class="text-danger mt-0.5 text-[10px] leading-3.5"
                 role="alert"
               >
                 {{ errors[field.key] }}
@@ -127,7 +150,9 @@ function displayValue(field: SettingField): string {
             </div>
 
             <template v-if="field.control === 'display'">
-              <span class="shrink-0 font-mono text-[11px] text-txt-3">{{ displayValue(field) }}</span>
+              <span class="text-txt-3 shrink-0 font-mono text-[11px]">{{
+                displayValue(field)
+              }}</span>
             </template>
 
             <template v-else>
@@ -152,7 +177,12 @@ function displayValue(field: SettingField): string {
                 @update:model-value="emit('update', field.key, $event)"
               />
 
-              <ScaleControl v-else-if="field.control === 'scale'" :model-value="stringValue(field.key)" :label="field.label" @update:model-value="emit('update', field.key, $event)" />
+              <ScaleControl
+                v-else-if="field.control === 'scale'"
+                :model-value="stringValue(field.key)"
+                :label="field.label"
+                @update:model-value="emit('update', field.key, $event)"
+              />
 
               <ShortcutRecorder
                 v-else-if="field.control === 'shortcut'"
@@ -163,7 +193,10 @@ function displayValue(field: SettingField): string {
                 @update:model-value="emit('update', field.key, $event)"
               />
 
-              <div v-else-if="field.control === 'directory'" class="flex shrink-0 items-center gap-1">
+              <div
+                v-else-if="field.control === 'directory'"
+                class="flex shrink-0 items-center gap-1"
+              >
                 <input
                   :value="stringValue(field.key)"
                   :aria-label="field.label"
@@ -172,7 +205,7 @@ function displayValue(field: SettingField): string {
                   :disabled="isDisabled(field)"
                   spellcheck="false"
                   @input="updateText(field, $event)"
-                >
+                />
                 <button
                   v-if="stringValue(field.key)"
                   type="button"
@@ -181,7 +214,10 @@ function displayValue(field: SettingField): string {
                   aria-label="清除目录"
                   @click="emit('update', field.key, '')"
                 >
-                  <AppIcon name="lucide:x" :size="12" />
+                  <AppIcon
+                    name="lucide:x"
+                    :size="12"
+                  />
                 </button>
                 <button
                   type="button"
@@ -191,7 +227,10 @@ function displayValue(field: SettingField): string {
                   :disabled="!IS_TAURI || isDisabled(field)"
                   @click="browseDirectory(field)"
                 >
-                  <AppIcon name="lucide:folder-open" :size="13" />
+                  <AppIcon
+                    name="lucide:folder-open"
+                    :size="13"
+                  />
                 </button>
               </div>
 
@@ -202,11 +241,15 @@ function displayValue(field: SettingField): string {
                 :aria-invalid="Boolean(errors[field.key]) || undefined"
                 :placeholder="field.placeholder"
                 :inputmode="field.inputmode ?? 'text'"
-                :class="['settings-input', controlWidth(field.size), errors[field.key] && 'settings-input-invalid']"
+                :class="[
+                  'settings-input',
+                  controlWidth(field.size),
+                  errors[field.key] && 'settings-input-invalid',
+                ]"
                 :disabled="isDisabled(field)"
                 spellcheck="false"
                 @input="updateText(field, $event)"
-              >
+              />
             </template>
           </div>
         </div>
@@ -280,7 +323,9 @@ function displayValue(field: SettingField): string {
   color: var(--color-txt);
   font-size: 11px;
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .settings-input::placeholder {
@@ -289,7 +334,8 @@ function displayValue(field: SettingField): string {
 
 .settings-input:focus-visible {
   border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
 .settings-input:disabled {
@@ -299,13 +345,23 @@ function displayValue(field: SettingField): string {
 .settings-input-invalid,
 .settings-input-invalid:focus-visible {
   border-color: color-mix(in oklch, var(--color-danger) 70%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-danger) 12%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-danger) 12%, transparent);
 }
 
 @container settings (max-width: 560px) {
-  .settings-row { flex-wrap: wrap; gap: 8px; }
-  .settings-row > div:first-child { flex-basis: 100%; }
-  .settings-page-header, .settings-group { padding-right: 10px; padding-left: 10px; }
+  .settings-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .settings-row > div:first-child {
+    flex-basis: 100%;
+  }
+  .settings-page-header,
+  .settings-group {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, toRef, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  reactive,
+  shallowRef,
+  toRef,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import { useClipboard } from '@vueuse/core'
-import { open as openFileDialog, save as saveFileDialog } from '@tauri-apps/plugin-dialog'
+import {
+  open as openFileDialog,
+  save as saveFileDialog,
+} from '@tauri-apps/plugin-dialog'
 import { openPath } from '@tauri-apps/plugin-opener'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
@@ -29,12 +39,15 @@ const { settings } = useSettings()
 
 type ConflictAction = 'overwrite' | 'skip' | 'cancel'
 
-const props = withDefaults(defineProps<{
-  sessionId: string
-  connectionName?: string
-}>(), {
-  connectionName: '',
-})
+const props = withDefaults(
+  defineProps<{
+    sessionId: string
+    connectionName?: string
+  }>(),
+  {
+    connectionName: '',
+  }
+)
 
 const {
   path,
@@ -55,7 +68,9 @@ const {
 
 const { save: saveSettings } = useSettings()
 const filterText = shallowRef('')
-function toggleHidden(): void { saveSettings({ ...settings, showHiddenFiles: !settings.showHiddenFiles }) }
+function toggleHidden(): void {
+  saveSettings({ ...settings, showHiddenFiles: !settings.showHiddenFiles })
+}
 const transfers = useFileTransfers()
 const editor = useRemoteEditor()
 const dropZone = useTemplateRef<HTMLElement>('dropZone')
@@ -73,23 +88,44 @@ const state = reactive({
   conflictAlways: false,
 })
 
-let resolveConflict: ((result: { action: ConflictAction, always: boolean }) => void) | undefined
+let resolveConflict:
+  ((result: { action: ConflictAction; always: boolean }) => void) | undefined
 
-const { isDragging: nativeDragging } = useNativeFileDrop(dropZone, paths => void uploadPaths(paths))
+const { isDragging: nativeDragging } = useNativeFileDrop(
+  dropZone,
+  paths => void uploadPaths(paths)
+)
 const dropActive = computed(() => nativeDragging.value || browserDragging.value)
 const connected = computed(() => Boolean(props.sessionId))
-const selectedFile = computed(() => entries.value.find(file => file.path === selected.value))
-const pathEntries = computed(() => sortedEntries.value.filter(file => settings.showHiddenFiles || !file.name.startsWith('.')))
-const visibleEntries = computed(() => pathEntries.value.filter(file => file.name.toLocaleLowerCase().includes(filterText.value.trim().toLocaleLowerCase())))
-watch(() => props.sessionId, () => { filterText.value = '' })
+const selectedFile = computed(() =>
+  entries.value.find(file => file.path === selected.value)
+)
+const pathEntries = computed(() =>
+  sortedEntries.value.filter(
+    file => settings.showHiddenFiles || !file.name.startsWith('.')
+  )
+)
+const visibleEntries = computed(() =>
+  pathEntries.value.filter(file =>
+    file.name
+      .toLocaleLowerCase()
+      .includes(filterText.value.trim().toLocaleLowerCase())
+  )
+)
+watch(
+  () => props.sessionId,
+  () => {
+    filterText.value = ''
+  }
+)
 const pathClip = useClipboard({ copiedDuring: 1600 })
 
-watch(visibleEntries, (files) => {
+watch(visibleEntries, files => {
   if (selected.value && !files.some(file => file.path === selected.value))
     selected.value = ''
 })
 
-watch(error, (message) => {
+watch(error, message => {
   if (message) toast.error({ title: '读取远端文件失败', description: message })
 })
 
@@ -101,21 +137,44 @@ async function copyPath(): Promise<void> {
 
 const contextItems = computed<ContextMenuItem[]>(() => {
   const file = state.menuFile
-  if (!file)
-    return []
+  if (!file) return []
   const directory = file.kind === 'directory'
   return [
-    { id: 'open', label: directory || file.kind === 'symlink' ? '打开目录' : '编辑文本文件', icon: directory ? 'lucide:folder-open' : 'lucide:file-pen-line' },
-    { id: 'external', label: '下载并用外部程序打开', icon: 'lucide:external-link', disabled: directory },
-    { id: 'download', label: '下载到…', icon: 'lucide:download', disabled: directory },
-    { id: 'rename', label: '重命名', icon: 'lucide:pencil', separatorBefore: true },
-    { id: 'delete', label: '删除', icon: 'lucide:trash-2', danger: true, separatorBefore: true },
+    {
+      id: 'open',
+      label: directory || file.kind === 'symlink' ? '打开目录' : '编辑文本文件',
+      icon: directory ? 'lucide:folder-open' : 'lucide:file-pen-line',
+    },
+    {
+      id: 'external',
+      label: '下载并用外部程序打开',
+      icon: 'lucide:external-link',
+      disabled: directory,
+    },
+    {
+      id: 'download',
+      label: '下载到…',
+      icon: 'lucide:download',
+      disabled: directory,
+    },
+    {
+      id: 'rename',
+      label: '重命名',
+      icon: 'lucide:pencil',
+      separatorBefore: true,
+    },
+    {
+      id: 'delete',
+      label: '删除',
+      icon: 'lucide:trash-2',
+      danger: true,
+      separatorBefore: true,
+    },
   ]
 })
 
-function metaOf(file: SshRemoteFile): { icon: string, tone: string } {
-  if (file.kind === 'directory')
-    return FILE_KIND_META.folder
+function metaOf(file: SshRemoteFile): { icon: string; tone: string } {
+  if (file.kind === 'directory') return FILE_KIND_META.folder
   if (file.kind === 'symlink')
     return { icon: 'lucide:link', tone: 'text-violet' }
   return FILE_KIND_META[extensionOf(file.name)]
@@ -130,12 +189,16 @@ function modifiedOf(file: SshRemoteFile): string {
 }
 
 const summary = computed(() => {
-  const dirs = visibleEntries.value.filter(item => item.kind === 'directory').length
+  const dirs = visibleEntries.value.filter(
+    item => item.kind === 'directory'
+  ).length
   return `${dirs} 个目录，${visibleEntries.value.length - dirs} 个文件`
 })
 
 function remoteChildPath(name: string): string {
-  return path.value === '/' ? `/${name}` : `${path.value.replace(/\/$/, '')}/${name}`
+  return path.value === '/'
+    ? `/${name}`
+    : `${path.value.replace(/\/$/, '')}/${name}`
 }
 
 function localName(localPath: string): string {
@@ -150,26 +213,27 @@ async function availableRemotePath(fileName: string): Promise<string> {
 
   for (let index = 1; index < 10_000; index++) {
     const candidate = remoteChildPath(`${base} (${index})${extension}`)
-    if (!await ssh.pathExists(props.sessionId, candidate))
-      return candidate
+    if (!(await ssh.pathExists(props.sessionId, candidate))) return candidate
   }
   throw new Error('无法为上传文件生成可用名称')
 }
 
 function defaultDownloadPath(fileName: string): string {
   const directory = settings.defaultDownloadDirectory.trim()
-  if (!directory)
-    return fileName
+  if (!directory) return fileName
   const separator = directory.includes('\\') ? '\\' : '/'
   return `${directory.replace(/[\\/]$/, '')}${separator}${fileName}`
 }
 
-function askConflict(fileName: string, remaining: number): Promise<{ action: ConflictAction, always: boolean }> {
+function askConflict(
+  fileName: string,
+  remaining: number
+): Promise<{ action: ConflictAction; always: boolean }> {
   state.conflictFileName = fileName
   state.conflictRemaining = remaining
   state.conflictAlways = false
   state.conflictOpen = true
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     resolveConflict = resolve
   })
 }
@@ -182,74 +246,87 @@ function settleConflict(action: ConflictAction): void {
 }
 
 async function uploadPaths(localPaths: readonly string[]): Promise<void> {
-  if (!connected.value || !path.value || !localPaths.length)
-    return
+  if (!connected.value || !path.value || !localPaths.length) return
 
   let policy: Exclude<ConflictAction, 'cancel'> | undefined
   let changed = false
 
   for (let index = 0; index < localPaths.length; index++) {
     const localPath = localPaths[index]
-    if (!localPath)
-      continue
+    if (!localPath) continue
     let remotePath = remoteChildPath(localName(localPath))
 
     try {
       let action: Exclude<ConflictAction, 'cancel'> = 'overwrite'
       const exists = await ssh.pathExists(props.sessionId, remotePath)
       if (exists) {
-        const existingEntry = entries.value.find(entry => entry.name === localName(localPath))
+        const existingEntry = entries.value.find(
+          entry => entry.name === localName(localPath)
+        )
         if (settings.overwriteBehavior === 'rename') {
           remotePath = await availableRemotePath(localName(localPath))
-        }
-        else if (existingEntry?.kind === 'directory') {
+        } else if (existingEntry?.kind === 'directory') {
           toast.error(`无法上传“${localName(localPath)}”：远端已有同名目录`)
           continue
-        }
-        else if (settings.overwriteBehavior === 'overwrite') {
+        } else if (settings.overwriteBehavior === 'overwrite') {
           action = 'overwrite'
-        }
-        else if (policy) {
+        } else if (policy) {
           action = policy
         } else {
-          const decision = await askConflict(localName(localPath), localPaths.length - index - 1)
-          if (decision.action === 'cancel')
-            break
+          const decision = await askConflict(
+            localName(localPath),
+            localPaths.length - index - 1
+          )
+          if (decision.action === 'cancel') break
           action = decision.action
-          if (decision.always)
-            policy = action
+          if (decision.always) policy = action
         }
       }
 
-      if (exists && settings.overwriteBehavior !== 'rename' && action === 'skip')
+      if (
+        exists &&
+        settings.overwriteBehavior !== 'rename' &&
+        action === 'skip'
+      )
         continue
 
-      changed = await transfers.upload({
-        sessionId: props.sessionId,
-        connectionName: props.connectionName,
-        localPath,
-        remotePath,
-        overwrite: exists && settings.overwriteBehavior !== 'rename' && action === 'overwrite',
-      }) || changed
-    }
-    catch (uploadError) {
-      toast.error({ title: `上传“${localName(localPath)}”失败`, description: ssh.errorMessage(uploadError) })
+      changed =
+        (await transfers.upload({
+          sessionId: props.sessionId,
+          connectionName: props.connectionName,
+          localPath,
+          remotePath,
+          overwrite:
+            exists &&
+            settings.overwriteBehavior !== 'rename' &&
+            action === 'overwrite',
+        })) || changed
+    } catch (uploadError) {
+      toast.error({
+        title: `上传“${localName(localPath)}”失败`,
+        description: ssh.errorMessage(uploadError),
+      })
     }
   }
 
-  if (changed)
-    await refresh()
+  if (changed) await refresh()
 }
 
 async function pickUploadFiles(): Promise<void> {
   const session = props.sessionId
-  if (!session) { toast.info('请先连接服务器'); return }
-  if (!path.value && !await load('')) return
+  if (!session) {
+    toast.info('请先连接服务器')
+    return
+  }
+  if (!path.value && !(await load(''))) return
   if (props.sessionId !== session || !path.value) return
   const directory = path.value
-  const result = await openFileDialog({ title: '选择要上传的文件', multiple: true, directory: false })
-  if (!result)
-    return
+  const result = await openFileDialog({
+    title: '选择要上传的文件',
+    multiple: true,
+    directory: false,
+  })
+  if (!result) return
   if (props.sessionId !== session || path.value !== directory) {
     toast.warning('当前服务器或目录已变化，请重新选择上传文件')
     return
@@ -258,11 +335,12 @@ async function pickUploadFiles(): Promise<void> {
 }
 
 async function download(file: SshRemoteFile): Promise<void> {
-  if (file.kind === 'directory')
-    return
-  const destination = await saveFileDialog({ title: `下载 ${file.name}`, defaultPath: defaultDownloadPath(file.name) })
-  if (!destination)
-    return
+  if (file.kind === 'directory') return
+  const destination = await saveFileDialog({
+    title: `下载 ${file.name}`,
+    defaultPath: defaultDownloadPath(file.name),
+  })
+  if (!destination) return
   await transfers.download({
     sessionId: props.sessionId,
     connectionName: props.connectionName,
@@ -278,7 +356,11 @@ async function openRemote(file: SshRemoteFile): Promise<void> {
     return
   }
 
-  editor.open({ sessionId: props.sessionId, path: file.path, connectionName: props.connectionName })
+  editor.open({
+    sessionId: props.sessionId,
+    path: file.path,
+    connectionName: props.connectionName,
+  })
 }
 
 async function openExternal(file: SshRemoteFile): Promise<void> {
@@ -287,8 +369,7 @@ async function openExternal(file: SshRemoteFile): Promise<void> {
     connectionName: props.connectionName,
     remotePath: file.path,
   })
-  if (localPath)
-    await openPath(localPath)
+  if (localPath) await openPath(localPath)
 }
 
 function openMenu(event: MouseEvent, file: SshRemoteFile): void {
@@ -301,36 +382,36 @@ function openMenu(event: MouseEvent, file: SshRemoteFile): void {
 
 function runContextAction(action: string): void {
   const file = state.menuFile
-  if (!file)
-    return
-  if (action === 'open')
-    void openRemote(file)
+  if (!file) return
+  if (action === 'open') void openRemote(file)
   else if (action === 'external')
-    void openExternal(file).catch(error => toast.error({ title: '打开文件失败', description: ssh.errorMessage(error) }))
-  else if (action === 'download')
-    void download(file)
-  else if (action === 'rename')
-    state.renaming = file
+    void openExternal(file).catch(error =>
+      toast.error({
+        title: '打开文件失败',
+        description: ssh.errorMessage(error),
+      })
+    )
+  else if (action === 'download') void download(file)
+  else if (action === 'rename') state.renaming = file
   else if (action === 'delete') {
-    if (settings.confirmFileDelete)
-      state.pendingDelete = file
-    else
-      void deleteFile(file)
+    if (settings.confirmFileDelete) state.pendingDelete = file
+    else void deleteFile(file)
   }
 }
 
 async function renameFile(name: string): Promise<void> {
   const file = state.renaming
   state.renaming = null
-  if (!file || name === file.name)
-    return
+  if (!file || name === file.name) return
   try {
     await ssh.renamePath(props.sessionId, file.path, remoteChildPath(name))
     await refresh()
     toast.success(`已重命名为“${name}”`)
-  }
-  catch (renameError) {
-    toast.error({ title: '重命名失败', description: ssh.errorMessage(renameError) })
+  } catch (renameError) {
+    toast.error({
+      title: '重命名失败',
+      description: ssh.errorMessage(renameError),
+    })
   }
 }
 
@@ -339,18 +420,18 @@ async function deleteFile(file: SshRemoteFile): Promise<void> {
     await ssh.deletePath(props.sessionId, file.path, file.kind === 'directory')
     await refresh()
     toast.success(`已删除“${file.name}”`)
-  }
-  catch (deleteError) {
-    toast.error({ title: '删除失败', description: ssh.errorMessage(deleteError) })
+  } catch (deleteError) {
+    toast.error({
+      title: '删除失败',
+      description: ssh.errorMessage(deleteError),
+    })
   }
 }
-
 
 async function confirmDelete(): Promise<void> {
   const file = state.pendingDelete
   state.pendingDelete = null
-  if (file)
-    await deleteFile(file)
+  if (file) await deleteFile(file)
 }
 
 function handleBrowserDrop(event: DragEvent): void {
@@ -358,8 +439,7 @@ function handleBrowserDrop(event: DragEvent): void {
   const paths = [...(event.dataTransfer?.files ?? [])]
     .map(file => (file as File & { path?: string }).path ?? '')
     .filter(Boolean)
-  if (paths.length)
-    void uploadPaths(paths)
+  if (paths.length) void uploadPaths(paths)
 }
 defineExpose({ pickUploadFiles })
 </script>
@@ -373,75 +453,203 @@ defineExpose({ pickUploadFiles })
     @dragleave.prevent="browserDragging = false"
     @drop.prevent="handleBrowserDrop"
   >
-    <div class="flex h-9 shrink-0 items-center gap-0.5 border-b border-line-soft px-2">
-      <IconButton icon="lucide:house" :size="14" title="主目录" :disabled="!connected" @click="load('')" />
-      <IconButton icon="lucide:arrow-left" :size="14" title="后退" :disabled="!canGoBack" @click="goBack" />
-      <IconButton icon="lucide:arrow-right" :size="14" title="前进" :disabled="!canGoForward" @click="goForward" />
-      <IconButton icon="lucide:arrow-up" :size="14" title="上一级" :disabled="!connected || path === '/'" @click="goUp" />
+    <div
+      class="border-line-soft flex h-9 shrink-0 items-center gap-0.5 border-b px-2"
+    >
+      <IconButton
+        icon="lucide:house"
+        :size="14"
+        title="主目录"
+        :disabled="!connected"
+        @click="load('')"
+      />
+      <IconButton
+        icon="lucide:arrow-left"
+        :size="14"
+        title="后退"
+        :disabled="!canGoBack"
+        @click="goBack"
+      />
+      <IconButton
+        icon="lucide:arrow-right"
+        :size="14"
+        title="前进"
+        :disabled="!canGoForward"
+        @click="goForward"
+      />
+      <IconButton
+        icon="lucide:arrow-up"
+        :size="14"
+        title="上一级"
+        :disabled="!connected || path === '/'"
+        @click="goUp"
+      />
 
       <div class="flex-1" />
 
-      <IconButton :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'" :size="14" title="复制路径" :disabled="!path" @click="copyPath" />
-      <IconButton icon="lucide:upload" :size="14" title="上传文件" :disabled="!connected" @click="pickUploadFiles" />
-      <IconButton icon="lucide:download" :size="14" title="下载选中文件" :disabled="!selectedFile || selectedFile.kind === 'directory'" @click="selectedFile && download(selectedFile)" />
-      <IconButton :icon="settings.showHiddenFiles ? 'lucide:eye' : 'lucide:eye-off'" :size="14" :title="settings.showHiddenFiles ? '隐藏点文件' : '显示隐藏文件'" @click="toggleHidden" />
-      <IconButton icon="lucide:rotate-cw" :size="14" title="刷新" :disabled="!connected" @click="refresh" />
+      <IconButton
+        :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'"
+        :size="14"
+        title="复制路径"
+        :disabled="!path"
+        @click="copyPath"
+      />
+      <IconButton
+        icon="lucide:upload"
+        :size="14"
+        title="上传文件"
+        :disabled="!connected"
+        @click="pickUploadFiles"
+      />
+      <IconButton
+        icon="lucide:download"
+        :size="14"
+        title="下载选中文件"
+        :disabled="!selectedFile || selectedFile.kind === 'directory'"
+        @click="selectedFile && download(selectedFile)"
+      />
+      <IconButton
+        :icon="settings.showHiddenFiles ? 'lucide:eye' : 'lucide:eye-off'"
+        :size="14"
+        :title="settings.showHiddenFiles ? '隐藏点文件' : '显示隐藏文件'"
+        @click="toggleHidden"
+      />
+      <IconButton
+        icon="lucide:rotate-cw"
+        :size="14"
+        title="刷新"
+        :disabled="!connected"
+        @click="refresh"
+      />
     </div>
 
-    <div class="flex shrink-0 border-b border-line-soft px-2 py-1.5">
-      <RemotePathInput :path="path" :entries="pathEntries" :connected="connected" :loading="loading" @navigate="load" />
+    <div class="border-line-soft flex shrink-0 border-b px-2 py-1.5">
+      <RemotePathInput
+        :path="path"
+        :entries="pathEntries"
+        :connected="connected"
+        :loading="loading"
+        @navigate="load"
+      />
     </div>
 
-    <div class="flex shrink-0 items-center gap-2 border-b border-line-soft px-3 py-1.5">
-      <AppIcon name="lucide:search" :size="13" class="text-txt-3" />
-      <input v-model="filterText" aria-label="筛选当前目录文件" placeholder="筛选当前目录文件…" class="min-w-0 flex-1 bg-transparent text-xs text-txt outline-none" @keydown.esc.stop="filterText = ''">
-      <IconButton v-if="filterText" icon="lucide:x" :size="12" title="清除文件筛选" @click="filterText = ''" />
+    <div
+      class="border-line-soft flex shrink-0 items-center gap-2 border-b px-3 py-1.5"
+    >
+      <AppIcon
+        name="lucide:search"
+        :size="13"
+        class="text-txt-3"
+      />
+      <input
+        v-model="filterText"
+        aria-label="筛选当前目录文件"
+        placeholder="筛选当前目录文件…"
+        class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none"
+        @keydown.esc.stop="filterText = ''"
+      />
+      <IconButton
+        v-if="filterText"
+        icon="lucide:x"
+        :size="12"
+        title="清除文件筛选"
+        @click="filterText = ''"
+      />
     </div>
 
-    <div class="grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b border-line-soft px-3 py-1.5 text-[11px] font-medium text-txt-3">
+    <div
+      class="border-line-soft text-txt-3 grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b px-3 py-1.5 text-[11px] font-medium"
+    >
       <span>Name</span>
       <span class="text-right">Size</span>
       <span>Modified</span>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto py-1 scroll-thin">
+    <div class="scroll-thin min-h-0 flex-1 overflow-y-auto py-1">
       <button
         v-for="file in visibleEntries"
         :key="file.path"
         type="button"
-        :class="cn('grid w-full grid-cols-[1fr_80px_130px] items-center gap-3 px-3 py-1.75 text-left text-xs transition-colors', selected === file.path ? 'bg-raised' : 'hover:bg-hover')"
+        :class="
+          cn(
+            'grid w-full grid-cols-[1fr_80px_130px] items-center gap-3 px-3 py-1.75 text-left text-xs transition-colors',
+            selected === file.path ? 'bg-raised' : 'hover:bg-hover'
+          )
+        "
         :title="`${file.permissions}  ${file.owner}:${file.group}`"
         @click="selected = file.path"
         @dblclick="openRemote(file)"
         @contextmenu.prevent.stop="openMenu($event, file)"
       >
         <span class="flex min-w-0 items-center gap-2">
-          <AppIcon :name="metaOf(file).icon" :size="15" :class="metaOf(file).tone" />
-          <span class="truncate text-txt">{{ file.name }}</span>
-          <span v-if="file.linkTarget" class="shrink-0 truncate text-[10.5px] text-txt-4">→ {{ file.linkTarget }}</span>
+          <AppIcon
+            :name="metaOf(file).icon"
+            :size="15"
+            :class="metaOf(file).tone"
+          />
+          <span class="text-txt truncate">{{ file.name }}</span>
+          <span
+            v-if="file.linkTarget"
+            class="text-txt-4 shrink-0 truncate text-[10.5px]"
+            >→ {{ file.linkTarget }}</span
+          >
         </span>
-        <span class="text-right text-txt-3">{{ sizeOf(file) }}</span>
-        <span class="truncate text-txt-3">{{ modifiedOf(file) }}</span>
+        <span class="text-txt-3 text-right">{{ sizeOf(file) }}</span>
+        <span class="text-txt-3 truncate">{{ modifiedOf(file) }}</span>
       </button>
 
-      <p v-if="loading" class="py-8 text-center text-xs text-txt-4">正在读取目录…</p>
-      <p v-else-if="!connected" class="py-8 text-center text-xs text-txt-4">连上服务器后可以浏览远端文件</p>
-      <p v-else-if="!visibleEntries.length && !error" class="py-8 text-center text-xs text-txt-4">{{ filterText.trim() ? '没有匹配的文件' : entries.length ? '隐藏文件已在设置中隐藏' : '这个目录是空的' }}</p>
+      <p
+        v-if="loading"
+        class="text-txt-4 py-8 text-center text-xs"
+      >
+        正在读取目录…
+      </p>
+      <p
+        v-else-if="!connected"
+        class="text-txt-4 py-8 text-center text-xs"
+      >
+        连上服务器后可以浏览远端文件
+      </p>
+      <p
+        v-else-if="!visibleEntries.length && !error"
+        class="text-txt-4 py-8 text-center text-xs"
+      >
+        {{
+          filterText.trim()
+            ? '没有匹配的文件'
+            : entries.length
+              ? '隐藏文件已在设置中隐藏'
+              : '这个目录是空的'
+        }}
+      </p>
     </div>
 
-    <footer class="flex h-7 shrink-0 items-center gap-3 border-t border-line-soft px-3 text-[11px] text-txt-3">
+    <footer
+      class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px]"
+    >
       <span class="truncate">{{ connected ? summary : '未连接' }}</span>
       <div class="flex-1" />
-      <span class="shrink-0 text-txt-4">双击打开 · 可拖入本地文件上传</span>
+      <span class="text-txt-4 shrink-0">双击打开 · 可拖入本地文件上传</span>
     </footer>
 
     <Transition name="drop-overlay">
-      <div v-if="dropActive && connected" class="drop-overlay" aria-live="polite">
-        <div class="grid size-12 place-items-center rounded-xl bg-violet/15 text-violet">
-          <AppIcon name="lucide:cloud-upload" :size="24" />
+      <div
+        v-if="dropActive && connected"
+        class="drop-overlay"
+        aria-live="polite"
+      >
+        <div
+          class="bg-violet/15 text-violet grid size-12 place-items-center rounded-xl"
+        >
+          <AppIcon
+            name="lucide:cloud-upload"
+            :size="24"
+          />
         </div>
-        <p class="mt-3 text-[13px] font-semibold text-txt">松开即可上传</p>
-        <p class="mt-1 text-[10.5px] text-txt-3">文件会上传到 {{ path || '主目录' }}</p>
+        <p class="text-txt mt-3 text-[13px] font-semibold">松开即可上传</p>
+        <p class="text-txt-3 mt-1 text-[10.5px]">
+          文件会上传到 {{ path || '主目录' }}
+        </p>
       </div>
     </Transition>
 
@@ -466,9 +674,11 @@ defineExpose({ pickUploadFiles })
   <AppConfirmDialog
     :open="Boolean(state.pendingDelete)"
     title="删除远端项目"
-    :description="state.pendingDelete?.kind === 'directory'
-      ? `确定删除空目录“${state.pendingDelete?.name ?? ''}”吗？此操作无法撤销。`
-      : `确定删除远端文件“${state.pendingDelete?.name ?? ''}”吗？此操作无法撤销。`"
+    :description="
+      state.pendingDelete?.kind === 'directory'
+        ? `确定删除空目录“${state.pendingDelete?.name ?? ''}”吗？此操作无法撤销。`
+        : `确定删除远端文件“${state.pendingDelete?.name ?? ''}”吗？此操作无法撤销。`
+    "
     confirm-label="删除"
     danger
     @close="state.pendingDelete = null"
@@ -498,7 +708,8 @@ defineExpose({ pickUploadFiles })
   border: 1px dashed color-mix(in oklch, var(--color-violet) 72%, transparent);
   border-radius: 10px;
   background: color-mix(in oklch, var(--color-panel) 89%, transparent);
-  box-shadow: inset 0 0 40px color-mix(in oklch, var(--color-violet) 8%, transparent);
+  box-shadow: inset 0 0 40px
+    color-mix(in oklch, var(--color-violet) 8%, transparent);
   backdrop-filter: blur(12px);
   pointer-events: none;
 }

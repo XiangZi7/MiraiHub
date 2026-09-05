@@ -29,18 +29,20 @@ export function useSshKeys() {
   /** 按密钥名、指纹、注释过滤 */
   const visibleKeys = computed(() => {
     const kw = state.keyword.trim().toLowerCase()
-    if (!kw)
-      return state.keys
+    if (!kw) return state.keys
 
-    return state.keys.filter(key =>
-      key.label.toLowerCase().includes(kw)
-      || key.fingerprint.toLowerCase().includes(kw)
-      || key.comment.toLowerCase().includes(kw),
+    return state.keys.filter(
+      key =>
+        key.label.toLowerCase().includes(kw) ||
+        key.fingerprint.toLowerCase().includes(kw) ||
+        key.comment.toLowerCase().includes(kw)
     )
   })
 
   /** 当前详情展示的密钥 */
-  const current = computed(() => state.keys.find(key => key.id === state.selected))
+  const current = computed(() =>
+    state.keys.find(key => key.id === state.selected)
+  )
 
   /** 重新扫描 ~/.ssh */
   async function refresh(): Promise<void> {
@@ -54,12 +56,10 @@ export function useSshKeys() {
       // 选中项可能已被删掉（或首次加载还没选），回落到第一把
       if (!state.keys.some(key => key.id === state.selected))
         state.selected = state.keys[0]?.id ?? ''
-    }
-    catch (err) {
+    } catch (err) {
       state.error = ssh.errorMessage(err)
       state.keys = []
-    }
-    finally {
+    } finally {
       state.loading = false
     }
   }
@@ -72,8 +72,7 @@ export function useSshKeys() {
       const key = await ssh.generateKey(request)
       await refresh()
       state.selected = key.id
-    }
-    catch (err) {
+    } catch (err) {
       state.error = ssh.errorMessage(err)
       throw err
     }
@@ -87,8 +86,7 @@ export function useSshKeys() {
       await ssh.deleteKey(keyId)
       privateKeys.forget(keyId)
       await refresh()
-    }
-    catch (err) {
+    } catch (err) {
       state.error = ssh.errorMessage(err)
       throw err
     }

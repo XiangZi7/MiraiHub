@@ -46,9 +46,14 @@ const sessionId = toRef(props, 'sessionId')
 </script>
 
 <template>
-  <section class="pane min-w-0 shrink-0" :style="{ width: `${props.width}px` }">
+  <section
+    class="pane min-w-0 shrink-0"
+    :style="{ width: `${props.width}px` }"
+  >
     <!-- 视图切换 -->
-    <header class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft px-2">
+    <header
+      class="border-line-soft flex h-10 shrink-0 items-center gap-1 border-b px-2"
+    >
       <button
         v-for="item in MACHINE_VIEWS"
         :key="item.id"
@@ -56,7 +61,10 @@ const sessionId = toRef(props, 'sessionId')
         :class="cn('seg', view === item.id && 'seg-active')"
         @click="view = item.id"
       >
-        <AppIcon :name="item.icon" :size="13" />
+        <AppIcon
+          :name="item.icon"
+          :size="13"
+        />
         <span>{{ item.label }}</span>
       </button>
 
@@ -80,7 +88,9 @@ const sessionId = toRef(props, 'sessionId')
       v-else
       ref="filesView"
       :session-id="sessionId"
-      :connection-name="connection ? `${connection.name} (${connection.host})` : ''"
+      :connection-name="
+        connection ? `${connection.name} (${connection.host})` : ''
+      "
     />
   </section>
 </template>

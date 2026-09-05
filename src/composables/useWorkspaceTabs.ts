@@ -1,12 +1,12 @@
-import { readonly } from "vue";
-import { storeToRefs } from "pinia";
-import { useWorkspaceStore } from "@/stores/workspace";
-export type { WorkspaceTab } from "@/stores/workspace";
+import { readonly } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useWorkspaceStore } from '@/stores/workspace'
+export type { WorkspaceTab } from '@/stores/workspace'
 
 /** 保留组件的只读接口；状态与动作由 Pinia 持有。 */
 export function useWorkspaceTabs() {
-  const store = useWorkspaceStore();
-  const { activeId, active } = storeToRefs(store);
+  const store = useWorkspaceStore()
+  const { activeId, active } = storeToRefs(store)
   const {
     open,
     close,
@@ -16,7 +16,7 @@ export function useWorkspaceTabs() {
     setStatus,
     closeByConnection,
     restore,
-  } = store;
+  } = store
   return {
     tabs: readonly(store.tabs),
     activeId,
@@ -29,5 +29,5 @@ export function useWorkspaceTabs() {
     setStatus,
     closeByConnection,
     restore,
-  };
+  }
 }

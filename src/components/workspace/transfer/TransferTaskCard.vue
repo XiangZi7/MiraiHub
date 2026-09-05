@@ -15,17 +15,19 @@ const emit = defineEmits<{
 }>()
 
 const progress = computed(() => {
-  if (!props.task.totalBytes)
-    return props.task.status === 'completed' ? 100 : 0
-  return Math.min(100, Math.round(props.task.transferredBytes / props.task.totalBytes * 100))
+  if (!props.task.totalBytes) return props.task.status === 'completed' ? 100 : 0
+  return Math.min(
+    100,
+    Math.round((props.task.transferredBytes / props.task.totalBytes) * 100)
+  )
 })
 
 const displayPath = computed(() => {
-  const path = props.task.direction === 'upload' ? props.task.target : props.task.source
+  const path =
+    props.task.direction === 'upload' ? props.task.target : props.task.source
   const normalized = path.replaceAll('\\', '/')
   const separator = normalized.lastIndexOf('/')
-  if (separator === 0)
-    return '/'
+  if (separator === 0) return '/'
   return separator > 0 ? normalized.slice(0, separator) : normalized
 })
 
@@ -37,8 +39,7 @@ const fileIcon = computed(() => {
 })
 
 const progressTone = computed(() => {
-  if (props.task.status === 'completed')
-    return 'transfer-progress-complete'
+  if (props.task.status === 'completed') return 'transfer-progress-complete'
   if (props.task.status === 'error' || props.task.status === 'cancelled')
     return 'transfer-progress-error'
   return 'transfer-progress-active'
@@ -46,18 +47,31 @@ const progressTone = computed(() => {
 
 const sizeLabel = computed(() => {
   const current = formatBytes(props.task.transferredBytes)
-  return props.task.totalBytes ? `${current} / ${formatBytes(props.task.totalBytes)}` : `${current} / Calculating`
+  return props.task.totalBytes
+    ? `${current} / ${formatBytes(props.task.totalBytes)}`
+    : `${current} / Calculating`
 })
 </script>
 
 <template>
   <article class="transfer-file">
-    <div class="transfer-file-icon" aria-hidden="true">
-      <AppIcon :name="fileIcon" :size="17" />
+    <div
+      class="transfer-file-icon"
+      aria-hidden="true"
+    >
+      <AppIcon
+        :name="fileIcon"
+        :size="17"
+      />
     </div>
 
     <div class="transfer-file-main">
-      <p class="transfer-file-name" :title="task.fileName">{{ task.fileName }}</p>
+      <p
+        class="transfer-file-name"
+        :title="task.fileName"
+      >
+        {{ task.fileName }}
+      </p>
       <p
         :class="['transfer-file-path', task.error && 'transfer-file-error']"
         :title="task.error || displayPath"
@@ -68,8 +82,17 @@ const sizeLabel = computed(() => {
         <span>{{ sizeLabel }}</span>
         <span>{{ progress }}%</span>
       </div>
-      <div class="transfer-file-track" role="progressbar" :aria-valuenow="progress" aria-valuemin="0" aria-valuemax="100">
-        <div :class="['transfer-file-progress', progressTone]" :style="{ width: `${progress}%` }" />
+      <div
+        class="transfer-file-track"
+        role="progressbar"
+        :aria-valuenow="progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <div
+          :class="['transfer-file-progress', progressTone]"
+          :style="{ width: `${progress}%` }"
+        />
       </div>
     </div>
 
@@ -82,7 +105,10 @@ const sizeLabel = computed(() => {
         aria-label="Pause transfer"
         @click="emit('pause', task.id)"
       >
-        <AppIcon name="lucide:pause" :size="13" />
+        <AppIcon
+          name="lucide:pause"
+          :size="13"
+        />
       </button>
       <button
         v-else-if="task.status === 'paused'"
@@ -92,16 +118,40 @@ const sizeLabel = computed(() => {
         aria-label="Resume transfer"
         @click="emit('resume', task.id)"
       >
-        <AppIcon name="lucide:play" :size="13" />
+        <AppIcon
+          name="lucide:play"
+          :size="13"
+        />
       </button>
-      <span v-else-if="task.status === 'completed'" class="transfer-result transfer-result-success" title="Completed">
-        <AppIcon name="lucide:circle-check" :size="14" />
+      <span
+        v-else-if="task.status === 'completed'"
+        class="transfer-result transfer-result-success"
+        title="Completed"
+      >
+        <AppIcon
+          name="lucide:circle-check"
+          :size="14"
+        />
       </span>
-      <span v-else-if="task.status === 'error'" class="transfer-result transfer-result-error" title="Failed">
-        <AppIcon name="lucide:circle-alert" :size="14" />
+      <span
+        v-else-if="task.status === 'error'"
+        class="transfer-result transfer-result-error"
+        title="Failed"
+      >
+        <AppIcon
+          name="lucide:circle-alert"
+          :size="14"
+        />
       </span>
-      <span v-else-if="task.status === 'cancelled'" class="transfer-result transfer-result-cancelled" title="Cancelled">
-        <AppIcon name="lucide:circle-x" :size="14" />
+      <span
+        v-else-if="task.status === 'cancelled'"
+        class="transfer-result transfer-result-cancelled"
+        title="Cancelled"
+      >
+        <AppIcon
+          name="lucide:circle-x"
+          :size="14"
+        />
       </span>
 
       <button
@@ -112,7 +162,10 @@ const sizeLabel = computed(() => {
         aria-label="Cancel transfer"
         @click="emit('cancel', task.id)"
       >
-        <AppIcon name="lucide:x" :size="14" />
+        <AppIcon
+          name="lucide:x"
+          :size="14"
+        />
       </button>
     </div>
   </article>
@@ -127,10 +180,16 @@ const sizeLabel = computed(() => {
   column-gap: 9px;
   border: 1px solid rgb(255 255 255 / 1.8%);
   border-radius: 7px;
-  background: linear-gradient(105deg, rgb(255 255 255 / 3.2%), rgb(255 255 255 / 1.2%));
+  background: linear-gradient(
+    105deg,
+    rgb(255 255 255 / 3.2%),
+    rgb(255 255 255 / 1.2%)
+  );
   box-shadow: 0 3px 12px rgb(0 0 0 / 12%);
   padding: 8px 9px 7px 14px;
-  transition: border-color 150ms ease, background-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
 }
 
 .transfer-file:hover {
@@ -203,7 +262,11 @@ const sizeLabel = computed(() => {
 }
 
 .transfer-progress-complete {
-  background: linear-gradient(90deg, color-mix(in oklch, var(--color-success) 82%, black), var(--color-success));
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--color-success) 82%, black),
+    var(--color-success)
+  );
 }
 
 .transfer-progress-error {
@@ -236,7 +299,9 @@ const sizeLabel = computed(() => {
   cursor: pointer;
   color: #9aa4ac;
   outline: none;
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .transfer-action:hover,

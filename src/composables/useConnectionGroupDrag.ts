@@ -56,9 +56,7 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
 
     return options
       .groups()
-      .find(
-        (group) => group.id === groupId && group.kind === payload?.groupKind,
-      )
+      .find(group => group.id === groupId && group.kind === payload?.groupKind)
   }
 
   function reset(): void {
@@ -73,7 +71,7 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
   function start(
     event: PointerEvent,
     connection: SavedConnection,
-    sourceGroup: ConnectionGroupView,
+    sourceGroup: ConnectionGroupView
   ): void {
     if (event.button !== 0 || !event.isPrimary) return
     activePointerId = event.pointerId
@@ -101,7 +99,7 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
     if (!dragging.value) {
       const distance = Math.hypot(
         event.clientX - startX,
-        event.clientY - startY,
+        event.clientY - startY
       )
       if (distance < DRAG_THRESHOLD_PX) return
 

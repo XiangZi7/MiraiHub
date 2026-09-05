@@ -77,32 +77,30 @@ const addMenuItems: ContextMenuItem[] = [
  * 让用户从密钥页直接点服务器打开终端。
  */
 const projectGroups = computed(() =>
-  groupsFor(active.value === 'databases' ? 'database' : 'ssh'),
+  groupsFor(active.value === 'databases' ? 'database' : 'ssh')
 )
 
 /** 分组标题：Databases 视图下叫 Connections 更贴切 */
 const groupsLabel = computed(() =>
-  active.value === 'databases' ? 'Databases' : 'Projects',
+  active.value === 'databases' ? 'Databases' : 'Projects'
 )
 
 const currentGroupKind = computed(() =>
-  active.value === 'databases' ? ('database' as const) : ('ssh' as const),
+  active.value === 'databases' ? ('database' as const) : ('ssh' as const)
 )
 
 /** 已打开且连上的连接 id，用来给节点点亮绿点 */
 const connectedIds = computed(
   () =>
-    new Set(
-      tabs.filter((tab) => tab.status === 'connected').map((tab) => tab.id),
-    ),
+    new Set(tabs.filter(tab => tab.status === 'connected').map(tab => tab.id))
 )
 
-const openIds = computed(() => new Set(tabs.map((tab) => tab.id)))
+const openIds = computed(() => new Set(tabs.map(tab => tab.id)))
 
 const transferSessionId = computed(() => {
   const connectionId = state.transferConnection?.id
   return (
-    tabs.find((tab) => tab.id === connectionId && tab.status === 'connected')
+    tabs.find(tab => tab.id === connectionId && tab.status === 'connected')
       ?.sessionId ?? ''
   )
 })
@@ -131,20 +129,24 @@ function editConnection(connection: SavedConnection): void {
       : connection.kind === 'ssh'
         ? 'ssh'
         : 'database',
-    connection.id,
+    connection.id
   )
 }
 
 async function moveConnection(
   connectionId: string,
-  groupName: string,
+  groupName: string
 ): Promise<void> {
   try {
     await updateConnection(connectionId, { group: groupName })
-    toast.success(groupName ? `连接已移动到“${groupName}”` : '连接已移到 Ungrouped')
-  }
-  catch (error) {
-    toast.error({ title: '移动连接失败', description: error instanceof Error ? error.message : String(error) })
+    toast.success(
+      groupName ? `连接已移动到“${groupName}”` : '连接已移到 Ungrouped'
+    )
+  } catch (error) {
+    toast.error({
+      title: '移动连接失败',
+      description: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 
@@ -163,9 +165,11 @@ async function duplicateConnection(connection: SavedConnection): Promise<void> {
       settings: structuredClone(toRaw(connection.settings)),
     })
     toast.success(`连接“${connection.name}”已复制`)
-  }
-  catch (error) {
-    toast.error({ title: '复制连接失败', description: error instanceof Error ? error.message : String(error) })
+  } catch (error) {
+    toast.error({
+      title: '复制连接失败',
+      description: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 
@@ -173,9 +177,11 @@ async function handleCreateGroup(name: string): Promise<void> {
   try {
     await createGroup(currentGroupKind.value, name)
     toast.success(`分组“${name}”已创建`)
-  }
-  catch (error) {
-    toast.error({ title: '创建分组失败', description: error instanceof Error ? error.message : String(error) })
+  } catch (error) {
+    toast.error({
+      title: '创建分组失败',
+      description: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 
@@ -183,9 +189,11 @@ async function handleRenameGroup(groupId: string, name: string): Promise<void> {
   try {
     await renameGroup(groupId, name)
     toast.success(`分组已重命名为“${name}”`)
-  }
-  catch (error) {
-    toast.error({ title: '重命名分组失败', description: error instanceof Error ? error.message : String(error) })
+  } catch (error) {
+    toast.error({
+      title: '重命名分组失败',
+      description: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 
@@ -201,7 +209,7 @@ function requestRemoveGroup(group: ConnectionGroupView): void {
 
 function openDatabaseTransfer(
   connection: SavedConnection,
-  mode: DatabaseTransferMode,
+  mode: DatabaseTransferMode
 ): void {
   state.transferConnection = connection
   state.transferMode = mode
@@ -230,14 +238,15 @@ async function confirmRemoval(): Promise<void> {
     if (connection) {
       await removeConnection(connection.id)
       toast.success(`连接“${connection.name}”已删除`)
-    }
-    else if (group) {
+    } else if (group) {
       await removeGroup(group.id)
       toast.success(`分组“${group.name}”已删除`)
     }
-  }
-  catch (error) {
-    toast.error({ title: '删除失败', description: error instanceof Error ? error.message : String(error) })
+  } catch (error) {
+    toast.error({
+      title: '删除失败',
+      description: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 </script>
@@ -251,7 +260,7 @@ async function confirmRemoval(): Promise<void> {
     <!-- 顶部工具条 -->
     <div
       :class="[
-        'flex h-11 shrink-0 items-center gap-1 border-b border-line-soft',
+        'border-line-soft flex h-11 shrink-0 items-center gap-1 border-b',
         collapsed ? 'justify-center px-1.5' : 'px-2.5',
       ]"
     >
@@ -261,7 +270,11 @@ async function confirmRemoval(): Promise<void> {
           title="侧边栏"
           @click="collapsed = true"
         />
-        <IconButton icon="lucide:layout-grid" title="恢复默认布局" @click="emit('resetLayout')" />
+        <IconButton
+          icon="lucide:layout-grid"
+          title="恢复默认布局"
+          @click="emit('resetLayout')"
+        />
         <div class="flex-1" />
       </template>
       <IconButton
@@ -273,12 +286,17 @@ async function confirmRemoval(): Promise<void> {
 
     <div
       :class="[
-        'flex-1 overflow-y-auto py-3 scroll-thin',
+        'scroll-thin flex-1 overflow-y-auto py-3',
         collapsed ? 'px-1.5' : 'px-2',
       ]"
     >
       <!-- 工作区 -->
-      <p v-if="!collapsed" class="group-label mb-1.5">Workspace</p>
+      <p
+        v-if="!collapsed"
+        class="group-label mb-1.5"
+      >
+        Workspace
+      </p>
       <nav class="space-y-0.5">
         <RouterLink
           v-for="item in NAV_ITEMS"
@@ -289,12 +307,16 @@ async function confirmRemoval(): Promise<void> {
             cn(
               'nav-item w-full',
               collapsed && 'justify-center px-0',
-              active === item.id && 'nav-item-active',
+              active === item.id && 'nav-item-active'
             )
           "
           :title="collapsed ? item.label : undefined"
         >
-          <AppIcon :name="item.icon" :size="15" class="text-txt-3" />
+          <AppIcon
+            :name="item.icon"
+            :size="15"
+            class="text-txt-3"
+          />
           <span v-if="!collapsed">{{ item.label }}</span>
         </RouterLink>
       </nav>
@@ -325,7 +347,7 @@ async function confirmRemoval(): Promise<void> {
     <!-- 底部操作 -->
     <div
       :class="[
-        'flex shrink-0 items-center gap-2 border-t border-line-soft',
+        'border-line-soft flex shrink-0 items-center gap-2 border-t',
         collapsed ? 'flex-col p-1.5' : 'p-2.5',
       ]"
     >
@@ -335,7 +357,10 @@ async function confirmRemoval(): Promise<void> {
         :title="collapsed ? 'Add Connection' : undefined"
         @click="openAddMenu"
       >
-        <AppIcon name="lucide:plus" :size="14" />
+        <AppIcon
+          name="lucide:plus"
+          :size="14"
+        />
         <span v-if="!collapsed">Add Connection</span>
       </button>
       <IconButton

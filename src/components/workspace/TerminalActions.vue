@@ -119,18 +119,18 @@ const refreshSearch = useDebounceFn(
     if (state.searchOpen && state.query) search(0)
   },
   120,
-  { maxWait: 500 },
+  { maxWait: 500 }
 )
 watch(
   () => state.query,
-  () => search(1, true),
+  () => search(1, true)
 )
 watch(
   () => props.terminal,
   (terminal, _previous, onCleanup) => {
     if (!terminal) return
     // 只拦截本终端的搜索快捷键，普通 Ctrl+C 仍交给远端。
-    terminal.attachCustomKeyEventHandler((event) => {
+    terminal.attachCustomKeyEventHandler(event => {
       if (
         event.type === 'keydown' &&
         (event.ctrlKey || event.metaKey) &&
@@ -155,7 +155,7 @@ watch(
       terminal.attachCustomKeyEventHandler(() => true)
     })
   },
-  { immediate: true },
+  { immediate: true }
 )
 
 async function runAction(id: string): Promise<void> {
@@ -216,7 +216,7 @@ async function runAction(id: string): Promise<void> {
     />
     <div
       v-if="searchOpen"
-      class="absolute top-full right-0 z-30 mt-2 flex w-72 items-center gap-1 rounded-lg border border-line bg-[var(--color-canvas)] p-2 shadow-lg"
+      class="border-line absolute top-full right-0 z-30 mt-2 flex w-72 items-center gap-1 rounded-lg border bg-[var(--color-canvas)] p-2 shadow-lg"
       role="search"
       @keydown.esc.stop="closeSearch"
     >
@@ -225,10 +225,12 @@ async function runAction(id: string): Promise<void> {
         v-model="query"
         aria-label="搜索终端内容"
         placeholder="搜索终端内容…"
-        class="min-w-0 flex-1 bg-transparent text-xs text-txt outline-none"
+        class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none"
         @keydown.enter.prevent="search($event.shiftKey ? -1 : 1)"
       />
-      <span class="shrink-0 text-[10px] text-txt-3" aria-live="polite"
+      <span
+        class="text-txt-3 shrink-0 text-[10px]"
+        aria-live="polite"
         >{{ matchCount ? matchIndex + 1 : 0 }}/{{ matchCount }}</span
       >
       <IconButton

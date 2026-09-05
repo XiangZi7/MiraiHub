@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, shallowRef, useId, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  shallowRef,
+  useId,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
@@ -24,10 +31,9 @@ const presetOptions = computed(() => [
   })),
 ])
 
-watch(selectedId, (id) => {
+watch(selectedId, id => {
   const preset = presets.value.find(item => item.id === id)
-  if (preset)
-    command.value = preset.command
+  if (preset) command.value = preset.command
 })
 
 async function beginSave(): Promise<void> {
@@ -47,8 +53,7 @@ async function beginSave(): Promise<void> {
 async function savePreset(): Promise<void> {
   const name = presetName.value.trim()
   const value = command.value.trim()
-  if (!name || !value)
-    return
+  if (!name || !value) return
 
   const preset = await save(name, value)
   selectedId.value = preset.id
@@ -57,8 +62,7 @@ async function savePreset(): Promise<void> {
 }
 
 async function removePreset(): Promise<void> {
-  if (!selectedId.value)
-    return
+  if (!selectedId.value) return
 
   await remove(selectedId.value)
   selectedId.value = ''
@@ -68,7 +72,7 @@ async function removePreset(): Promise<void> {
 
 <template>
   <fieldset class="startup-command-field">
-    <legend class="mb-1.5 block text-[11px] font-medium text-txt-2">
+    <legend class="text-txt-2 mb-1.5 block text-[11px] font-medium">
       Initialization Command
     </legend>
 
@@ -79,7 +83,11 @@ async function removePreset(): Promise<void> {
         :options="presetOptions"
         hide-label
       />
-      <IconButton icon="lucide:save" title="把当前命令保存为预设" @click="beginSave" />
+      <IconButton
+        icon="lucide:save"
+        title="把当前命令保存为预设"
+        @click="beginSave"
+      />
       <IconButton
         icon="lucide:trash-2"
         title="删除选中的预设"
@@ -88,7 +96,11 @@ async function removePreset(): Promise<void> {
       />
     </div>
 
-    <form v-if="naming" class="mt-2 flex items-center gap-2" @submit.prevent="savePreset">
+    <form
+      v-if="naming"
+      class="mt-2 flex items-center gap-2"
+      @submit.prevent="savePreset"
+    >
       <input
         ref="presetName"
         v-model="presetName"
@@ -97,11 +109,18 @@ async function removePreset(): Promise<void> {
         aria-label="初始化命令预设名称"
         maxlength="64"
         @keydown.esc.prevent="naming = false"
+      />
+      <AppButton
+        size="sm"
+        variant="primary"
+        type="submit"
       >
-      <AppButton size="sm" variant="primary" type="submit">
         保存预设
       </AppButton>
-      <AppButton size="sm" @click="naming = false">
+      <AppButton
+        size="sm"
+        @click="naming = false"
+      >
         取消
       </AppButton>
     </form>
@@ -115,7 +134,9 @@ async function removePreset(): Promise<void> {
       spellcheck="false"
     />
 
-    <p class="mt-1.5 text-[10.5px] text-txt-4">SSH shell 就绪后自动执行；预设保存在本机。</p>
+    <p class="text-txt-4 mt-1.5 text-[10.5px]">
+      SSH shell 就绪后自动执行；预设保存在本机。
+    </p>
   </fieldset>
 </template>
 
@@ -133,7 +154,9 @@ async function removePreset(): Promise<void> {
   color: var(--color-txt);
   font-size: 12px;
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .preset-name-input {
@@ -146,7 +169,7 @@ async function removePreset(): Promise<void> {
   width: 100%;
   resize: vertical;
   padding: 8px 10px;
-  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
   line-height: 1.45;
 }
 
@@ -158,6 +181,7 @@ async function removePreset(): Promise<void> {
 .preset-name-input:focus,
 .command-input:focus {
   border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 </style>

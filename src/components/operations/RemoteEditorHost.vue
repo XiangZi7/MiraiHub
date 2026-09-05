@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from "vue";
-import { useRemoteEditor } from "@/composables/useRemoteEditor";
-const Editor = defineAsyncComponent(() => import("./RemoteTextEditor.vue"));
-const editor = useRemoteEditor();
+import { defineAsyncComponent } from 'vue'
+import { useRemoteEditor } from '@/composables/useRemoteEditor'
+const Editor = defineAsyncComponent(() => import('./RemoteTextEditor.vue'))
+const editor = useRemoteEditor()
 </script>
 <template>
   <Editor

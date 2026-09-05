@@ -24,8 +24,7 @@ const titleId = useId()
 
 // Esc 关闭。挂在 window 而不是浮层元素上：焦点可能在任何一个输入框里
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-  if (event.key === 'Escape')
-    emit('close')
+  if (event.key === 'Escape') emit('close')
 })
 </script>
 
@@ -37,28 +36,44 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     @click.self="emit('close')"
   >
     <section
-      class="glass pane max-h-full w-full max-w-100 shadow-pop"
+      class="glass pane shadow-pop max-h-full w-full max-w-100"
       role="dialog"
       aria-modal="true"
       :aria-labelledby="titleId"
     >
-      <header class="flex shrink-0 items-start gap-2 border-b border-line-soft px-4 py-3">
+      <header
+        class="border-line-soft flex shrink-0 items-start gap-2 border-b px-4 py-3"
+      >
         <div class="min-w-0 flex-1">
-          <h2 :id="titleId" class="text-[13px] font-medium text-txt">
+          <h2
+            :id="titleId"
+            class="text-txt text-[13px] font-medium"
+          >
             {{ title }}
           </h2>
-          <p v-if="description" class="mt-1 text-[11px] text-txt-3">
+          <p
+            v-if="description"
+            class="text-txt-3 mt-1 text-[11px]"
+          >
             {{ description }}
           </p>
         </div>
-        <IconButton icon="lucide:x" :size="15" title="关闭" @click="emit('close')" />
+        <IconButton
+          icon="lucide:x"
+          :size="15"
+          title="关闭"
+          @click="emit('close')"
+        />
       </header>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3.5 scroll-thin">
+      <div class="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-3.5">
         <slot />
       </div>
 
-      <footer v-if="$slots.footer" class="flex shrink-0 items-center gap-2 border-t border-line-soft px-4 py-3">
+      <footer
+        v-if="$slots.footer"
+        class="border-line-soft flex shrink-0 items-center gap-2 border-t px-4 py-3"
+      >
         <slot name="footer" />
       </footer>
     </section>

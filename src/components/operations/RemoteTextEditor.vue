@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { toRefs } from "vue";
-import { useRemoteTextDocument } from "@/composables/useRemoteTextDocument";
-import type { RemoteEditRequest } from "@/composables/useRemoteEditor";
-import OperationDialog from "./OperationDialog.vue";
-import AppButton from "@/components/ui/AppButton.vue";
-import AppConfirmDialog from "@/components/ui/AppConfirmDialog.vue";
-const props = defineProps<RemoteEditRequest & { standalone?: boolean }>();
+import { toRefs } from 'vue'
+import { useRemoteTextDocument } from '@/composables/useRemoteTextDocument'
+import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
+import OperationDialog from './OperationDialog.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
+const props = defineProps<RemoteEditRequest & { standalone?: boolean }>()
 const emit = defineEmits<{
-  close: [];
-  status: [dirty: boolean, busy: boolean];
-}>();
+  close: []
+  status: [dirty: boolean, busy: boolean]
+}>()
 const {
   state,
   dirty,
@@ -24,9 +24,9 @@ const {
 } = useRemoteTextDocument(
   props,
   !!props.standalone,
-  () => emit("close"),
-  (dirty, busy) => emit("status", dirty, busy),
-);
+  () => emit('close'),
+  (dirty, busy) => emit('status', dirty, busy)
+)
 const {
   document: remote,
   draft,
@@ -36,8 +36,8 @@ const {
   reviewing,
   reviewedText,
   discard,
-} = toRefs(state);
-defineExpose({ requestClose });
+} = toRefs(state)
+defineExpose({ requestClose })
 </script>
 <template>
   <OperationDialog
@@ -54,16 +54,22 @@ defineExpose({ requestClose });
     <div class="editor-toolbar">
       <span
         >{{
-          busy ? "处理中" : !remote ? "未加载" : dirty ? "未保存" : "已同步"
+          busy ? '处理中' : !remote ? '未加载' : dirty ? '未保存' : '已同步'
         }}
-        · UTF-8{{ remote?.bom ? " BOM" : "" }} ·
-        {{ remote?.lineEnding || "LF" }} · {{ lines }} 行 ·
+        · UTF-8{{ remote?.bom ? ' BOM' : '' }} ·
+        {{ remote?.lineEnding || 'LF' }} · {{ lines }} 行 ·
         {{ (bytes / 1024).toFixed(1) }} KB</span
       >
       <div class="flex-1" />
-      <AppButton size="sm" :disabled="busy || reviewing" @click="requestReload"
+      <AppButton
+        size="sm"
+        :disabled="busy || reviewing"
+        @click="requestReload"
         >重新加载</AppButton
-      ><AppButton size="sm" :disabled="!remote" @click="copyDraft"
+      ><AppButton
+        size="sm"
+        :disabled="!remote"
+        @click="copyDraft"
         >复制草稿</AppButton
       ><AppButton
         variant="primary"
@@ -73,14 +79,22 @@ defineExpose({ requestClose });
         >预览并保存 · Ctrl+S</AppButton
       >
     </div>
-    <p v-if="error" role="alert" class="editor-notice text-danger">
+    <p
+      v-if="error"
+      role="alert"
+      class="editor-notice text-danger"
+    >
       {{ error }}
     </p>
-    <p v-if="message" role="status" class="editor-notice text-success">
+    <p
+      v-if="message"
+      role="status"
+      class="editor-notice text-success"
+    >
       {{ message }}
     </p>
     <template v-if="reviewing && remote">
-      <p class="text-[12px] text-warning">
+      <p class="text-warning text-[12px]">
         核对以下完整内容后，确认保存到上方服务器与路径。
       </p>
       <div class="editor-review">
@@ -101,11 +115,16 @@ defineExpose({ requestClose });
         </label>
       </div>
       <div class="flex justify-end gap-2">
-        <AppButton :disabled="busy" @click="reviewing = false"
+        <AppButton
+          :disabled="busy"
+          @click="reviewing = false"
           >返回编辑</AppButton
-        ><AppButton variant="primary" :disabled="busy" @click="save">{{
-          busy ? "正在检查并保存…" : "确认保存到远端"
-        }}</AppButton>
+        ><AppButton
+          variant="primary"
+          :disabled="busy"
+          @click="save"
+          >{{ busy ? '正在检查并保存…' : '确认保存到远端' }}</AppButton
+        >
       </div>
     </template>
     <textarea
@@ -169,7 +188,7 @@ defineExpose({ requestClose });
   background: var(--color-base);
   color: var(--color-txt);
   font:
-    12px/1.8 "JetBrains Mono",
+    12px/1.8 'JetBrains Mono',
     monospace;
   tab-size: 2;
   white-space: pre;

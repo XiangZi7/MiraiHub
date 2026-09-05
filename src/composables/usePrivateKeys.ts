@@ -38,8 +38,7 @@ export function usePrivateKeys() {
   }
 
   async function refreshLocalKeys(): Promise<void> {
-    if (!IS_TAURI)
-      return
+    if (!IS_TAURI) return
 
     loading.value = true
     error.value = ''
@@ -47,11 +46,9 @@ export function usePrivateKeys() {
     try {
       privateKeysStore.syncLocalKeys(await ssh.listKeys())
       reload()
-    }
-    catch (caught) {
+    } catch (caught) {
       error.value = ssh.errorMessage(caught)
-    }
-    finally {
+    } finally {
       loading.value = false
     }
   }

@@ -12,7 +12,8 @@
     "test": "node --test tests/*.test.mjs",
     "version:set": "node scripts/release-version.mjs",
     "version:check": "node scripts/release-version.mjs --check",
-    "release:build": "tauri build --bundles nsis -- --locked"
+    "release:build": "tauri build --bundles nsis -- --locked",
+    "format": "prettier --write 'src/**/*.{vue,ts,js,jsx,html,css,scss,md}'"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",

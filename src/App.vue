@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { RouterView, useRoute } from "vue-router";
-import ToastHost from "@/components/ui/ToastHost.vue";
-const route = useRoute();
+import { RouterView, useRoute } from 'vue-router'
+import ToastHost from '@/components/ui/ToastHost.vue'
+const route = useRoute()
 </script>
 
 <template>

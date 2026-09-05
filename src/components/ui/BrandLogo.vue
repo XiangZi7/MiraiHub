@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = withDefaults(defineProps<{
-  size?: number
-}>(), {
-  size: 24,
-})
+const props = withDefaults(
+  defineProps<{
+    size?: number
+  }>(),
+  {
+    size: 24,
+  }
+)
 
 const logoStyle = computed(() => {
   const size = Math.max(1, props.size)
@@ -29,6 +32,6 @@ const logoStyle = computed(() => {
       alt=""
       draggable="false"
       class="block size-full object-cover"
-    >
+    />
   </span>
 </template>

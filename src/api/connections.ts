@@ -36,31 +36,40 @@ const CHANGE_EVENT = 'miraihub:connections-changed'
 function readAll(): SavedConnection[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw)
-      return []
+    if (!raw) return []
 
     const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed))
-      return []
+    if (!Array.isArray(parsed)) return []
 
-    return parsed.map((connection) => {
+    return parsed.map(connection => {
       const item = connection as Partial<SavedConnection>
       const tags = Array.isArray(item.tags)
-        ? item.tags.filter((tag): tag is string => typeof tag === 'string').map(tag => tag.trim()).filter(Boolean)
+        ? item.tags
+            .filter((tag): tag is string => typeof tag === 'string')
+            .map(tag => tag.trim())
+            .filter(Boolean)
         : []
       const tagColor = isTagColor(item.tagColor) ? item.tagColor : 'green'
 
       return { ...item, tags, tagColor } as SavedConnection
     })
-  }
-  catch (err) {
+  } catch (err) {
     console.warn('读取连接配置失败，按空列表处理：', err)
     return []
   }
 }
 
 function isTagColor(value: unknown): value is ConnectionTagColor {
-  return ['red', 'orange', 'amber', 'green', 'cyan', 'blue', 'violet', 'gray'].includes(String(value))
+  return [
+    'red',
+    'orange',
+    'amber',
+    'green',
+    'cyan',
+    'blue',
+    'violet',
+    'gray',
+  ].includes(String(value))
 }
 
 function writeAll(connections: SavedConnection[]): void {
@@ -71,23 +80,21 @@ function writeAll(connections: SavedConnection[]): void {
 function readGroups(): ConnectionGroup[] {
   try {
     const raw = localStorage.getItem(GROUP_STORAGE_KEY)
-    if (!raw)
-      return []
+    if (!raw) return []
 
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed))
-      return []
+    if (!Array.isArray(parsed)) return []
 
-    return parsed.filter((group): group is ConnectionGroup => (
-      typeof group === 'object'
-      && group !== null
-      && typeof group.id === 'string'
-      && typeof group.name === 'string'
-      && (group.kind === 'ssh' || group.kind === 'database')
-      && typeof group.createdAt === 'number'
-    ))
-  }
-  catch (error) {
+    return parsed.filter(
+      (group): group is ConnectionGroup =>
+        typeof group === 'object' &&
+        group !== null &&
+        typeof group.id === 'string' &&
+        typeof group.name === 'string' &&
+        (group.kind === 'ssh' || group.kind === 'database') &&
+        typeof group.createdAt === 'number'
+    )
+  } catch (error) {
     console.warn('读取连接分组失败，按空列表处理：', error)
     return []
   }
@@ -103,13 +110,14 @@ function readTags(): ConnectionTagDefinition[] {
     const raw = localStorage.getItem(TAG_STORAGE_KEY)
     const parsed: unknown = raw ? JSON.parse(raw) : []
     const tags = Array.isArray(parsed)
-      ? parsed.filter((tag): tag is ConnectionTagDefinition => (
-          typeof tag === 'object'
-          && tag !== null
-          && typeof tag.name === 'string'
-          && isTagColor(tag.color)
-          && typeof tag.createdAt === 'number'
-        ))
+      ? parsed.filter(
+          (tag): tag is ConnectionTagDefinition =>
+            typeof tag === 'object' &&
+            tag !== null &&
+            typeof tag.name === 'string' &&
+            isTagColor(tag.color) &&
+            typeof tag.createdAt === 'number'
+        )
       : []
 
     // 首次升级时把旧连接上的自由文本标签收进共享目录，已有数据无需重建。
@@ -118,20 +126,21 @@ function readTags(): ConnectionTagDefinition[] {
     for (const connection of readAll()) {
       for (const name of connection.tags) {
         const key = normalizedName(name)
-        if (!key || known.has(key))
-          continue
-        tags.push({ name: name.trim(), color: connection.tagColor, createdAt: connection.createdAt })
+        if (!key || known.has(key)) continue
+        tags.push({
+          name: name.trim(),
+          color: connection.tagColor,
+          createdAt: connection.createdAt,
+        })
         known.add(key)
         changed = true
       }
     }
 
-    if (changed)
-      localStorage.setItem(TAG_STORAGE_KEY, JSON.stringify(tags))
+    if (changed) localStorage.setItem(TAG_STORAGE_KEY, JSON.stringify(tags))
 
     return tags
-  }
-  catch (error) {
+  } catch (error) {
     console.warn('读取共享标签失败，按空列表处理：', error)
     return []
   }
@@ -150,31 +159,32 @@ function ensureTags(names: readonly string[], color: ConnectionTagColor): void {
   for (const rawName of names) {
     const name = rawName.trim()
     const key = normalizedName(name)
-    if (!key || known.has(key))
-      continue
+    if (!key || known.has(key)) continue
     additions.push({ name, color, createdAt: Date.now() })
     known.add(key)
   }
 
-  if (additions.length)
-    writeTags([...tags, ...additions])
+  if (additions.length) writeTags([...tags, ...additions])
 }
 
 function normalizedName(name: string): string {
   return name.trim().toLocaleLowerCase()
 }
 
-function ensureGroup(kind: ConnectionGroupKind, name: string): ConnectionGroup | undefined {
+function ensureGroup(
+  kind: ConnectionGroupKind,
+  name: string
+): ConnectionGroup | undefined {
   const trimmed = name.trim()
-  if (!trimmed)
-    return undefined
+  if (!trimmed) return undefined
 
   const groups = readGroups()
-  const existing = groups.find(group => (
-    group.kind === kind && normalizedName(group.name) === normalizedName(trimmed)
-  ))
-  if (existing)
-    return existing
+  const existing = groups.find(
+    group =>
+      group.kind === kind &&
+      normalizedName(group.name) === normalizedName(trimmed)
+  )
+  if (existing) return existing
 
   const group: ConnectionGroup = {
     id: `group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -209,15 +219,15 @@ export async function listGroups(): Promise<ConnectionGroup[]> {
   // 这样旧分组也能重命名、删除，并且连接移走后仍然保留空分组。
   for (const connection of readAll()) {
     const name = connection.group.trim()
-    if (!name)
-      continue
+    if (!name) continue
 
     const kind = groupKindOf(connection.kind)
-    const exists = groups.some(group => (
-      group.kind === kind && normalizedName(group.name) === normalizedName(name)
-    ))
-    if (exists)
-      continue
+    const exists = groups.some(
+      group =>
+        group.kind === kind &&
+        normalizedName(group.name) === normalizedName(name)
+    )
+    if (exists) continue
 
     groups.push({
       id: `group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -228,8 +238,7 @@ export async function listGroups(): Promise<ConnectionGroup[]> {
     changed = true
   }
 
-  if (changed)
-    localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(groups))
+  if (changed) localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(groups))
 
   return groups.sort((a, b) => a.createdAt - b.createdAt)
 }
@@ -263,7 +272,7 @@ export async function create(input: NewConnection): Promise<SavedConnection> {
 /** 更新部分字段。id 不存在时静默忽略 —— 并发下另一端可能刚删掉它 */
 export async function update(
   id: string,
-  patch: Partial<Omit<SavedConnection, 'id'>>,
+  patch: Partial<Omit<SavedConnection, 'id'>>
 ): Promise<void> {
   const existing = readAll().find(item => item.id === id)
   if (existing) {
@@ -274,7 +283,7 @@ export async function update(
   }
 
   writeAll(
-    readAll().map(item => (item.id === id ? { ...item, ...patch } : item)),
+    readAll().map(item => (item.id === id ? { ...item, ...patch } : item))
   )
 }
 
@@ -288,52 +297,56 @@ export async function touch(id: string): Promise<void> {
   await update(id, { lastUsedAt: Date.now() })
 }
 
-export async function createGroup(kind: ConnectionGroupKind, name: string): Promise<ConnectionGroup | undefined> {
+export async function createGroup(
+  kind: ConnectionGroupKind,
+  name: string
+): Promise<ConnectionGroup | undefined> {
   return ensureGroup(kind, name)
 }
 
 export async function renameGroup(id: string, name: string): Promise<void> {
   const trimmed = name.trim()
-  if (!trimmed)
-    return
+  if (!trimmed) return
 
   const groups = readGroups()
   const target = groups.find(group => group.id === id)
-  if (!target)
-    return
+  if (!target) return
 
-  const duplicate = groups.some(group => (
-    group.id !== id
-    && group.kind === target.kind
-    && normalizedName(group.name) === normalizedName(trimmed)
-  ))
-  if (duplicate)
-    return
+  const duplicate = groups.some(
+    group =>
+      group.id !== id &&
+      group.kind === target.kind &&
+      normalizedName(group.name) === normalizedName(trimmed)
+  )
+  if (duplicate) return
 
-  const connections = readAll().map(connection => (
-    groupKindOf(connection.kind) === target.kind
-    && normalizedName(connection.group) === normalizedName(target.name)
+  const connections = readAll().map(connection =>
+    groupKindOf(connection.kind) === target.kind &&
+    normalizedName(connection.group) === normalizedName(target.name)
       ? { ...connection, group: trimmed }
       : connection
-  ))
+  )
 
   writeAll(connections)
-  writeGroups(groups.map(group => group.id === id ? { ...group, name: trimmed } : group))
+  writeGroups(
+    groups.map(group => (group.id === id ? { ...group, name: trimmed } : group))
+  )
 }
 
 /** 删除分组时保留连接，并统一移回 Ungrouped。 */
 export async function removeGroup(id: string): Promise<void> {
   const groups = readGroups()
   const target = groups.find(group => group.id === id)
-  if (!target)
-    return
+  if (!target) return
 
-  writeAll(readAll().map(connection => (
-    groupKindOf(connection.kind) === target.kind
-    && normalizedName(connection.group) === normalizedName(target.name)
-      ? { ...connection, group: '' }
-      : connection
-  )))
+  writeAll(
+    readAll().map(connection =>
+      groupKindOf(connection.kind) === target.kind &&
+      normalizedName(connection.group) === normalizedName(target.name)
+        ? { ...connection, group: '' }
+        : connection
+    )
+  )
   writeGroups(groups.filter(group => group.id !== id))
 }
 
@@ -348,7 +361,12 @@ export async function removeGroup(id: string): Promise<void> {
  */
 export function subscribe(handler: () => void): () => void {
   const onStorage = (event: StorageEvent): void => {
-    if (event.key === STORAGE_KEY || event.key === GROUP_STORAGE_KEY || event.key === TAG_STORAGE_KEY || event.key === null)
+    if (
+      event.key === STORAGE_KEY ||
+      event.key === GROUP_STORAGE_KEY ||
+      event.key === TAG_STORAGE_KEY ||
+      event.key === null
+    )
       handler()
   }
 
@@ -364,14 +382,28 @@ export function subscribe(handler: () => void): () => void {
 }
 
 /** 连接备份只包含连接、分组、标签；AI 密钥与查询记录不在此范围。 */
-export async function backupSnapshot(): Promise<import('@/utils/connection-backup').ConnectionSnapshot> {
-  return { connections: readAll(), groups: await listGroups(), tags: readTags() }
+export async function backupSnapshot(): Promise<
+  import('@/utils/connection-backup').ConnectionSnapshot
+> {
+  return {
+    connections: readAll(),
+    groups: await listGroups(),
+    tags: readTags(),
+  }
 }
 
 /** 预览后再次检查当前配置，失败时恢复原有三项存储。 */
-export function applyBackupSnapshot(expected: import('@/utils/connection-backup').ConnectionSnapshot, next: import('@/utils/connection-backup').ConnectionSnapshot): void {
-  const current = { connections: readAll(), groups: readGroups().sort((a, b) => a.createdAt - b.createdAt), tags: readTags() }
-  if (JSON.stringify(current) !== JSON.stringify(expected)) throw new Error('预览后连接配置发生变化，请重新读取备份并预览')
+export function applyBackupSnapshot(
+  expected: import('@/utils/connection-backup').ConnectionSnapshot,
+  next: import('@/utils/connection-backup').ConnectionSnapshot
+): void {
+  const current = {
+    connections: readAll(),
+    groups: readGroups().sort((a, b) => a.createdAt - b.createdAt),
+    tags: readTags(),
+  }
+  if (JSON.stringify(current) !== JSON.stringify(expected))
+    throw new Error('预览后连接配置发生变化，请重新读取备份并预览')
   const keys = [STORAGE_KEY, GROUP_STORAGE_KEY, TAG_STORAGE_KEY]
   const before = keys.map(key => localStorage.getItem(key))
   try {
@@ -379,7 +411,11 @@ export function applyBackupSnapshot(expected: import('@/utils/connection-backup'
     localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(next.groups))
     localStorage.setItem(TAG_STORAGE_KEY, JSON.stringify(next.tags))
   } catch (error) {
-    keys.forEach((key, index) => { const value = before[index]; if (value === null || value === undefined) localStorage.removeItem(key); else localStorage.setItem(key, value) })
+    keys.forEach((key, index) => {
+      const value = before[index]
+      if (value === null || value === undefined) localStorage.removeItem(key)
+      else localStorage.setItem(key, value)
+    })
     throw error
   }
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT))

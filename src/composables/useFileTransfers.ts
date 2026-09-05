@@ -1,14 +1,14 @@
-import { readonly } from "vue";
-import { storeToRefs } from "pinia";
-import { useTransfersStore } from "@/stores/transfers";
+import { readonly } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useTransfersStore } from '@/stores/transfers'
 export type {
   FileTransferDirection,
   FileTransferTask,
-} from "@/stores/transfers";
+} from '@/stores/transfers'
 export function useFileTransfers() {
-  const store = useTransfersStore();
-  void store.ensureListener();
-  const { activeTasks, completedTasks, failedTasks } = storeToRefs(store);
+  const store = useTransfersStore()
+  void store.ensureListener()
+  const { activeTasks, completedTasks, failedTasks } = storeToRefs(store)
   const {
     upload,
     download,
@@ -18,7 +18,7 @@ export function useFileTransfers() {
     pauseAll,
     resumeAll,
     clearSettled,
-  } = store;
+  } = store
   return {
     tasks: readonly(store.tasks),
     activeTasks,
@@ -32,5 +32,5 @@ export function useFileTransfers() {
     pauseAll,
     resumeAll,
     clearSettled,
-  };
+  }
 }

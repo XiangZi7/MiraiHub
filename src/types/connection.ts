@@ -6,21 +6,18 @@
  */
 
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
-import type { DatabaseConfig, DatabaseKind, DatabaseSslMode } from '@/types/database'
+import type {
+  DatabaseConfig,
+  DatabaseKind,
+  DatabaseSslMode,
+} from '@/types/database'
 import { settingNumber, settingsSnapshot } from '@/composables/useSettings'
 
 /** 连接协议。SSH 与数据库共用一套存储，靠这个字段分流 */
 export type ConnectionKind = 'ssh' | 'local' | DatabaseKind
 
-export type ConnectionTagColor
-  = | 'red'
-    | 'orange'
-    | 'amber'
-    | 'green'
-    | 'cyan'
-    | 'blue'
-    | 'violet'
-    | 'gray'
+export type ConnectionTagColor =
+  'red' | 'orange' | 'amber' | 'green' | 'cyan' | 'blue' | 'violet' | 'gray'
 
 /** 可被所有连接复用的标签定义。连接记录只保存标签名，目录负责共享与配色。 */
 export interface ConnectionTagDefinition {
@@ -110,28 +107,35 @@ export interface SavedConnection {
   createdAt: number
   /** 最后一次连接时间，从未连过为 0 */
   lastUsedAt: number
-  settings: SshConnectionSettings | LocalConnectionSettings | DatabaseConnectionSettings
+  settings:
+    SshConnectionSettings | LocalConnectionSettings | DatabaseConnectionSettings
 }
 
 /** 保存新连接时的入参，id 与时间戳由存储层生成 */
-export type NewConnection = Omit<SavedConnection, 'id' | 'createdAt' | 'lastUsedAt'>
+export type NewConnection = Omit<
+  SavedConnection,
+  'id' | 'createdAt' | 'lastUsedAt'
+>
 
 /** 类型收窄：这条连接是 SSH 吗 */
 export function isSshConnection(
-  connection: SavedConnection,
+  connection: SavedConnection
 ): connection is SavedConnection & { settings: SshConnectionSettings } {
   return connection.kind === 'ssh'
 }
 
 /** 类型收窄：这条连接是数据库吗 */
 export function isDatabaseConnection(
-  connection: SavedConnection,
-): connection is SavedConnection & { kind: DatabaseKind, settings: DatabaseConnectionSettings } {
+  connection: SavedConnection
+): connection is SavedConnection & {
+  kind: DatabaseKind
+  settings: DatabaseConnectionSettings
+} {
   return connection.kind === 'mysql' || connection.kind === 'postgresql'
 }
 
 export function isLocalConnection(
-  connection: SavedConnection,
+  connection: SavedConnection
 ): connection is SavedConnection & { settings: LocalConnectionSettings } {
   return connection.kind === 'local'
 }
@@ -163,7 +167,7 @@ export function toSshConfig(connection: SavedConnection): SshConfig {
 /** 已保存的数据库连接 → Rust 驱动入参。 */
 export function toDatabaseConfig(
   connection: SavedConnection,
-  passwordOverride?: string,
+  passwordOverride?: string
 ): DatabaseConfig {
   if (!isDatabaseConnection(connection))
     throw new Error(`连接 ${connection.name} 不是数据库类型`)

@@ -5,60 +5,65 @@ import {
   onMounted,
   useId,
   useTemplateRef,
-} from "vue";
-import { useEventListener } from "@vueuse/core";
-import IconButton from "@/components/ui/IconButton.vue";
+} from 'vue'
+import { useEventListener } from '@vueuse/core'
+import IconButton from '@/components/ui/IconButton.vue'
 const props = withDefaults(
   defineProps<{
-    title: string;
-    wide?: boolean;
-    busy?: boolean;
-    standalone?: boolean;
+    title: string
+    wide?: boolean
+    busy?: boolean
+    standalone?: boolean
   }>(),
-  { wide: false, busy: false, standalone: false },
-);
-const emit = defineEmits<{ close: [] }>();
-const titleId = useId();
-const dialog = useTemplateRef<HTMLElement>("dialog");
-let previous: HTMLElement | null = null;
+  { wide: false, busy: false, standalone: false }
+)
+const emit = defineEmits<{ close: [] }>()
+const titleId = useId()
+const dialog = useTemplateRef<HTMLElement>('dialog')
+let previous: HTMLElement | null = null
 onMounted(async () => {
-  previous = document.activeElement as HTMLElement;
-  await nextTick();
-  dialog.value?.focus();
-});
-onBeforeUnmount(() => previous?.focus());
-useEventListener(window, "keydown", (event: KeyboardEvent) => {
-  if (document.querySelector("[role=alertdialog]")) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!props.busy) emit("close");
+  previous = document.activeElement as HTMLElement
+  await nextTick()
+  dialog.value?.focus()
+})
+onBeforeUnmount(() => previous?.focus())
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (document.querySelector('[role=alertdialog]')) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!props.busy) emit('close')
   }
-  if (event.key === "Tab" && dialog.value) {
+  if (event.key === 'Tab' && dialog.value) {
     const controls = [
       ...dialog.value.querySelectorAll<HTMLElement>(
-        'button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]',
+        'button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]'
       ),
-    ].filter((e) => e.getClientRects().length);
+    ].filter(e => e.getClientRects().length)
     const first = controls[0],
-      last = controls.at(-1);
+      last = controls.at(-1)
     if (
       event.shiftKey &&
       (document.activeElement === first ||
         document.activeElement === dialog.value)
     ) {
-      event.preventDefault();
-      last?.focus();
+      event.preventDefault()
+      last?.focus()
     } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first?.focus();
+      event.preventDefault()
+      first?.focus()
     }
   }
-});
+})
 </script>
 <template>
-  <Teleport to="body" :disabled="standalone"
-    ><div class="operation-backdrop" :class="standalone && 'operation-window'">
+  <Teleport
+    to="body"
+    :disabled="standalone"
+    ><div
+      class="operation-backdrop"
+      :class="standalone && 'operation-window'"
+    >
       <section
         ref="dialog"
         class="operation-dialog"

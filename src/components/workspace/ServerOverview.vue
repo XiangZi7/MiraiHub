@@ -25,19 +25,23 @@ const props = defineProps<{
 
 const emit = defineEmits<{ action: [id: string] }>()
 
-const { stats, loading, error, history, ready, refresh } = useSystemStats(toRef(props, 'sessionId'))
+const { stats, loading, error, history, ready, refresh } = useSystemStats(
+  toRef(props, 'sessionId')
+)
 const lastNotifiedError = shallowRef('')
 
-watch(error, (message) => {
-  if (!message || message === lastNotifiedError.value)
-    return
+watch(error, message => {
+  if (!message || message === lastNotifiedError.value) return
   lastNotifiedError.value = message
   toast.error({ title: '采集系统信息失败', description: message })
 })
 
-watch(() => props.sessionId, () => {
-  lastNotifiedError.value = ''
-})
+watch(
+  () => props.sessionId,
+  () => {
+    lastNotifiedError.value = ''
+  }
+)
 
 /** 是否已连上。没连上就没有指标可言，展示引导而不是一排 0 */
 const connected = computed(() => Boolean(props.sessionId))
@@ -50,8 +54,7 @@ const connected = computed(() => Boolean(props.sessionId))
  */
 const cards = computed(() => {
   const snapshot = stats.value
-  if (!snapshot)
-    return []
+  if (!snapshot) return []
 
   const { cpu, memory, disk, network } = snapshot
   const mem = splitKb(memory.usedKb)
@@ -110,8 +113,7 @@ const subtitle = computed(() => {
 /** 系统信息列表，连上后才有 */
 const facts = computed(() => {
   const snapshot = stats.value
-  if (!snapshot)
-    return []
+  if (!snapshot) return []
 
   return [
     { label: 'Hostname', value: snapshot.hostname || '—' },
@@ -123,15 +125,25 @@ const facts = computed(() => {
   ]
 })
 async function runAction(id: string): Promise<void> {
-  if (id === 'refresh') { await refresh(); return }
+  if (id === 'refresh') {
+    await refresh()
+    return
+  }
   if (id === 'copy-info') {
     try {
-      const text = [props.connection?.name, subtitle.value, ...facts.value.map(fact => fact.label + ': ' + fact.value)].filter(Boolean).join('\n')
+      const text = [
+        props.connection?.name,
+        subtitle.value,
+        ...facts.value.map(fact => fact.label + ': ' + fact.value),
+      ]
+        .filter(Boolean)
+        .join('\n')
       await navigator.clipboard.writeText(text)
       scheduleClipboardClear(text)
       toast.success('服务器信息已复制')
+    } catch (error) {
+      toast.error({ title: '复制服务器信息失败', description: String(error) })
     }
-    catch (error) { toast.error({ title: '复制服务器信息失败', description: String(error) }) }
     return
   }
   emit('action', id)
@@ -139,55 +151,89 @@ async function runAction(id: string): Promise<void> {
 </script>
 
 <template>
-  <div class="min-h-0 flex-1 overflow-y-auto p-4 scroll-thin">
+  <div class="scroll-thin min-h-0 flex-1 overflow-y-auto p-4">
     <!-- 服务器概要 -->
     <header class="mb-5 flex items-start gap-4">
       <div
-        class="grid size-[74px] shrink-0 place-items-center rounded-2xl border border-violet/25 text-violet"
-        style="background: color-mix(in oklch, var(--color-violet) 16%, transparent)"
+        class="border-violet/25 text-violet grid size-[74px] shrink-0 place-items-center rounded-2xl border"
+        style="
+          background: color-mix(in oklch, var(--color-violet) 16%, transparent);
+        "
       >
-        <AppIcon name="lucide:server" :size="34" />
+        <AppIcon
+          name="lucide:server"
+          :size="34"
+        />
       </div>
 
       <div class="min-w-0 flex-1 pt-1">
-        <h1 class="truncate text-[19px] font-semibold leading-tight tracking-tight text-txt">
+        <h1
+          class="text-txt truncate text-[19px] leading-tight font-semibold tracking-tight"
+        >
           {{ connection?.name ?? '未选择服务器' }}
         </h1>
         <p
           class="mt-1.5 flex items-center gap-1.5 text-xs"
           :class="connected ? 'text-success' : 'text-txt-3'"
         >
-          <StatusDot :tone="connected ? 'success' : 'txt-3'" :size="6" :glow="connected" />
+          <StatusDot
+            :tone="connected ? 'success' : 'txt-3'"
+            :size="6"
+            :glow="connected"
+          />
           <span>{{ connected ? 'Online' : 'Offline' }}</span>
         </p>
-        <p class="mt-1.5 truncate text-xs text-txt-3" :title="subtitle">
+        <p
+          class="text-txt-3 mt-1.5 truncate text-xs"
+          :title="subtitle"
+        >
           {{ subtitle }}
         </p>
       </div>
 
-      <IconButton icon="lucide:rotate-cw" title="刷新系统信息" :disabled="!connected || loading" @click="refresh" />
+      <IconButton
+        icon="lucide:rotate-cw"
+        title="刷新系统信息"
+        :disabled="!connected || loading"
+        @click="refresh"
+      />
     </header>
 
     <!-- 资源指标 -->
-    <div v-if="ready" class="mb-6 grid grid-cols-4 gap-2.5">
+    <div
+      v-if="ready"
+      class="mb-6 grid grid-cols-4 gap-2.5"
+    >
       <article
         v-for="card in cards"
         :key="card.id"
         class="card overflow-hidden"
       >
-        <div class="px-3 pb-2 pt-2.5">
-          <p class="text-[11px] text-txt-3">
+        <div class="px-3 pt-2.5 pb-2">
+          <p class="text-txt-3 text-[11px]">
             {{ card.label }}
           </p>
 
           <!-- 网络卡：上下行双行 -->
           <template v-if="card.id === 'network'">
-            <p class="mt-1.5 flex items-center gap-1 text-[13px] font-medium text-txt">
-              <AppIcon name="lucide:arrow-down" :size="12" class="text-accent" />
+            <p
+              class="text-txt mt-1.5 flex items-center gap-1 text-[13px] font-medium"
+            >
+              <AppIcon
+                name="lucide:arrow-down"
+                :size="12"
+                class="text-accent"
+              />
               <span class="truncate">{{ card.down }}</span>
             </p>
-            <p class="mt-1 flex items-center gap-1 text-[13px] font-medium text-txt">
-              <AppIcon name="lucide:arrow-up" :size="12" class="text-cyan" />
+            <p
+              class="text-txt mt-1 flex items-center gap-1 text-[13px] font-medium"
+            >
+              <AppIcon
+                name="lucide:arrow-up"
+                :size="12"
+                class="text-cyan"
+              />
               <span class="truncate">{{ card.up }}</span>
             </p>
           </template>
@@ -195,64 +241,97 @@ async function runAction(id: string): Promise<void> {
           <!-- 常规卡：主值 + 占比 -->
           <template v-else>
             <p class="mt-1 flex items-baseline gap-1">
-              <span class="text-[21px] font-semibold leading-none tracking-tight text-txt">{{ card.value }}</span>
-              <span v-if="card.suffix" class="truncate text-[11px] text-txt-3">{{ card.suffix }}</span>
+              <span
+                class="text-txt text-[21px] leading-none font-semibold tracking-tight"
+                >{{ card.value }}</span
+              >
+              <span
+                v-if="card.suffix"
+                class="text-txt-3 truncate text-[11px]"
+                >{{ card.suffix }}</span
+              >
             </p>
-            <p class="mt-1.5 truncate text-[11px] text-txt-3" :title="card.caption">
+            <p
+              class="text-txt-3 mt-1.5 truncate text-[11px]"
+              :title="card.caption"
+            >
               {{ card.caption }}
             </p>
           </template>
         </div>
 
-        <SparkLine :data="card.trend" :color="card.color" :height="44" />
+        <SparkLine
+          :data="card.trend"
+          :color="card.color"
+          :height="44"
+        />
       </article>
     </div>
 
     <!-- 首次采集中 -->
-    <div v-else-if="loading" class="mb-6 grid grid-cols-4 gap-2.5">
-      <div v-for="i in 4" :key="i" class="card h-26 animate-pulse bg-raised/40" />
+    <div
+      v-else-if="loading"
+      class="mb-6 grid grid-cols-4 gap-2.5"
+    >
+      <div
+        v-for="i in 4"
+        :key="i"
+        class="card bg-raised/40 h-26 animate-pulse"
+      />
     </div>
 
     <!-- 没连上 -->
-    <div v-else-if="!connected" class="mb-6 rounded-xl border border-dashed border-line px-4 py-8 text-center">
-      <p class="text-xs text-txt-3">
+    <div
+      v-else-if="!connected"
+      class="border-line mb-6 rounded-xl border border-dashed px-4 py-8 text-center"
+    >
+      <p class="text-txt-3 text-xs">
         连上服务器后，这里会显示实时的 CPU、内存、磁盘与网络
       </p>
     </div>
 
     <!-- 快捷操作 -->
     <section class="mb-6">
-      <h2 class="mb-2.5 text-[13px] font-medium text-txt-2">
-        Quick Actions
-      </h2>
+      <h2 class="text-txt-2 mb-2.5 text-[13px] font-medium">Quick Actions</h2>
       <div class="grid grid-cols-3 gap-2.5">
         <button
           v-for="action in QUICK_ACTIONS"
           :key="action.id"
           type="button"
           class="card-action flex min-w-0 flex-col items-center justify-center gap-2 px-1 py-3.5 disabled:opacity-35"
-          :disabled="!connected && ['upload', 'refresh', 'copy-info'].includes(action.id)"
+          :disabled="
+            !connected && ['upload', 'refresh', 'copy-info'].includes(action.id)
+          "
           @click="runAction(action.id)"
         >
-          <AppIcon :name="action.icon" :size="19" :class="action.tone" />
-          <span class="max-w-full truncate text-[11px] text-txt-2">{{ action.label }}</span>
+          <AppIcon
+            :name="action.icon"
+            :size="19"
+            :class="action.tone"
+          />
+          <span class="text-txt-2 max-w-full truncate text-[11px]">{{
+            action.label
+          }}</span>
         </button>
       </div>
     </section>
 
     <!-- 系统信息 -->
     <section v-if="facts.length">
-      <h2 class="mb-2.5 text-[13px] font-medium text-txt-2">
-        System
-      </h2>
-      <div class="card divide-y divide-line-soft overflow-hidden">
+      <h2 class="text-txt-2 mb-2.5 text-[13px] font-medium">System</h2>
+      <div class="card divide-line-soft divide-y overflow-hidden">
         <div
           v-for="fact in facts"
           :key="fact.label"
           class="flex items-center gap-3 px-3.5 py-2.5"
         >
-          <span class="w-28 shrink-0 text-[11px] text-txt-3">{{ fact.label }}</span>
-          <span class="min-w-0 flex-1 truncate text-xs text-txt-2" :title="fact.value">
+          <span class="text-txt-3 w-28 shrink-0 text-[11px]">{{
+            fact.label
+          }}</span>
+          <span
+            class="text-txt-2 min-w-0 flex-1 truncate text-xs"
+            :title="fact.value"
+          >
             {{ fact.value }}
           </span>
         </div>

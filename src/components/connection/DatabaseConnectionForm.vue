@@ -13,18 +13,25 @@ import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { NewConnection } from '@/types/connection'
 import { isDatabaseConnection } from '@/types/connection'
-import type { DatabaseConfig, DatabaseKind, DatabaseSslMode } from '@/types/database'
+import type {
+  DatabaseConfig,
+  DatabaseKind,
+  DatabaseSslMode,
+} from '@/types/database'
 import ConnectionFilePathField from './ConnectionFilePathField.vue'
 
 const { settings } = useSettings()
 
 type SectionId = 'general' | 'ssl'
 
-const props = withDefaults(defineProps<{
-  connectionId?: string
-}>(), {
-  connectionId: '',
-})
+const props = withDefaults(
+  defineProps<{
+    connectionId?: string
+  }>(),
+  {
+    connectionId: '',
+  }
+)
 
 const kind = defineModel<DatabaseKind>('kind', { required: true })
 
@@ -40,10 +47,11 @@ const testing = shallowRef(false)
 const saving = shallowRef(false)
 const loadingConnection = shallowRef(Boolean(props.connectionId))
 const savePassword = shallowRef<boolean>(settings.rememberPasswords)
-const databaseKinds: Array<{ id: DatabaseKind, label: string, icon: string }> = [
-  { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
-  { id: 'postgresql', label: 'PostgreSQL', icon: 'lucide:cylinder' },
-]
+const databaseKinds: Array<{ id: DatabaseKind; label: string; icon: string }> =
+  [
+    { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
+    { id: 'postgresql', label: 'PostgreSQL', icon: 'lucide:cylinder' },
+  ]
 const sslModeOptions = [
   { value: 'disable', label: 'Disable' },
   { value: 'prefer', label: 'Prefer' },
@@ -53,9 +61,12 @@ const sslModeOptions = [
 ] as const
 const certificateExtensions = ['pem', 'crt', 'cer'] as const
 const privateKeyExtensions = ['pem', 'key'] as const
-const portForKind = (value: DatabaseKind): string => value === 'mysql' ? '3306' : '5432'
+const portForKind = (value: DatabaseKind): string =>
+  value === 'mysql' ? '3306' : '5432'
 const defaultPort = computed(() => portForKind(kind.value))
-const databaseLabel = computed(() => kind.value === 'mysql' ? 'MySQL' : 'PostgreSQL')
+const databaseLabel = computed(() =>
+  kind.value === 'mysql' ? 'MySQL' : 'PostgreSQL'
+)
 
 const form = reactive({
   name: '',
@@ -72,17 +83,17 @@ const form = reactive({
   clientKey: '',
 })
 
-const isReady = computed<boolean>(() => (
-  form.name.trim().length > 0
-  && form.host.trim().length > 0
-  && form.username.trim().length > 0
-))
+const isReady = computed<boolean>(
+  () =>
+    form.name.trim().length > 0 &&
+    form.host.trim().length > 0 &&
+    form.username.trim().length > 0
+)
 
 onMounted(loadConnection)
 
 async function loadConnection(): Promise<void> {
-  if (!props.connectionId)
-    return
+  if (!props.connectionId) return
 
   try {
     const connection = await connectionsStore.get(props.connectionId)
@@ -108,26 +119,25 @@ async function loadConnection(): Promise<void> {
       clientKey: settings.clientKey ?? '',
     })
     savePassword.value = Boolean(settings.password)
-  }
-  catch (error) {
-    toast.error({ title: '读取连接失败', description: databaseApi.errorMessage(error) })
-  }
-  finally {
+  } catch (error) {
+    toast.error({
+      title: '读取连接失败',
+      description: databaseApi.errorMessage(error),
+    })
+  } finally {
     loadingConnection.value = false
   }
 }
 
 /** 切换数据库协议；端口仍是旧协议默认值时一并换成新默认值。 */
 function selectKind(nextKind: DatabaseKind): void {
-  if (nextKind === kind.value)
-    return
+  if (nextKind === kind.value) return
 
   const previousDefaultPort = defaultPort.value
   kind.value = nextKind
 
   if (!form.port.trim() || form.port === previousDefaultPort)
     form.port = portForKind(nextKind)
-
 }
 
 function selectedFileName(path: string): string {
@@ -135,7 +145,10 @@ function selectedFileName(path: string): string {
 }
 
 function handleSslFileSelected(label: string, path: string): void {
-  toast.success({ title: `已选择${label}`, description: selectedFileName(path) })
+  toast.success({
+    title: `已选择${label}`,
+    description: selectedFileName(path),
+  })
 }
 
 function handleSslFileError(message: string): void {
@@ -158,8 +171,8 @@ function validate(): boolean {
   }
 
   if (
-    form.sslMode !== 'disable'
-    && Boolean(form.clientCertificate.trim()) !== Boolean(form.clientKey.trim())
+    form.sslMode !== 'disable' &&
+    Boolean(form.clientCertificate.trim()) !== Boolean(form.clientKey.trim())
   ) {
     activeSection.value = 'ssl'
     toast.warning('客户端证书和客户端私钥需要同时选择')
@@ -188,18 +201,18 @@ function buildConfig(): DatabaseConfig {
 
 /** 真正建立驱动连接并立即释放，用于验证网络、TLS 与认证配置。 */
 async function testConnection(): Promise<void> {
-  if (!validate() || testing.value)
-    return
+  if (!validate() || testing.value) return
 
   testing.value = true
   try {
     await databaseApi.testConnection(buildConfig())
     toast.success('数据库连接成功')
-  }
-  catch (error) {
-    toast.error({ title: '数据库连接失败', description: databaseApi.errorMessage(error) })
-  }
-  finally {
+  } catch (error) {
+    toast.error({
+      title: '数据库连接失败',
+      description: databaseApi.errorMessage(error),
+    })
+  } finally {
     testing.value = false
   }
 }
@@ -211,8 +224,7 @@ async function testConnection(): Promise<void> {
  * 真正的查询执行要等 db 模块落地。
  */
 async function saveConnection(): Promise<void> {
-  if (!validate() || saving.value)
-    return
+  if (!validate() || saving.value) return
 
   saving.value = true
 
@@ -239,56 +251,79 @@ async function saveConnection(): Promise<void> {
       },
     }
 
-    if (props.connectionId)
-      await update(props.connectionId, input)
-    else
-      await create(input)
+    if (props.connectionId) await update(props.connectionId, input)
+    else await create(input)
 
     toast.success(props.connectionId ? '数据库连接已更新' : '数据库连接已保存')
     emit('close')
-  }
-  catch (err) {
-    toast.error({ title: '保存数据库连接失败', description: databaseApi.errorMessage(err) })
-  }
-  finally {
+  } catch (err) {
+    toast.error({
+      title: '保存数据库连接失败',
+      description: databaseApi.errorMessage(err),
+    })
+  } finally {
     saving.value = false
   }
 }
 </script>
 
 <template>
-  <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="saveConnection">
-    <div class="connection-tabs" role="tablist" :aria-label="`${databaseLabel} connection settings`">
+  <form
+    class="flex min-h-0 flex-1 flex-col"
+    @submit.prevent="saveConnection"
+  >
+    <div
+      class="connection-tabs"
+      role="tablist"
+      :aria-label="`${databaseLabel} connection settings`"
+    >
       <AppButton
-        v-for="section in ([{ id: 'general', label: 'General' }, { id: 'ssl', label: 'SSL' }] as const)"
+        v-for="section in [
+          { id: 'general', label: 'General' },
+          { id: 'ssl', label: 'SSL' },
+        ] as const"
         :key="section.id"
         variant="bare"
         role="tab"
         :aria-selected="activeSection === section.id"
-        :class="['connection-tab', activeSection === section.id && 'connection-tab-active']"
+        :class="[
+          'connection-tab',
+          activeSection === section.id && 'connection-tab-active',
+        ]"
         @click="activeSection = section.id"
       >
         {{ section.label }}
       </AppButton>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin">
-      <div v-if="activeSection === 'general'" class="grid gap-3.5">
+    <div class="scroll-thin min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div
+        v-if="activeSection === 'general'"
+        class="grid gap-3.5"
+      >
         <fieldset class="space-y-1.5">
-          <legend class="connection-label">
-            Connection Type
-          </legend>
-          <div class="database-kinds" role="radiogroup" aria-label="Database type">
+          <legend class="connection-label">Connection Type</legend>
+          <div
+            class="database-kinds"
+            role="radiogroup"
+            aria-label="Database type"
+          >
             <AppButton
               v-for="option in databaseKinds"
               :key="option.id"
               variant="bare"
               role="radio"
               :aria-checked="kind === option.id"
-              :class="['database-kind', kind === option.id && 'database-kind-active']"
+              :class="[
+                'database-kind',
+                kind === option.id && 'database-kind-active',
+              ]"
               @click="selectKind(option.id)"
             >
-              <AppIcon :name="option.icon" :size="13" />
+              <AppIcon
+                :name="option.icon"
+                :size="13"
+              />
               <span>{{ option.label }}</span>
             </AppButton>
           </div>
@@ -356,15 +391,28 @@ async function saveConnection(): Promise<void> {
           />
         </div>
 
-        <AppTextarea v-model="form.description" label="Description (Optional)" :rows="2" class="resize-none" placeholder="Add a description for this connection…" />
+        <AppTextarea
+          v-model="form.description"
+          label="Description (Optional)"
+          :rows="2"
+          class="resize-none"
+          placeholder="Add a description for this connection…"
+        />
       </div>
 
-      <div v-else class="grid gap-3.5">
+      <div
+        v-else
+        class="grid gap-3.5"
+      >
         <div class="connection-section-copy">
           Configure encrypted transport for this {{ databaseLabel }} connection.
         </div>
 
-        <AppSelect v-model="form.sslMode" label="SSL Mode" :options="sslModeOptions" />
+        <AppSelect
+          v-model="form.sslMode"
+          label="SSL Mode"
+          :options="sslModeOptions"
+        />
 
         <template v-if="form.sslMode !== 'disable'">
           <ConnectionFilePathField
@@ -402,14 +450,19 @@ async function saveConnection(): Promise<void> {
     </div>
 
     <footer class="connection-footer">
-      <AppButton :disabled="testing || loadingConnection" @click="testConnection">
+      <AppButton
+        :disabled="testing || loadingConnection"
+        @click="testConnection"
+      >
         {{ testing ? 'Testing…' : 'Test Connection' }}
       </AppButton>
       <div class="flex-1" />
-      <AppButton @click="emit('close')">
-        Cancel
-      </AppButton>
-      <AppButton type="submit" variant="primary" :disabled="saving || loadingConnection">
+      <AppButton @click="emit('close')"> Cancel </AppButton>
+      <AppButton
+        type="submit"
+        variant="primary"
+        :disabled="saving || loadingConnection"
+      >
         {{ saving ? 'Saving…' : 'Save' }}
       </AppButton>
     </footer>
@@ -503,7 +556,8 @@ async function saveConnection(): Promise<void> {
   border-color: color-mix(in oklch, var(--color-violet) 65%, transparent);
   background: color-mix(in oklch, var(--color-violet) 14%, var(--color-card));
   color: var(--color-txt);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  box-shadow: 0 0 0 1px
+    color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
 .connection-section-copy {

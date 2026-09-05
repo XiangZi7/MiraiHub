@@ -22,11 +22,14 @@ const { settings } = useSettings()
 
 type SectionId = 'general' | 'advanced' | 'ssh-key' | 'proxy'
 
-const props = withDefaults(defineProps<{
-  connectionId?: string
-}>(), {
-  connectionId: '',
-})
+const props = withDefaults(
+  defineProps<{
+    connectionId?: string
+  }>(),
+  {
+    connectionId: '',
+  }
+)
 
 const emit = defineEmits<{
   close: []
@@ -42,7 +45,7 @@ const {
   refreshLocalKeys,
 } = usePrivateKeys()
 
-const sections: Array<{ id: SectionId, label: string }> = [
+const sections: Array<{ id: SectionId; label: string }> = [
   { id: 'general', label: 'General' },
   { id: 'advanced', label: 'Advanced' },
   { id: 'ssh-key', label: 'SSH Key' },
@@ -101,24 +104,18 @@ const form = reactive({
 
 const descriptionId = useId()
 
-watch(defaultPrivateKey, (path) => {
+watch(defaultPrivateKey, path => {
   // 初次扫描 ~/.ssh 找到默认项时自动带入；不覆盖用户已经手动选好的路径。
-  if (!form.privateKey.trim())
-    form.privateKey = path
+  if (!form.privateKey.trim()) form.privateKey = path
 })
 
 onMounted(async () => {
-  await Promise.all([
-    refreshLocalKeys(),
-    loadConnection(),
-  ])
-  if (!form.privateKey.trim())
-    form.privateKey = defaultPrivateKey.value
+  await Promise.all([refreshLocalKeys(), loadConnection()])
+  if (!form.privateKey.trim()) form.privateKey = defaultPrivateKey.value
 })
 
 async function loadConnection(): Promise<void> {
-  if (!props.connectionId)
-    return
+  if (!props.connectionId) return
 
   try {
     const connection = await connectionsStore.get(props.connectionId)
@@ -141,28 +138,44 @@ async function loadConnection(): Promise<void> {
       keepAlive: String(settings.keepaliveSecs),
       terminalType: settings.terminalType,
       startupCommand: settings.startupCommand,
-      authentication: settings.auth.type === 'privateKey' ? 'private-key' : settings.auth.type,
+      authentication:
+        settings.auth.type === 'privateKey'
+          ? 'private-key'
+          : settings.auth.type,
       password: settings.auth.type === 'password' ? settings.auth.password : '',
-      privateKey: settings.auth.type === 'privateKey' ? settings.auth.path : defaultPrivateKey.value,
-      passphrase: settings.auth.type === 'privateKey' ? settings.auth.passphrase ?? '' : '',
+      privateKey:
+        settings.auth.type === 'privateKey'
+          ? settings.auth.path
+          : defaultPrivateKey.value,
+      passphrase:
+        settings.auth.type === 'privateKey'
+          ? (settings.auth.passphrase ?? '')
+          : '',
     })
-    savePassword.value = settings.auth.type === 'password' && Boolean(settings.auth.password)
-  }
-  catch (error) {
-    toast.error({ title: '读取 SSH 连接失败', description: ssh.errorMessage(error) })
-  }
-  finally {
+    savePassword.value =
+      settings.auth.type === 'password' && Boolean(settings.auth.password)
+  } catch (error) {
+    toast.error({
+      title: '读取 SSH 连接失败',
+      description: ssh.errorMessage(error),
+    })
+  } finally {
     loadingConnection.value = false
   }
 }
 
-const isReady = computed<boolean>(() => (
-  form.name.trim().length > 0
-  && form.host.trim().length > 0
-  && form.username.trim().length > 0
-))
+const isReady = computed<boolean>(
+  () =>
+    form.name.trim().length > 0 &&
+    form.host.trim().length > 0 &&
+    form.username.trim().length > 0
+)
 
-function numericSettings(): { port: number, timeoutSecs: number, keepaliveSecs: number } {
+function numericSettings(): {
+  port: number
+  timeoutSecs: number
+  keepaliveSecs: number
+} {
   return {
     port: Number(form.port),
     timeoutSecs: Number(form.timeout),
@@ -171,10 +184,14 @@ function numericSettings(): { port: number, timeoutSecs: number, keepaliveSecs: 
 }
 
 function normalizedTags(): string[] {
-  return [...new Set(form.tags
-    .split(/[,，]/)
-    .map(tag => tag.trim())
-    .filter(Boolean))]
+  return [
+    ...new Set(
+      form.tags
+        .split(/[,，]/)
+        .map(tag => tag.trim())
+        .filter(Boolean)
+    ),
+  ]
 }
 
 /**
@@ -216,31 +233,28 @@ function buildConfig(): SshConfig {
 
 function rememberPrivateKey(path: string): void {
   const trimmed = path.trim()
-  if (!trimmed || trimmed.toLocaleLowerCase().endsWith('.pub'))
-    return
+  if (!trimmed || trimmed.toLocaleLowerCase().endsWith('.pub')) return
 
   rememberImported([trimmed])
 }
 
 async function browsePrivateKeys(): Promise<void> {
-  if (browsingPrivateKeys.value)
-    return
+  if (browsingPrivateKeys.value) return
 
   browsingPrivateKeys.value = true
 
   try {
     const paths = await privateKeysStore.pickPrivateKeys()
-    if (!paths.length)
-      return
+    if (!paths.length) return
 
     const remembered = rememberImported(paths)
     form.privateKey = remembered[0]?.path ?? paths[0]
-    toast.success(paths.length > 1 ? `已保存 ${paths.length} 把私钥` : '已选择私钥')
-  }
-  catch (error) {
+    toast.success(
+      paths.length > 1 ? `已保存 ${paths.length} 把私钥` : '已选择私钥'
+    )
+  } catch (error) {
     toast.error({ title: '选择私钥失败', description: ssh.errorMessage(error) })
-  }
-  finally {
+  } finally {
     browsingPrivateKeys.value = false
   }
 }
@@ -268,7 +282,11 @@ function validate(): boolean {
   }
 
   // 0 是明确支持的“关闭 keepalive”，不能用 `Number(value) || 30` 把它改回默认值。
-  if (!Number.isInteger(keepaliveSecs) || keepaliveSecs < 0 || keepaliveSecs > 86400) {
+  if (
+    !Number.isInteger(keepaliveSecs) ||
+    keepaliveSecs < 0 ||
+    keepaliveSecs > 86400
+  ) {
     activeSection.value = 'advanced'
     toast.warning('Keep Alive 必须是 0–86400 秒之间的整数')
     return false
@@ -280,7 +298,10 @@ function validate(): boolean {
     return false
   }
 
-  if (form.authentication === 'private-key' && form.privateKey.trim().toLocaleLowerCase().endsWith('.pub')) {
+  if (
+    form.authentication === 'private-key' &&
+    form.privateKey.trim().toLocaleLowerCase().endsWith('.pub')
+  ) {
     activeSection.value = 'ssh-key'
     toast.warning('请选择私钥文件，不要选择 .pub 公钥文件')
     return false
@@ -294,19 +315,16 @@ function validate(): boolean {
  * 只有这样才能验出密码对不对、密钥是否被接受 —— 光校验字段格式说明不了任何问题。
  */
 async function testConnection(): Promise<void> {
-  if (!validate() || testing.value)
-    return
+  if (!validate() || testing.value) return
 
   testing.value = true
   try {
     const sessionId = await ssh.connect(buildConfig())
     await ssh.disconnect(sessionId)
     toast.success('SSH 连接成功')
-  }
-  catch (err) {
+  } catch (err) {
     toast.error({ title: 'SSH 连接失败', description: ssh.errorMessage(err) })
-  }
-  finally {
+  } finally {
     testing.value = false
   }
 }
@@ -319,8 +337,7 @@ async function testConnection(): Promise<void> {
  * 那时表单里的 auth 会是空密码，后端会认证失败并明确提示。
  */
 async function saveConnection(): Promise<void> {
-  if (!validate() || saving.value)
-    return
+  if (!validate() || saving.value) return
 
   saving.value = true
 
@@ -349,41 +366,53 @@ async function saveConnection(): Promise<void> {
       },
     }
 
-    if (props.connectionId)
-      await update(props.connectionId, input)
-    else
-      await create(input)
+    if (props.connectionId) await update(props.connectionId, input)
+    else await create(input)
 
     toast.success(props.connectionId ? 'SSH 连接已更新' : 'SSH 连接已保存')
     emit('close')
-  }
-  catch (err) {
-    toast.error({ title: '保存 SSH 连接失败', description: ssh.errorMessage(err) })
-  }
-  finally {
+  } catch (err) {
+    toast.error({
+      title: '保存 SSH 连接失败',
+      description: ssh.errorMessage(err),
+    })
+  } finally {
     saving.value = false
   }
 }
 </script>
 
 <template>
-  <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="saveConnection">
-    <div class="connection-tabs" role="tablist" aria-label="SSH connection settings">
+  <form
+    class="flex min-h-0 flex-1 flex-col"
+    @submit.prevent="saveConnection"
+  >
+    <div
+      class="connection-tabs"
+      role="tablist"
+      aria-label="SSH connection settings"
+    >
       <button
         v-for="section in sections"
         :key="section.id"
         type="button"
         role="tab"
         :aria-selected="activeSection === section.id"
-        :class="['connection-tab', activeSection === section.id && 'connection-tab-active']"
+        :class="[
+          'connection-tab',
+          activeSection === section.id && 'connection-tab-active',
+        ]"
         @click="activeSection = section.id"
       >
         {{ section.label }}
       </button>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin">
-      <div v-if="activeSection === 'general'" class="grid gap-3.5">
+    <div class="scroll-thin min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div
+        v-if="activeSection === 'general'"
+        class="grid gap-3.5"
+      >
         <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
           <AppTextField
             v-model="form.name"
@@ -454,23 +483,36 @@ async function saveConnection(): Promise<void> {
           </div>
         </template>
 
-        <div v-else-if="form.authentication === 'private-key'" class="space-y-2">
+        <div
+          v-else-if="form.authentication === 'private-key'"
+          class="space-y-2"
+        >
           <AppTextField
             v-model="form.privateKey"
             label="Private Key"
             placeholder="选择或输入私钥路径（支持 PEM）"
             action-icon="lucide:folder-open"
-            :action-title="browsingPrivateKeys ? '正在打开文件选择器…' : '选择 SSH 私钥文件'"
+            :action-title="
+              browsingPrivateKeys ? '正在打开文件选择器…' : '选择 SSH 私钥文件'
+            "
             :action-disabled="browsingPrivateKeys"
             @action="browsePrivateKeys"
           />
-          <AppButton variant="bare" class="w-fit text-left text-[11px] text-violet hover:text-txt" @click="activeSection = 'ssh-key'">
+          <AppButton
+            variant="bare"
+            class="text-violet hover:text-txt w-fit text-left text-[11px]"
+            @click="activeSection = 'ssh-key'"
+          >
             Configure private key →
           </AppButton>
         </div>
 
         <div class="space-y-1.5">
-          <label :for="descriptionId" class="connection-label">Description (Optional)</label>
+          <label
+            :for="descriptionId"
+            class="connection-label"
+            >Description (Optional)</label
+          >
           <textarea
             :id="descriptionId"
             v-model="form.description"
@@ -481,21 +523,40 @@ async function saveConnection(): Promise<void> {
         </div>
       </div>
 
-      <div v-else-if="activeSection === 'advanced'" class="grid gap-3.5">
+      <div
+        v-else-if="activeSection === 'advanced'"
+        class="grid gap-3.5"
+      >
         <div class="connection-section-copy">
           Fine-tune connection stability and terminal startup behavior.
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <AppTextField v-model="form.timeout" label="Connection Timeout (s)" inputmode="numeric" />
-          <AppTextField v-model="form.keepAlive" label="Keep Alive (s)" inputmode="numeric" />
+          <AppTextField
+            v-model="form.timeout"
+            label="Connection Timeout (s)"
+            inputmode="numeric"
+          />
+          <AppTextField
+            v-model="form.keepAlive"
+            label="Keep Alive (s)"
+            inputmode="numeric"
+          />
         </div>
-        <AppSelect v-model="form.terminalType" label="Terminal Type" :options="terminalOptions" />
+        <AppSelect
+          v-model="form.terminalType"
+          label="Terminal Type"
+          :options="terminalOptions"
+        />
         <StartupCommandPresetField v-model="form.startupCommand" />
       </div>
 
-      <div v-else-if="activeSection === 'ssh-key'" class="grid gap-3.5">
+      <div
+        v-else-if="activeSection === 'ssh-key'"
+        class="grid gap-3.5"
+      >
         <div class="connection-section-copy">
-          Choose a saved private key or add several keys with the native file picker.
+          Choose a saved private key or add several keys with the native file
+          picker.
         </div>
         <PrivateKeySelector
           v-model="form.privateKey"
@@ -515,31 +576,61 @@ async function saveConnection(): Promise<void> {
         />
       </div>
 
-      <div v-else class="grid gap-3.5">
+      <div
+        v-else
+        class="grid gap-3.5"
+      >
         <div class="connection-section-copy">
           Route this SSH connection through a SOCKS or HTTP proxy.
         </div>
-        <AppSelect v-model="form.proxyType" label="Proxy Type" :options="proxyOptions" />
+        <AppSelect
+          v-model="form.proxyType"
+          label="Proxy Type"
+          :options="proxyOptions"
+        />
         <template v-if="form.proxyType !== 'none'">
           <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
-            <AppTextField v-model="form.proxyHost" label="Proxy Host" placeholder="127.0.0.1" />
-            <AppTextField v-model="form.proxyPort" label="Port" placeholder="1080" inputmode="numeric" />
+            <AppTextField
+              v-model="form.proxyHost"
+              label="Proxy Host"
+              placeholder="127.0.0.1"
+            />
+            <AppTextField
+              v-model="form.proxyPort"
+              label="Port"
+              placeholder="1080"
+              inputmode="numeric"
+            />
           </div>
-          <AppTextField v-model="form.proxyUsername" label="Proxy Username" placeholder="Optional" />
-          <AppTextField v-model="form.proxyPassword" label="Proxy Password" type="password" placeholder="Optional" />
+          <AppTextField
+            v-model="form.proxyUsername"
+            label="Proxy Username"
+            placeholder="Optional"
+          />
+          <AppTextField
+            v-model="form.proxyPassword"
+            label="Proxy Password"
+            type="password"
+            placeholder="Optional"
+          />
         </template>
       </div>
     </div>
 
     <footer class="connection-footer">
-      <AppButton :disabled="testing" @click="testConnection">
+      <AppButton
+        :disabled="testing"
+        @click="testConnection"
+      >
         {{ testing ? 'Testing…' : 'Test Connection' }}
       </AppButton>
       <div class="flex-1" />
-      <AppButton @click="emit('close')">
-        Cancel
-      </AppButton>
-      <AppButton type="submit" variant="primary" :disabled="saving || loadingConnection">
+      <AppButton @click="emit('close')"> Cancel </AppButton>
+      <AppButton
+        type="submit"
+        variant="primary"
+        :disabled="saving || loadingConnection"
+      >
         {{ saving ? 'Saving…' : props.connectionId ? 'Update' : 'Save' }}
       </AppButton>
     </footer>
@@ -564,7 +655,9 @@ async function saveConnection(): Promise<void> {
   padding: 0 12px;
   color: var(--color-txt-3);
   font-size: 11.5px;
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .connection-tab:hover,
@@ -606,7 +699,9 @@ async function saveConnection(): Promise<void> {
   color: var(--color-txt);
   font-size: 12px;
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .connection-textarea::placeholder {
@@ -615,7 +710,8 @@ async function saveConnection(): Promise<void> {
 
 .connection-textarea:focus {
   border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
 .connection-section-copy {
@@ -637,5 +733,4 @@ async function saveConnection(): Promise<void> {
   background: color-mix(in oklch, var(--color-panel) 34%, transparent);
   padding: 0 18px;
 }
-
 </style>

@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, toRefs } from "vue";
-import { useIntervalFn } from "@vueuse/core";
-import * as ssh from "@/api/ssh";
-import * as api from "@/api/operations";
-import type { SshSessionInfo } from "@/types/ssh";
-import OperationDialog from "./OperationDialog.vue";
-import TunnelCreateForm from "./TunnelCreateForm.vue";
-import TunnelList from "./TunnelList.vue";
-import { copyText } from "@/utils/clipboard";
-const props = defineProps<{ preferredSessionId?: string }>();
-const emit = defineEmits<{ close: [] }>();
+import { computed, onMounted, reactive, toRefs } from 'vue'
+import { useIntervalFn } from '@vueuse/core'
+import * as ssh from '@/api/ssh'
+import * as api from '@/api/operations'
+import type { SshSessionInfo } from '@/types/ssh'
+import OperationDialog from './OperationDialog.vue'
+import TunnelCreateForm from './TunnelCreateForm.vue'
+import TunnelList from './TunnelList.vue'
+import { copyText } from '@/utils/clipboard'
+const props = defineProps<{ preferredSessionId?: string }>()
+const emit = defineEmits<{ close: [] }>()
 // 响应式状态
 const state = reactive({
   // 当前可用的 SSH 会话
@@ -17,11 +17,11 @@ const state = reactive({
   // 已建立的隧道记录
   tunnels: [] as api.Tunnel[],
   // 选中的 SSH 会话
-  sessionId: props.preferredSessionId ?? "",
+  sessionId: props.preferredSessionId ?? '',
   // 本地监听端口，输入框清空时保留空字符串
   bindPort: 0 as number | string,
   // SSH 服务器访问的目标地址
-  targetHost: "127.0.0.1",
+  targetHost: '127.0.0.1',
   // 目标服务端口
   targetPort: 3306 as number | string,
   // 建立隧道期间锁定配置
@@ -29,8 +29,8 @@ const state = reactive({
   // 正在刷新连接与隧道
   loading: false,
   // 操作失败时的提示
-  error: "",
-});
+  error: '',
+})
 const {
   sessions,
   tunnels,
@@ -41,72 +41,72 @@ const {
   busy,
   loading,
   error,
-} = toRefs(state);
+} = toRefs(state)
 const valid = computed(
   () =>
-    state.sessions.some((s) => s.id === state.sessionId) &&
-    state.bindPort !== "" &&
+    state.sessions.some(s => s.id === state.sessionId) &&
+    state.bindPort !== '' &&
     Number.isInteger(Number(state.bindPort)) &&
     Number(state.bindPort) >= 0 &&
     Number(state.bindPort) <= 65535 &&
     Number.isInteger(Number(state.targetPort)) &&
     Number(state.targetPort) > 0 &&
     Number(state.targetPort) <= 65535 &&
-    Boolean(state.targetHost.trim()),
-);
+    Boolean(state.targetHost.trim())
+)
 async function refresh(): Promise<void> {
-  if (state.loading) return;
-  state.loading = true;
+  if (state.loading) return
+  state.loading = true
   try {
     const [sessions, tunnels] = await Promise.all([
       ssh.listSessions(),
       api.listTunnels(),
-    ]);
-    state.sessions = sessions;
-    state.tunnels = tunnels;
-    if (!state.sessionId && sessions[0]) state.sessionId = sessions[0].id;
+    ])
+    state.sessions = sessions
+    state.tunnels = tunnels
+    if (!state.sessionId && sessions[0]) state.sessionId = sessions[0].id
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   } finally {
-    state.loading = false;
+    state.loading = false
   }
 }
-onMounted(refresh);
-useIntervalFn(() => void refresh(), 2000);
+onMounted(refresh)
+useIntervalFn(() => void refresh(), 2000)
 async function start(): Promise<void> {
-  if (!valid.value || state.busy) return;
-  state.busy = true;
-  state.error = "";
+  if (!valid.value || state.busy) return
+  state.busy = true
+  state.error = ''
   try {
     await api.startTunnel({
       sessionId: state.sessionId,
-      bindHost: "127.0.0.1",
+      bindHost: '127.0.0.1',
       bindPort: Number(state.bindPort),
       targetHost: state.targetHost.trim(),
       targetPort: Number(state.targetPort),
-    });
-    await refresh();
+    })
+    await refresh()
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   } finally {
-    state.busy = false;
+    state.busy = false
   }
 }
 async function action(row: api.Tunnel): Promise<void> {
-  state.error = "";
+  state.error = ''
   try {
-    if (row.status === "running") await api.stopTunnel(row.id);
-    else await api.removeTunnel(row.id);
-    await refresh();
+    if (row.status === 'running') await api.stopTunnel(row.id)
+    else await api.removeTunnel(row.id)
+    await refresh()
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   }
 }
 async function copy(row: api.Tunnel): Promise<void> {
   try {
-    await copyText(`${row.bindHost}:${row.bindPort}`);
+    await copyText(`${row.bindHost}:${row.bindPort}`)
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   }
 }
 </script>
@@ -133,8 +133,18 @@ async function copy(row: api.Tunnel): Promise<void> {
         @submit="start"
         @refresh="refresh"
       />
-      <p v-if="error" role="alert" class="tunnel-error">{{ error }}</p>
-      <TunnelList :tunnels="tunnels" @copy="copy" @action="action" />
+      <p
+        v-if="error"
+        role="alert"
+        class="tunnel-error"
+      >
+        {{ error }}
+      </p>
+      <TunnelList
+        :tunnels="tunnels"
+        @copy="copy"
+        @action="action"
+      />
       <p class="tunnel-footer">
         关闭此窗口后隧道继续运行，断开 SSH 或退出应用后停止。每条隧道最多 32
         个并发连接。

@@ -27,8 +27,7 @@ interface PathSuggestion {
 }
 
 const suggestions = computed<PathSuggestion[]>(() => {
-  if (!props.connected)
-    return []
+  if (!props.connected) return []
 
   const value = draft.value.trim()
   const slash = value.lastIndexOf('/')
@@ -37,33 +36,36 @@ const suggestions = computed<PathSuggestion[]>(() => {
 
   return props.entries
     .filter(entry => entry.kind === 'directory' || entry.kind === 'symlink')
-    .filter(entry => !prefix || entry.name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase()))
+    .filter(
+      entry =>
+        !prefix ||
+        entry.name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())
+    )
     .slice(0, 10)
     .map(entry => ({
       label: entry.name,
-      path: directoryPrefix
-        ? `${directoryPrefix}${entry.name}`
-        : entry.name,
+      path: directoryPrefix ? `${directoryPrefix}${entry.name}` : entry.name,
     }))
 })
 
-watch(() => props.path, (path) => {
-  draft.value = path
-}, { immediate: true })
+watch(
+  () => props.path,
+  path => {
+    draft.value = path
+  },
+  { immediate: true }
+)
 
-watch(suggestions, (items) => {
-  if (activeIndex.value >= items.length)
-    activeIndex.value = 0
+watch(suggestions, items => {
+  if (activeIndex.value >= items.length) activeIndex.value = 0
 })
 
 function absolutePath(value: string): string {
   const target = value.trim()
-  if (!target)
-    return props.path || ''
+  if (!target) return props.path || ''
   if (target.startsWith('/') || target === '~' || target.startsWith('~/'))
     return target
-  if (!props.path || props.path === '/')
-    return `/${target}`
+  if (!props.path || props.path === '/') return `/${target}`
   return `${props.path.replace(/\/$/, '')}/${target}`
 }
 
@@ -82,21 +84,23 @@ function handleKeydown(event: KeyboardEvent): void {
     event.preventDefault()
     open.value = true
     activeIndex.value = (activeIndex.value + 1) % suggestions.value.length
-  }
-  else if (event.key === 'ArrowUp' && suggestions.value.length) {
+  } else if (event.key === 'ArrowUp' && suggestions.value.length) {
     event.preventDefault()
     open.value = true
-    activeIndex.value = (activeIndex.value - 1 + suggestions.value.length) % suggestions.value.length
-  }
-  else if ((event.key === 'Tab' || event.key === 'Enter') && open.value && suggestions.value[activeIndex.value]) {
+    activeIndex.value =
+      (activeIndex.value - 1 + suggestions.value.length) %
+      suggestions.value.length
+  } else if (
+    (event.key === 'Tab' || event.key === 'Enter') &&
+    open.value &&
+    suggestions.value[activeIndex.value]
+  ) {
     event.preventDefault()
     choose(suggestions.value[activeIndex.value])
-  }
-  else if (event.key === 'Enter') {
+  } else if (event.key === 'Enter') {
     event.preventDefault()
     navigate()
-  }
-  else if (event.key === 'Escape') {
+  } else if (event.key === 'Escape') {
     open.value = false
     draft.value = props.path
   }
@@ -110,8 +114,7 @@ function showSuggestions(): void {
 }
 
 useEventListener(document, 'pointerdown', (event: PointerEvent) => {
-  if (!root.value?.contains(event.target as Node))
-    open.value = false
+  if (!root.value?.contains(event.target as Node)) open.value = false
 })
 
 defineExpose({
@@ -120,9 +123,16 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="root" class="remote-path-root">
+  <div
+    ref="root"
+    class="remote-path-root"
+  >
     <div class="remote-path-field">
-      <AppIcon name="lucide:folder" :size="13" class="shrink-0 text-txt-3" />
+      <AppIcon
+        name="lucide:folder"
+        :size="13"
+        class="text-txt-3 shrink-0"
+      />
       <input
         ref="input"
         v-model="draft"
@@ -135,9 +145,14 @@ defineExpose({
         @focus="showSuggestions"
         @input="showSuggestions"
         @keydown="handleKeydown"
-      >
-      <AppIcon v-if="loading" name="lucide:loader-circle" :size="13" class="animate-spin text-violet" />
-      <kbd class="shrink-0 text-[9px] text-txt-4">Enter</kbd>
+      />
+      <AppIcon
+        v-if="loading"
+        name="lucide:loader-circle"
+        :size="13"
+        class="text-violet animate-spin"
+      />
+      <kbd class="text-txt-4 shrink-0 text-[9px]">Enter</kbd>
     </div>
 
     <Transition name="path-suggestions">
@@ -153,13 +168,24 @@ defineExpose({
           type="button"
           role="option"
           :aria-selected="activeIndex === index"
-          :class="['path-suggestion', activeIndex === index && 'path-suggestion-active']"
+          :class="[
+            'path-suggestion',
+            activeIndex === index && 'path-suggestion-active',
+          ]"
           @pointerenter="activeIndex = index"
           @mousedown.prevent="choose(item)"
         >
-          <AppIcon name="mirai:folder" :size="14" class="shrink-0 text-blue" />
-          <span class="min-w-0 flex-1 truncate text-left">{{ item.label }}</span>
-          <span class="truncate font-mono text-[9.5px] text-txt-4">{{ item.path }}</span>
+          <AppIcon
+            name="mirai:folder"
+            :size="14"
+            class="text-blue shrink-0"
+          />
+          <span class="min-w-0 flex-1 truncate text-left">{{
+            item.label
+          }}</span>
+          <span class="text-txt-4 truncate font-mono text-[9.5px]">{{
+            item.path
+          }}</span>
         </button>
       </div>
     </Transition>
@@ -183,13 +209,17 @@ defineExpose({
   border-radius: 6px;
   background: color-mix(in oklch, var(--color-card) 72%, transparent);
   padding: 0 8px;
-  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
 }
 
 .remote-path-field:focus-within {
   border-color: color-mix(in oklch, var(--color-violet) 52%, var(--color-line));
   background: color-mix(in oklch, var(--color-panel) 90%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 10%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-violet) 10%, transparent);
 }
 
 .remote-path-field input {
@@ -197,7 +227,7 @@ defineExpose({
   flex: 1;
   background: transparent;
   color: var(--color-txt);
-  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
   font-size: 11px;
   outline: none;
 }
@@ -246,7 +276,9 @@ defineExpose({
 
 .path-suggestions-enter-active,
 .path-suggestions-leave-active {
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
 }
 
 .path-suggestions-enter-from,
@@ -263,4 +295,3 @@ defineExpose({
   }
 }
 </style>
-

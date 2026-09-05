@@ -21,9 +21,12 @@ import ConnectionTagEditor from './ConnectionTagEditor.vue'
 
 const { settings } = useSettings()
 
-const props = withDefaults(defineProps<{
-  connectionId?: string
-}>(), { connectionId: '' })
+const props = withDefaults(
+  defineProps<{
+    connectionId?: string
+  }>(),
+  { connectionId: '' }
+)
 
 const emit = defineEmits<{ close: [] }>()
 const { create, update, tags: sharedTags } = useConnections()
@@ -49,8 +52,7 @@ const shellOptions = LOCAL_SHELL_OPTIONS.map(option => ({
 const ready = computed(() => Boolean(form.name.trim()))
 
 onMounted(async () => {
-  if (!props.connectionId)
-    return
+  if (!props.connectionId) return
 
   try {
     const connection = await connectionsStore.get(props.connectionId)
@@ -67,25 +69,32 @@ onMounted(async () => {
       tagColor: connection.tagColor,
       description: connection.description,
     })
-  }
-  catch (error) {
+  } catch (error) {
     toast.error({ title: '读取本地终端失败', description: errorMessage(error) })
-  }
-  finally {
+  } finally {
     loading.value = false
   }
 })
 
 async function browseDirectory(): Promise<void> {
-  if (!IS_TAURI)
-    return
-  const selected = await open({ directory: true, multiple: false, title: '选择本地终端工作目录' })
-  if (typeof selected === 'string')
-    form.workingDirectory = selected
+  if (!IS_TAURI) return
+  const selected = await open({
+    directory: true,
+    multiple: false,
+    title: '选择本地终端工作目录',
+  })
+  if (typeof selected === 'string') form.workingDirectory = selected
 }
 
 function normalizedTags(): string[] {
-  return [...new Set(form.tags.split(/[,，]/).map(tag => tag.trim()).filter(Boolean))]
+  return [
+    ...new Set(
+      form.tags
+        .split(/[,，]/)
+        .map(tag => tag.trim())
+        .filter(Boolean)
+    ),
+  ]
 }
 
 async function save(): Promise<void> {
@@ -112,41 +121,58 @@ async function save(): Promise<void> {
       },
     }
 
-    if (props.connectionId)
-      await update(props.connectionId, input)
-    else
-      await create(input)
+    if (props.connectionId) await update(props.connectionId, input)
+    else await create(input)
     toast.success(props.connectionId ? '本地终端已更新' : '本地终端已保存')
     emit('close')
-  }
-  catch (error) {
+  } catch (error) {
     toast.error({ title: '保存本地终端失败', description: errorMessage(error) })
-  }
-  finally {
+  } finally {
     saving.value = false
   }
 }
 </script>
 
 <template>
-  <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="save">
+  <form
+    class="flex min-h-0 flex-1 flex-col"
+    @submit.prevent="save"
+  >
     <div class="local-heading">
-      <div class="grid size-9 place-items-center rounded-lg bg-violet/12 text-violet">
+      <div
+        class="bg-violet/12 text-violet grid size-9 place-items-center rounded-lg"
+      >
         <span class="text-base">›_</span>
       </div>
       <div>
-        <h2 class="text-xs font-semibold text-txt">Local Terminal</h2>
-        <p class="mt-0.5 text-[10.5px] text-txt-4">在本机 PTY 中启动一个独立 Shell 会话</p>
+        <h2 class="text-txt text-xs font-semibold">Local Terminal</h2>
+        <p class="text-txt-4 mt-0.5 text-[10.5px]">
+          在本机 PTY 中启动一个独立 Shell 会话
+        </p>
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 scroll-thin">
+    <div class="scroll-thin min-h-0 flex-1 overflow-y-auto px-5 py-4">
       <div class="grid gap-3.5">
         <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
-          <AppTextField v-model="form.name" label="Name" placeholder="e.g. Development" required autofocus />
-          <AppTextField v-model="form.group" label="Group" placeholder="e.g. Local" />
+          <AppTextField
+            v-model="form.name"
+            label="Name"
+            placeholder="e.g. Development"
+            required
+            autofocus
+          />
+          <AppTextField
+            v-model="form.group"
+            label="Group"
+            placeholder="e.g. Local"
+          />
         </div>
-        <AppSelect v-model="form.shell" label="Shell" :options="shellOptions" />
+        <AppSelect
+          v-model="form.shell"
+          label="Shell"
+          :options="shellOptions"
+        />
         <AppTextField
           v-model="form.workingDirectory"
           label="Working Directory"
@@ -161,7 +187,11 @@ async function save(): Promise<void> {
           :available-tags="sharedTags"
         />
         <div class="space-y-1.5">
-          <label for="local-description" class="block text-[11px] font-medium text-txt-2">Description (Optional)</label>
+          <label
+            for="local-description"
+            class="text-txt-2 block text-[11px] font-medium"
+            >Description (Optional)</label
+          >
           <textarea
             id="local-description"
             v-model="form.description"
@@ -176,7 +206,11 @@ async function save(): Promise<void> {
     <footer class="local-footer">
       <div class="flex-1" />
       <AppButton @click="emit('close')">Cancel</AppButton>
-      <AppButton type="submit" variant="primary" :disabled="saving || loading">
+      <AppButton
+        type="submit"
+        variant="primary"
+        :disabled="saving || loading"
+      >
         {{ saving ? 'Saving…' : props.connectionId ? 'Update' : 'Save' }}
       </AppButton>
     </footer>
@@ -208,7 +242,8 @@ async function save(): Promise<void> {
 
 .local-description:focus {
   border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
 .local-footer {

@@ -1,71 +1,75 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, useId, useTemplateRef, watch } from "vue";
-import { useEventListener } from "@vueuse/core";
-import AppButton from "./AppButton.vue";
-import AppIcon from "./AppIcon.vue";
+import { nextTick, onBeforeUnmount, useId, useTemplateRef, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
+import AppButton from './AppButton.vue'
+import AppIcon from './AppIcon.vue'
 
 const props = withDefaults(
   defineProps<{
-    open: boolean;
-    title: string;
-    description: string;
-    confirmLabel?: string;
-    danger?: boolean;
+    open: boolean
+    title: string
+    description: string
+    confirmLabel?: string
+    danger?: boolean
   }>(),
   {
-    confirmLabel: "确认",
+    confirmLabel: '确认',
     danger: false,
-  },
-);
+  }
+)
 
 const emit = defineEmits<{
-  close: [];
-  confirm: [];
-}>();
+  close: []
+  confirm: []
+}>()
 
-const titleId = useId();
-const dialog = useTemplateRef<HTMLElement>("dialog");
-let previous: HTMLElement | null = null;
+const titleId = useId()
+const dialog = useTemplateRef<HTMLElement>('dialog')
+let previous: HTMLElement | null = null
 watch(
   () => props.open,
-  async (open) => {
+  async open => {
     if (open) {
-      previous = document.activeElement as HTMLElement;
-      await nextTick();
-      dialog.value?.querySelector<HTMLButtonElement>("button")?.focus();
-    } else previous?.focus();
+      previous = document.activeElement as HTMLElement
+      await nextTick()
+      dialog.value?.querySelector<HTMLButtonElement>('button')?.focus()
+    } else previous?.focus()
   },
-  { immediate: true },
-);
+  { immediate: true }
+)
 onBeforeUnmount(() => {
-  if (props.open) previous?.focus();
-});
-useEventListener(window, "keydown", (event: KeyboardEvent) => {
-  if (props.open && event.key === "Tab" && dialog.value) {
+  if (props.open) previous?.focus()
+})
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (props.open && event.key === 'Tab' && dialog.value) {
     const buttons = [
       ...dialog.value.querySelectorAll<HTMLButtonElement>(
-        "button:not([disabled])",
+        'button:not([disabled])'
       ),
-    ];
+    ]
     if (event.shiftKey && document.activeElement === buttons[0]) {
-      event.preventDefault();
-      buttons.at(-1)?.focus();
+      event.preventDefault()
+      buttons.at(-1)?.focus()
     } else if (!event.shiftKey && document.activeElement === buttons.at(-1)) {
-      event.preventDefault();
-      buttons[0]?.focus();
+      event.preventDefault()
+      buttons[0]?.focus()
     }
   }
-  if (props.open && event.key === "Escape") {
-    event.preventDefault();
-    emit("close");
+  if (props.open && event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
   }
-});
+})
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="confirm-dialog">
-      <div v-if="open" class="app-confirm-backdrop" @click.self="emit('close')">
+      <div
+        v-if="open"
+        class="app-confirm-backdrop"
+        @click.self="emit('close')"
+      >
         <section
           ref="dialog"
           class="app-confirm-dialog"
@@ -82,15 +86,22 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
             />
           </div>
           <div class="min-w-0 flex-1">
-            <h2 :id="titleId" class="text-[13px] font-semibold text-txt">
+            <h2
+              :id="titleId"
+              class="text-txt text-[13px] font-semibold"
+            >
               {{ title }}
             </h2>
-            <p class="mt-1 text-[11px] leading-4 text-txt-3">
+            <p class="text-txt-3 mt-1 text-[11px] leading-4">
               {{ description }}
             </p>
           </div>
           <footer class="col-span-2 mt-2 flex justify-end gap-2">
-            <AppButton size="sm" autofocus @click="emit('close')">
+            <AppButton
+              size="sm"
+              autofocus
+              @click="emit('close')"
+            >
               取消
             </AppButton>
             <AppButton

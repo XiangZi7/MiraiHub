@@ -1,3 +1,3 @@
 <template>
-  <main class="grid h-screen place-items-center text-txt">正在返回工作区…</main>
+  <main class="text-txt grid h-screen place-items-center">正在返回工作区…</main>
 </template>

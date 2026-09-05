@@ -17,8 +17,7 @@ const NOTES: Record<ToastTone, number[]> = {
 export function playNotificationSound(tone: ToastTone): void {
   try {
     context ??= new AudioContext()
-    if (context.state === 'suspended')
-      void context.resume()
+    if (context.state === 'suspended') void context.resume()
 
     const start = context.currentTime
     NOTES[tone].forEach((frequency, index) => {
@@ -36,8 +35,7 @@ export function playNotificationSound(tone: ToastTone): void {
       oscillator.start(at)
       oscillator.stop(at + 0.19)
     })
-  }
-  catch {
+  } catch {
     // 没有音频设备或被系统策略禁止时不影响功能
   }
 }

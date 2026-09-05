@@ -7,123 +7,123 @@ import {
   toRef,
   useTemplateRef,
   watch,
-} from "vue";
-import type { AgentTarget } from "@/types/agent";
-import { useAiAgent } from "@/composables/useAiAgent";
-import { copyText } from "@/utils/clipboard";
-import { openSettingsWindow } from "@/utils/window";
-import AppIcon from "@/components/ui/AppIcon.vue";
-import IconButton from "@/components/ui/IconButton.vue";
-import AppButton from "@/components/ui/AppButton.vue";
-import AgentApprovalCard from "./AgentApprovalCard.vue";
+} from 'vue'
+import type { AgentTarget } from '@/types/agent'
+import { useAiAgent } from '@/composables/useAiAgent'
+import { copyText } from '@/utils/clipboard'
+import { openSettingsWindow } from '@/utils/window'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import IconButton from '@/components/ui/IconButton.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AgentApprovalCard from './AgentApprovalCard.vue'
 
 const props = withDefaults(
   defineProps<{
-    target: AgentTarget;
-    title?: string;
-    active?: boolean;
-    split?: boolean;
+    target: AgentTarget
+    title?: string
+    active?: boolean
+    split?: boolean
   }>(),
-  { active: true, split: false },
-);
-const emit = defineEmits<{ split: []; close: [] }>();
+  { active: true, split: false }
+)
+const emit = defineEmits<{ split: []; close: [] }>()
 const { run, busy, error, awaitingApproval, send, decide, stop, clear } =
-  useAiAgent(toRef(props, "target"), toRef(props, "active"));
+  useAiAgent(toRef(props, 'target'), toRef(props, 'active'))
 // 输入与显示状态；敏感会话不会持久化。
-const state = reactive({ prompt: "", copied: false });
-const { prompt, copied } = toRefs(state);
-const scroll = useTemplateRef<HTMLElement>("scroll");
-const isDatabase = computed(() => props.target.kind === "database");
+const state = reactive({ prompt: '', copied: false })
+const { prompt, copied } = toRefs(state)
+const scroll = useTemplateRef<HTMLElement>('scroll')
+const isDatabase = computed(() => props.target.kind === 'database')
 const suggestions = computed(() =>
   isDatabase.value
     ? [
-        "查看表结构",
-        "分析数据库结构并给出优化建议",
-        "帮我编写查询",
-        "检查索引并说明改进方案",
+        '查看表结构',
+        '分析数据库结构并给出优化建议',
+        '帮我编写查询',
+        '检查索引并说明改进方案',
       ]
     : [
-        "检查系统状态",
-        "查看磁盘使用情况",
-        "查看运行中的进程",
-        "检查网络状态",
-        "分析服务器问题",
-        "更新系统软件包",
-      ],
-);
+        '检查系统状态',
+        '查看磁盘使用情况',
+        '查看运行中的进程',
+        '检查网络状态',
+        '分析服务器问题',
+        '更新系统软件包',
+      ]
+)
 const canSend = computed(() =>
   Boolean(
     props.target.sessionId &&
     props.active &&
     state.prompt.trim() &&
     !busy.value &&
-    !awaitingApproval.value,
-  ),
-);
+    !awaitingApproval.value
+  )
+)
 const statusLabel = computed(
   () =>
     ({
-      running: "正在处理",
-      approval: "等待审批",
-      completed: "本轮完成",
-      cancelled: "已停止",
-      failed: "任务未完成",
-    })[run.value?.status ?? "completed"],
-);
+      running: '正在处理',
+      approval: '等待审批',
+      completed: '本轮完成',
+      cancelled: '已停止',
+      failed: '任务未完成',
+    })[run.value?.status ?? 'completed']
+)
 async function submit(): Promise<void> {
-  if (!canSend.value) return;
-  const text = state.prompt;
-  state.prompt = "";
-  if (!(await send(text)) && !state.prompt) state.prompt = text;
+  if (!canSend.value) return
+  const text = state.prompt
+  state.prompt = ''
+  if (!(await send(text)) && !state.prompt) state.prompt = text
 }
 function suggest(text: string): void {
-  state.prompt = text;
+  state.prompt = text
 }
 function keydown(event: KeyboardEvent): void {
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-    event.preventDefault();
-    event.stopPropagation();
-    void submit();
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault()
+    event.stopPropagation()
+    void submit()
   }
 }
 async function copyConversation(): Promise<void> {
-  if (!run.value) return;
+  if (!run.value) return
   try {
     await copyText(
       [
         `目标：${run.value.target}`,
         ...run.value.entries.map(
-          (entry) =>
-            `${entry.role}: ${entry.text}${entry.detail ? `\n${entry.detail}` : ""}`,
+          entry =>
+            `${entry.role}: ${entry.text}${entry.detail ? `\n${entry.detail}` : ''}`
         ),
-      ].join("\n\n"),
-    );
-    state.copied = true;
+      ].join('\n\n')
+    )
+    state.copied = true
   } catch {
-    state.copied = false;
+    state.copied = false
   }
 }
 watch(
   () => run.value?.entries.length,
   async () => {
-    state.copied = false;
-    await nextTick();
+    state.copied = false
+    await nextTick()
     scroll.value?.scrollTo({
       top: scroll.value.scrollHeight,
-      behavior: "auto",
-    });
-  },
-);
+      behavior: 'auto',
+    })
+  }
+)
 watch(
   () => run.value?.approval?.id,
   async () => {
-    await nextTick();
+    await nextTick()
     scroll.value?.scrollTo({
       top: scroll.value.scrollHeight,
-      behavior: "auto",
-    });
-  },
-);
+      behavior: 'auto',
+    })
+  }
+)
 </script>
 
 <template>
@@ -133,10 +133,13 @@ watch(
     aria-label="AI Agent"
   >
     <header class="agent-header">
-      <span class="status-dot" :class="target.sessionId && 'online'" /><span
-        class="max-w-44 truncate text-[11px] text-txt-2"
+      <span
+        class="status-dot"
+        :class="target.sessionId && 'online'"
+      /><span
+        class="text-txt-2 max-w-44 truncate text-[11px]"
         :title="title"
-        >{{ title || (isDatabase ? "Database" : "Server") }}</span
+        >{{ title || (isDatabase ? 'Database' : 'Server') }}</span
       >
       <span class="agent-tab">AI Agent <span class="beta">BETA</span></span>
       <div class="flex-1" />
@@ -168,14 +171,22 @@ watch(
         @click="emit('close')"
       />
     </header>
-    <div ref="scroll" class="agent-scroll">
+    <div
+      ref="scroll"
+      class="agent-scroll"
+    >
       <div class="agent-intro">
-        <div class="bot-avatar"><AppIcon name="lucide:bot" :size="25" /></div>
+        <div class="bot-avatar">
+          <AppIcon
+            name="lucide:bot"
+            :size="25"
+          />
+        </div>
         <div>
-          <h2>AI Agent ({{ isDatabase ? "Database" : "Terminal" }})</h2>
+          <h2>AI Agent ({{ isDatabase ? 'Database' : 'Terminal' }})</h2>
           <p>
             协助{{
-              isDatabase ? "查询、分析和管理数据库" : "诊断问题和管理服务器"
+              isDatabase ? '查询、分析和管理数据库' : '诊断问题和管理服务器'
             }}
           </p>
         </div>
@@ -200,7 +211,10 @@ watch(
                   ]"
               :key="item"
             >
-              <AppIcon name="lucide:check" :size="13" />{{ item }}
+              <AppIcon
+                name="lucide:check"
+                :size="13"
+              />{{ item }}
             </li>
           </ul>
           <p>内置只读工具自动运行，其他操作逐次审批。</p>
@@ -216,7 +230,11 @@ watch(
           </button>
         </div>
       </template>
-      <div v-else class="messages" aria-live="polite">
+      <div
+        v-else
+        class="messages"
+        aria-live="polite"
+      >
         <div class="provider">{{ run.model }} · {{ run.provider }}</div>
         <article
           v-for="(entry, index) in run.entries"
@@ -226,11 +244,14 @@ watch(
         >
           <template v-if="entry.role === 'user' || entry.role === 'assistant'"
             ><span class="message-role">{{
-              entry.role === "user" ? "你" : "AI Agent"
+              entry.role === 'user' ? '你' : 'AI Agent'
             }}</span>
             <p>{{ entry.text }}</p></template
           >
-          <details v-else :open="entry.role === 'error'">
+          <details
+            v-else
+            :open="entry.role === 'error'"
+          >
             <summary>
               <AppIcon
                 :name="
@@ -253,7 +274,7 @@ watch(
           :busy="busy"
           @decide="decide"
         />
-        <div class="flex items-center gap-2 text-[11px] text-txt-3">
+        <div class="text-txt-3 flex items-center gap-2 text-[11px]">
           <AppIcon
             v-if="busy"
             name="lucide:loader-circle"
@@ -263,7 +284,7 @@ watch(
         </div>
         <p
           v-if="run.status === 'cancelled'"
-          class="text-[11px] leading-relaxed text-txt-3"
+          class="text-txt-3 text-[11px] leading-relaxed"
         >
           已停止后续步骤。正在执行的操作可能已生效，请核对远端状态。
         </p>
@@ -271,15 +292,15 @@ watch(
       <p
         v-if="error"
         role="alert"
-        class="mt-3 rounded-lg border border-danger/30 bg-danger/5 p-3 text-[12px] text-danger"
+        class="border-danger/30 bg-danger/5 text-danger mt-3 rounded-lg border p-3 text-[12px]"
       >
         {{ error }}
       </p>
       <div
         v-if="!target.sessionId"
-        class="mt-4 rounded-lg border border-line p-3 text-[12px] text-txt-3"
+        class="border-line text-txt-3 mt-4 rounded-lg border p-3 text-[12px]"
       >
-        请先连接{{ isDatabase ? "数据库" : "SSH 服务器" }}。
+        请先连接{{ isDatabase ? '数据库' : 'SSH 服务器' }}。
       </div>
     </div>
     <footer class="agent-footer">
@@ -294,7 +315,10 @@ watch(
           AI 设置
         </button>
       </p>
-      <form class="composer" @submit.prevent="submit">
+      <form
+        class="composer"
+        @submit.prevent="submit"
+      >
         <textarea
           v-model="prompt"
           :placeholder="
@@ -323,7 +347,10 @@ watch(
           :disabled="!canSend"
           class="send-button"
         >
-          <AppIcon name="lucide:send" :size="17" />
+          <AppIcon
+            name="lucide:send"
+            :size="17"
+          />
         </button>
       </form>
       <p class="footer-hint">

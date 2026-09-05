@@ -1,7 +1,10 @@
 import type { RecentFilter, SessionKind } from '@/types'
 
 /** 会话类型 → 图标、徽章文案与配色，与终端 / 数据库 / 文件三处入口的色系保持一致 */
-export const SESSION_KIND_META: Record<SessionKind, { label: string, icon: string, tone: string }> = {
+export const SESSION_KIND_META: Record<
+  SessionKind,
+  { label: string; icon: string; tone: string }
+> = {
   ssh: { label: 'SSH', icon: 'lucide:square-terminal', tone: 'text-accent' },
   local: { label: 'LOCAL', icon: 'lucide:terminal', tone: 'text-violet' },
   database: { label: 'DB', icon: 'lucide:database', tone: 'text-pink' },
@@ -17,7 +20,7 @@ export const RECENT_FILTERS: RecentFilter[] = [
 ]
 
 /** 时间分组的边界，单位毫秒。从近到远匹配，命中即归入该组 */
-export const RECENT_BUCKETS: { id: string, label: string, within: number }[] = [
+export const RECENT_BUCKETS: { id: string; label: string; within: number }[] = [
   { id: 'today', label: 'Today', within: 86_400_000 },
   { id: 'yesterday', label: 'Yesterday', within: 172_800_000 },
   { id: 'week', label: 'Earlier this week', within: 604_800_000 },

@@ -40,29 +40,26 @@ const EVENT_TRANSFER = 'ssh://transfer'
  */
 export function isAppError(err: unknown): err is AppError {
   return (
-    typeof err === 'object'
-    && err !== null
-    && 'kind' in err
-    && 'message' in err
-    && typeof (err as AppError).message === 'string'
+    typeof err === 'object' &&
+    err !== null &&
+    'kind' in err &&
+    'message' in err &&
+    typeof (err as AppError).message === 'string'
   )
 }
 
 /** 从任意异常里取出可展示的文案 */
 export function errorMessage(err: unknown): string {
-  if (isAppError(err))
-    return err.message
+  if (isAppError(err)) return err.message
 
-  if (err instanceof Error)
-    return err.message
+  if (err instanceof Error) return err.message
 
   return String(err)
 }
 
 /** 浏览器里直接预览时没有 Tauri 后端，给出明确报错而不是让 invoke 抛底层异常 */
 function ensureTauri(): void {
-  if (!IS_TAURI)
-    throw new Error('SSH 功能需要在桌面应用中运行')
+  if (!IS_TAURI) throw new Error('SSH 功能需要在桌面应用中运行')
 }
 
 /**
@@ -90,7 +87,10 @@ export async function listSessions(): Promise<SshSessionInfo[]> {
  * 在会话上开一个带 PTY 的交互式 shell。
  * 开好之后远端输出会通过 `ssh://output` 事件持续推来，用 onOutput 订阅。
  */
-export async function openShell(sessionId: string, pty: PtyOptions): Promise<void> {
+export async function openShell(
+  sessionId: string,
+  pty: PtyOptions
+): Promise<void> {
   ensureTauri()
   await invoke('ssh_open_shell', { sessionId, pty })
 }
@@ -101,13 +101,20 @@ export async function openShell(sessionId: string, pty: PtyOptions): Promise<voi
  * 传 string 而非字节数组：xterm.js 的 onData 给的就是 string，
  * 且用户输入必然是合法 UTF-8，不存在输出流那种跨包截断问题。
  */
-export async function writeToShell(sessionId: string, data: string): Promise<void> {
+export async function writeToShell(
+  sessionId: string,
+  data: string
+): Promise<void> {
   ensureTauri()
   await invoke('ssh_write', { sessionId, data })
 }
 
 /** 终端尺寸变化时同步给远端，否则 vim/top 这类全屏程序会画错 */
-export async function resizeShell(sessionId: string, cols: number, rows: number): Promise<void> {
+export async function resizeShell(
+  sessionId: string,
+  cols: number,
+  rows: number
+): Promise<void> {
   ensureTauri()
   await invoke('ssh_resize', { sessionId, cols, rows })
 }
@@ -116,7 +123,10 @@ export async function resizeShell(sessionId: string, cols: number, rows: number)
  * 执行单条命令并等待结果。
  * 与 openShell 相互独立：走的是新开的一次性通道，不影响交互式 shell。
  */
-export async function exec(sessionId: string, command: string): Promise<SshCommandOutput> {
+export async function exec(
+  sessionId: string,
+  command: string
+): Promise<SshCommandOutput> {
   ensureTauri()
   return invoke<SshCommandOutput>('ssh_exec', { sessionId, command })
 }
@@ -125,10 +135,14 @@ export async function exec(sessionId: string, command: string): Promise<SshComma
 export async function completeShell(
   sessionId: string,
   line: string,
-  cwd: string,
+  cwd: string
 ): Promise<ShellSuggestion[]> {
   ensureTauri()
-  return invoke<ShellSuggestion[]>('ssh_complete_shell', { sessionId, line, cwd })
+  return invoke<ShellSuggestion[]>('ssh_complete_shell', {
+    sessionId,
+    line,
+    cwd,
+  })
 }
 
 /**
@@ -145,23 +159,34 @@ export async function systemStats(sessionId: string): Promise<SshSystemStats> {
 /** 列出远端目录。path 传空串表示家目录 */
 export async function listDirectory(
   sessionId: string,
-  path: string,
+  path: string
 ): Promise<SshDirectoryListing> {
   ensureTauri()
   return invoke<SshDirectoryListing>('ssh_list_directory', { sessionId, path })
 }
 
-export async function pathExists(sessionId: string, path: string): Promise<boolean> {
+export async function pathExists(
+  sessionId: string,
+  path: string
+): Promise<boolean> {
   ensureTauri()
   return invoke<boolean>('ssh_path_exists', { sessionId, path })
 }
 
-export async function renamePath(sessionId: string, oldPath: string, newPath: string): Promise<void> {
+export async function renamePath(
+  sessionId: string,
+  oldPath: string,
+  newPath: string
+): Promise<void> {
   ensureTauri()
   await invoke('ssh_rename_path', { sessionId, oldPath, newPath })
 }
 
-export async function deletePath(sessionId: string, path: string, isDirectory: boolean): Promise<void> {
+export async function deletePath(
+  sessionId: string,
+  path: string,
+  isDirectory: boolean
+): Promise<void> {
   ensureTauri()
   await invoke('ssh_delete_path', { sessionId, path, isDirectory })
 }
@@ -212,7 +237,9 @@ export async function listKeys(): Promise<SshKeyInfo[]> {
 }
 
 /** 生成新密钥，写入 ~/.ssh 并返回其信息 */
-export async function generateKey(request: GenerateKeyRequest): Promise<SshKeyInfo> {
+export async function generateKey(
+  request: GenerateKeyRequest
+): Promise<SshKeyInfo> {
   ensureTauri()
   return invoke<SshKeyInfo>('ssh_generate_key', { request })
 }
@@ -231,27 +258,29 @@ export async function deleteKey(keyId: string): Promise<void> {
  */
 export function onOutput(
   sessionId: string,
-  handler: (payload: SshOutputEvent) => void,
+  handler: (payload: SshOutputEvent) => void
 ): Promise<UnlistenFn> {
-  return listen<SshOutputEvent>(EVENT_OUTPUT, (event) => {
-    if (event.payload.sessionId === sessionId)
-      handler(event.payload)
+  return listen<SshOutputEvent>(EVENT_OUTPUT, event => {
+    if (event.payload.sessionId === sessionId) handler(event.payload)
   })
 }
 
 /** 订阅会话状态变更。返回取消订阅函数 */
 export function onStatus(
   sessionId: string,
-  handler: (payload: SshStatusEvent) => void,
+  handler: (payload: SshStatusEvent) => void
 ): Promise<UnlistenFn> {
-  return listen<SshStatusEvent>(EVENT_STATUS, (event) => {
-    if (event.payload.sessionId === sessionId)
-      handler(event.payload)
+  return listen<SshStatusEvent>(EVENT_STATUS, event => {
+    if (event.payload.sessionId === sessionId) handler(event.payload)
   })
 }
 
-export function onTransfer(handler: (payload: SshTransferEvent) => void): Promise<UnlistenFn> {
-  return listen<SshTransferEvent>(EVENT_TRANSFER, event => handler(event.payload))
+export function onTransfer(
+  handler: (payload: SshTransferEvent) => void
+): Promise<UnlistenFn> {
+  return listen<SshTransferEvent>(EVENT_TRANSFER, event =>
+    handler(event.payload)
+  )
 }
 
 /**
@@ -264,8 +293,7 @@ export function decodeBase64(data: string): Uint8Array {
   const binary = atob(data)
   const bytes = new Uint8Array(binary.length)
 
-  for (let i = 0; i < binary.length; i++)
-    bytes[i] = binary.charCodeAt(i)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
 
   return bytes
 }

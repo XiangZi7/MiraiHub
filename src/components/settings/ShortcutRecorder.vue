@@ -26,20 +26,15 @@ const isDefault = computed(() => model.value === props.defaultValue)
 function stop(event?: Event): void {
   recording.value = false
   pending.value = ''
-  if (event?.target instanceof HTMLElement)
-    event.target.blur()
+  if (event?.target instanceof HTMLElement) event.target.blur()
 }
 
 function modifiersLabel(event: KeyboardEvent): string {
   const held: string[] = []
-  if (event.ctrlKey)
-    held.push('Ctrl')
-  if (event.altKey)
-    held.push('Alt')
-  if (event.shiftKey)
-    held.push('Shift')
-  if (event.metaKey)
-    held.push('Meta')
+  if (event.ctrlKey) held.push('Ctrl')
+  if (event.altKey) held.push('Alt')
+  if (event.shiftKey) held.push('Shift')
+  if (event.metaKey) held.push('Meta')
   return held.length ? `${held.join(' + ')} + …` : ''
 }
 
@@ -80,11 +75,22 @@ function handleKeydown(event: KeyboardEvent): void {
       @blur="stop()"
       @keydown="handleKeydown"
     >
-      <span v-if="recording" class="shortcut-hint">{{ pending || '按下组合键…' }}</span>
+      <span
+        v-if="recording"
+        class="shortcut-hint"
+        >{{ pending || '按下组合键…' }}</span
+      >
       <template v-else>
-        <template v-for="(part, index) in parts" :key="`${part}-${index}`">
+        <template
+          v-for="(part, index) in parts"
+          :key="`${part}-${index}`"
+        >
           <kbd class="shortcut-key">{{ part }}</kbd>
-          <span v-if="index < parts.length - 1" class="shortcut-plus">+</span>
+          <span
+            v-if="index < parts.length - 1"
+            class="shortcut-plus"
+            >+</span
+          >
         </template>
       </template>
     </button>
@@ -96,7 +102,10 @@ function handleKeydown(event: KeyboardEvent): void {
       :disabled="disabled || isDefault"
       @click="model = defaultValue"
     >
-      <AppIcon name="lucide:rotate-ccw" :size="12" />
+      <AppIcon
+        name="lucide:rotate-ccw"
+        :size="12"
+      />
     </button>
   </div>
 </template>
@@ -116,7 +125,10 @@ function handleKeydown(event: KeyboardEvent): void {
   padding: 0 8px;
   color: var(--color-txt-2);
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease;
 }
 
 .shortcut-field:hover {
@@ -131,7 +143,8 @@ function handleKeydown(event: KeyboardEvent): void {
 .shortcut-field-recording {
   border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
   background: color-mix(in oklch, var(--color-violet) 10%, var(--color-panel));
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-violet) 12%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-violet) 12%, transparent);
 }
 
 .shortcut-hint {

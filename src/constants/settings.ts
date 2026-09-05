@@ -2,7 +2,14 @@ import type { SettingsPage } from '@/types/settings'
 import { LOCAL_SHELL_OPTIONS } from '@/constants/connection'
 
 export const SETTINGS_PAGES: readonly SettingsPage[] = [
-  { id: 'ai', label: 'AI Agent', title: 'AI Agent', description: '模型配置与操作审批', icon: 'lucide:bot', groups: [] },
+  {
+    id: 'ai',
+    label: 'AI Agent',
+    title: 'AI Agent',
+    description: '模型配置与操作审批',
+    icon: 'lucide:bot',
+    groups: [],
+  },
   {
     id: 'general',
     label: '通用',
@@ -22,7 +29,8 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           {
             key: 'restoreLastSession',
             label: '启动时恢复上次打开的标签',
-            description: '重新打开退出前的连接标签，但不会自动建立连接以外的操作',
+            description:
+              '重新打开退出前的连接标签，但不会自动建立连接以外的操作',
             control: 'switch',
           },
         ],
@@ -132,10 +140,30 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       {
         title: '全局快捷键',
         fields: [
-          { key: 'shortcutPalette', label: '打开命令面板', control: 'shortcut', size: 'lg' },
-          { key: 'shortcutTerminal', label: '新建本地终端', control: 'shortcut', size: 'lg' },
-          { key: 'shortcutSearch', label: '全局搜索', control: 'shortcut', size: 'lg' },
-          { key: 'shortcutFiles', label: '打开文件面板', control: 'shortcut', size: 'lg' },
+          {
+            key: 'shortcutPalette',
+            label: '打开命令面板',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutTerminal',
+            label: '新建本地终端',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutSearch',
+            label: '全局搜索',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutFiles',
+            label: '打开文件面板',
+            control: 'shortcut',
+            size: 'lg',
+          },
         ],
       },
     ],
@@ -230,7 +258,8 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           {
             key: 'transferBufferSizeKb',
             label: '传输缓冲区大小（KB）',
-            description: '更大的缓冲区能提升大文件吞吐，部分服务器不支持超过 256 KB 的数据包',
+            description:
+              '更大的缓冲区能提升大文件吞吐，部分服务器不支持超过 256 KB 的数据包',
             control: 'select',
             size: 'sm',
             options: [
@@ -300,7 +329,10 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             description: '新建本地终端时预选的 Shell',
             control: 'select',
             size: 'lg',
-            options: LOCAL_SHELL_OPTIONS.map(option => ({ value: option.value, label: option.label })),
+            options: LOCAL_SHELL_OPTIONS.map(option => ({
+              value: option.value,
+              label: option.label,
+            })),
           },
           {
             key: 'terminalScrollback',
@@ -324,7 +356,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       {
         title: '文件浏览',
         fields: [
-          { key: 'showHiddenFiles', label: '显示隐藏文件', description: '显示以 . 开头的文件和目录', control: 'switch' },
+          {
+            key: 'showHiddenFiles',
+            label: '显示隐藏文件',
+            description: '显示以 . 开头的文件和目录',
+            control: 'switch',
+          },
           { key: 'confirmFileDelete', label: '删除前确认', control: 'switch' },
           {
             key: 'overwriteBehavior',
@@ -355,7 +392,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     ],
   },
   {
-    id: 'backup', label: '备份与恢复', title: '连接备份与恢复', description: '导出、预览和恢复连接配置', icon: 'lucide:archive-restore', groups: [],
+    id: 'backup',
+    label: '备份与恢复',
+    title: '连接备份与恢复',
+    description: '导出、预览和恢复连接配置',
+    icon: 'lucide:archive-restore',
+    groups: [],
   },
   {
     id: 'data',
@@ -367,8 +409,17 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       {
         title: '历史记录',
         fields: [
-          { key: 'saveSessionHistory', label: '记录最近会话', description: '关闭后「最近」视图不再更新', control: 'switch' },
-          { key: 'saveQueryHistory', label: '保存 SQL 查询历史', control: 'switch' },
+          {
+            key: 'saveSessionHistory',
+            label: '记录最近会话',
+            description: '关闭后「最近」视图不再更新',
+            control: 'switch',
+          },
+          {
+            key: 'saveQueryHistory',
+            label: '保存 SQL 查询历史',
+            control: 'switch',
+          },
           {
             key: 'historyRetention',
             label: '历史保留天数',
@@ -409,7 +460,8 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           {
             key: 'verifyHostKey',
             label: '验证 SSH 主机密钥',
-            description: '首次连接记录到 ~/.ssh/known_hosts，之后密钥变化将拒绝连接',
+            description:
+              '首次连接记录到 ~/.ssh/known_hosts，之后密钥变化将拒绝连接',
             control: 'switch',
           },
           {
@@ -450,8 +502,16 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       {
         title: '应用通知',
         fields: [
-          { key: 'notifyConnectionChanges', label: '连接建立与断开', control: 'switch' },
-          { key: 'notifyTransferComplete', label: '文件传输完成', control: 'switch' },
+          {
+            key: 'notifyConnectionChanges',
+            label: '连接建立与断开',
+            control: 'switch',
+          },
+          {
+            key: 'notifyTransferComplete',
+            label: '文件传输完成',
+            control: 'switch',
+          },
           {
             key: 'notifyErrors',
             label: '错误与异常',
@@ -472,11 +532,30 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       {
         title: 'MiraiHub',
         fields: [
-          { id: 'version', label: '版本', control: 'display', displayValue: '0.1.0' },
-          { id: 'tauriVersion', label: 'Tauri 版本', control: 'display', displayValue: '—' },
-          { label: '运行框架', control: 'display', displayValue: 'Tauri 2 + Vue 3' },
+          {
+            id: 'version',
+            label: '版本',
+            control: 'display',
+            displayValue: '0.1.0',
+          },
+          {
+            id: 'tauriVersion',
+            label: 'Tauri 版本',
+            control: 'display',
+            displayValue: '—',
+          },
+          {
+            label: '运行框架',
+            control: 'display',
+            displayValue: 'Tauri 2 + Vue 3',
+          },
           { label: '终端引擎', control: 'display', displayValue: 'xterm.js' },
-          { id: 'platform', label: '运行平台', control: 'display', displayValue: '—' },
+          {
+            id: 'platform',
+            label: '运行平台',
+            control: 'display',
+            displayValue: '—',
+          },
         ],
       },
     ],

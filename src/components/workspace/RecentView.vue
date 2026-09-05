@@ -7,7 +7,11 @@ import SearchField from '@/components/ui/SearchField.vue'
 import { useConnections } from '@/composables/useConnections'
 import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
-import { RECENT_BUCKETS, RECENT_FILTERS, SESSION_KIND_META } from '@/constants/recent'
+import {
+  RECENT_BUCKETS,
+  RECENT_FILTERS,
+  SESSION_KIND_META,
+} from '@/constants/recent'
 import type { RecentFilter, RecentGroup, SessionKind } from '@/types'
 import type { SavedConnection } from '@/types/connection'
 import { endpointOf } from '@/types/connection'
@@ -44,23 +48,22 @@ const clearConfirmOpen = shallowRef(false)
 
 /** 连接类型 → 会话类型。数据库的三种协议在这里都归为 database */
 function kindOf(connection: SavedConnection): SessionKind {
-  if (connection.kind === 'ssh')
-    return 'ssh'
+  if (connection.kind === 'ssh') return 'ssh'
   return connection.kind === 'local' ? 'local' : 'database'
 }
 
 /** 用过的连接，按最近使用倒序 */
 const usedConnections = computed(() =>
   connections
-    .filter((item) => {
-      if (item.lastUsedAt <= 0)
-        return false
-      const retentionMs = settingNumber('historyRetention', 30) * 24 * 60 * 60 * 1000
+    .filter(item => {
+      if (item.lastUsedAt <= 0) return false
+      const retentionMs =
+        settingNumber('historyRetention', 30) * 24 * 60 * 60 * 1000
       return Date.now() - item.lastUsedAt < retentionMs
     })
     .slice()
     .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
-    .slice(0, settingNumber('maxRecentItems', 50)),
+    .slice(0, settingNumber('maxRecentItems', 50))
 )
 
 /** 按类型 + 关键词过滤后再分时间段，空分组不占位 */
@@ -68,44 +71,42 @@ const visibleGroups = computed<RecentGroup[]>(() => {
   const kw = state.keyword.trim().toLowerCase()
   const now = Date.now()
 
-  const matched = usedConnections.value.filter((item) => {
-    if (state.filter !== 'all' && kindOf(item) !== state.filter)
-      return false
+  const matched = usedConnections.value.filter(item => {
+    if (state.filter !== 'all' && kindOf(item) !== state.filter) return false
 
-    if (!kw)
-      return true
+    if (!kw) return true
 
-    return item.name.toLowerCase().includes(kw)
-      || item.host.toLowerCase().includes(kw)
+    return (
+      item.name.toLowerCase().includes(kw) ||
+      item.host.toLowerCase().includes(kw)
+    )
   })
 
-  return RECENT_BUCKETS
-    .map((bucket, index) => {
-      // 每个桶只收"比上一个桶更早、但不超过自身边界"的记录，
-      // 否则今天的记录会同时落进 Today 和后面所有更宽的桶
-      const lower = index === 0 ? 0 : RECENT_BUCKETS[index - 1].within
+  return RECENT_BUCKETS.map((bucket, index) => {
+    // 每个桶只收"比上一个桶更早、但不超过自身边界"的记录，
+    // 否则今天的记录会同时落进 Today 和后面所有更宽的桶
+    const lower = index === 0 ? 0 : RECENT_BUCKETS[index - 1].within
 
-      const items = matched
-        .filter((item) => {
-          const age = now - item.lastUsedAt
-          return age >= lower && age < bucket.within
-        })
-        .map(item => ({
-          id: item.id,
-          label: item.name,
-          kind: kindOf(item),
-          address: endpointOf(item),
-          usedAt: item.lastUsedAt,
-        }))
+    const items = matched
+      .filter(item => {
+        const age = now - item.lastUsedAt
+        return age >= lower && age < bucket.within
+      })
+      .map(item => ({
+        id: item.id,
+        label: item.name,
+        kind: kindOf(item),
+        address: endpointOf(item),
+        usedAt: item.lastUsedAt,
+      }))
 
-      return { id: bucket.id, label: bucket.label, items }
-    })
-    .filter(group => group.items.length > 0)
+    return { id: bucket.id, label: bucket.label, items }
+  }).filter(group => group.items.length > 0)
 })
 
 /** 过滤后的会话总数，给状态栏 */
 const total = computed(() =>
-  visibleGroups.value.reduce((sum, group) => sum + group.items.length, 0),
+  visibleGroups.value.reduce((sum, group) => sum + group.items.length, 0)
 )
 
 /** 一条都没用过 vs 只是被筛掉了，两种空状态的出路不一样 */
@@ -113,8 +114,7 @@ const hasHistory = computed(() => usedConnections.value.length > 0)
 
 function reopen(id: string): void {
   const connection = connections.find(item => item.id === id)
-  if (connection)
-    emit('open', connection)
+  if (connection) emit('open', connection)
 }
 
 /** 清空记录：把 lastUsedAt 归零，连接本身保留 */
@@ -122,12 +122,14 @@ async function clearHistory(): Promise<void> {
   clearConfirmOpen.value = false
   try {
     await Promise.all(
-      usedConnections.value.map(item => update(item.id, { lastUsedAt: 0 })),
+      usedConnections.value.map(item => update(item.id, { lastUsedAt: 0 }))
     )
     toast.success('最近会话记录已清空')
-  }
-  catch (error) {
-    toast.error({ title: '清空最近会话失败', description: error instanceof Error ? error.message : String(error) })
+  } catch (error) {
+    toast.error({
+      title: '清空最近会话失败',
+      description: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 </script>
@@ -135,7 +137,9 @@ async function clearHistory(): Promise<void> {
 <template>
   <div class="pane flex-1">
     <!-- 工具条 -->
-    <header class="flex h-10 shrink-0 items-center gap-1 border-b border-line-soft pl-2 pr-2">
+    <header
+      class="border-line-soft flex h-10 shrink-0 items-center gap-1 border-b pr-2 pl-2"
+    >
       <button
         v-for="item in RECENT_FILTERS"
         :key="item.id"
@@ -163,19 +167,25 @@ async function clearHistory(): Promise<void> {
     </header>
 
     <!-- 会话列表 -->
-    <div class="min-h-0 flex-1 overflow-y-auto px-2.5 py-2 scroll-thin">
-      <section v-for="group in visibleGroups" :key="group.id" class="mb-3 last:mb-0">
+    <div class="scroll-thin min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+      <section
+        v-for="group in visibleGroups"
+        :key="group.id"
+        class="mb-3 last:mb-0"
+      >
         <p class="group-label mb-1.5 px-1">
           {{ group.label }}
         </p>
 
-        <div class="card divide-y divide-line-soft overflow-hidden">
+        <div class="card divide-line-soft divide-y overflow-hidden">
           <div
             v-for="session in group.items"
             :key="session.id"
-            class="group flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-raised"
+            class="group hover:bg-raised flex items-center gap-3 px-3 py-2.5 transition-colors"
           >
-            <div class="grid size-8 shrink-0 place-items-center rounded-lg border border-line-soft bg-panel">
+            <div
+              class="border-line-soft bg-panel grid size-8 shrink-0 place-items-center rounded-lg border"
+            >
               <AppIcon
                 :name="SESSION_KIND_META[session.kind].icon"
                 :size="15"
@@ -185,17 +195,23 @@ async function clearHistory(): Promise<void> {
 
             <div class="min-w-0 flex-1">
               <p class="flex items-center gap-1.5">
-                <span class="truncate text-xs text-txt">{{ session.label }}</span>
-                <span class="shrink-0 rounded border border-line bg-card px-1.5 text-[10px] font-medium text-txt-3">
+                <span class="text-txt truncate text-xs">{{
+                  session.label
+                }}</span>
+                <span
+                  class="border-line bg-card text-txt-3 shrink-0 rounded border px-1.5 text-[10px] font-medium"
+                >
                   {{ SESSION_KIND_META[session.kind].label }}
                 </span>
               </p>
-              <p class="mt-0.5 truncate font-mono text-[10.5px] text-txt-4">
+              <p class="text-txt-4 mt-0.5 truncate font-mono text-[10.5px]">
                 {{ session.address }}
               </p>
             </div>
 
-            <span class="w-28 shrink-0 truncate text-right text-[11px] text-txt-4">
+            <span
+              class="text-txt-4 w-28 shrink-0 truncate text-right text-[11px]"
+            >
               {{ formatRelative(session.usedAt) }}
             </span>
 
@@ -206,30 +222,49 @@ async function clearHistory(): Promise<void> {
               title="重新连接"
               @click="reopen(session.id)"
             >
-              <AppIcon name="lucide:rotate-cw" :size="12" />
+              <AppIcon
+                name="lucide:rotate-cw"
+                :size="12"
+              />
               <span>Reconnect</span>
             </button>
           </div>
         </div>
       </section>
 
-      <div v-if="!visibleGroups.length" class="flex h-full items-center justify-center">
+      <div
+        v-if="!visibleGroups.length"
+        class="flex h-full items-center justify-center"
+      >
         <div class="flex flex-col items-center gap-3 text-center">
-          <div class="grid size-14 place-items-center rounded-2xl border border-line bg-card text-txt-3">
-            <AppIcon name="lucide:clock" :size="26" />
+          <div
+            class="border-line bg-card text-txt-3 grid size-14 place-items-center rounded-2xl border"
+          >
+            <AppIcon
+              name="lucide:clock"
+              :size="26"
+            />
           </div>
-          <p class="text-sm text-txt-2">
+          <p class="text-txt-2 text-sm">
             {{ hasHistory ? '没有匹配的会话' : '还没有会话记录' }}
           </p>
-          <p class="max-w-70 text-xs text-txt-4">
-            {{ hasHistory ? '换个关键词，或把筛选切回 All' : settings.saveSessionHistory ? '打开一个连接后，这里会记下来' : '会话历史已在设置中关闭' }}
+          <p class="text-txt-4 max-w-70 text-xs">
+            {{
+              hasHistory
+                ? '换个关键词，或把筛选切回 All'
+                : settings.saveSessionHistory
+                  ? '打开一个连接后，这里会记下来'
+                  : '会话历史已在设置中关闭'
+            }}
           </p>
         </div>
       </div>
     </div>
 
     <!-- 状态栏 -->
-    <footer class="flex h-7 shrink-0 items-center border-t border-line-soft px-3 text-[10.5px] text-txt-3">
+    <footer
+      class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center border-t px-3 text-[10.5px]"
+    >
       <span>{{ total }} sessions</span>
       <div class="flex-1" />
       <span>点击 Reconnect 回到该连接</span>

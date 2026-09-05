@@ -26,7 +26,9 @@ const DRAG_THRESHOLD_PX = 5
  * 与侧栏连接拖拽一样使用 Pointer Events，避免 HTML5 drag/drop 与
  * Tauri 原生文件拖放互相抢事件。排序状态仍由标签所属的父组件持有。
  */
-export function useTabReorder<T extends ReorderableTab>(options: TabReorderOptions<T>) {
+export function useTabReorder<T extends ReorderableTab>(
+  options: TabReorderOptions<T>
+) {
   const dragging = shallowRef(false)
   const draggedId = shallowRef('')
   const targetId = shallowRef('')
@@ -46,8 +48,14 @@ export function useTabReorder<T extends ReorderableTab>(options: TabReorderOptio
     top: `${pointerY.value + 14}px`,
   }))
 
-  function directTargetAtPoint(x: number, y: number, container: HTMLElement): DropTarget | null {
-    const element = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-reorderable-tab-id]')
+  function directTargetAtPoint(
+    x: number,
+    y: number,
+    container: HTMLElement
+  ): DropTarget | null {
+    const element = document
+      .elementFromPoint(x, y)
+      ?.closest<HTMLElement>('[data-reorderable-tab-id]')
     if (!element || !container.contains(element)) return null
 
     const id = element.dataset.reorderableTabId
@@ -56,27 +64,47 @@ export function useTabReorder<T extends ReorderableTab>(options: TabReorderOptio
     return { id, position: x < rect.left + rect.width / 2 ? 'before' : 'after' }
   }
 
-  function nearestTargetAtPoint(x: number, y: number, container: HTMLElement): DropTarget | null {
+  function nearestTargetAtPoint(
+    x: number,
+    y: number,
+    container: HTMLElement
+  ): DropTarget | null {
     const bounds = container.getBoundingClientRect()
-    if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return null
+    if (
+      x < bounds.left ||
+      x > bounds.right ||
+      y < bounds.top ||
+      y > bounds.bottom
+    )
+      return null
 
-    const elements = [...container.querySelectorAll<HTMLElement>('[data-reorderable-tab-id]')]
+    const elements = [
+      ...container.querySelectorAll<HTMLElement>('[data-reorderable-tab-id]'),
+    ]
     if (!elements.length) return null
 
     for (const element of elements) {
       const rect = element.getBoundingClientRect()
       if (x < rect.left + rect.width / 2)
-        return { id: element.dataset.reorderableTabId ?? '', position: 'before' }
+        return {
+          id: element.dataset.reorderableTabId ?? '',
+          position: 'before',
+        }
     }
 
     const last = elements[elements.length - 1]
-    return last ? { id: last.dataset.reorderableTabId ?? '', position: 'after' } : null
+    return last
+      ? { id: last.dataset.reorderableTabId ?? '', position: 'after' }
+      : null
   }
 
   function dropTargetAtPoint(x: number, y: number): DropTarget | null {
     const container = options.container()
     if (!container) return null
-    return directTargetAtPoint(x, y, container) ?? nearestTargetAtPoint(x, y, container)
+    return (
+      directTargetAtPoint(x, y, container) ??
+      nearestTargetAtPoint(x, y, container)
+    )
   }
 
   function reset(): void {
@@ -108,7 +136,10 @@ export function useTabReorder<T extends ReorderableTab>(options: TabReorderOptio
     pointerY.value = event.clientY
 
     if (!dragging.value) {
-      const distance = Math.hypot(event.clientX - startX, event.clientY - startY)
+      const distance = Math.hypot(
+        event.clientX - startX,
+        event.clientY - startY
+      )
       if (distance < DRAG_THRESHOLD_PX) return
       dragging.value = true
       draggedId.value = sourceId
@@ -130,7 +161,9 @@ export function useTabReorder<T extends ReorderableTab>(options: TabReorderOptio
 
     const currentSourceId = sourceId
     const wasDragging = dragging.value
-    const target = wasDragging ? dropTargetAtPoint(event.clientX, event.clientY) : null
+    const target = wasDragging
+      ? dropTargetAtPoint(event.clientX, event.clientY)
+      : null
 
     if (wasDragging) {
       suppressedClickId = currentSourceId

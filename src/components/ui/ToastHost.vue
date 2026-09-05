@@ -4,7 +4,7 @@ import { useToast, type ToastTone } from '@/composables/useToast'
 
 const { toasts, dismiss, pause, resume } = useToast()
 
-const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
+const toneMeta: Record<ToastTone, { icon: string; label: string }> = {
   success: { icon: 'lucide:check', label: '成功' },
   error: { icon: 'lucide:x', label: '错误' },
   warning: { icon: 'lucide:triangle-alert', label: '警告' },
@@ -20,7 +20,11 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
       aria-live="polite"
       aria-relevant="additions"
     >
-      <TransitionGroup name="toast-list" tag="div" class="toast-list">
+      <TransitionGroup
+        name="toast-list"
+        tag="div"
+        class="toast-list"
+      >
         <article
           v-for="item in toasts"
           :key="item.id"
@@ -31,16 +35,30 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
           @mouseenter="pause(item.id)"
           @mouseleave="resume(item.id)"
         >
-          <span class="toast-glow" aria-hidden="true" />
+          <span
+            class="toast-glow"
+            aria-hidden="true"
+          />
 
-          <div class="toast-icon" aria-hidden="true">
-            <AppIcon :name="toneMeta[item.tone].icon" :size="item.tone === 'warning' || item.tone === 'info' ? 14 : 13" />
+          <div
+            class="toast-icon"
+            aria-hidden="true"
+          >
+            <AppIcon
+              :name="toneMeta[item.tone].icon"
+              :size="item.tone === 'warning' || item.tone === 'info' ? 14 : 13"
+            />
           </div>
 
           <div class="toast-copy">
             <span class="sr-only">{{ toneMeta[item.tone].label }}：</span>
             <p class="toast-title">{{ item.title }}</p>
-            <p v-if="item.description" class="toast-description scroll-thin">{{ item.description }}</p>
+            <p
+              v-if="item.description"
+              class="toast-description scroll-thin"
+            >
+              {{ item.description }}
+            </p>
           </div>
 
           <button
@@ -50,10 +68,17 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
             title="关闭"
             @click="dismiss(item.id)"
           >
-            <AppIcon name="lucide:x" :size="13" />
+            <AppIcon
+              name="lucide:x"
+              :size="13"
+            />
           </button>
 
-          <span v-if="item.duration > 0" class="toast-progress" aria-hidden="true" />
+          <span
+            v-if="item.duration > 0"
+            class="toast-progress"
+            aria-hidden="true"
+          />
         </article>
       </TransitionGroup>
     </section>
@@ -87,7 +112,8 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
   align-items: start;
   column-gap: 10px;
   overflow: hidden;
-  border: 1px solid color-mix(in oklch, var(--toast-tone) 24%, var(--color-line-strong));
+  border: 1px solid
+    color-mix(in oklch, var(--toast-tone) 24%, var(--color-line-strong));
   border-radius: 12px;
   background: color-mix(in oklch, var(--color-panel) 94%, transparent);
   box-shadow:
@@ -100,9 +126,15 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
   -webkit-backdrop-filter: blur(30px) saturate(175%);
 }
 
-.toast-card-success { --toast-tone: var(--color-success); }
-.toast-card-error { --toast-tone: var(--color-danger); }
-.toast-card-warning { --toast-tone: var(--color-amber); }
+.toast-card-success {
+  --toast-tone: var(--color-success);
+}
+.toast-card-error {
+  --toast-tone: var(--color-danger);
+}
+.toast-card-warning {
+  --toast-tone: var(--color-amber);
+}
 
 /* 左上角一抹同色辉光，替代粗重的左边框来标示语义 */
 .toast-glow {
@@ -171,7 +203,10 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
   border-radius: 6px;
   color: var(--color-txt-4);
   opacity: 0;
-  transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease;
 }
 
 .toast-card:hover .toast-close,
@@ -194,7 +229,11 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
   bottom: 0;
   left: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--toast-tone), color-mix(in oklch, var(--toast-tone) 55%, transparent));
+  background: linear-gradient(
+    90deg,
+    var(--toast-tone),
+    color-mix(in oklch, var(--toast-tone) 55%, transparent)
+  );
   transform-origin: left center;
   animation: toast-drain var(--toast-duration, 4000ms) linear forwards;
 }
@@ -204,16 +243,24 @@ const toneMeta: Record<ToastTone, { icon: string, label: string }> = {
 }
 
 @keyframes toast-drain {
-  from { transform: scaleX(1); }
-  to { transform: scaleX(0); }
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 
 .toast-list-enter-active {
-  transition: opacity 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition:
+    opacity 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .toast-list-leave-active {
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 
 .toast-list-move {

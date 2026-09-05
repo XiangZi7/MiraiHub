@@ -5,7 +5,14 @@
  * 每个用它的组件各写一份历史栈没有意义。
  */
 
-import { computed, onBeforeUnmount, reactive, toRefs, watch, type Ref } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  reactive,
+  toRefs,
+  watch,
+  type Ref,
+} from 'vue'
 import * as ssh from '@/api/ssh'
 import type { SshRemoteFile } from '@/types/ssh'
 
@@ -33,11 +40,10 @@ export function useRemoteFiles(sessionId: Ref<string>) {
       const aDir = a.kind === 'directory'
       const bDir = b.kind === 'directory'
 
-      if (aDir !== bDir)
-        return aDir ? -1 : 1
+      if (aDir !== bDir) return aDir ? -1 : 1
 
       return a.name.localeCompare(b.name)
-    }),
+    })
   )
 
   /** 路径面包屑。根目录返回空数组，模板里单独渲染那个 `/` */
@@ -65,8 +71,7 @@ export function useRemoteFiles(sessionId: Ref<string>) {
    */
   async function load(target: string, record = true): Promise<boolean> {
     const id = sessionId.value
-    if (!id)
-      return false
+    if (!id) return false
 
     const currentRequest = ++requestId
 
@@ -76,36 +81,30 @@ export function useRemoteFiles(sessionId: Ref<string>) {
     try {
       const listing = await ssh.listDirectory(id, target)
 
-      if (currentRequest !== requestId || sessionId.value !== id)
-        return false
+      if (currentRequest !== requestId || sessionId.value !== id) return false
 
       state.path = listing.path
       state.entries = listing.entries
       state.selected = ''
 
-      if (record)
-        pushHistory(listing.path)
+      if (record) pushHistory(listing.path)
 
       return true
-    }
-    catch (err) {
+    } catch (err) {
       if (currentRequest === requestId && sessionId.value === id)
         state.error = ssh.errorMessage(err)
 
       // 保留原来的列表：进不去新目录时，让用户还能看到刚才那个，
       // 而不是连当前位置也一起清空
       return false
-    }
-    finally {
-      if (currentRequest === requestId)
-        state.loading = false
+    } finally {
+      if (currentRequest === requestId) state.loading = false
     }
   }
 
   /** 写入历史。从中间跳转时截掉后面的"未来"分支 */
   function pushHistory(target: string): void {
-    if (state.history[state.cursor] === target)
-      return
+    if (state.history[state.cursor] === target) return
 
     state.history = [...state.history.slice(0, state.cursor + 1), target]
     state.cursor = state.history.length - 1
@@ -119,16 +118,14 @@ export function useRemoteFiles(sessionId: Ref<string>) {
 
   /** 上一级。已在根目录时无事发生 */
   async function goUp(): Promise<void> {
-    if (state.path === '/' || !state.path)
-      return
+    if (state.path === '/' || !state.path) return
 
     const parent = state.path.replace(/\/[^/]+\/?$/, '') || '/'
     await load(parent)
   }
 
   async function goBack(): Promise<void> {
-    if (!canGoBack.value)
-      return
+    if (!canGoBack.value) return
 
     const targetCursor = state.cursor - 1
     if (await load(state.history[targetCursor], false))
@@ -136,8 +133,7 @@ export function useRemoteFiles(sessionId: Ref<string>) {
   }
 
   async function goForward(): Promise<void> {
-    if (!canGoForward.value)
-      return
+    if (!canGoForward.value) return
 
     const targetCursor = state.cursor + 1
     if (await load(state.history[targetCursor], false))
@@ -152,7 +148,7 @@ export function useRemoteFiles(sessionId: Ref<string>) {
   /** 会话变化时重置并回到家目录 */
   watch(
     sessionId,
-    async (id) => {
+    async id => {
       requestId += 1
       state.path = ''
       state.entries = []
@@ -163,10 +159,9 @@ export function useRemoteFiles(sessionId: Ref<string>) {
       state.cursor = -1
 
       // 传空串让后端解析成家目录 —— 前端不该猜远端用户的 home 在哪
-      if (id)
-        await load('')
+      if (id) await load('')
     },
-    { immediate: true },
+    { immediate: true }
   )
 
   onBeforeUnmount(() => {

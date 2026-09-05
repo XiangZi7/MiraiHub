@@ -1,37 +1,69 @@
 <script setup lang="ts">
-import AppIcon from "@/components/ui/AppIcon.vue";
-import { cn } from "@/utils/cn";
+import AppIcon from '@/components/ui/AppIcon.vue'
+import { cn } from '@/utils/cn'
 
-export type TransferStatusFilter = "all" | "active" | "completed" | "failed";
+export type TransferStatusFilter = 'all' | 'active' | 'completed' | 'failed'
 
 defineProps<{
-  modelValue: TransferStatusFilter;
-  counts: Record<TransferStatusFilter, number>;
-}>();
+  modelValue: TransferStatusFilter
+  counts: Record<TransferStatusFilter, number>
+}>()
 
 const emit = defineEmits<{
-  "update:modelValue": [value: TransferStatusFilter];
-}>();
+  'update:modelValue': [value: TransferStatusFilter]
+}>()
 
-const filters: Array<{ id: TransferStatusFilter; label: string; icon: string; tone: string }> = [
-  { id: "all", label: "全部", icon: "lucide:list", tone: "text-txt-3" },
-  { id: "active", label: "进行中", icon: "lucide:loader-circle", tone: "text-blue" },
-  { id: "completed", label: "已完成", icon: "lucide:circle-check", tone: "text-success" },
-  { id: "failed", label: "错误", icon: "lucide:circle-alert", tone: "text-danger" },
-];
+const filters: Array<{
+  id: TransferStatusFilter
+  label: string
+  icon: string
+  tone: string
+}> = [
+  { id: 'all', label: '全部', icon: 'lucide:list', tone: 'text-txt-3' },
+  {
+    id: 'active',
+    label: '进行中',
+    icon: 'lucide:loader-circle',
+    tone: 'text-blue',
+  },
+  {
+    id: 'completed',
+    label: '已完成',
+    icon: 'lucide:circle-check',
+    tone: 'text-success',
+  },
+  {
+    id: 'failed',
+    label: '错误',
+    icon: 'lucide:circle-alert',
+    tone: 'text-danger',
+  },
+]
 </script>
 
 <template>
-  <nav class="transfer-filters" aria-label="传输状态筛选">
+  <nav
+    class="transfer-filters"
+    aria-label="传输状态筛选"
+  >
     <button
       v-for="filter in filters"
       :key="filter.id"
       type="button"
-      :class="cn('transfer-filter', modelValue === filter.id && 'transfer-filter-active')"
+      :class="
+        cn(
+          'transfer-filter',
+          modelValue === filter.id && 'transfer-filter-active'
+        )
+      "
       :aria-pressed="modelValue === filter.id"
       @click="emit('update:modelValue', filter.id)"
     >
-      <AppIcon :name="filter.icon" :size="11" :class="filter.tone" />
+      <AppIcon
+        :name="filter.icon"
+        :size="11"
+        :class="filter.tone"
+      />
       <span>{{ filter.label }}</span>
       <span class="transfer-filter-count">{{ counts[filter.id] }}</span>
     </button>
@@ -61,7 +93,10 @@ const filters: Array<{ id: TransferStatusFilter; label: string; icon: string; to
   color: var(--color-txt-3);
   font-size: 9px;
   outline: none;
-  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .transfer-filter:hover,

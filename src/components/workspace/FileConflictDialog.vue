@@ -28,14 +28,33 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 <template>
   <Teleport to="body">
     <Transition name="file-conflict">
-      <div v-if="open" class="file-conflict-backdrop" @click.self="emit('cancel')">
-        <section class="file-conflict-dialog" role="alertdialog" aria-modal="true" aria-labelledby="file-conflict-title">
-          <div class="grid size-9 shrink-0 place-items-center rounded-lg bg-amber/12 text-amber">
-            <AppIcon name="lucide:files" :size="18" />
+      <div
+        v-if="open"
+        class="file-conflict-backdrop"
+        @click.self="emit('cancel')"
+      >
+        <section
+          class="file-conflict-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="file-conflict-title"
+        >
+          <div
+            class="bg-amber/12 text-amber grid size-9 shrink-0 place-items-center rounded-lg"
+          >
+            <AppIcon
+              name="lucide:files"
+              :size="18"
+            />
           </div>
           <div class="min-w-0 flex-1">
-            <h2 id="file-conflict-title" class="text-[13px] font-semibold text-txt">远端已有同名文件</h2>
-            <p class="mt-1 break-all text-[11px] leading-4 text-txt-3">
+            <h2
+              id="file-conflict-title"
+              class="text-txt text-[13px] font-semibold"
+            >
+              远端已有同名文件
+            </h2>
+            <p class="text-txt-3 mt-1 text-[11px] leading-4 break-all">
               “{{ fileName }}”已经存在。要覆盖远端文件，还是跳过本次上传？
             </p>
             <AppCheckbox
@@ -47,9 +66,23 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             />
           </div>
           <footer class="col-span-2 mt-2 flex justify-end gap-2">
-            <AppButton size="sm" @click="emit('cancel')">取消全部</AppButton>
-            <AppButton size="sm" @click="emit('skip')">跳过</AppButton>
-            <AppButton size="sm" variant="primary" autofocus @click="emit('overwrite')">覆盖</AppButton>
+            <AppButton
+              size="sm"
+              @click="emit('cancel')"
+              >取消全部</AppButton
+            >
+            <AppButton
+              size="sm"
+              @click="emit('skip')"
+              >跳过</AppButton
+            >
+            <AppButton
+              size="sm"
+              variant="primary"
+              autofocus
+              @click="emit('overwrite')"
+              >覆盖</AppButton
+            >
           </footer>
         </section>
       </div>

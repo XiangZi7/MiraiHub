@@ -123,7 +123,7 @@ async function runTransfer(): Promise<void> {
         props.sessionId,
         state.path,
         state.includeData,
-        state.dropExisting,
+        state.dropExisting
       )
       toast.success({
         title: '数据库导出完成',
@@ -139,7 +139,10 @@ async function runTransfer(): Promise<void> {
     state.finished = true
     emit('finished', props.mode)
   } catch (error) {
-    toast.error({ title: isExport.value ? '数据库导出失败' : 'SQL 导入失败', description: database.errorMessage(error) })
+    toast.error({
+      title: isExport.value ? '数据库导出失败' : 'SQL 导入失败',
+      description: database.errorMessage(error),
+    })
   } finally {
     state.running = false
     state.cancelling = false
@@ -153,7 +156,10 @@ async function cancelImport(): Promise<void> {
   try {
     await database.cancelQuery(props.sessionId)
   } catch (error) {
-    toast.error({ title: '取消导入失败', description: database.errorMessage(error) })
+    toast.error({
+      title: '取消导入失败',
+      description: database.errorMessage(error),
+    })
     state.cancelling = false
   }
 }
@@ -172,7 +178,10 @@ function formatBytes(bytes: number): string {
 <template>
   <Teleport to="body">
     <Transition name="database-transfer-dialog">
-      <div v-if="open" class="database-transfer-backdrop">
+      <div
+        v-if="open"
+        class="database-transfer-backdrop"
+      >
         <AppDialog
           :title="title"
           :description="`${connection?.name ?? '数据库'} · ${databaseName}`"
@@ -180,12 +189,12 @@ function formatBytes(bytes: number): string {
         >
           <div class="grid gap-3.5">
             <div class="space-y-1.5">
-              <label class="text-[11px] font-medium text-txt-2">
+              <label class="text-txt-2 text-[11px] font-medium">
                 {{ isExport ? '保存位置' : 'SQL 文件' }}
               </label>
               <div class="flex gap-2">
                 <div
-                  class="input flex min-w-0 flex-1 items-center gap-2 px-2.5 font-mono text-[10.5px] text-txt-3"
+                  class="input text-txt-3 flex min-w-0 flex-1 items-center gap-2 px-2.5 font-mono text-[10.5px]"
                 >
                   <AppIcon
                     :name="
@@ -198,7 +207,10 @@ function formatBytes(bytes: number): string {
                     state.path || '尚未选择文件'
                   }}</span>
                 </div>
-                <AppButton :disabled="state.running" @click="choosePath">
+                <AppButton
+                  :disabled="state.running"
+                  @click="choosePath"
+                >
                   浏览…
                 </AppButton>
               </div>
@@ -220,7 +232,7 @@ function formatBytes(bytes: number): string {
                 />
               </div>
               <p
-                class="flex items-start gap-1.5 text-[10.5px] leading-4 text-txt-4"
+                class="text-txt-4 flex items-start gap-1.5 text-[10.5px] leading-4"
               >
                 <AppIcon
                   name="lucide:info"
@@ -234,7 +246,7 @@ function formatBytes(bytes: number): string {
 
             <p
               v-else
-              class="card flex items-start gap-2 border-amber/25 bg-amber/8 px-3 py-2.5 text-[10.5px] leading-4 text-amber"
+              class="card border-amber/25 bg-amber/8 text-amber flex items-start gap-2 px-3 py-2.5 text-[10.5px] leading-4"
             >
               <AppIcon
                 name="lucide:triangle-alert"
@@ -249,13 +261,13 @@ function formatBytes(bytes: number): string {
 
             <p
               v-if="state.running"
-              class="card flex items-center gap-2 px-3 py-2.5 text-[11px] text-txt-2"
+              class="card text-txt-2 flex items-center gap-2 px-3 py-2.5 text-[11px]"
               role="status"
             >
               <AppIcon
                 name="lucide:loader-circle"
                 :size="14"
-                class="animate-spin text-violet"
+                class="text-violet animate-spin"
               />
               {{
                 state.cancelling
@@ -276,7 +288,11 @@ function formatBytes(bytes: number): string {
             >
               {{ state.cancelling ? '取消中…' : '取消导入' }}
             </AppButton>
-            <AppButton v-else :disabled="state.running" @click="requestClose">
+            <AppButton
+              v-else
+              :disabled="state.running"
+              @click="requestClose"
+            >
               {{ state.finished ? '完成' : '取消' }}
             </AppButton>
             <AppButton

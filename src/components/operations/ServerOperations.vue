@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { defineAsyncComponent, reactive, toRefs } from "vue";
-import IconButton from "@/components/ui/IconButton.vue";
+import { defineAsyncComponent, reactive, toRefs } from 'vue'
+import IconButton from '@/components/ui/IconButton.vue'
 const TunnelManagerDialog = defineAsyncComponent(
-  () => import("./TunnelManagerDialog.vue"),
-);
+  () => import('./TunnelManagerDialog.vue')
+)
 const BatchOperationDialog = defineAsyncComponent(
-  () => import("./BatchOperationDialog.vue"),
-);
-defineProps<{ sessionId?: string }>();
-const state = reactive({ tunnels: false, batch: false });
-const { tunnels, batch } = toRefs(state);
+  () => import('./BatchOperationDialog.vue')
+)
+defineProps<{ sessionId?: string }>()
+const state = reactive({ tunnels: false, batch: false })
+const { tunnels, batch } = toRefs(state)
 </script>
 <template>
   <div class="flex items-center gap-0.5">
@@ -27,6 +27,9 @@ const { tunnels, batch } = toRefs(state);
       v-if="tunnels"
       :preferred-session-id="sessionId"
       @close="tunnels = false"
-    /><BatchOperationDialog v-if="batch" @close="batch = false" />
+    /><BatchOperationDialog
+      v-if="batch"
+      @close="batch = false"
+    />
   </div>
 </template>

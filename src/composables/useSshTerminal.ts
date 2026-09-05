@@ -16,15 +16,21 @@ import { Terminal } from '@xterm/xterm'
 import * as ssh from '@/api/ssh'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import { TERMINAL_THEME } from '@/constants/terminal'
-import { settingNumber, settingsSnapshot, useSettings } from '@/composables/useSettings'
+import {
+  settingNumber,
+  settingsSnapshot,
+  useSettings,
+} from '@/composables/useSettings'
 
 function terminalFontFamily(): string {
   const families: Record<string, string> = {
     'jetbrains-mono': '"JetBrains Mono Variable", ui-monospace, monospace',
     'cascadia-code': '"Cascadia Code", ui-monospace, monospace',
-    'consolas': 'Consolas, ui-monospace, monospace',
+    consolas: 'Consolas, ui-monospace, monospace',
   }
-  return families[settingsSnapshot().terminalFont] ?? families['jetbrains-mono']!
+  return (
+    families[settingsSnapshot().terminalFont] ?? families['jetbrains-mono']!
+  )
 }
 
 interface TerminalConnectOptions {
@@ -92,7 +98,7 @@ export function useSshTerminal() {
 
     // 用户输入直接转发给远端。未连接时丢弃：
     // 否则在断开的终端里敲字会攒下一堆无处可去的 invoke
-    terminal.onData((data) => {
+    terminal.onData(data => {
       // vim/top 等切到 alternate buffer 后，按键属于应用本身，不做 shell 补全。
       if (terminal.buffer.active.type === 'alternate') {
         state.inputLine = ''
@@ -100,47 +106,45 @@ export function useSshTerminal() {
         return
       }
 
-      if (inputInterceptor?.(data))
-        return
+      if (inputInterceptor?.(data)) return
 
       sendInput(data)
     })
   }
 
   const stopSettingsWatch = watch(
-    () => [
-      settings.terminalFont,
-      settings.terminalFontSize,
-      settings.terminalCursor,
-      settings.terminalCursorBlink,
-      settings.terminalScrollback,
-    ] as const,
+    () =>
+      [
+        settings.terminalFont,
+        settings.terminalFontSize,
+        settings.terminalCursor,
+        settings.terminalCursorBlink,
+        settings.terminalScrollback,
+      ] as const,
     () => {
       const terminal = term.value
-      if (!terminal)
-        return
+      if (!terminal) return
       terminal.options.fontFamily = terminalFontFamily()
       terminal.options.fontSize = settingNumber('terminalFontSize', 13)
-      terminal.options.cursorStyle = settings.terminalCursor as 'block' | 'bar' | 'underline'
+      terminal.options.cursorStyle = settings.terminalCursor as
+        'block' | 'bar' | 'underline'
       terminal.options.cursorBlink = settings.terminalCursorBlink
       terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
       resize()
-    },
+    }
   )
 
   /** 建立连接并打开交互式 shell */
   async function connect(
     config: SshConfig,
-    options: TerminalConnectOptions = {},
+    options: TerminalConnectOptions = {}
   ): Promise<void> {
     const terminal = term.value
-    if (!terminal)
-      throw new Error('终端尚未挂载')
+    if (!terminal) throw new Error('终端尚未挂载')
 
     // 配置在独立窗口里可能被修改后重新打开同一标签。
     // 先清掉旧会话，避免一个终端同时订阅两条连接的输出。
-    if (state.sessionId)
-      await disconnect()
+    if (state.sessionId) await disconnect()
 
     const currentOperation = ++operation
     state.status = 'connecting'
@@ -161,7 +165,7 @@ export function useSshTerminal() {
 
       // 先订阅再开 shell：反过来的话 shell 启动瞬间的输出（登录 banner、
       // 提示符）会在订阅建立前就推送出来，前几行就丢了
-      const stopOutput = await ssh.onOutput(id, (payload) => {
+      const stopOutput = await ssh.onOutput(id, payload => {
         if (state.sessionId === id)
           terminal.write(ssh.decodeBase64(payload.data))
       })
@@ -174,15 +178,15 @@ export function useSshTerminal() {
 
       unlisteners.push(stopOutput)
 
-      const stopStatus = await ssh.onStatus(id, (payload) => {
-        if (state.sessionId !== id)
-          return
+      const stopStatus = await ssh.onStatus(id, payload => {
+        if (state.sessionId !== id) return
 
         state.status = payload.status
 
         if (payload.status === 'disconnected') {
           state.error = payload.reason ?? ''
-          const suffix = payload.exitCode === null ? '' : `（退出码 ${payload.exitCode}）`
+          const suffix =
+            payload.exitCode === null ? '' : `（退出码 ${payload.exitCode}）`
           terminal.writeln(`\r\n\x1b[90m连接已断开${suffix}\x1b[0m`)
         }
       })
@@ -209,17 +213,13 @@ export function useSshTerminal() {
       state.status = 'connected'
 
       const startupCommand = options.startupCommand?.trim()
-      if (startupCommand)
-        await ssh.writeToShell(id, `${startupCommand}\r`)
+      if (startupCommand) await ssh.writeToShell(id, `${startupCommand}\r`)
 
-      if (isActive(currentOperation))
-        terminal.focus()
-    }
-    catch (err) {
+      if (isActive(currentOperation)) terminal.focus()
+    } catch (err) {
       // 关闭标签/改配置导致的过期流程不应覆盖新连接的状态或打印伪错误。
       if (!isActive(currentOperation)) {
-        if (id)
-          await discardSession(id)
+        if (id) await discardSession(id)
         return
       }
 
@@ -232,8 +232,7 @@ export function useSshTerminal() {
       // 订阅可能已部分建立，清掉避免泄漏
       await cleanup()
 
-      if (id)
-        await discardSession(id)
+      if (id) await discardSession(id)
 
       throw err
     }
@@ -248,8 +247,7 @@ export function useSshTerminal() {
   const resize = useDebounceFn(() => {
     const fit = fitAddon.value
     const terminal = term.value
-    if (!fit || !terminal)
-      return
+    if (!fit || !terminal) return
 
     fit.fit()
 
@@ -269,8 +267,7 @@ export function useSshTerminal() {
     state.status = 'disconnected'
     state.inputLine = ''
 
-    if (id)
-      await discardSession(id)
+    if (id) await discardSession(id)
   }
 
   function isActive(currentOperation: number): boolean {
@@ -293,8 +290,7 @@ export function useSshTerminal() {
 
   /** 写入失败通常意味着连接已断，提示一次即可，不必每个按键都刷屏 */
   function handleWriteError(err: unknown): void {
-    if (state.status !== 'connected')
-      return
+    if (state.status !== 'connected') return
 
     state.status = 'disconnected'
     state.error = ssh.errorMessage(err)
@@ -303,8 +299,7 @@ export function useSshTerminal() {
 
   /** 统一发送用户输入，并同步维护一份轻量的当前行镜像供补全使用。 */
   function sendInput(data: string): void {
-    if (state.status !== 'connected' || !state.sessionId)
-      return
+    if (state.status !== 'connected' || !state.sessionId) return
 
     trackInput(data)
     void ssh.writeToShell(state.sessionId, data).catch(handleWriteError)

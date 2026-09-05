@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import AppIcon from '@/components/ui/AppIcon.vue'
 
-withDefaults(defineProps<{
-  label: string
-  color: string
-  compact?: boolean
-  removable?: boolean
-  selectable?: boolean
-}>(), {
-  compact: false,
-  removable: false,
-  selectable: false,
-})
+withDefaults(
+  defineProps<{
+    label: string
+    color: string
+    compact?: boolean
+    removable?: boolean
+    selectable?: boolean
+  }>(),
+  {
+    compact: false,
+    removable: false,
+    selectable: false,
+  }
+)
 
 const emit = defineEmits<{
   remove: []
@@ -31,7 +34,10 @@ const emit = defineEmits<{
     :style="{ '--tag-color': color }"
     @click="selectable && emit('select')"
   >
-    <span class="connection-tag-dot" aria-hidden="true" />
+    <span
+      class="connection-tag-dot"
+      aria-hidden="true"
+    />
     <span class="connection-tag-label">{{ label }}</span>
     <button
       v-if="removable"
@@ -40,7 +46,10 @@ const emit = defineEmits<{
       :aria-label="`移除标签 ${label}`"
       @click.stop="emit('remove')"
     >
-      <AppIcon name="lucide:x" :size="10" />
+      <AppIcon
+        name="lucide:x"
+        :size="10"
+      />
     </button>
   </component>
 </template>
@@ -91,7 +100,9 @@ const emit = defineEmits<{
   border-radius: 3px;
   color: var(--color-txt-4);
   outline: none;
-  transition: color 150ms ease, background-color 150ms ease;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .connection-tag-remove:hover,
@@ -103,20 +114,35 @@ const emit = defineEmits<{
 .connection-tag-badge-selectable {
   cursor: pointer;
   outline: none;
-  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .connection-tag-badge-selectable:hover,
 .connection-tag-badge-selectable:focus-visible {
-  border-color: color-mix(in oklch, var(--tag-color) 22%, var(--color-line-strong));
-  background-color: color-mix(in oklch, var(--tag-color) 9%, var(--color-raised));
+  border-color: color-mix(
+    in oklch,
+    var(--tag-color) 22%,
+    var(--color-line-strong)
+  );
+  background-color: color-mix(
+    in oklch,
+    var(--tag-color) 9%,
+    var(--color-raised)
+  );
   color: var(--color-txt);
 }
 
 .connection-tag-badge-compact {
   height: 17px;
   gap: 4px;
-  border-color: color-mix(in oklch, var(--tag-color) 9%, var(--color-line-soft));
+  border-color: color-mix(
+    in oklch,
+    var(--tag-color) 9%,
+    var(--color-line-soft)
+  );
   border-radius: 4px;
   background: color-mix(in oklch, var(--tag-color) 4%, var(--color-card));
   padding: 0 5px;

@@ -1,4 +1,11 @@
-import { computed, onBeforeUnmount, reactive, toRefs, watch, type Ref } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  reactive,
+  toRefs,
+  watch,
+  type Ref,
+} from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import * as ssh from '@/api/ssh'
 import type { ShellSuggestion } from '@/types/ssh'
@@ -21,11 +28,12 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
   const { suggestions, activeIndex, loading, cwd } = toRefs(state)
   let requestId = 0
 
-  const open = computed(() => (
-    options.enabled.value
-    && state.suggestions.length > 0
-    && state.dismissedLine !== options.inputLine.value
-  ))
+  const open = computed(
+    () =>
+      options.enabled.value &&
+      state.suggestions.length > 0 &&
+      state.dismissedLine !== options.inputLine.value
+  )
 
   const activeSuggestion = computed(() => state.suggestions[state.activeIndex])
 
@@ -43,20 +51,20 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
 
     try {
       const items = await ssh.completeShell(id, line, state.cwd)
-      if (currentRequest !== requestId || id !== options.sessionId.value || line !== options.inputLine.value)
+      if (
+        currentRequest !== requestId ||
+        id !== options.sessionId.value ||
+        line !== options.inputLine.value
+      )
         return
 
       state.suggestions = items
       state.activeIndex = 0
       state.dismissedLine = ''
-    }
-    catch {
-      if (currentRequest === requestId)
-        state.suggestions = []
-    }
-    finally {
-      if (currentRequest === requestId)
-        state.loading = false
+    } catch {
+      if (currentRequest === requestId) state.suggestions = []
+    } finally {
+      if (currentRequest === requestId) state.loading = false
     }
   }, 140)
 
@@ -72,20 +80,23 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
   }
 
   function move(step: 1 | -1): void {
-    if (!state.suggestions.length)
-      return
+    if (!state.suggestions.length) return
 
-    state.activeIndex = (state.activeIndex + step + state.suggestions.length) % state.suggestions.length
+    state.activeIndex =
+      (state.activeIndex + step + state.suggestions.length) %
+      state.suggestions.length
   }
 
   /** 跟随简单的 `cd path` 更新补全目录；复杂 shell 表达式仍交给远端 shell 自己处理。 */
   async function trackSubmittedCommand(line: string): Promise<void> {
     const match = line.trim().match(/^cd(?:\s+(.+))?$/)
-    if (!match || !options.sessionId.value)
-      return
+    if (!match || !options.sessionId.value) return
 
     let target = (match[1] ?? '').trim()
-    if ((target.startsWith('"') && target.endsWith('"')) || (target.startsWith("'") && target.endsWith("'")))
+    if (
+      (target.startsWith('"') && target.endsWith('"')) ||
+      (target.startsWith("'") && target.endsWith("'"))
+    )
       target = target.slice(1, -1)
 
     if (target && !target.startsWith('/') && !target.startsWith('~'))
@@ -94,39 +105,36 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
     try {
       const listing = await ssh.listDirectory(options.sessionId.value, target)
       state.cwd = listing.path
-    }
-    catch {
+    } catch {
       // 与真正 shell 中失败的 cd 保持一致：补全目录继续沿用旧值。
     }
   }
 
-  watch(
-    [options.inputLine, options.enabled],
-    ([line, enabled]) => {
-      if (!enabled || !currentToken(line)) {
-        clear()
-        return
-      }
-      state.dismissedLine = ''
-      void requestSuggestions()
-    },
-  )
-
-  watch(options.sessionId, async (id) => {
-    clear()
-    state.cwd = ''
-    if (!id)
+  watch([options.inputLine, options.enabled], ([line, enabled]) => {
+    if (!enabled || !currentToken(line)) {
+      clear()
       return
+    }
+    state.dismissedLine = ''
+    void requestSuggestions()
+  })
 
-    try {
-      const listing = await ssh.listDirectory(id, '')
-      if (id === options.sessionId.value)
-        state.cwd = listing.path
-    }
-    catch {
-      // 补全不可用不影响终端本身连接。
-    }
-  }, { immediate: true })
+  watch(
+    options.sessionId,
+    async id => {
+      clear()
+      state.cwd = ''
+      if (!id) return
+
+      try {
+        const listing = await ssh.listDirectory(id, '')
+        if (id === options.sessionId.value) state.cwd = listing.path
+      } catch {
+        // 补全不可用不影响终端本身连接。
+      }
+    },
+    { immediate: true }
+  )
 
   onBeforeUnmount(clear)
 
@@ -145,8 +153,6 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
 }
 
 function currentToken(line: string): string {
-  if (/\s$/.test(line))
-    return ''
+  if (/\s$/.test(line)) return ''
   return line.match(/\S+$/)?.[0] ?? ''
 }
-

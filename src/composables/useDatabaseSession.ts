@@ -1,4 +1,11 @@
-import { computed, onBeforeUnmount, reactive, toRefs, watch, type Ref } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  reactive,
+  toRefs,
+  watch,
+  type Ref,
+} from 'vue'
 import * as database from '@/api/database'
 import type { SavedConnection } from '@/types/connection'
 import { isDatabaseConnection, toDatabaseConfig } from '@/types/connection'
@@ -15,8 +22,8 @@ interface UseDatabaseSessionOptions {
 }
 
 export function databaseObjectKey(
-  object: Pick<DatabaseObject, 'schema' | 'name'>
-    & Partial<Pick<DatabaseObject, 'kind' | 'identity'>>,
+  object: Pick<DatabaseObject, 'schema' | 'name'> &
+    Partial<Pick<DatabaseObject, 'kind' | 'identity'>>
 ): string {
   return `${object.schema}\u0000${object.kind ?? ''}\u0000${object.name}\u0000${object.identity ?? ''}`
 }
@@ -27,7 +34,7 @@ export function databaseObjectKey(
  */
 export function useDatabaseSession(
   connection: Ref<SavedConnection | undefined>,
-  options: UseDatabaseSessionOptions = {},
+  options: UseDatabaseSessionOptions = {}
 ) {
   const state = reactive({
     sessionId: '',
@@ -50,7 +57,9 @@ export function useDatabaseSession(
   let generation = 0
   let runtimePassword: string | undefined
 
-  const connected = computed(() => state.status === 'connected' && Boolean(state.sessionId))
+  const connected = computed(
+    () => state.status === 'connected' && Boolean(state.sessionId)
+  )
 
   function emitStatus(): void {
     options.onStatus?.(state.status, state.sessionId)
@@ -59,19 +68,16 @@ export function useDatabaseSession(
   function setStatus(status: SshSessionStatus, sessionId = ''): void {
     state.status = status
     state.sessionId = status === 'connected' ? sessionId : ''
-    if (status !== 'connected')
-      state.session = null
+    if (status !== 'connected') state.session = null
     emitStatus()
   }
 
   async function release(sessionId: string): Promise<void> {
-    if (!sessionId)
-      return
+    if (!sessionId) return
 
     try {
       await database.disconnect(sessionId)
-    }
-    catch (error) {
+    } catch (error) {
       // 会话可能已因应用退出或后端错误被清理；前端状态已完成释放。
       console.warn('释放数据库连接失败：', database.errorMessage(error))
     }
@@ -108,7 +114,9 @@ export function useDatabaseSession(
     }
 
     try {
-      const session = await database.connect(toDatabaseConfig(target, runtimePassword))
+      const session = await database.connect(
+        toDatabaseConfig(target, runtimePassword)
+      )
       if (request !== generation) {
         void release(session.sessionId)
         return
@@ -117,15 +125,12 @@ export function useDatabaseSession(
       state.session = session
       setStatus('connected', session.sessionId)
       await Promise.all([refreshDatabases(), refreshObjects()])
-    }
-    catch (error) {
-      if (request !== generation)
-        return
+    } catch (error) {
+      if (request !== generation) return
 
       setStatus('disconnected')
       state.connectionError = database.errorMessage(error)
-      state.needsPassword = database.isAppError(error)
-        && error.kind === 'auth'
+      state.needsPassword = database.isAppError(error) && error.kind === 'auth'
     }
   }
 
@@ -138,129 +143,116 @@ export function useDatabaseSession(
 
   async function refreshObjects(): Promise<void> {
     const sessionId = state.sessionId
-    if (!sessionId)
-      return
+    if (!sessionId) return
 
     state.objectsLoading = true
     state.objectsError = ''
     try {
       const objects = await database.listObjects(sessionId)
-      if (state.sessionId === sessionId)
-        state.objects = objects
-    }
-    catch (error) {
+      if (state.sessionId === sessionId) state.objects = objects
+    } catch (error) {
       if (state.sessionId === sessionId)
         state.objectsError = database.errorMessage(error)
-    }
-    finally {
-      if (state.sessionId === sessionId)
-        state.objectsLoading = false
+    } finally {
+      if (state.sessionId === sessionId) state.objectsLoading = false
     }
   }
 
   async function refreshDatabases(): Promise<void> {
     const sessionId = state.sessionId
-    if (!sessionId)
-      return
+    if (!sessionId) return
 
     state.databasesLoading = true
     try {
       const databases = await database.listDatabases(sessionId)
-      if (state.sessionId === sessionId)
-        state.databases = databases
-    }
-    catch (error) {
+      if (state.sessionId === sessionId) state.databases = databases
+    } catch (error) {
       if (state.sessionId === sessionId)
         state.objectsError = database.errorMessage(error)
-    }
-    finally {
-      if (state.sessionId === sessionId)
-        state.databasesLoading = false
+    } finally {
+      if (state.sessionId === sessionId) state.databasesLoading = false
     }
   }
 
   async function switchDatabase(name: string): Promise<void> {
     const sessionId = state.sessionId
-    if (!sessionId || !name || name === state.session?.database)
-      return
+    if (!sessionId || !name || name === state.session?.database) return
 
     state.objectsLoading = true
     state.objectsError = ''
     try {
       const session = await database.useDatabase(sessionId, name)
-      if (state.sessionId !== sessionId)
-        return
+      if (state.sessionId !== sessionId) return
       state.session = session
       state.columnsByObject = {}
       await refreshObjects()
-    }
-    catch (error) {
+    } catch (error) {
       if (state.sessionId === sessionId)
         state.objectsError = database.errorMessage(error)
-    }
-    finally {
-      if (state.sessionId === sessionId)
-        state.objectsLoading = false
+    } finally {
+      if (state.sessionId === sessionId) state.objectsLoading = false
     }
   }
 
   async function inspectObject(object: DatabaseObject): Promise<void> {
     const sessionId = state.sessionId
     const key = databaseObjectKey(object)
-    if (!sessionId || state.inspectingKeys.has(key) || state.columnsByObject[key])
+    if (
+      !sessionId ||
+      state.inspectingKeys.has(key) ||
+      state.columnsByObject[key]
+    )
       return
 
     state.inspectingKeys.add(key)
     try {
-      const columns = await database.describeObject(sessionId, object.schema, object.name)
-      if (state.sessionId === sessionId)
-        state.columnsByObject[key] = columns
-    }
-    catch (error) {
+      const columns = await database.describeObject(
+        sessionId,
+        object.schema,
+        object.name
+      )
+      if (state.sessionId === sessionId) state.columnsByObject[key] = columns
+    } catch (error) {
       if (state.sessionId === sessionId)
         state.objectsError = database.errorMessage(error)
-    }
-    finally {
+    } finally {
       state.inspectingKeys.delete(key)
     }
   }
 
   async function executeSql(sql: string): Promise<void> {
     const sessionId = state.sessionId
-    if (!sessionId || state.queryLoading)
-      return
+    if (!sessionId || state.queryLoading) return
 
     state.queryLoading = true
     state.queryError = ''
     state.queryExecution = null
     try {
       const result = await database.execute(sessionId, sql)
-      if (state.sessionId !== sessionId)
-        return
+      if (state.sessionId !== sessionId) return
 
       state.queryExecution = result
       // DDL/DML 可能改变对象结构；异步刷新，不阻塞结果展示。
-      if (result.statements.some(statement => !statement.error && !statement.columns.length))
+      if (
+        result.statements.some(
+          statement => !statement.error && !statement.columns.length
+        )
+      )
         void refreshObjects()
-    }
-    catch (error) {
+    } catch (error) {
       if (state.sessionId === sessionId)
         state.queryError = database.errorMessage(error)
-    }
-    finally {
-      if (state.sessionId === sessionId)
-        state.queryLoading = false
+    } finally {
+      if (state.sessionId === sessionId) state.queryLoading = false
     }
   }
 
   async function cancelQuery(): Promise<void> {
-    if (!state.sessionId || !state.queryLoading)
-      return
+    if (!state.sessionId || !state.queryLoading) return
 
     try {
       await database.cancelQuery(state.sessionId)
-    }
-    catch (error) {
+    } catch (error) {
       state.queryError = database.errorMessage(error)
     }
   }
@@ -271,7 +263,7 @@ export function useDatabaseSession(
       runtimePassword = undefined
       void connect()
     },
-    { immediate: true, deep: true },
+    { immediate: true, deep: true }
   )
 
   onBeforeUnmount(() => void disconnect())

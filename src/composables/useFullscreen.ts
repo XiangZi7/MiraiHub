@@ -48,7 +48,7 @@ export function useFullscreen() {
         .onResized(() => {
           void sync().catch(() => {})
         })
-        .then((unlisten) => {
+        .then(unlisten => {
           if (disposed) unlisten()
           else stop = unlisten
         })

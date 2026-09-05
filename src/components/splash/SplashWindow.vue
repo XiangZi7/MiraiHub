@@ -3,7 +3,11 @@
 </script>
 
 <template>
-  <iframe class="splash-preview" src="/splash.html" title="MiraiHub 启动画面" />
+  <iframe
+    class="splash-preview"
+    src="/splash.html"
+    title="MiraiHub 启动画面"
+  />
 </template>
 
 <style scoped>

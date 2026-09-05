@@ -31,14 +31,14 @@ export async function testConnection(config: DatabaseConfig): Promise<void> {
 }
 
 export async function connect(
-  config: DatabaseConfig,
+  config: DatabaseConfig
 ): Promise<DatabaseSession> {
   ensureTauri()
   return invoke<DatabaseSession>('db_connect', { config })
 }
 
 export async function describeSession(
-  sessionId: string,
+  sessionId: string
 ): Promise<DatabaseSession> {
   ensureTauri()
   return invoke<DatabaseSession>('db_describe_session', { sessionId })
@@ -46,7 +46,7 @@ export async function describeSession(
 
 export async function useDatabase(
   sessionId: string,
-  database: string,
+  database: string
 ): Promise<DatabaseSession> {
   ensureTauri()
   return invoke<DatabaseSession>('db_use_database', { sessionId, database })
@@ -58,7 +58,7 @@ export async function disconnect(sessionId: string): Promise<void> {
 }
 
 export async function listObjects(
-  sessionId: string,
+  sessionId: string
 ): Promise<DatabaseObject[]> {
   ensureTauri()
   return invoke<DatabaseObject[]>('db_list_objects', { sessionId })
@@ -72,7 +72,7 @@ export async function listDatabases(sessionId: string): Promise<string[]> {
 export async function describeObject(
   sessionId: string,
   schema: string,
-  name: string,
+  name: string
 ): Promise<DatabaseColumn[]> {
   ensureTauri()
   return invoke<DatabaseColumn[]>('db_describe_object', {
@@ -86,7 +86,7 @@ export async function tableDetail(
   sessionId: string,
   schema: string,
   name: string,
-  kind: DatabaseObjectKind,
+  kind: DatabaseObjectKind
 ): Promise<DatabaseTableDetail> {
   ensureTauri()
   return invoke<DatabaseTableDetail>('db_table_detail', {
@@ -99,7 +99,7 @@ export async function tableDetail(
 
 export async function routineDetail(
   sessionId: string,
-  object: Pick<DatabaseObject, 'schema' | 'name' | 'kind' | 'identity'>,
+  object: Pick<DatabaseObject, 'schema' | 'name' | 'kind' | 'identity'>
 ): Promise<DatabaseRoutineDetail> {
   ensureTauri()
   return invoke<DatabaseRoutineDetail>('db_routine_detail', {
@@ -111,7 +111,10 @@ export async function routineDetail(
   })
 }
 
-export async function createDatabase(sessionId: string, name: string): Promise<void> {
+export async function createDatabase(
+  sessionId: string,
+  name: string
+): Promise<void> {
   ensureTauri()
   await invoke('db_create_database', { sessionId, name })
 }
@@ -119,13 +122,16 @@ export async function createDatabase(sessionId: string, name: string): Promise<v
 export async function renameDatabase(
   sessionId: string,
   oldName: string,
-  newName: string,
+  newName: string
 ): Promise<void> {
   ensureTauri()
   await invoke('db_rename_database', { sessionId, oldName, newName })
 }
 
-export async function dropDatabase(sessionId: string, name: string): Promise<void> {
+export async function dropDatabase(
+  sessionId: string,
+  name: string
+): Promise<void> {
   ensureTauri()
   await invoke('db_drop_database', { sessionId, name })
 }
@@ -133,7 +139,7 @@ export async function dropDatabase(sessionId: string, name: string): Promise<voi
 export async function renameObject(
   sessionId: string,
   object: Pick<DatabaseObject, 'schema' | 'name' | 'kind' | 'identity'>,
-  newName: string,
+  newName: string
 ): Promise<void> {
   ensureTauri()
   await invoke('db_rename_object', {
@@ -148,7 +154,7 @@ export async function renameObject(
 
 export async function dropObject(
   sessionId: string,
-  object: Pick<DatabaseObject, 'schema' | 'name' | 'kind' | 'identity'>,
+  object: Pick<DatabaseObject, 'schema' | 'name' | 'kind' | 'identity'>
 ): Promise<void> {
   ensureTauri()
   await invoke('db_drop_object', {
@@ -163,7 +169,7 @@ export async function dropObject(
 export async function countRows(
   sessionId: string,
   schema: string,
-  name: string,
+  name: string
 ): Promise<number> {
   ensureTauri()
   return invoke<number>('db_count_rows', { sessionId, schema, name })
@@ -171,7 +177,7 @@ export async function countRows(
 
 export async function fetchRows(
   sessionId: string,
-  request: RowPageRequest,
+  request: RowPageRequest
 ): Promise<DatabaseRowPage> {
   ensureTauri()
   return invoke<DatabaseRowPage>('db_fetch_rows', { sessionId, request })
@@ -179,7 +185,7 @@ export async function fetchRows(
 
 export async function mutateRows(
   sessionId: string,
-  request: MutationRequest,
+  request: MutationRequest
 ): Promise<MutationResult> {
   ensureTauri()
   return invoke<MutationResult>('db_mutate_rows', { sessionId, request })
@@ -188,7 +194,7 @@ export async function mutateRows(
 export async function execute(
   sessionId: string,
   sql: string,
-  maxRows = 500,
+  maxRows = 500
 ): Promise<DatabaseExecution> {
   ensureTauri()
   return invoke<DatabaseExecution>('db_execute', {
@@ -208,7 +214,7 @@ export async function exportSql(
   sessionId: string,
   path: string,
   includeData: boolean,
-  dropExisting: boolean,
+  dropExisting: boolean
 ): Promise<DatabaseExportResult> {
   ensureTauri()
   return invoke<DatabaseExportResult>('db_export_sql', {
@@ -221,7 +227,7 @@ export async function exportSql(
 
 export async function importSql(
   sessionId: string,
-  path: string,
+  path: string
 ): Promise<DatabaseImportResult> {
   ensureTauri()
   return invoke<DatabaseImportResult>('db_import_sql', { sessionId, path })

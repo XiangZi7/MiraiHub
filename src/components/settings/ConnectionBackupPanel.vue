@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, toRefs, watch } from "vue";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import * as connections from "@/api/connections";
-import * as api from "@/api/operations";
+import { computed, onMounted, reactive, toRefs, watch } from 'vue'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import * as connections from '@/api/connections'
+import * as api from '@/api/operations'
 import {
   createConnectionBackup,
   parseConnectionBackup,
@@ -10,11 +10,11 @@ import {
   type ConnectionBackup,
   type ConnectionSnapshot,
   type RestoreMode,
-} from "@/utils/connection-backup";
+} from '@/utils/connection-backup'
 import { useSettings } from '@/composables/useSettings'
-import { IS_TAURI } from "@/utils/window";
-import AppButton from "@/components/ui/AppButton.vue";
-import AppIcon from "@/components/ui/AppIcon.vue";
+import { IS_TAURI } from '@/utils/window'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const { settings } = useSettings()
 // 导入必须先验证和预览；密码仅保存在当前页面内存。
@@ -22,17 +22,17 @@ const state = reactive({
   snapshot: null as ConnectionSnapshot | null,
   archive: null as ConnectionBackup | null,
   busy: false,
-  error: "",
-  message: "",
-  password: "",
+  error: '',
+  message: '',
+  password: '',
   includeCredentials: false,
-  path: "",
-  restorePassword: "",
-  mode: "skip" as RestoreMode,
+  path: '',
+  restorePassword: '',
+  mode: 'skip' as RestoreMode,
   restoreCredentials: false,
   startupCommands: false,
   reviewed: false,
-});
+})
 const {
   snapshot,
   archive,
@@ -47,7 +47,7 @@ const {
   restoreCredentials,
   startupCommands,
   reviewed,
-} = toRefs(state);
+} = toRefs(state)
 const plan = computed(() =>
   state.snapshot && state.archive
     ? restorePlan(
@@ -58,119 +58,129 @@ const plan = computed(() =>
           credentials: state.restoreCredentials && settings.rememberPasswords,
           startupCommands: state.startupCommands,
         },
-        () => `conn-${crypto.randomUUID()}`,
+        () => `conn-${crypto.randomUUID()}`
       )
-    : null,
-);
+    : null
+)
 const counts = computed(() => ({
-  add: plan.value?.changes.filter((c) => c.action === "add").length ?? 0,
-  update: plan.value?.changes.filter((c) => c.action === "update").length ?? 0,
-  skip: plan.value?.changes.filter((c) => c.action === "skip").length ?? 0,
-}));
+  add: plan.value?.changes.filter(c => c.action === 'add').length ?? 0,
+  update: plan.value?.changes.filter(c => c.action === 'update').length ?? 0,
+  skip: plan.value?.changes.filter(c => c.action === 'skip').length ?? 0,
+}))
 watch(
   () => settings.rememberPasswords,
-  (value) => {
+  value => {
     if (!value) {
-      state.restoreCredentials = false;
-      state.reviewed = false;
+      state.restoreCredentials = false
+      state.reviewed = false
     }
-  },
-);
+  }
+)
 onMounted(async () => {
-  state.snapshot = await connections.backupSnapshot();
-});
+  state.snapshot = await connections.backupSnapshot()
+})
 async function exportBackup(): Promise<void> {
-  if (state.busy) return;
-  state.error = "";
-  state.message = "";
+  if (state.busy) return
+  state.error = ''
+  state.message = ''
   if (state.includeCredentials && !state.password) {
-    state.error = "包含密码或启动命令时必须设置备份密码";
-    return;
+    state.error = '包含密码或启动命令时必须设置备份密码'
+    return
   }
   if (state.password && new TextEncoder().encode(state.password).length < 10) {
-    state.error = "备份密码至少需要 10 字节";
-    return;
+    state.error = '备份密码至少需要 10 字节'
+    return
   }
-  state.busy = true;
+  state.busy = true
   try {
     const payload = createConnectionBackup(
       await connections.backupSnapshot(),
-      state.includeCredentials,
-    );
+      state.includeCredentials
+    )
     const path = await save({
-      title: "保存连接备份",
+      title: '保存连接备份',
       defaultPath: `MiraiHub-connections-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: "MiraiHub 连接备份", extensions: ["json"] }],
-    });
+      filters: [{ name: 'MiraiHub 连接备份', extensions: ['json'] }],
+    })
     if (path) {
-      await api.writeBackup(path, payload, state.password);
-      state.message = `备份已保存：${path}`;
-      state.password = "";
+      await api.writeBackup(path, payload, state.password)
+      state.message = `备份已保存：${path}`
+      state.password = ''
     }
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   } finally {
-    state.busy = false;
+    state.busy = false
   }
 }
 async function choose(): Promise<void> {
   const path = await open({
-    title: "选择连接备份",
+    title: '选择连接备份',
     multiple: false,
     directory: false,
-    filters: [{ name: "MiraiHub 连接备份", extensions: ["json"] }],
-  });
-  if (typeof path === "string") {
-    state.path = path;
-    state.archive = null;
-    state.reviewed = false;
-    state.message = "";
-    state.error = "";
+    filters: [{ name: 'MiraiHub 连接备份', extensions: ['json'] }],
+  })
+  if (typeof path === 'string') {
+    state.path = path
+    state.archive = null
+    state.reviewed = false
+    state.message = ''
+    state.error = ''
   }
 }
 async function preview(): Promise<void> {
-  if (!state.path || state.busy) return;
-  state.busy = true;
-  state.error = "";
-  state.message = "";
-  state.archive = null;
-  state.reviewed = false;
+  if (!state.path || state.busy) return
+  state.busy = true
+  state.error = ''
+  state.message = ''
+  state.archive = null
+  state.reviewed = false
   try {
     const archive = parseConnectionBackup(
-      await api.readBackup(state.path, state.restorePassword),
-    );
-    state.snapshot = await connections.backupSnapshot();
-    state.archive = archive;
-    state.restorePassword = "";
-    state.restoreCredentials = false;
-    state.startupCommands = false;
+      await api.readBackup(state.path, state.restorePassword)
+    )
+    state.snapshot = await connections.backupSnapshot()
+    state.archive = archive
+    state.restorePassword = ''
+    state.restoreCredentials = false
+    state.startupCommands = false
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   } finally {
-    state.busy = false;
+    state.busy = false
   }
 }
 function apply(): void {
-  if (!state.reviewed || !state.snapshot || !plan.value || state.busy) return;
-  state.error = "";
+  if (!state.reviewed || !state.snapshot || !plan.value || state.busy) return
+  state.error = ''
   try {
-    connections.applyBackupSnapshot(state.snapshot, plan.value.next);
-    state.message = `恢复完成：新增 ${counts.value.add}，更新 ${counts.value.update}，跳过 ${counts.value.skip}。未自动连接任何服务器。`;
-    state.snapshot = plan.value.next;
-    state.archive = null;
-    state.reviewed = false;
+    connections.applyBackupSnapshot(state.snapshot, plan.value.next)
+    state.message = `恢复完成：新增 ${counts.value.add}，更新 ${counts.value.update}，跳过 ${counts.value.skip}。未自动连接任何服务器。`
+    state.snapshot = plan.value.next
+    state.archive = null
+    state.reviewed = false
   } catch (error) {
-    state.error = api.errorMessage(error);
+    state.error = api.errorMessage(error)
   }
 }
 </script>
 <template>
   <section class="backup-settings">
-    <h2><AppIcon name="lucide:archive-restore" :size="20" />连接备份与恢复</h2>
+    <h2>
+      <AppIcon
+        name="lucide:archive-restore"
+        :size="20"
+      />连接备份与恢复
+    </h2>
     <p class="muted">
       备份连接、分组和标签。AI 配置、私钥文件、查询历史不包含在内。
     </p>
-    <p v-if="!IS_TAURI" class="muted">请在桌面程序中选择文件进行备份或恢复。</p>
+    <p
+      v-if="!IS_TAURI"
+      class="muted"
+    >
+      请在桌面程序中选择文件进行备份或恢复。
+    </p>
     <div class="backup-card">
       <h3>
         导出备份
@@ -205,11 +215,15 @@ function apply(): void {
     <div class="backup-card">
       <h3>恢复备份</h3>
       <div class="flex items-center gap-2">
-        <AppButton :disabled="busy || !IS_TAURI" @click="choose"
+        <AppButton
+          :disabled="busy || !IS_TAURI"
+          @click="choose"
           >选择备份文件</AppButton
-        ><span class="min-w-0 truncate text-[10px] text-txt-3" :title="path">{{
-          path || "尚未选择"
-        }}</span>
+        ><span
+          class="text-txt-3 min-w-0 truncate text-[10px]"
+          :title="path"
+          >{{ path || '尚未选择' }}</span
+        >
       </div>
       <label class="backup-field"
         >解密密码<input
@@ -218,9 +232,11 @@ function apply(): void {
           autocomplete="off"
           :disabled="busy"
           placeholder="未加密备份留空" /></label
-      ><AppButton :disabled="busy || !path || !IS_TAURI" @click="preview">{{
-        busy ? "处理中…" : "读取并预览恢复内容"
-      }}</AppButton>
+      ><AppButton
+        :disabled="busy || !path || !IS_TAURI"
+        @click="preview"
+        >{{ busy ? '处理中…' : '读取并预览恢复内容' }}</AppButton
+      >
       <template v-if="archive && plan"
         ><label class="backup-field"
           >同 ID 连接的处理方式<select
@@ -245,11 +261,15 @@ function apply(): void {
             @change="reviewed = false"
           />恢复 SSH 启动命令（下次连接时会自动执行，请先核对备份来源）</label
         >
-        <details v-if="startupCommands" class="startup-review" open>
+        <details
+          v-if="startupCommands"
+          class="startup-review"
+          open
+        >
           <summary>核对备份中的 SSH 启动命令</summary>
           <div
             v-for="connection in archive.connections.filter(
-              (c) => c.kind === 'ssh',
+              c => c.kind === 'ssh'
             )"
             :key="connection.id"
           >
@@ -259,9 +279,9 @@ function apply(): void {
               }}:{{ connection.port }}</strong
             >
             <pre>{{
-              "startupCommand" in connection.settings
-                ? connection.settings.startupCommand || "（无启动命令）"
-                : ""
+              'startupCommand' in connection.settings
+                ? connection.settings.startupCommand || '（无启动命令）'
+                : ''
             }}</pre>
           </div>
         </details>
@@ -270,9 +290,12 @@ function apply(): void {
           {{ counts.skip }}
         </div>
         <div class="restore-list">
-          <div v-for="(item, index) in plan.changes" :key="index">
+          <div
+            v-for="(item, index) in plan.changes"
+            :key="index"
+          >
             <span>{{
-              { add: "新增", update: "更新", skip: "跳过" }[item.action]
+              { add: '新增', update: '更新', skip: '跳过' }[item.action]
             }}</span
             ><span
               >{{ item.name
@@ -296,8 +319,20 @@ function apply(): void {
         </p></template
       >
     </div>
-    <p v-if="error" role="alert" class="text-danger">{{ error }}</p>
-    <p v-if="message" role="status" class="text-success">{{ message }}</p>
+    <p
+      v-if="error"
+      role="alert"
+      class="text-danger"
+    >
+      {{ error }}
+    </p>
+    <p
+      v-if="message"
+      role="status"
+      class="text-success"
+    >
+      {{ message }}
+    </p>
   </section>
 </template>
 <style scoped>

@@ -1,35 +1,40 @@
 <script setup lang="ts">
-import { computed, useId } from "vue";
-import type { SshSessionInfo } from "@/types/ssh";
-import AppButton from "@/components/ui/AppButton.vue";
-import AppIcon from "@/components/ui/AppIcon.vue";
+import { computed, useId } from 'vue'
+import type { SshSessionInfo } from '@/types/ssh'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{
-  sessions: readonly SshSessionInfo[];
-  busy: boolean;
-  loading: boolean;
-  valid: boolean;
-}>();
-const emit = defineEmits<{ submit: []; refresh: [] }>();
-const sessionId = defineModel<string>("sessionId", { required: true });
-const bindPort = defineModel<number | string>("bindPort", { required: true });
-const targetHost = defineModel<string>("targetHost", { required: true });
-const targetPort = defineModel<number | string>("targetPort", {
+  sessions: readonly SshSessionInfo[]
+  busy: boolean
+  loading: boolean
+  valid: boolean
+}>()
+const emit = defineEmits<{ submit: []; refresh: [] }>()
+const sessionId = defineModel<string>('sessionId', { required: true })
+const bindPort = defineModel<number | string>('bindPort', { required: true })
+const targetHost = defineModel<string>('targetHost', { required: true })
+const targetPort = defineModel<number | string>('targetPort', {
   required: true,
-});
-const fieldId = useId();
+})
+const fieldId = useId()
 const missingSession = computed(
   () =>
     Boolean(sessionId.value) &&
-    !props.sessions.some((session) => session.id === sessionId.value),
-);
+    !props.sessions.some(session => session.id === sessionId.value)
+)
 </script>
 
 <template>
-  <form class="tunnel-create" @submit.prevent="emit('submit')">
+  <form
+    class="tunnel-create"
+    @submit.prevent="emit('submit')"
+  >
     <div class="tunnel-connection-row">
       <div class="tunnel-form-field">
-        <label :for="`${fieldId}-session`" class="tunnel-field-label"
+        <label
+          :for="`${fieldId}-session`"
+          class="tunnel-field-label"
           >SSH 连接</label
         >
         <select
@@ -44,10 +49,17 @@ const missingSession = computed(
           "
           required
         >
-          <option value="" disabled>
-            {{ loading ? "正在读取连接…" : "请选择已连接的服务器" }}
+          <option
+            value=""
+            disabled
+          >
+            {{ loading ? '正在读取连接…' : '请选择已连接的服务器' }}
           </option>
-          <option v-if="missingSession" :value="sessionId" disabled>
+          <option
+            v-if="missingSession"
+            :value="sessionId"
+            disabled
+          >
             原连接已断开，请重新选择
           </option>
           <option
@@ -64,7 +76,10 @@ const missingSession = computed(
         :disabled="busy || loading"
         @click="emit('refresh')"
       >
-        <AppIcon name="lucide:refresh-cw" :size="14" />
+        <AppIcon
+          name="lucide:refresh-cw"
+          :size="14"
+        />
         刷新连接
       </AppButton>
     </div>
@@ -75,8 +90,8 @@ const missingSession = computed(
     >
       {{
         !sessions.length
-          ? "请先在工作区连接一台 SSH 服务器，再建立隧道。"
-          : "所选 SSH 连接已断开，请选择可用连接。"
+          ? '请先在工作区连接一台 SSH 服务器，再建立隧道。'
+          : '所选 SSH 连接已断开，请选择可用连接。'
       }}
     </p>
 
@@ -85,14 +100,22 @@ const missingSession = computed(
         class="tunnel-endpoint"
         :aria-labelledby="`${fieldId}-local-title`"
       >
-        <h3 :id="`${fieldId}-local-title`" class="tunnel-endpoint-title">
-          <AppIcon name="lucide:monitor" :size="15" />
+        <h3
+          :id="`${fieldId}-local-title`"
+          class="tunnel-endpoint-title"
+        >
+          <AppIcon
+            name="lucide:monitor"
+            :size="15"
+          />
           本地监听
           <span class="tunnel-endpoint-tag">本机</span>
         </h3>
         <div class="tunnel-endpoint-fields">
           <div class="tunnel-form-field">
-            <label :for="`${fieldId}-bind-host`" class="tunnel-field-label"
+            <label
+              :for="`${fieldId}-bind-host`"
+              class="tunnel-field-label"
               >监听地址</label
             >
             <input
@@ -103,7 +126,9 @@ const missingSession = computed(
             />
           </div>
           <div class="tunnel-form-field">
-            <label :for="`${fieldId}-bind-port`" class="tunnel-field-label"
+            <label
+              :for="`${fieldId}-bind-port`"
+              class="tunnel-field-label"
               >本地端口</label
             >
             <input
@@ -120,7 +145,10 @@ const missingSession = computed(
             />
           </div>
         </div>
-        <p :id="`${fieldId}-bind-hint`" class="tunnel-field-hint">
+        <p
+          :id="`${fieldId}-bind-hint`"
+          class="tunnel-field-hint"
+        >
           端口填 0 时自动分配，仅本机可访问。
         </p>
       </section>
@@ -136,14 +164,22 @@ const missingSession = computed(
         class="tunnel-endpoint"
         :aria-labelledby="`${fieldId}-remote-title`"
       >
-        <h3 :id="`${fieldId}-remote-title`" class="tunnel-endpoint-title">
-          <AppIcon name="lucide:server" :size="15" />
+        <h3
+          :id="`${fieldId}-remote-title`"
+          class="tunnel-endpoint-title"
+        >
+          <AppIcon
+            name="lucide:server"
+            :size="15"
+          />
           远端目标
           <span class="tunnel-endpoint-tag">通过 SSH</span>
         </h3>
         <div class="tunnel-endpoint-fields">
           <div class="tunnel-form-field">
-            <label :for="`${fieldId}-target-host`" class="tunnel-field-label"
+            <label
+              :for="`${fieldId}-target-host`"
+              class="tunnel-field-label"
               >目标主机</label
             >
             <input
@@ -158,7 +194,9 @@ const missingSession = computed(
             />
           </div>
           <div class="tunnel-form-field">
-            <label :for="`${fieldId}-target-port`" class="tunnel-field-label"
+            <label
+              :for="`${fieldId}-target-port`"
+              class="tunnel-field-label"
               >目标端口</label
             >
             <input
@@ -174,7 +212,10 @@ const missingSession = computed(
             />
           </div>
         </div>
-        <p :id="`${fieldId}-target-hint`" class="tunnel-field-hint">
+        <p
+          :id="`${fieldId}-target-hint`"
+          class="tunnel-field-hint"
+        >
           127.0.0.1 表示 SSH 服务器自身。
         </p>
       </section>
@@ -182,8 +223,10 @@ const missingSession = computed(
 
     <div class="tunnel-create-actions">
       <span class="tunnel-security-note"
-        ><AppIcon name="lucide:shield-check" :size="14" />流量通过 SSH
-        加密转发</span
+        ><AppIcon
+          name="lucide:shield-check"
+          :size="14"
+        />流量通过 SSH 加密转发</span
       >
       <AppButton
         type="submit"
@@ -195,7 +238,7 @@ const missingSession = computed(
           :name="busy ? 'lucide:loader-circle' : 'lucide:plus'"
           :size="15"
         />
-        {{ busy ? "正在建立…" : "建立本地隧道" }}
+        {{ busy ? '正在建立…' : '建立本地隧道' }}
       </AppButton>
     </div>
   </form>

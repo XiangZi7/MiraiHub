@@ -10,9 +10,13 @@ import {
 import { formatBytes, formatRate } from '@/utils/format'
 import { formatDuration } from '@/utils/time'
 import TransferPanelFooter from './transfer/TransferPanelFooter.vue'
-import TransferPanelHeader, { type TransferPanelTab } from './transfer/TransferPanelHeader.vue'
+import TransferPanelHeader, {
+  type TransferPanelTab,
+} from './transfer/TransferPanelHeader.vue'
 import TransferTaskGroup from './transfer/TransferTaskGroup.vue'
-import TransferStatusFilter, { type TransferStatusFilter as TransferFilter } from './transfer/TransferStatusFilter.vue'
+import TransferStatusFilter, {
+  type TransferStatusFilter as TransferFilter,
+} from './transfer/TransferStatusFilter.vue'
 
 interface TransferGroupView {
   key: string
@@ -39,23 +43,34 @@ const triggerRoot = useTemplateRef<HTMLElement>('triggerRoot')
 const panelRoot = useTemplateRef<HTMLElement>('panelRoot')
 const now = useNow({ interval: 1000 })
 
-const historyTasks = computed(() => tasks.filter(task => ['completed', 'error', 'cancelled'].includes(task.status)))
-const tabTasks = computed(() => activeTab.value === 'history' ? historyTasks.value : [...tasks])
+const historyTasks = computed(() =>
+  tasks.filter(task =>
+    ['completed', 'error', 'cancelled'].includes(task.status)
+  )
+)
+const tabTasks = computed(() =>
+  activeTab.value === 'history' ? historyTasks.value : [...tasks]
+)
 const statusCounts = computed<Record<TransferFilter, number>>(() => ({
   all: tabTasks.value.length,
-  active: tabTasks.value.filter(task => ['queued', 'running', 'paused'].includes(task.status)).length,
+  active: tabTasks.value.filter(task =>
+    ['queued', 'running', 'paused'].includes(task.status)
+  ).length,
   completed: tabTasks.value.filter(task => task.status === 'completed').length,
-  failed: tabTasks.value.filter(task => task.status === 'error' || task.status === 'cancelled').length,
+  failed: tabTasks.value.filter(
+    task => task.status === 'error' || task.status === 'cancelled'
+  ).length,
 }))
-const visibleTasks = computed(() => tabTasks.value.filter((task) => {
-  if (statusFilter.value === 'active')
-    return ['queued', 'running', 'paused'].includes(task.status)
-  if (statusFilter.value === 'completed')
-    return task.status === 'completed'
-  if (statusFilter.value === 'failed')
-    return task.status === 'error' || task.status === 'cancelled'
-  return true
-}))
+const visibleTasks = computed(() =>
+  tabTasks.value.filter(task => {
+    if (statusFilter.value === 'active')
+      return ['queued', 'running', 'paused'].includes(task.status)
+    if (statusFilter.value === 'completed') return task.status === 'completed'
+    if (statusFilter.value === 'failed')
+      return task.status === 'error' || task.status === 'cancelled'
+    return true
+  })
+)
 
 const groups = computed<TransferGroupView[]>(() => {
   const byConnection = new Map<string, TransferGroupView>()
@@ -80,59 +95,73 @@ const groups = computed<TransferGroupView[]>(() => {
 })
 
 const aggregate = computed(() => {
-  const current = activeTasks.value.length ? [...activeTasks.value] : [...tabTasks.value]
+  const current = activeTasks.value.length
+    ? [...activeTasks.value]
+    : [...tabTasks.value]
   const totalBytes = current.reduce((sum, task) => sum + task.totalBytes, 0)
   const transferredBytes = current.reduce((sum, task) => {
-    if (!task.totalBytes)
-      return sum + task.transferredBytes
+    if (!task.totalBytes) return sum + task.transferredBytes
     return sum + Math.min(task.transferredBytes, task.totalBytes)
   }, 0)
   const progress = totalBytes
-    ? Math.min(100, Math.round(transferredBytes / totalBytes * 100))
-    : current.length && current.every(task => task.status === 'completed') ? 100 : 0
-  const startedAt = current.length ? Math.min(...current.map(task => task.createdAt)) : 0
-  const elapsedSeconds = startedAt ? Math.max(1, (now.value.getTime() - startedAt) / 1000) : 0
-  const rate = elapsedSeconds ? transferredBytes / elapsedSeconds : 0
-  const remainingMs = rate > 0 && totalBytes > transferredBytes
-    ? (totalBytes - transferredBytes) / rate * 1000
+    ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100))
+    : current.length && current.every(task => task.status === 'completed')
+      ? 100
+      : 0
+  const startedAt = current.length
+    ? Math.min(...current.map(task => task.createdAt))
     : 0
+  const elapsedSeconds = startedAt
+    ? Math.max(1, (now.value.getTime() - startedAt) / 1000)
+    : 0
+  const rate = elapsedSeconds ? transferredBytes / elapsedSeconds : 0
+  const remainingMs =
+    rate > 0 && totalBytes > transferredBytes
+      ? ((totalBytes - transferredBytes) / rate) * 1000
+      : 0
 
   return { totalBytes, transferredBytes, progress, rate, remainingMs }
 })
 
-const canPause = computed(() => activeTasks.value.some(task => task.status === 'running'))
-const canResume = computed(() => !canPause.value && activeTasks.value.some(task => task.status === 'paused'))
+const canPause = computed(() =>
+  activeTasks.value.some(task => task.status === 'running')
+)
+const canResume = computed(
+  () =>
+    !canPause.value && activeTasks.value.some(task => task.status === 'paused')
+)
 
 const statusLabel = computed(() => {
   const active = activeTasks.value
-  if (!active.length)
-    return tasks.length ? 'Complete' : 'Idle'
-  if (!active.some(task => task.status === 'running'))
-    return 'Paused'
+  if (!active.length) return tasks.length ? 'Complete' : 'Idle'
+  if (!active.some(task => task.status === 'running')) return 'Paused'
   const directions = new Set(active.map(task => task.direction))
-  if (directions.size > 1)
-    return 'Transferring'
+  if (directions.size > 1) return 'Transferring'
   return directions.has('upload') ? 'Uploading' : 'Downloading'
 })
 
 const footerSummary = computed(() => {
   const direction = new Set(tasks.map(task => task.direction))
-  const prefix = direction.size === 1 && direction.has('upload')
-    ? 'Upload'
-    : direction.size === 1 && direction.has('download') ? 'Download' : 'Transfer'
-  const total = aggregate.value.totalBytes ? formatBytes(aggregate.value.totalBytes) : 'Calculating'
+  const prefix =
+    direction.size === 1 && direction.has('upload')
+      ? 'Upload'
+      : direction.size === 1 && direction.has('download')
+        ? 'Download'
+        : 'Transfer'
+  const total = aggregate.value.totalBytes
+    ? formatBytes(aggregate.value.totalBytes)
+    : 'Calculating'
   const rate = aggregate.value.rate ? formatRate(aggregate.value.rate) : '--'
-  const remaining = aggregate.value.remainingMs ? ` • ${formatDuration(aggregate.value.remainingMs)} remaining` : ''
+  const remaining = aggregate.value.remainingMs
+    ? ` • ${formatDuration(aggregate.value.remainingMs)} remaining`
+    : ''
   return `${prefix}: ${formatBytes(aggregate.value.transferredBytes)} / ${total} • ${rate}${remaining}`
 })
 
 const emptyLabel = computed(() => {
-  if (statusFilter.value === 'active')
-    return '当前没有进行中的传输'
-  if (statusFilter.value === 'completed')
-    return '还没有已完成的传输'
-  if (statusFilter.value === 'failed')
-    return '当前没有错误或已取消的传输'
+  if (statusFilter.value === 'active') return '当前没有进行中的传输'
+  if (statusFilter.value === 'completed') return '还没有已完成的传输'
+  if (statusFilter.value === 'failed') return '当前没有错误或已取消的传输'
   return activeTab.value === 'history' ? '还没有传输历史' : '还没有文件传输'
 })
 
@@ -140,21 +169,32 @@ watch(activeTab, () => {
   statusFilter.value = 'all'
 })
 
-useEventListener(document, 'pointerdown', (event: PointerEvent) => {
-  const target = event.target as Node
-  if (!open.value || triggerRoot.value?.contains(target) || panelRoot.value?.contains(target))
-    return
-  open.value = false
-}, { capture: true })
+useEventListener(
+  document,
+  'pointerdown',
+  (event: PointerEvent) => {
+    const target = event.target as Node
+    if (
+      !open.value ||
+      triggerRoot.value?.contains(target) ||
+      panelRoot.value?.contains(target)
+    )
+      return
+    open.value = false
+  },
+  { capture: true }
+)
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-  if (open.value && event.key === 'Escape')
-    open.value = false
+  if (open.value && event.key === 'Escape') open.value = false
 })
 </script>
 
 <template>
-  <div ref="triggerRoot" class="relative">
+  <div
+    ref="triggerRoot"
+    class="relative"
+  >
     <button
       type="button"
       class="icon-btn relative"
@@ -163,8 +203,15 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       aria-haspopup="dialog"
       @click="open = !open"
     >
-      <AppIcon name="lucide:download" :size="15" />
-      <span v-if="activeTasks.length" class="transfer-badge">{{ Math.min(activeTasks.length, 9) }}</span>
+      <AppIcon
+        name="lucide:download"
+        :size="15"
+      />
+      <span
+        v-if="activeTasks.length"
+        class="transfer-badge"
+        >{{ Math.min(activeTasks.length, 9) }}</span
+      >
     </button>
 
     <Teleport to="body">
@@ -184,7 +231,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             @change-tab="activeTab = $event"
           />
 
-          <TransferStatusFilter v-model="statusFilter" :counts="statusCounts" />
+          <TransferStatusFilter
+            v-model="statusFilter"
+            :counts="statusCounts"
+          />
 
           <div class="transfer-content scroll-thin">
             <TransferTaskGroup
@@ -198,8 +248,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               @cancel="cancel"
             />
 
-            <div v-if="!groups.length" class="transfer-empty">
-              <AppIcon name="lucide:folder-clock" :size="25" />
+            <div
+              v-if="!groups.length"
+              class="transfer-empty"
+            >
+              <AppIcon
+                name="lucide:folder-clock"
+                :size="25"
+              />
               <p>{{ emptyLabel }}</p>
             </div>
           </div>
@@ -253,7 +309,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     linear-gradient(150deg, rgb(255 255 255 / 7%), transparent 38%),
     radial-gradient(circle at 18% 0%, rgb(60 138 190 / 16%), transparent 40%),
     rgb(10 14 19 / 80%);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 54%), inset 0 1px rgb(255 255 255 / 5%);
+  box-shadow:
+    0 24px 70px rgb(0 0 0 / 54%),
+    inset 0 1px rgb(255 255 255 / 5%);
   backdrop-filter: blur(34px) saturate(165%);
   -webkit-backdrop-filter: blur(34px) saturate(165%);
 }
@@ -278,7 +336,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
 .transfer-center-enter-active,
 .transfer-center-leave-active {
-  transition: opacity 130ms ease, transform 130ms ease;
+  transition:
+    opacity 130ms ease,
+    transform 130ms ease;
   transform-origin: top right;
 }
 

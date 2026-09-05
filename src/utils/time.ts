@@ -9,7 +9,7 @@
 import { settingsSnapshot } from '@/composables/useSettings'
 
 /** 相对时间的分档，单位毫秒。从小到大匹配，命中即返回 */
-const UNITS: { limit: number, divisor: number, suffix: string }[] = [
+const UNITS: { limit: number; divisor: number; suffix: string }[] = [
   { limit: 60_000, divisor: 1000, suffix: '秒前' },
   { limit: 3_600_000, divisor: 60_000, suffix: '分钟前' },
   { limit: 86_400_000, divisor: 3_600_000, suffix: '小时前' },
@@ -26,19 +26,16 @@ const pad = (value: number): string => String(value).padStart(2, '0')
  * 直接给绝对时间更有用。
  */
 export function formatRelative(timestamp: number): string {
-  if (!timestamp)
-    return '—'
+  if (!timestamp) return '—'
 
   const diff = Date.now() - timestamp
 
   // 时钟回拨或后端时间超前时 diff 为负，按"刚刚"处理，
   // 否则会算出"-3 分钟前"这种明显错误的文案
-  if (diff < 30_000)
-    return '刚刚'
+  if (diff < 30_000) return '刚刚'
 
   for (const { limit, divisor, suffix } of UNITS) {
-    if (diff < limit)
-      return `${Math.floor(diff / divisor)} ${suffix}`
+    if (diff < limit) return `${Math.floor(diff / divisor)} ${suffix}`
   }
 
   return formatDate(timestamp)
@@ -46,8 +43,7 @@ export function formatRelative(timestamp: number): string {
 
 /** 绝对日期，按设置输出 `2026-09-03` / `09/03/2026` / `03/09/2026` */
 export function formatDate(timestamp: number): string {
-  if (!timestamp)
-    return '—'
+  if (!timestamp) return '—'
 
   const date = new Date(timestamp)
   const year = date.getFullYear()
@@ -66,8 +62,7 @@ export function formatDate(timestamp: number): string {
 
 /** 时刻，按设置输出 `14:32` 或 `2:32 PM` */
 export function formatTime(timestamp: number): string {
-  if (!timestamp)
-    return '—'
+  if (!timestamp) return '—'
 
   const date = new Date(timestamp)
   const hours = date.getHours()
@@ -83,8 +78,7 @@ export function formatTime(timestamp: number): string {
 
 /** 日期加时间，如「2026-09-03 14:32」 */
 export function formatDateTime(timestamp: number): string {
-  if (!timestamp)
-    return '—'
+  if (!timestamp) return '—'
 
   return `${formatDate(timestamp)} ${formatTime(timestamp)}`
 }

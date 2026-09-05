@@ -3,17 +3,20 @@ import { shallowRef } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import AppTextField from '@/components/ui/AppTextField.vue'
 
-const props = withDefaults(defineProps<{
-  label: string
-  placeholder?: string
-  dialogTitle: string
-  filterName?: string
-  extensions?: readonly string[]
-}>(), {
-  placeholder: '',
-  filterName: '证书与密钥文件',
-  extensions: () => [],
-})
+const props = withDefaults(
+  defineProps<{
+    label: string
+    placeholder?: string
+    dialogTitle: string
+    filterName?: string
+    extensions?: readonly string[]
+  }>(),
+  {
+    placeholder: '',
+    filterName: '证书与密钥文件',
+    extensions: () => [],
+  }
+)
 
 const emit = defineEmits<{
   selected: [path: string]
@@ -43,11 +46,9 @@ async function selectFile(): Promise<void> {
     if (!path) return
     model.value = path
     emit('selected', path)
-  }
-  catch (error) {
+  } catch (error) {
     emit('error', errorMessage(error))
-  }
-  finally {
+  } finally {
     selecting.value = false
   }
 }

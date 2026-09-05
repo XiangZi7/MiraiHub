@@ -6,66 +6,75 @@ import {
   shallowRef,
   toRefs,
   useTemplateRef,
-} from "vue";
-import type { SshConfig, SshSessionStatus } from "@/types/ssh";
-import TerminalPanel from "./TerminalPanel.vue";
-import AiAgentPanel from "@/components/agent/AiAgentPanel.vue";
-import AppIcon from "@/components/ui/AppIcon.vue";
-import IconButton from "@/components/ui/IconButton.vue";
+} from 'vue'
+import type { SshConfig, SshSessionStatus } from '@/types/ssh'
+import TerminalPanel from './TerminalPanel.vue'
+import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import IconButton from '@/components/ui/IconButton.vue'
 
 const props = withDefaults(
   defineProps<{
-    connectionId?: string;
-    config: SshConfig;
-    title?: string;
-    terminalType?: string;
-    startupCommand?: string;
-    active?: boolean;
+    connectionId?: string
+    config: SshConfig
+    title?: string
+    terminalType?: string
+    startupCommand?: string
+    active?: boolean
   }>(),
-  { active: true },
-);
+  { active: true }
+)
 const emit = defineEmits<{
-  status: [status: SshSessionStatus, sessionId: string];
-}>();
-const split = shallowRef(false);
+  status: [status: SshSessionStatus, sessionId: string]
+}>()
+const split = shallowRef(false)
 // AI 始终绑定主终端的会话；切换连接后不复用旧会话审批。
-const state = reactive({ aiOpen: false, aiSplit: false, sessionId: "" });
-const { aiOpen, aiSplit } = toRefs(state);
+const state = reactive({ aiOpen: false, aiSplit: false, sessionId: '' })
+const { aiOpen, aiSplit } = toRefs(state)
 const target = computed(() => ({
-  kind: "ssh" as const,
+  kind: 'ssh' as const,
   sessionId: state.sessionId,
-  database: "",
-}));
-const primary = useTemplateRef<InstanceType<typeof TerminalPanel>>("primary");
-const secondary = useTemplateRef<InstanceType<typeof TerminalPanel>>("secondary");
+  database: '',
+}))
+const primary = useTemplateRef<InstanceType<typeof TerminalPanel>>('primary')
+const secondary =
+  useTemplateRef<InstanceType<typeof TerminalPanel>>('secondary')
 function statusChanged(status: SshSessionStatus, sessionId: string): void {
-  state.sessionId = status === "connected" ? sessionId : "";
-  emit("status", status, sessionId);
+  state.sessionId = status === 'connected' ? sessionId : ''
+  emit('status', status, sessionId)
 }
 function splitAgent(): void {
-  state.aiSplit = !(state.aiOpen && state.aiSplit);
-  state.aiOpen = true;
+  state.aiSplit = !(state.aiOpen && state.aiSplit)
+  state.aiOpen = true
 }
 function showTerminal(): void {
-  state.aiOpen = false;
-  void nextTick(() => primary.value?.focus());
+  state.aiOpen = false
+  void nextTick(() => primary.value?.focus())
 }
 defineExpose({
-  reconnectFor: async (id: string) => { if (props.connectionId !== id) return; await primary.value?.reconnect(); await secondary.value?.reconnect(); },
-  disconnectFor: async (id: string) => { if (props.connectionId !== id) return; await primary.value?.disconnect(); await secondary.value?.disconnect(); },
+  reconnectFor: async (id: string) => {
+    if (props.connectionId !== id) return
+    await primary.value?.reconnect()
+    await secondary.value?.reconnect()
+  },
+  disconnectFor: async (id: string) => {
+    if (props.connectionId !== id) return
+    await primary.value?.disconnect()
+    await secondary.value?.disconnect()
+  },
   focusFor: (id: string) => {
     if (props.connectionId === id) {
-      showTerminal();
-      primary.value?.focus();
+      showTerminal()
+      primary.value?.focus()
     }
   },
   splitFor: async (id: string) => {
-    if (props.connectionId !== id) return;
-    split.value = !split.value;
-    await nextTick();
-    primary.value?.focus();
+    if (props.connectionId !== id) return
+    split.value = !split.value
+    await nextTick()
+    primary.value?.focus()
   },
-});
+})
 </script>
 
 <template>
@@ -76,14 +85,20 @@ defineExpose({
         :class="(!aiOpen || aiSplit) && 'selected'"
         @click="showTerminal"
       >
-        <AppIcon name="lucide:terminal" :size="13" />SSH
+        <AppIcon
+          name="lucide:terminal"
+          :size="13"
+        />SSH
       </button>
       <button
         type="button"
         :class="aiOpen && 'selected'"
         @click="aiOpen = true"
       >
-        <AppIcon name="lucide:bot" :size="14" />AI Agent
+        <AppIcon
+          name="lucide:bot"
+          :size="14"
+        />AI Agent
         <span class="beta">BETA</span>
       </button>
       <div class="flex-1" />

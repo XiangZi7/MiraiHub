@@ -1,10 +1,10 @@
-import { readonly } from "vue";
-import { storeToRefs } from "pinia";
-import { useConnectionsStore } from "@/stores/connections";
+import { readonly } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useConnectionsStore } from '@/stores/connections'
 export function useConnections() {
-  const store = useConnectionsStore();
-  void store.initialize().catch(() => undefined);
-  const { loaded, sshConnections, databaseConnections } = storeToRefs(store);
+  const store = useConnectionsStore()
+  void store.initialize().catch(() => undefined)
+  const { loaded, sshConnections, databaseConnections } = storeToRefs(store)
   const {
     groupsFor,
     find,
@@ -16,7 +16,7 @@ export function useConnections() {
     renameGroup,
     removeGroup,
     touch,
-  } = store;
+  } = store
   return {
     connections: readonly(store.items),
     groups: readonly(store.groups),
@@ -34,5 +34,5 @@ export function useConnections() {
     renameGroup,
     removeGroup,
     touch,
-  };
+  }
 }

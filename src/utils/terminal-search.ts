@@ -9,7 +9,7 @@ export interface TerminalMatch {
 /** 按终端单元格映射文本，支持中文宽字符、组合字符和自动折行。 */
 export function findTerminalMatches(
   buffer: IBuffer,
-  query: string,
+  query: string
 ): TerminalMatch[] {
   if (!query) return []
   const matches: TerminalMatch[] = []

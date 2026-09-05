@@ -21,7 +21,7 @@ watch([open, unreadCount], ([visible]) => {
     />
     <span
       v-if="unreadCount"
-      class="pointer-events-none absolute right-0 top-0 size-1.5 rounded-full bg-violet"
+      class="bg-violet pointer-events-none absolute top-0 right-0 size-1.5 rounded-full"
     />
   </div>
   <Teleport to="body">
@@ -33,28 +33,31 @@ watch([open, unreadCount], ([visible]) => {
     >
       <p
         v-if="!notifications.length"
-        class="py-8 text-center text-xs text-txt-3"
+        class="text-txt-3 py-8 text-center text-xs"
       >
         暂无通知
       </p>
-      <ol v-else class="space-y-3">
+      <ol
+        v-else
+        class="space-y-3"
+      >
         <li
           v-for="item in notifications"
           :key="item.id"
-          class="rounded-lg border border-line bg-card p-3"
+          class="border-line bg-card rounded-lg border p-3"
         >
           <div
-            class="mb-1 flex items-center justify-between gap-2 text-[10px] text-txt-4"
+            class="text-txt-4 mb-1 flex items-center justify-between gap-2 text-[10px]"
           >
             <span :class="item.tone === 'error' && 'text-danger'">{{
               tones[item.tone]
             }}</span>
             <time>{{ formatDateTime(item.createdAt) }}</time>
           </div>
-          <p class="break-words text-xs text-txt">{{ item.title }}</p>
+          <p class="text-txt text-xs break-words">{{ item.title }}</p>
           <p
             v-if="item.description"
-            class="mt-1 whitespace-pre-wrap break-words text-[11px] text-txt-3"
+            class="text-txt-3 mt-1 text-[11px] break-words whitespace-pre-wrap"
           >
             {{ item.description }}
           </p>
@@ -62,7 +65,7 @@ watch([open, unreadCount], ([visible]) => {
       </ol>
       <template #footer>
         <button
-          class="text-xs text-txt-3 disabled:opacity-40"
+          class="text-txt-3 text-xs disabled:opacity-40"
           :disabled="!notifications.length"
           @click="clearNotifications"
         >

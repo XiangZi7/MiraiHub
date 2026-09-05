@@ -18,23 +18,19 @@ export async function copyText(text: string): Promise<void> {
  * 用户在这期间复制了别的东西就不动它。读取权限不可用时按写入时间兜底清空。
  */
 export function scheduleClipboardClear(text: string): void {
-  if (clearTimer)
-    clearTimeout(clearTimer)
+  if (clearTimer) clearTimeout(clearTimer)
   lastCopied = text
 
   const seconds = Number(settingsSnapshot().clipboardClearTimeout) || 0
-  if (seconds <= 0)
-    return
+  if (seconds <= 0) return
 
   clearTimer = setTimeout(async () => {
     clearTimer = undefined
     try {
       const current = await navigator.clipboard.readText().catch(() => null)
-      if (current !== null && current !== lastCopied)
-        return
+      if (current !== null && current !== lastCopied) return
       await navigator.clipboard.writeText('')
-    }
-    catch {
+    } catch {
       // 窗口失焦时 WebView 可能拒绝访问剪贴板，忽略即可
     }
   }, seconds * 1000)

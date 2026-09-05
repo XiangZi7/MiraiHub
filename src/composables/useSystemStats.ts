@@ -6,7 +6,14 @@
  * 再快只会让请求首尾相接，再慢曲线就跟不上实际负载了。
  */
 
-import { computed, onBeforeUnmount, reactive, toRefs, watch, type Ref } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  reactive,
+  toRefs,
+  watch,
+  type Ref,
+} from 'vue'
 import * as ssh from '@/api/ssh'
 import type { SshSystemStats } from '@/types/ssh'
 
@@ -46,8 +53,7 @@ export function useSystemStats(sessionId: Ref<string>) {
   function pushHistory(snapshot: SshSystemStats): void {
     const push = (list: number[], value: number): void => {
       list.push(Number.isFinite(value) ? value : 0)
-      if (list.length > HISTORY_SIZE)
-        list.shift()
+      if (list.length > HISTORY_SIZE) list.shift()
     }
 
     const { memory, disk, network } = snapshot
@@ -64,30 +70,25 @@ export function useSystemStats(sessionId: Ref<string>) {
     const id = sessionId.value
     const requestGeneration = generation
 
-    if (!id || inflightGeneration === requestGeneration)
-      return
+    if (!id || inflightGeneration === requestGeneration) return
 
     inflightGeneration = requestGeneration
 
-    if (!state.stats)
-      state.loading = true
+    if (!state.stats) state.loading = true
 
     try {
       const snapshot = await ssh.systemStats(id)
 
       // 采集期间会话可能已经断了或换了台机器，
       // 这时的结果属于上一台，写进去会让界面显示错误的数据
-      if (generation !== requestGeneration || sessionId.value !== id)
-        return
+      if (generation !== requestGeneration || sessionId.value !== id) return
 
       state.stats = snapshot
       state.error = ''
       pushHistory(snapshot)
-    }
-    catch (err) {
+    } catch (err) {
       state.error = ssh.errorMessage(err)
-    }
-    finally {
+    } finally {
       if (generation === requestGeneration) {
         inflightGeneration = -1
         state.loading = false
@@ -122,7 +123,7 @@ export function useSystemStats(sessionId: Ref<string>) {
   /** 会话变化时重置并重新开始 */
   watch(
     sessionId,
-    async (id) => {
+    async id => {
       stop()
       const currentGeneration = ++generation
       inflightGeneration = -1
@@ -132,15 +133,13 @@ export function useSystemStats(sessionId: Ref<string>) {
       state.error = ''
       state.history = { cpu: [], memory: [], disk: [], network: [] }
 
-      if (!id)
-        return
+      if (!id) return
 
       await refresh()
 
-      if (generation === currentGeneration)
-        schedule(currentGeneration)
+      if (generation === currentGeneration) schedule(currentGeneration)
     },
-    { immediate: true },
+    { immediate: true }
   )
 
   onBeforeUnmount(() => {

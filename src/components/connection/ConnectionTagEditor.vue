@@ -1,26 +1,36 @@
 <script setup lang="ts">
 import { computed, shallowRef, useId } from 'vue'
 import { CONNECTION_TAG_COLORS } from '@/constants/connection'
-import type { ConnectionTagColor, ConnectionTagDefinition } from '@/types/connection'
+import type {
+  ConnectionTagColor,
+  ConnectionTagDefinition,
+} from '@/types/connection'
 import ConnectionTagBadge from './ConnectionTagBadge.vue'
 
-const props = withDefaults(defineProps<{
-  availableTags?: readonly ConnectionTagDefinition[]
-}>(), {
-  availableTags: () => [],
-})
+const props = withDefaults(
+  defineProps<{
+    availableTags?: readonly ConnectionTagDefinition[]
+  }>(),
+  {
+    availableTags: () => [],
+  }
+)
 
 const tags = defineModel<string>({ required: true })
 const color = defineModel<ConnectionTagColor>('color', { required: true })
 const draft = shallowRef('')
 const inputId = useId()
 
-const selectedTags = computed(() => tags.value
-  .split(/[,，]/)
-  .map(tag => tag.trim())
-  .filter(Boolean))
+const selectedTags = computed(() =>
+  tags.value
+    .split(/[,，]/)
+    .map(tag => tag.trim())
+    .filter(Boolean)
+)
 
-const selectedKeys = computed(() => new Set(selectedTags.value.map(tag => tag.toLocaleLowerCase())))
+const selectedKeys = computed(
+  () => new Set(selectedTags.value.map(tag => tag.toLocaleLowerCase()))
+)
 const suggestions = computed(() => {
   const query = draft.value.trim().toLocaleLowerCase()
   return props.availableTags
@@ -36,19 +46,24 @@ function definitionOf(name: string): ConnectionTagDefinition | undefined {
 
 function tagColor(name: string): string {
   const tone = definitionOf(name)?.color ?? color.value
-  return CONNECTION_TAG_COLORS.find(option => option.id === tone)?.css ?? 'var(--color-accent)'
+  return (
+    CONNECTION_TAG_COLORS.find(option => option.id === tone)?.css ??
+    'var(--color-accent)'
+  )
 }
 
 function addTag(rawName = draft.value): void {
-  const name = rawName.trim().replace(/[,，]+$/, '').trim()
+  const name = rawName
+    .trim()
+    .replace(/[,，]+$/, '')
+    .trim()
   if (!name || selectedKeys.value.has(name.toLocaleLowerCase())) {
     draft.value = ''
     return
   }
 
   const definition = definitionOf(name)
-  if (definition)
-    color.value = definition.color
+  if (definition) color.value = definition.color
 
   tags.value = [...selectedTags.value, definition?.name ?? name].join(', ')
   draft.value = ''
@@ -73,7 +88,11 @@ function handleInputKeydown(event: KeyboardEvent): void {
 <template>
   <div class="grid gap-2.5">
     <div class="space-y-1.5">
-      <label :for="inputId" class="block text-[11px] font-medium text-txt-2">Tags</label>
+      <label
+        :for="inputId"
+        class="text-txt-2 block text-[11px] font-medium"
+        >Tags</label
+      >
       <div class="tag-input-shell">
         <ConnectionTagBadge
           v-for="tag in selectedTags"
@@ -91,14 +110,15 @@ function handleInputKeydown(event: KeyboardEvent): void {
           autocomplete="off"
           @keydown="handleInputKeydown"
           @blur="addTag()"
-        >
+        />
       </div>
     </div>
 
-    <div v-if="suggestions.length" class="space-y-1.5">
-      <p class="text-[10px] text-txt-4">
-        共享标签 · 点击即可使用
-      </p>
+    <div
+      v-if="suggestions.length"
+      class="space-y-1.5"
+    >
+      <p class="text-txt-4 text-[10px]">共享标签 · 点击即可使用</p>
       <div class="flex flex-wrap gap-1.5">
         <ConnectionTagBadge
           v-for="tag in suggestions"
@@ -113,10 +133,14 @@ function handleInputKeydown(event: KeyboardEvent): void {
     </div>
 
     <fieldset class="space-y-1.5">
-      <legend class="block text-[11px] font-medium text-txt-2">
+      <legend class="text-txt-2 block text-[11px] font-medium">
         Tag Color
       </legend>
-      <div class="flex min-h-7 items-center gap-2" role="radiogroup" aria-label="标签颜色">
+      <div
+        class="flex min-h-7 items-center gap-2"
+        role="radiogroup"
+        aria-label="标签颜色"
+      >
         <button
           v-for="option in CONNECTION_TAG_COLORS"
           :key="option.id"
@@ -125,7 +149,10 @@ function handleInputKeydown(event: KeyboardEvent): void {
           :aria-checked="color === option.id"
           :aria-label="option.label"
           :title="option.label"
-          :class="['tag-color-option', color === option.id && 'tag-color-option-active']"
+          :class="[
+            'tag-color-option',
+            color === option.id && 'tag-color-option-active',
+          ]"
           :style="{ '--tag-color': option.css }"
           @click="color = option.id"
         />
@@ -145,7 +172,9 @@ function handleInputKeydown(event: KeyboardEvent): void {
   border-radius: 8px;
   background: var(--color-panel);
   padding: 5px 8px;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .tag-input-shell:focus-within {
@@ -177,7 +206,9 @@ function handleInputKeydown(event: KeyboardEvent): void {
   border-radius: 50%;
   background: transparent;
   outline: none;
-  transition: border-color 150ms ease, background-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
 }
 
 .tag-color-option::before {
@@ -194,7 +225,11 @@ function handleInputKeydown(event: KeyboardEvent): void {
 }
 
 .tag-color-option-active {
-  border-color: color-mix(in oklch, var(--tag-color) 30%, var(--color-line-strong));
+  border-color: color-mix(
+    in oklch,
+    var(--tag-color) 30%,
+    var(--color-line-strong)
+  );
   background: color-mix(in oklch, var(--tag-color) 8%, var(--color-raised));
 }
 

@@ -26,7 +26,13 @@ onBeforeUnmount(() => {
  * 关闭键 hover 用系统同款红 #c42b1c，其余用极淡的白。
  */
 const buttons = computed(() => [
-  { id: 'min', icon: 'mirai:win-min', title: '最小化', danger: false, run: minimizeWindow },
+  {
+    id: 'min',
+    icon: 'mirai:win-min',
+    title: '最小化',
+    danger: false,
+    run: minimizeWindow,
+  },
   {
     id: 'max',
     icon: isMaximized.value ? 'mirai:win-restore' : 'mirai:win-max',
@@ -34,7 +40,13 @@ const buttons = computed(() => [
     danger: false,
     run: toggleMaximizeWindow,
   },
-  { id: 'close', icon: 'mirai:win-close', title: '关闭', danger: true, run: closeWindow },
+  {
+    id: 'close',
+    icon: 'mirai:win-close',
+    title: '关闭',
+    danger: true,
+    run: closeWindow,
+  },
 ])
 </script>
 
@@ -45,7 +57,7 @@ const buttons = computed(() => [
       :key="button.id"
       type="button"
       :class="[
-        'grid w-11.5 place-items-center text-txt-2 transition-colors duration-100',
+        'text-txt-2 grid w-11.5 place-items-center transition-colors duration-100',
         button.danger
           ? 'hover:bg-danger hover:text-white'
           : 'hover:bg-hover hover:text-txt',
@@ -53,7 +65,10 @@ const buttons = computed(() => [
       :title="button.title"
       @click="button.run()"
     >
-      <AppIcon :name="button.icon" :size="22" />
+      <AppIcon
+        :name="button.icon"
+        :size="22"
+      />
     </button>
   </div>
 </template>

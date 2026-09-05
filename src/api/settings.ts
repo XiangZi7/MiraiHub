@@ -1,5 +1,9 @@
 import { emit, listen } from '@tauri-apps/api/event'
-import { DEFAULT_SETTINGS, type SettingKey, type SettingsValues } from '@/types/settings'
+import {
+  DEFAULT_SETTINGS,
+  type SettingKey,
+  type SettingsValues,
+} from '@/types/settings'
 import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
 
@@ -21,16 +25,14 @@ export function loadSettings(): SettingsValues {
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw)
-      return defaults
+    if (!raw) return defaults
 
     const parsed = JSON.parse(raw) as Record<string, unknown>
     for (const key of Object.keys(defaults) as SettingKey[]) {
       if (typeof parsed[key] === typeof defaults[key])
         Object.assign(defaults, { [key]: parsed[key] })
     }
-  }
-  catch (error) {
+  } catch (error) {
     console.warn('读取设置失败，已恢复默认值：', error)
   }
 
@@ -57,8 +59,7 @@ export function saveSettings(settings: SettingsValues): void {
  */
 export function subscribeSettings(listener: () => void): () => void {
   const handleStorage = (event: StorageEvent): void => {
-    if (event.key === STORAGE_KEY || event.key === null)
-      listener()
+    if (event.key === STORAGE_KEY || event.key === null) listener()
   }
 
   window.addEventListener('storage', handleStorage)
@@ -69,11 +70,9 @@ export function subscribeSettings(listener: () => void): () => void {
   let cancelled = false
   if (IS_TAURI) {
     void listen(TAURI_EVENT, listener)
-      .then((unlisten) => {
-        if (cancelled)
-          unlisten()
-        else
-          unlistenTauri = unlisten
+      .then(unlisten => {
+        if (cancelled) unlisten()
+        else unlistenTauri = unlisten
       })
       .catch((error: unknown) => {
         console.warn('订阅设置变更事件失败：', error)

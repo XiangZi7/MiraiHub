@@ -29,19 +29,19 @@ function getContext(): CanvasRenderingContext2D | null {
  */
 export function parseColor(input: string): [number, number, number] {
   const cached = cache.get(input)
-  if (cached)
-    return cached
+  if (cached) return cached
 
   // var(--color-blue) → 先取出变量实际值，canvas 的 fillStyle 不认 var()
   let value = input.trim()
   if (value.startsWith('var(')) {
     const name = value.slice(4, -1).trim().split(',')[0].trim()
-    value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    value = getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim()
   }
 
   const c = getContext()
-  if (!c)
-    return [255, 255, 255]
+  if (!c) return [255, 255, 255]
 
   c.clearRect(0, 0, 1, 1)
   // 先落一个已知值：若 value 非法，fillStyle 会保持原值而不是抛错

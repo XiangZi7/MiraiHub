@@ -26,37 +26,49 @@ const menu = useTemplateRef<HTMLElement>('menu')
 const menuStyle = computed<CSSProperties>(() => ({
   left: `${props.anchor.left}px`,
   top: props.anchor.top === undefined ? undefined : `${props.anchor.top}px`,
-  bottom: props.anchor.bottom === undefined ? undefined : `${props.anchor.bottom}px`,
+  bottom:
+    props.anchor.bottom === undefined ? undefined : `${props.anchor.bottom}px`,
   width: `${props.anchor.width}px`,
   maxHeight: `${props.anchor.maxHeight}px`,
 }))
 
-watch(() => props.activeIndex, async (index) => {
-  await nextTick()
-  menu.value
-    ?.querySelector<HTMLElement>(`[data-suggestion-index="${index}"]`)
-    ?.scrollIntoView({ block: 'nearest' })
-})
+watch(
+  () => props.activeIndex,
+  async index => {
+    await nextTick()
+    menu.value
+      ?.querySelector<HTMLElement>(`[data-suggestion-index="${index}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }
+)
 
 function iconOf(item: ShellSuggestion): string {
-  if (item.kind === 'command')
-    return 'lucide:square-terminal'
+  if (item.kind === 'command') return 'lucide:square-terminal'
   return item.kind === 'directory' ? 'mirai:folder' : 'mirai:file'
 }
 
 function toneOf(item: ShellSuggestion): string {
-  if (item.kind === 'command')
-    return 'text-violet'
+  if (item.kind === 'command') return 'text-violet'
   return item.kind === 'directory' ? 'text-blue' : 'text-txt-3'
 }
 
 function kindLabel(item: ShellSuggestion): string {
-  return item.kind === 'command' ? 'CMD' : item.kind === 'directory' ? 'DIR' : 'FILE'
+  return item.kind === 'command'
+    ? 'CMD'
+    : item.kind === 'directory'
+      ? 'DIR'
+      : 'FILE'
 }
 </script>
 
 <template>
-  <div ref="menu" class="terminal-suggestions" role="listbox" aria-label="终端输入建议" :style="menuStyle">
+  <div
+    ref="menu"
+    class="terminal-suggestions"
+    role="listbox"
+    aria-label="终端输入建议"
+    :style="menuStyle"
+  >
     <div class="terminal-suggestions-list">
       <button
         v-for="(item, index) in items"
@@ -65,15 +77,24 @@ function kindLabel(item: ShellSuggestion): string {
         role="option"
         :data-suggestion-index="index"
         :aria-selected="activeIndex === index"
-        :class="['terminal-suggestion', activeIndex === index && 'terminal-suggestion-active']"
+        :class="[
+          'terminal-suggestion',
+          activeIndex === index && 'terminal-suggestion-active',
+        ]"
         @pointerenter="emit('hover', index)"
         @mousedown.prevent="emit('select', item)"
       >
-        <AppIcon :name="iconOf(item)" :size="14" :class="['shrink-0', toneOf(item)]" />
-        <span class="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-txt">
+        <AppIcon
+          :name="iconOf(item)"
+          :size="14"
+          :class="['shrink-0', toneOf(item)]"
+        />
+        <span
+          class="text-txt min-w-0 flex-1 truncate text-left font-mono text-[11px]"
+        >
           {{ item.label }}
         </span>
-        <span class="max-w-44 truncate text-right text-[10px] text-txt-4">
+        <span class="text-txt-4 max-w-44 truncate text-right text-[10px]">
           {{ item.description }}
         </span>
         <span class="suggestion-kind">{{ kindLabel(item) }}</span>
@@ -83,7 +104,12 @@ function kindLabel(item: ShellSuggestion): string {
     <footer class="terminal-suggestions-footer">
       <span>↑↓ 选择</span>
       <span>Tab 接受</span>
-      <AppIcon v-if="loading" name="lucide:loader-circle" :size="11" class="ml-auto animate-spin text-violet" />
+      <AppIcon
+        v-if="loading"
+        name="lucide:loader-circle"
+        :size="11"
+        class="text-violet ml-auto animate-spin"
+      />
     </footer>
   </div>
 </template>
@@ -109,7 +135,12 @@ function kindLabel(item: ShellSuggestion): string {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-color: color-mix(in oklch, var(--color-line-strong) 82%, transparent) transparent;
+  scrollbar-color: color-mix(
+      in oklch,
+      var(--color-line-strong) 82%,
+      transparent
+    )
+    transparent;
   scrollbar-width: thin;
 }
 

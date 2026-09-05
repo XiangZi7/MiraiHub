@@ -15,12 +15,11 @@ const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const
  * 否则用户拿界面上的数字和终端里的一对就对不上。
  */
 export function formatBytes(bytes: number, digits = 1): string {
-  if (!Number.isFinite(bytes) || bytes <= 0)
-    return '0 B'
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
 
   const index = Math.min(
     Math.floor(Math.log(bytes) / Math.log(1024)),
-    UNITS.length - 1,
+    UNITS.length - 1
   )
 
   const value = bytes / 1024 ** index
@@ -42,13 +41,19 @@ export function formatKb(kb: number, digits = 1): string {
  * 指标卡要把数值排成大字号、单位排成小字号，
  * 拿到一整个字符串再切分容易出错，索性从源头分开返回。
  */
-export function splitBytes(bytes: number, digits = 1): { value: string, unit: string } {
+export function splitBytes(
+  bytes: number,
+  digits = 1
+): { value: string; unit: string } {
   const [value, unit] = formatBytes(bytes, digits).split(' ')
   return { value, unit }
 }
 
 /** KB 版本的 splitBytes */
-export function splitKb(kb: number, digits = 1): { value: string, unit: string } {
+export function splitKb(
+  kb: number,
+  digits = 1
+): { value: string; unit: string } {
   return splitBytes(kb * 1024, digits)
 }
 
@@ -64,26 +69,22 @@ export function formatRate(bytesPerSec: number): string {
  * 分母就是 0，界面上不该出现 NaN。
  */
 export function percent(used: number, total: number, digits = 0): string {
-  if (total <= 0)
-    return '0%'
+  if (total <= 0) return '0%'
 
   return `${((used / total) * 100).toFixed(digits)}%`
 }
 
 /** 开机时长，如 `12 天 3 小时` */
 export function formatUptime(seconds: number): string {
-  if (seconds <= 0)
-    return '—'
+  if (seconds <= 0) return '—'
 
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor((seconds % 86400) / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
 
-  if (days > 0)
-    return `${days} 天 ${hours} 小时`
+  if (days > 0) return `${days} 天 ${hours} 小时`
 
-  if (hours > 0)
-    return `${hours} 小时 ${minutes} 分钟`
+  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`
 
   return `${minutes} 分钟`
 }

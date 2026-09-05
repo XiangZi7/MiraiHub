@@ -7,27 +7,29 @@ import { IS_TAURI } from '@/utils/window'
 /** 把 Tauri 原生文件拖放事件限定到指定 DOM 区域，并返回可渲染的悬停状态。 */
 export function useNativeFileDrop(
   target: Readonly<Ref<HTMLElement | null>>,
-  onDrop: (paths: string[]) => void,
+  onDrop: (paths: string[]) => void
 ) {
   const isDragging = shallowRef(false)
   let unlisten: UnlistenFn | undefined
   let scaleFactor = 1
 
-  function isInside(position: { x: number, y: number }): boolean {
+  function isInside(position: { x: number; y: number }): boolean {
     const element = target.value
-    if (!element)
-      return false
+    if (!element) return false
     const rect = element.getBoundingClientRect()
-    return position.x >= rect.left && position.x <= rect.right
-      && position.y >= rect.top && position.y <= rect.bottom
+    return (
+      position.x >= rect.left &&
+      position.x <= rect.right &&
+      position.y >= rect.top &&
+      position.y <= rect.bottom
+    )
   }
 
   onMounted(async () => {
-    if (!IS_TAURI)
-      return
+    if (!IS_TAURI) return
 
     scaleFactor = await getCurrentWindow().scaleFactor()
-    unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+    unlisten = await getCurrentWebview().onDragDropEvent(event => {
       const payload = event.payload
       if (payload.type === 'leave') {
         isDragging.value = false

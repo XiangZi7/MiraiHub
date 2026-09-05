@@ -14,23 +14,31 @@ let started = false
  * 托盘、材质、自启动这类只能由主窗口触发一次的动作放在 WorkspaceLayout 里。
  */
 export function startSettingsRuntime(): void {
-  if (started)
-    return
+  if (started) return
   started = true
   const settings = useSettingsStore(pinia).values
 
   watch(
-    () => [settings.compactLayout, settings.reduceMotion, settings.windowMaterial] as const,
+    () =>
+      [
+        settings.compactLayout,
+        settings.reduceMotion,
+        settings.windowMaterial,
+      ] as const,
     ([compact, reduceMotion, material]) => {
       const root = document.documentElement
       root.classList.toggle('compact', compact)
       root.classList.toggle('reduce-motion', reduceMotion)
       root.classList.toggle('material-solid', material === 'solid')
     },
-    { immediate: true },
+    { immediate: true }
   )
 
-  watch(() => settings.uiScale, scale => void applyZoom(scale), { immediate: true })
+  watch(
+    () => settings.uiScale,
+    scale => void applyZoom(scale),
+    { immediate: true }
+  )
 }
 
 export async function applyZoom(value: string): Promise<void> {
@@ -39,15 +47,16 @@ export async function applyZoom(value: string): Promise<void> {
   if (IS_TAURI) {
     try {
       await getCurrentWebview().setZoom(factor)
-    }
-    catch (error) {
+    } catch (error) {
       console.warn('应用界面缩放失败：', error)
     }
     return
   }
 
   // 浏览器预览没有原生缩放，退回 CSS zoom
-  const style = document.documentElement.style as CSSStyleDeclaration & { zoom: string }
+  const style = document.documentElement.style as CSSStyleDeclaration & {
+    zoom: string
+  }
   style.zoom = factor === 1 ? '' : String(factor)
   style.setProperty('--preview-zoom', String(factor))
 }
