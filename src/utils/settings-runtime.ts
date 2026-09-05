@@ -11,7 +11,7 @@ let started = false
  * 把纯前端就能生效的设置应用到当前文档：紧凑布局、减少动画、纯色材质、界面缩放。
  *
  * 每个 WebView 窗口都各自调用一次，这样设置窗口、连接窗口也跟着变；
- * 托盘、材质、自启动这类只能由主窗口触发一次的动作放在 MainWindow 里。
+ * 托盘、材质、自启动这类只能由主窗口触发一次的动作放在 WorkspaceLayout 里。
  */
 export function startSettingsRuntime(): void {
   if (started)

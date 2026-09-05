@@ -24,7 +24,7 @@ const props = defineProps<{
   width: number
 }>()
 
-// 当前视图由 MainWindow 持有：命令面板的 Open Files 需要越过本组件直接切到 Files
+// 当前视图由 workspace-layout Store 持有，命令面板与服务器页共用。
 const view = defineModel<MachineViewId>('view', { required: true })
 
 defineEmits<{

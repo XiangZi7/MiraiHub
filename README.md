@@ -17,6 +17,8 @@ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
 pnpm build
 ```
 
+前端采用 Vue Router + Pinia，目录职责、页面路由、会话缓存和 Store 使用约定见 [前端架构](docs/FRONTEND_ARCHITECTURE.md)。
+
 ## 自动打包与版本发布
 
 将代码提交到 GitHub 后，推送 `v` 开头的版本标签即可触发 `.github/workflows/release.yml`，自动测试、打包 Windows x64，并发布 GitHub Release。
