@@ -1,0 +1,60 @@
+/* Kuriyama Mirai · 栗山未来。可在「主题皮肤 → 自定义 CSS」载入并编辑。 */
+:root {
+  color-scheme: light;
+  --color-canvas: #f9edf1;
+  --color-window: #fff7fae8;
+  --color-panel: #fff8fbb3;
+  --color-pane: #fffafbc4;
+  --color-card: #fff8fbb8;
+  --color-raised: #fce0ecc9;
+  --color-hover: #f8d4e5bd;
+  --color-terminal: #fff9fbd9;
+  --color-line: #b6507826;
+  --color-line-soft: #b6507817;
+  --color-line-strong: #c8518652;
+  --color-txt: #593a49;
+  --color-txt-2: #795565;
+  --color-txt-3: #956777;
+  --color-txt-4: #a37e8c;
+  --color-violet: #c93478;
+  --color-accent: var(--color-violet);
+  --color-accent-deep: #a82560;
+  --color-success: #378260;
+  --color-indigo: #7c56aa;
+  --color-blue: #427bac;
+  --color-cyan: #28828c;
+  --color-pink: #c93478;
+  --color-amber: #a27823;
+  --color-orange: #b56a36;
+  --color-danger: #c13e54;
+  --color-term-fg: #664654;
+  --color-term-green: #378260;
+  --color-term-blue: #427bac;
+  --color-term-cyan: #28828c;
+  --color-term-dim: #a37e8c;
+  --skin-wallpaper-wash: #fff8fa40;
+  --shadow-win: inset 0 1px 0 #ffffffb3;
+  --shadow-pop:
+    0 20px 56px -12px #9d527b40, 0 0 0 1px #d68da32e, inset 0 1px 0 #ffffffb3;
+  --shadow-pane: 0 2px 12px #b3668610, inset 0 1px 0 #ffffffb3;
+  --shadow-card: inset 0 1px 0 #ffffffb3;
+}
+
+.win-bar,
+.settings-titlebar {
+  background-color: #fff7fa5c;
+}
+
+:root:not(.is-tauri) {
+  background: var(--color-canvas);
+}
+
+.nav-item-active,
+.seg-active {
+  color: var(--color-accent-deep);
+  background: #fbe1eca6;
+}
+
+.pane {
+  backdrop-filter: blur(8px);
+}

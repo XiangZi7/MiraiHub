@@ -13,6 +13,8 @@ import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import TerminalPanel from './TerminalPanel.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
+import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
 
 const AiAgentPanel = defineAsyncComponent(
   () => import('@/components/agent/AiAgentPanel.vue')
@@ -36,6 +38,13 @@ const split = shallowRef(false)
 // AI 始终绑定主终端的会话；切换连接后不复用旧会话审批。
 const state = reactive({ aiOpen: false, aiSplit: false, sessionId: '' })
 const { aiOpen, aiSplit } = toRefs(state)
+const agentContainer = useTemplateRef<HTMLElement>('agentContainer')
+const {
+  width: agentWidth,
+  min: agentMin,
+  max: agentMax,
+  style: agentStyle,
+} = useAgentPaneWidth(agentContainer, 'ssh')
 const aiVisited = shallowRef(false)
 watch(
   aiOpen,
@@ -130,11 +139,13 @@ defineExpose({
         @click="splitAgent"
       />
     </div>
-    <div class="workspace-content">
+    <div
+      ref="agentContainer"
+      class="workspace-content"
+    >
       <div
         v-show="!aiOpen || aiSplit"
         class="terminal-stack"
-        :class="split && 'flex-col'"
       >
         <TerminalPanel
           ref="primary"
@@ -146,16 +157,26 @@ defineExpose({
           @split="splitAgent"
           @status="statusChanged"
         />
-        <TerminalPanel
-          ref="secondary"
-          v-if="split"
-          :config="config"
-          :title="`${title || config.host} · 分屏`"
-          :terminal-type="terminalType"
-          split
-          @split="split = false"
-        />
+        <Transition name="terminal-split">
+          <TerminalPanel
+            ref="secondary"
+            v-if="split"
+            :config="config"
+            :title="`${title || config.host} · 分屏`"
+            :terminal-type="terminalType"
+            split
+            @split="split = false"
+          />
+        </Transition>
       </div>
+      <AppResizeHandle
+        v-if="aiOpen && aiSplit"
+        v-model="agentWidth"
+        pane-side="right"
+        :min="agentMin"
+        :max="agentMax"
+        label="调整 SSH AI Agent 宽度"
+      />
       <AiAgentPanel
         v-if="aiVisited"
         v-show="aiOpen"
@@ -163,7 +184,7 @@ defineExpose({
         :title="title || config.host"
         :active="active && aiOpen"
         :split="aiSplit"
-        :class="aiSplit && 'split-agent'"
+        :style="aiSplit ? agentStyle : undefined"
         @split="splitAgent"
         @close="showTerminal"
       />
@@ -213,23 +234,27 @@ defineExpose({
   flex: 1;
   min-height: 0;
   min-width: 0;
-  gap: 8px;
   container-type: inline-size;
 }
 .terminal-stack {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
   gap: 8px;
 }
-.split-agent {
-  flex: 0 0 44%;
-  min-width: 280px;
+.terminal-split-enter-active,
+.terminal-split-leave-active {
+  transition:
+    flex-grow var(--motion-panel),
+    opacity var(--motion-panel),
+    transform var(--motion-panel);
 }
-@container (max-width:650px) {
-  .split-agent {
-    min-width: 250px;
-  }
+.terminal-split-enter-from,
+.terminal-split-leave-to {
+  flex-grow: 0 !important;
+  opacity: 0;
+  transform: translateY(8px);
 }
 </style>

@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MiraiHub 皮肤与动画验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, reactive, nextTick, watch } from 'vue'
+      import { createPinia } from 'pinia'
+      import { addCollection } from '@iconify/vue'
+      import icons from 'virtual:mirai-icons'
+      import WindowFrame from '/src/components/ui/WindowFrame.vue'
+      import AppCollapse from '/src/components/ui/AppCollapse.vue'
+      import ThemeCustomization from '/src/components/settings/ThemeCustomization.vue'
+      import ThemeSkinPanel from '/src/components/settings/ThemeSkinPanel.vue'
+      import { resolveSkinSettings, readSkinLibrary } from '/src/utils/skin.ts'
+      import { DEFAULT_SETTINGS } from '/src/types/settings.ts'
+      import {
+        applySkin,
+        skinRuntime,
+        miraiBackground,
+      } from '/src/utils/skin-runtime.ts'
+      import { currentTerminalTheme } from '/src/constants/terminal.ts'
+      import '/src/assets/styles/main.css'
+
+      addCollection(icons)
+      const draft = reactive({
+        ...DEFAULT_SETTINGS,
+        skinTheme: 'kuriyama-mirai',
+      })
+      const state = reactive({
+        open: true,
+        results: [],
+        complete: false,
+        gallery: false,
+      })
+      watch(
+        () => ({ ...draft }),
+        value => applySkin(value, { animate: false }),
+        { immediate: true }
+      )
+      const app = createApp({
+        render: () =>
+          h(WindowFrame, { class: 'h-screen w-screen' }, () => [
+            h(
+              'div',
+              {
+                style: 'overflow:auto;padding:24px;max-width:650px;width:100%',
+              },
+              [
+                h('h1', { style: 'font-size:18px' }, '皮肤与动画浏览器验证'),
+                h(
+                  'p',
+                  { id: 'test-status', role: 'status' },
+                  state.complete ? '验证完成' : '验证中'
+                ),
+                h(
+                  'ul',
+                  { id: 'test-results' },
+                  state.results.map(result => h('li', result))
+                ),
+                h(AppCollapse, { id: 'collapse-probe', open: state.open }, () =>
+                  h('div', { style: 'height:120px' }, '折叠区域')
+                ),
+                h(state.gallery ? ThemeSkinPanel : ThemeCustomization, {
+                  values: draft,
+                  onUpdate: patch => Object.assign(draft, patch),
+                }),
+              ]
+            ),
+          ]),
+      })
+      app.use(createPinia()).mount('#app')
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+      async function check(name, fn) {
+        try {
+          await fn()
+          state.results.push('PASS · ' + name)
+        } catch (error) {
+          state.results.push('FAIL · ' + name + ': ' + error.message)
+        }
+      }
+      function assert(value, message) {
+        if (!value) throw new Error(message)
+      }
+      await nextTick()
+      await check('PNG 上传、压缩、预览和重复选择', async () => {
+        const response = await fetch(miraiBackground)
+        const file = new File([await response.blob()], 'background-test.png', {
+          type: 'image/png',
+        })
+        const input = document.querySelector('input[type=file]')
+        for (let round = 0; round < 2; round++) {
+          draft.skinBackgroundImage = ''
+          const transfer = new DataTransfer()
+          transfer.items.add(file)
+          input.files = transfer.files
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+          for (
+            let attempt = 0;
+            attempt < 100 && !draft.skinBackgroundImage;
+            attempt++
+          )
+            await wait(30)
+          assert(
+            draft.skinBackgroundImage.startsWith('data:image/webp;base64,'),
+            '上传没有生成 WebP'
+          )
+          assert(
+            draft.skinBackgroundImage.length <= 2_000_000,
+            '图片超出本地保存上限'
+          )
+          assert(
+            draft.skinBackgroundName === file.name &&
+              draft.skinBackground === 'custom',
+            '上传状态未更新'
+          )
+          assert(input.value === '', '相同文件无法再次选择')
+        }
+      })
+      await check('透明度、模糊、完整显示和对齐实际应用', async () => {
+        Object.assign(draft, {
+          skinBackgroundOpacity: '45',
+          skinBackgroundBlur: '6',
+          skinBackgroundFit: 'contain',
+          skinBackgroundPosition: 'right',
+        })
+        await nextTick()
+        const activeWallpaper = () =>
+          document.querySelector(
+            '.skin-wallpaper:not(.skin-background-leave-active)'
+          )
+        for (let attempt = 0; attempt < 50; attempt++) {
+          if (
+            activeWallpaper() &&
+            getComputedStyle(activeWallpaper()).opacity === '0.45'
+          )
+            break
+          await wait(40)
+        }
+        const css = getComputedStyle(activeWallpaper())
+        assert(
+          css.opacity === '0.45',
+          `透明度错误：${css.opacity}，运行时 ${skinRuntime.opacity}`
+        )
+        assert(css.filter === 'blur(6px)', '模糊参数错误')
+        assert(
+          css.backgroundSize === 'contain' &&
+            css.backgroundPositionX === '100%',
+          '布局参数错误'
+        )
+      })
+      await check('下拉框支持鼠标点击选择', async () => {
+        const initialScroll = document.documentElement.scrollTop
+        const trigger = [...document.querySelectorAll('[role=combobox]')].find(
+          el =>
+            document
+              .getElementById(el.getAttribute('aria-labelledby'))
+              ?.textContent.trim() === '背景显示方式'
+        )
+        trigger.click()
+        await nextTick()
+        const option = [...document.querySelectorAll('[role=option]')].find(
+          el => el.textContent.includes('铺满窗口')
+        )
+        option.click()
+        await nextTick()
+        assert(draft.skinBackgroundFit === 'cover', '点击选项未更新参数')
+        assert(
+          document.documentElement.scrollTop === initialScroll,
+          '下拉框滚动了整个窗口'
+        )
+      })
+      await check('浅色终端及自定义 CSS 更新后不会沿用旧颜色缓存', async () => {
+        const light = currentTerminalTheme().foreground
+        Object.assign(draft, {
+          skinStyle: 'custom',
+          skinCustomCss: ':root { --color-term-fg: #123456; }',
+        })
+        await nextTick()
+        assert(
+          currentTerminalTheme().foreground === 'rgba(18, 52, 86, 1)',
+          '终端未更新自定义颜色'
+        )
+        Object.assign(draft, { skinStyle: 'builtin', skinTheme: 'default' })
+        await nextTick()
+        assert(
+          currentTerminalTheme().foreground !== light,
+          '终端没有恢复深色配色'
+        )
+      })
+      await check(
+        '折叠经过中间高度，隐藏后不能聚焦；减少动画立即收起',
+        async () => {
+          const panel = document.querySelector('#collapse-probe')
+          state.open = false
+          await nextTick()
+          await wait(70)
+          const height = panel.getBoundingClientRect().height
+          if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+            assert(height > 0 && height < 120, '没有折叠过渡')
+          await wait(300)
+          assert(
+            panel.getBoundingClientRect().height === 0 && panel.inert,
+            '收起后仍占用空间或可聚焦'
+          )
+          document.documentElement.classList.add('reduce-motion')
+          state.open = true
+          await nextTick()
+          await wait(30)
+          assert(
+            panel.getBoundingClientRect().height === 120,
+            '减少动画没有立即生效'
+          )
+          document.documentElement.classList.remove('reduce-motion')
+        }
+      )
+      Object.assign(draft, { ...DEFAULT_SETTINGS, skinTheme: 'kuriyama-mirai' })
+      await check('滑块组件通过 input 事件更新数值和进度填充', async () => {
+        await nextTick()
+        const slider = document.querySelector('.app-slider input')
+        slider.value = '67'
+        slider.dispatchEvent(new Event('input', { bubbles: true }))
+        await nextTick()
+        assert(draft.skinBackgroundOpacity === '67', '滑块没有更新设置')
+        assert(
+          slider.style.getPropertyValue('--slider-progress') === '67%',
+          '进度填充未更新'
+        )
+        assert(
+          slider
+            .closest('.app-slider')
+            .querySelector('output')
+            .textContent.includes('67'),
+          '读数没有同步'
+        )
+      })
+      await check(
+        '新增、重命名与切换卡片保留独立设置，内置主题保持原样',
+        async () => {
+          state.gallery = true
+          await nextTick()
+          document.querySelector('.add-card').click()
+          await nextTick()
+          const firstId = draft.skinTheme
+          assert(firstId.startsWith('custom-'), '没有新建独立主题')
+          const name = document.querySelector('input[aria-label="皮肤名称"]')
+          name.value = '自定义樱花'
+          name.dispatchEvent(new Event('input', { bubbles: true }))
+          await nextTick()
+          const slider = document.querySelector('.app-slider input')
+          slider.value = '82'
+          slider.dispatchEvent(new Event('input', { bubbles: true }))
+          await nextTick()
+          document.querySelector('.default-card').click()
+          await nextTick()
+          assert(
+            draft.skinTheme === 'default' && !skinRuntime.background,
+            '默认主题没有恢复'
+          )
+          document.querySelector('.mirai-card').click()
+          await nextTick()
+          assert(
+            skinRuntime.background === miraiBackground &&
+              skinRuntime.opacity === 0.3,
+            '内置皮肤被覆盖'
+          )
+          document.querySelector('.add-card').click()
+          await nextTick()
+          assert(
+            readSkinLibrary(draft.skinLibrary).length === 2,
+            '第二套皮肤覆盖了第一套'
+          )
+          document.querySelector('.custom-card').click()
+          await nextTick()
+          assert(
+            draft.skinTheme === firstId &&
+              resolveSkinSettings(draft).skinBackgroundOpacity === '82',
+            '参数没有独立保存'
+          )
+          assert(
+            readSkinLibrary(draft.skinLibrary)[0].name === '自定义樱花',
+            '名称没有保存'
+          )
+          const gallery = document.querySelector('.theme-cards')
+          assert(
+            gallery.scrollWidth > gallery.clientWidth && gallery.scrollLeft > 0,
+            '卡片没有横向滚动'
+          )
+          assert(
+            document.querySelector('.default-card').scrollTop === 0,
+            '内置卡片内容被滚动裁切'
+          )
+        }
+      )
+      await check(
+        '在内置主题上传图片会新增卡片，删除只移除自定义卡片',
+        async () => {
+          document.querySelector('.mirai-card').click()
+          await nextTick()
+          const file = new File(
+            [await (await fetch(miraiBackground)).blob()],
+            'new-custom.png',
+            { type: 'image/png' }
+          )
+          const transfer = new DataTransfer()
+          transfer.items.add(file)
+          const input = document.querySelector('input[type=file]')
+          input.files = transfer.files
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+          for (
+            let attempt = 0;
+            attempt < 100 && !draft.skinTheme.startsWith('custom-');
+            attempt++
+          )
+            await wait(30)
+          assert(
+            readSkinLibrary(draft.skinLibrary).length === 3,
+            '上传没有新增主题'
+          )
+          assert(
+            resolveSkinSettings(draft).skinBackgroundImage.startsWith(
+              'data:image/webp'
+            ),
+            '新主题丢失背景'
+          )
+          const deleteButton = [...document.querySelectorAll('button')].find(
+            button => button.textContent.includes('删除皮肤')
+          )
+          deleteButton.click()
+          await nextTick()
+          assert(
+            readSkinLibrary(draft.skinLibrary).length === 2,
+            '删除误伤其他主题'
+          )
+          assert(
+            draft.skinTheme === 'kuriyama-mirai' &&
+              skinRuntime.background === miraiBackground,
+            '删除后没有恢复基础主题'
+          )
+        }
+      )
+      state.complete = true
+    </script>
+  </body>
+</html>

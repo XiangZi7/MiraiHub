@@ -94,14 +94,14 @@ export function openConnectionWindow(
   )
 }
 
-/** 请求 Rust 创建原生设置子窗口；浏览器开发态降级为固定尺寸 popup。 */
+/** 请求 Rust 创建原生设置子窗口；浏览器开发态降级为可缩放 popup。 */
 export function openSettingsWindow(): void {
   if (!IS_TAURI) {
     window
       .open(
         '/?window=settings',
         'miraihub-settings',
-        'popup=yes,width=700,height=540,resizable=no'
+        'popup=yes,width=1000,height=760,resizable=yes'
       )
       ?.focus()
     return

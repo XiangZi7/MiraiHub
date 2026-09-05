@@ -4,7 +4,7 @@ export type SettingValue = string | boolean
  * 全部设置项及默认值。
  *
  * 每一项都必须有消费方：没有地方读取的开关只会让用户误以为它有效。
- * 语言切换、浅色主题与空闲锁定尚无实现基础，暂不提供。
+ * 语言切换与空闲锁定尚无实现基础，暂不提供。
  */
 export const DEFAULT_SETTINGS = {
   launchAtStartup: false,
@@ -18,6 +18,18 @@ export const DEFAULT_SETTINGS = {
   compactLayout: false,
   uiScale: '100',
   reduceMotion: false,
+  skinTheme: 'default',
+  skinBase: 'default',
+  skinLibrary: '[]',
+  skinStyle: 'builtin',
+  skinCustomCss: '',
+  skinBackground: 'theme',
+  skinBackgroundImage: '',
+  skinBackgroundName: '',
+  skinBackgroundOpacity: '30',
+  skinBackgroundBlur: '0',
+  skinBackgroundFit: 'cover',
+  skinBackgroundPosition: 'center',
 
   shortcutPalette: 'Ctrl+K',
   shortcutTerminal: 'Ctrl+T',
@@ -72,6 +84,7 @@ export type SettingsPageId =
   | 'ai'
   | 'general'
   | 'appearance'
+  | 'skin'
   | 'shortcuts'
   | 'connections'
   | 'terminal'

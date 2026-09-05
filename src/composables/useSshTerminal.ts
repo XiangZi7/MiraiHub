@@ -9,13 +9,14 @@
  */
 
 import { onBeforeUnmount, reactive, shallowRef, toRefs, watch } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
+import { useDebounceFn, useEventListener } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import * as ssh from '@/api/ssh'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
-import { TERMINAL_THEME } from '@/constants/terminal'
+import { currentTerminalTheme } from '@/constants/terminal'
+import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
 import {
   settingNumber,
   settingsSnapshot,
@@ -47,6 +48,9 @@ export function useSshTerminal() {
   // 被 Vue 深度代理会显著拖慢渲染
   const term = shallowRef<Terminal>()
   const fitAddon = shallowRef<FitAddon>()
+  useEventListener(window, SKIN_CHANGE_EVENT, () => {
+    if (term.value) term.value.options.theme = currentTerminalTheme()
+  })
 
   // 响应式状态
   const state = reactive({
@@ -83,7 +87,8 @@ export function useSshTerminal() {
       cursorBlink: settings.terminalCursorBlink,
       // 回滚缓冲给足：排查日志时经常要往回翻很多屏
       scrollback: settingNumber('terminalScrollback', 5000),
-      theme: TERMINAL_THEME,
+      theme: currentTerminalTheme(),
+      allowTransparency: true,
       // 让 xterm 自己吞掉 Ctrl+C 之类的组合键交给远端，而不是被浏览器截走
       macOptionIsMeta: true,
     })

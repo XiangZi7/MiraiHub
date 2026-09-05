@@ -1,4 +1,5 @@
 import type { ITheme } from '@xterm/xterm'
+import { rgba } from '@/utils/color'
 
 /**
  * xterm.js 配色。
@@ -35,4 +36,42 @@ export const TERMINAL_THEME: ITheme = {
   brightMagenta: '#e6bcff',
   brightCyan: '#a6ecf2',
   brightWhite: '#f0f0f2',
+}
+
+const MIRAI_TERMINAL_THEME: ITheme = {
+  ...TERMINAL_THEME,
+  foreground: '#664654',
+  cursor: '#c93478',
+  cursorAccent: '#fff9fb',
+  selectionBackground: '#c9347833',
+  black: '#593a49',
+  red: '#bb3652',
+  green: '#327758',
+  yellow: '#94691f',
+  blue: '#3c70a5',
+  magenta: '#9f4e94',
+  cyan: '#247b84',
+  white: '#927885',
+  brightBlack: '#a37e8c',
+  brightRed: '#c43d5d',
+  brightGreen: '#398060',
+  brightYellow: '#9c7523',
+  brightBlue: '#427bac',
+  brightMagenta: '#b654a0',
+  brightCyan: '#28828c',
+  brightWhite: '#593a49',
+}
+
+/** Resolve CSS tokens to sRGB for xterm's canvas, including custom CSS colors. */
+export function currentTerminalTheme(): ITheme {
+  const mirai = document.documentElement.dataset.skinStyle === 'mirai'
+  return {
+    ...(mirai ? MIRAI_TERMINAL_THEME : TERMINAL_THEME),
+    foreground: rgba('var(--color-term-fg)', 1),
+    cursor: rgba('var(--color-accent)', 1),
+    green: rgba('var(--color-term-green)', 1),
+    blue: rgba('var(--color-term-blue)', 1),
+    cyan: rgba('var(--color-term-cyan)', 1),
+    selectionBackground: rgba('var(--color-accent)', 0.24),
+  }
 }

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AI 分屏宽度验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, reactive, nextTick } from 'vue'
+      import Fixture from './AgentResizeFixture.vue'
+      import '/src/assets/styles/main.css'
+      const state = reactive({ size: 900, results: [], complete: false })
+      const keys = ['ssh', 'database'].map(
+        kind => `miraihub:agent-pane-width:${kind}`
+      )
+      const original = keys.map(key => localStorage.getItem(key))
+      const app = createApp({
+        render: () =>
+          h('main', { style: 'padding:24px;overflow:auto;height:100vh' }, [
+            h('h1', { style: 'font-size:18px' }, 'AI 分屏宽度验证'),
+            h(
+              'p',
+              { id: 'test-status' },
+              state.complete ? '验证完成，可拖动分隔条继续检查' : '验证中'
+            ),
+            h(
+              'ul',
+              { id: 'test-results' },
+              state.results.map(result => h('li', result))
+            ),
+            h(Fixture, { kind: 'ssh', size: state.size }),
+            h(Fixture, { kind: 'database', size: state.size }),
+          ]),
+      })
+      app.mount('#app')
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+      function assert(value, message) {
+        if (!value) throw new Error(message)
+      }
+      async function check(name, fn) {
+        try {
+          await fn()
+          state.results.push('PASS · ' + name)
+        } catch (e) {
+          state.results.push('FAIL · ' + name + ': ' + e.message)
+        }
+      }
+      await nextTick()
+      await wait(80)
+      for (const kind of ['ssh', 'database'])
+        await check(`${kind} 分隔条方向、最小最大宽度及持久化`, async () => {
+          const separator = document.querySelector(
+            `[data-kind="${kind}"] [role=separator]`
+          )
+          separator.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Home', bubbles: true })
+          )
+          await nextTick()
+          assert(
+            separator.getAttribute('aria-valuenow') ===
+              separator.getAttribute('aria-valuemin'),
+            '最小宽度错误'
+          )
+          const before = Number(separator.getAttribute('aria-valuenow'))
+          separator.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })
+          )
+          await nextTick()
+          assert(
+            Number(separator.getAttribute('aria-valuenow')) === before + 8,
+            '向左应增大右侧面板'
+          )
+          assert(
+            Number(
+              localStorage.getItem(`miraihub:agent-pane-width:${kind}`)
+            ) ===
+              before + 8,
+            '未记忆宽度'
+          )
+          separator.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'End', bubbles: true })
+          )
+          await nextTick()
+          assert(
+            separator.getAttribute('aria-valuenow') ===
+              separator.getAttribute('aria-valuemax'),
+            '最大宽度错误'
+          )
+          const section = separator.parentElement
+          const total = [...section.children].reduce(
+            (sum, child) => sum + child.getBoundingClientRect().width,
+            0
+          )
+          assert(
+            Math.abs(total - section.getBoundingClientRect().width) <= 1,
+            '面板溢出容器'
+          )
+        })
+      await check('窗口缩小时保留编辑区，放大后恢复偏好宽度', async () => {
+        const wide = [...document.querySelectorAll('[role=separator]')].map(
+          el => el.getAttribute('aria-valuenow')
+        )
+        state.size = 480
+        await nextTick()
+        await wait(80)
+        for (const section of document.querySelectorAll('.fixture')) {
+          assert(section.scrollWidth <= section.clientWidth, '窄窗口内容溢出')
+          assert(
+            section.querySelector('.editor').getBoundingClientRect().width >=
+              180,
+            '编辑区被挤没'
+          )
+        }
+        state.size = 900
+        await nextTick()
+        await wait(80)
+        const restored = [...document.querySelectorAll('[role=separator]')].map(
+          el => el.getAttribute('aria-valuenow')
+        )
+        assert(
+          JSON.stringify(restored) === JSON.stringify(wide),
+          '放大后没有恢复宽度'
+        )
+      })
+      for (let i = 0; i < keys.length; i++) {
+        if (original[i] === null) localStorage.removeItem(keys[i])
+        else localStorage.setItem(keys[i], original[i])
+      }
+      state.complete = true
+    </script>
+  </body>
+</html>

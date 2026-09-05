@@ -3,6 +3,7 @@ import { computed, reactive } from 'vue'
 import ConnectionTagBadge from '@/components/connection/ConnectionTagBadge.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppCollapse from '@/components/ui/AppCollapse.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
@@ -331,62 +332,61 @@ function runContextAction(action: string): void {
           }}</span>
         </button>
 
-        <div
-          v-show="isExpanded(group.id)"
-          class="space-y-0.5"
-        >
-          <button
-            v-for="node in group.items"
-            :key="node.id"
-            type="button"
-            :class="
-              cn(
-                'connection-node w-full pl-7',
-                'connection-node-draggable',
-                groupDrag.draggedConnectionId.value === node.id &&
-                  'connection-node-dragging',
-                activeId === node.id && 'nav-item-active'
-              )
-            "
-            :title="endpointOf(node)"
-            @click="openConnection(node)"
-            @contextmenu.prevent.stop="openConnectionMenu($event, node)"
-            @pointerdown="groupDrag.start($event, node, group)"
-          >
-            <StatusDot
-              :tone="toneOf(node)"
-              :size="6"
-              :glow="toneOf(node) !== 'txt-3'"
-              class="mt-1.5 self-start"
-            />
-            <span class="min-w-0 flex-1 text-left">
-              <span class="text-txt block truncate text-[11.5px]">{{
-                node.name
-              }}</span>
-              <span
-                class="text-txt-4 mt-0.5 block truncate font-mono text-[9.5px]"
-              >
-                {{ node.kind === 'local' ? endpointOf(node) : node.host }}
-              </span>
-            </span>
-            <span
-              v-if="node.tags.length"
-              class="connection-tags-preview"
+        <AppCollapse :open="isExpanded(group.id)">
+          <div class="space-y-0.5">
+            <button
+              v-for="node in group.items"
+              :key="node.id"
+              type="button"
+              :class="
+                cn(
+                  'connection-node w-full pl-7',
+                  'connection-node-draggable',
+                  groupDrag.draggedConnectionId.value === node.id &&
+                    'connection-node-dragging',
+                  activeId === node.id && 'nav-item-active'
+                )
+              "
+              :title="endpointOf(node)"
+              @click="openConnection(node)"
+              @contextmenu.prevent.stop="openConnectionMenu($event, node)"
+              @pointerdown="groupDrag.start($event, node, group)"
             >
-              <ConnectionTagBadge
-                :label="node.tags[0]"
-                :color="connectionTagColorCss(node.tagColor)"
-                compact
+              <StatusDot
+                :tone="toneOf(node)"
+                :size="6"
+                :glow="toneOf(node) !== 'txt-3'"
+                class="mt-1.5 self-start"
               />
-              <span
-                v-if="node.tags.length > 1"
-                class="connection-tags-more"
-              >
-                +{{ node.tags.length - 1 }}
+              <span class="min-w-0 flex-1 text-left">
+                <span class="text-txt block truncate text-[11.5px]">{{
+                  node.name
+                }}</span>
+                <span
+                  class="text-txt-4 mt-0.5 block truncate font-mono text-[9.5px]"
+                >
+                  {{ node.kind === 'local' ? endpointOf(node) : node.host }}
+                </span>
               </span>
-            </span>
-          </button>
-        </div>
+              <span
+                v-if="node.tags.length"
+                class="connection-tags-preview"
+              >
+                <ConnectionTagBadge
+                  :label="node.tags[0]"
+                  :color="connectionTagColorCss(node.tagColor)"
+                  compact
+                />
+                <span
+                  v-if="node.tags.length > 1"
+                  class="connection-tags-more"
+                >
+                  +{{ node.tags.length - 1 }}
+                </span>
+              </span>
+            </button>
+          </div>
+        </AppCollapse>
       </div>
 
       <button

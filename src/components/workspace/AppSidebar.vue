@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppCollapse from '@/components/ui/AppCollapse.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { useConnections } from '@/composables/useConnections'
 import { toast } from '@/composables/useToast'
@@ -254,6 +255,7 @@ async function confirmRemoval(): Promise<void> {
 <template>
   <aside
     class="app-sidebar"
+    :class="{ 'is-collapsed': collapsed }"
     :style="{ width: collapsed ? '3.25rem' : `${width}px` }"
     aria-label="主侧边栏"
   >
@@ -280,6 +282,7 @@ async function confirmRemoval(): Promise<void> {
       <IconButton
         :icon="collapsed ? 'lucide:chevrons-right' : 'lucide:chevrons-left'"
         :title="collapsed ? '展开侧栏' : '折叠侧栏'"
+        :aria-expanded="!collapsed"
         @click="collapsed = !collapsed"
       />
     </div>
@@ -291,12 +294,9 @@ async function confirmRemoval(): Promise<void> {
       ]"
     >
       <!-- 工作区 -->
-      <p
-        v-if="!collapsed"
-        class="group-label mb-1.5"
-      >
-        Workspace
-      </p>
+      <AppCollapse :open="!collapsed">
+        <p class="group-label mb-1.5">Workspace</p>
+      </AppCollapse>
       <nav class="space-y-0.5">
         <RouterLink
           v-for="item in NAV_ITEMS"
@@ -317,31 +317,36 @@ async function confirmRemoval(): Promise<void> {
             :size="15"
             class="text-txt-3"
           />
-          <span v-if="!collapsed">{{ item.label }}</span>
+          <span
+            class="sidebar-label"
+            :aria-hidden="collapsed"
+            >{{ item.label }}</span
+          >
         </RouterLink>
       </nav>
 
-      <SidebarProjects
-        v-if="!collapsed"
-        :label="groupsLabel"
-        :groups="projectGroups"
-        :loaded="loaded"
-        :active-id="activeId"
-        :connected-ids="connectedIds"
-        :open-ids="openIds"
-        @open="emit('open', $event)"
-        @add-connection="addConnection"
-        @create-group="handleCreateGroup"
-        @rename-group="handleRenameGroup"
-        @remove-group="requestRemoveGroup"
-        @move="moveConnection"
-        @edit="editConnection"
-        @duplicate="duplicateConnection"
-        @new-database-query="emit('newDatabaseQuery', $event)"
-        @export-database="openDatabaseTransfer($event, 'export')"
-        @import-database="openDatabaseTransfer($event, 'import')"
-        @remove="requestRemoveConnection"
-      />
+      <AppCollapse :open="!collapsed">
+        <SidebarProjects
+          :label="groupsLabel"
+          :groups="projectGroups"
+          :loaded="loaded"
+          :active-id="activeId"
+          :connected-ids="connectedIds"
+          :open-ids="openIds"
+          @open="emit('open', $event)"
+          @add-connection="addConnection"
+          @create-group="handleCreateGroup"
+          @rename-group="handleRenameGroup"
+          @remove-group="requestRemoveGroup"
+          @move="moveConnection"
+          @edit="editConnection"
+          @duplicate="duplicateConnection"
+          @new-database-query="emit('newDatabaseQuery', $event)"
+          @export-database="openDatabaseTransfer($event, 'export')"
+          @import-database="openDatabaseTransfer($event, 'import')"
+          @remove="requestRemoveConnection"
+        />
+      </AppCollapse>
     </div>
 
     <!-- 底部操作 -->
@@ -361,7 +366,11 @@ async function confirmRemoval(): Promise<void> {
           name="lucide:plus"
           :size="14"
         />
-        <span v-if="!collapsed">Add Connection</span>
+        <span
+          class="sidebar-label"
+          :aria-hidden="collapsed"
+          >Add Connection</span
+        >
       </button>
       <IconButton
         icon="lucide:settings"
@@ -412,5 +421,27 @@ async function confirmRemoval(): Promise<void> {
   flex-direction: column;
   border-right: 1px solid var(--color-line-soft);
   background: var(--color-panel);
+  overflow: hidden;
+  transition: width var(--motion-panel);
+}
+.sidebar-label {
+  max-width: 200px;
+  opacity: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    max-width var(--motion-panel),
+    opacity 180ms ease;
+}
+.is-collapsed .sidebar-label {
+  max-width: 0;
+  opacity: 0;
+}
+.is-collapsed .nav-item,
+.is-collapsed .btn {
+  gap: 0;
+}
+.app-sidebar :deep(.app-collapse) {
+  min-width: 0;
 }
 </style>

@@ -28,9 +28,6 @@ function getContext(): CanvasRenderingContext2D | null {
  * 支持 `var(--x)`、`oklch(...)`、`#hex`、颜色关键字等一切浏览器认识的写法。
  */
 export function parseColor(input: string): [number, number, number] {
-  const cached = cache.get(input)
-  if (cached) return cached
-
   // var(--color-blue) → 先取出变量实际值，canvas 的 fillStyle 不认 var()
   let value = input.trim()
   if (value.startsWith('var(')) {
@@ -39,6 +36,10 @@ export function parseColor(input: string): [number, number, number] {
       .getPropertyValue(name)
       .trim()
   }
+
+  // Cache the resolved color, not the variable name: skins change its value.
+  const cached = cache.get(value)
+  if (cached) return cached
 
   const c = getContext()
   if (!c) return [255, 255, 255]
@@ -52,7 +53,7 @@ export function parseColor(input: string): [number, number, number] {
   const [r, g, b] = c.getImageData(0, 0, 1, 1).data
   const rgb: [number, number, number] = [r, g, b]
 
-  cache.set(input, rgb)
+  cache.set(value, rgb)
   return rgb
 }
 

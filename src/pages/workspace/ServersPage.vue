@@ -149,24 +149,52 @@ registerWorkspaceController('servers', { action })
       key="empty-terminal"
     />
 
-    <AppResizeHandle
-      v-if="machineOpen && Boolean(activeSshTab)"
-      v-model="machineWidth"
-      pane-side="right"
-      :min="MACHINE_MIN_WIDTH"
-      :max="machineMaxWidth"
-      label="调整机器面板宽度"
-    />
+    <Transition name="machine-panel">
+      <div
+        v-if="machineOpen && Boolean(activeSshTab)"
+        class="machine-panel-shell"
+        :style="{ width: `${machineWidth + 10}px` }"
+      >
+        <AppResizeHandle
+          v-model="machineWidth"
+          pane-side="right"
+          :min="MACHINE_MIN_WIDTH"
+          :max="machineMaxWidth"
+          label="调整机器面板宽度"
+        />
 
-    <MachinePanel
-      ref="machinePanel"
-      @action="runWorkspaceAction"
-      v-if="machineOpen && Boolean(activeSshTab)"
-      v-model:view="machineView"
-      :connection="activeSshTab?.connection"
-      :session-id="activeSshTab?.sessionId ?? ''"
-      :width="machineWidth"
-      @close="machineOpen = false"
-    />
+        <MachinePanel
+          ref="machinePanel"
+          @action="runWorkspaceAction"
+          v-model:view="machineView"
+          :connection="activeSshTab?.connection"
+          :session-id="activeSshTab?.sessionId ?? ''"
+          :width="machineWidth"
+          @close="machineOpen = false"
+        />
+      </div>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.machine-panel-shell {
+  display: flex;
+  min-height: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.machine-panel-enter-active,
+.machine-panel-leave-active {
+  transition:
+    width var(--motion-panel),
+    opacity var(--motion-panel),
+    transform var(--motion-panel);
+}
+.machine-panel-enter-from,
+.machine-panel-leave-to {
+  width: 0 !important;
+  opacity: 0;
+  transform: translateX(12px);
+}
+</style>

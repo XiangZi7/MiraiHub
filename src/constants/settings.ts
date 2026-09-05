@@ -131,6 +131,14 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     ],
   },
   {
+    id: 'skin',
+    label: '主题皮肤',
+    title: '主题皮肤 / Theme Skin',
+    description: '选择你喜欢的主题皮肤',
+    icon: 'lucide:flower-2',
+    groups: [],
+  },
+  {
     id: 'shortcuts',
     label: '快捷键',
     title: '快捷键',

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings-resize",
+  "description": "Resize the frameless settings window from its edges and corners",
+  "windows": ["settings"],
+  "permissions": ["core:window:allow-start-resize-dragging"]
+}

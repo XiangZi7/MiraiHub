@@ -14,6 +14,7 @@ import { getTauriVersion, getVersion } from '@tauri-apps/api/app'
 import AppButton from '@/components/ui/AppButton.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
+import WindowResizeHandles from '@/components/ui/WindowResizeHandles.vue'
 import NavigationControls from '@/components/workspace/NavigationControls.vue'
 import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
@@ -24,10 +25,12 @@ import type {
   SettingsPageId,
   SettingsValues,
 } from '@/types/settings'
-import { closeWindow, IS_TAURI } from '@/utils/window'
+import { closeWindow, IS_TAURI, toggleMaximizeWindow } from '@/utils/window'
 import { applyZoom } from '@/utils/settings-runtime'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 import SettingsSidebar from '@/components/settings/SettingsSidebar.vue'
+import ThemeSkinPanel from '@/components/settings/ThemeSkinPanel.vue'
+import { applySkin } from '@/utils/skin-runtime'
 import packageInfo from '../../../package.json'
 
 const AiSettingsPanel = defineAsyncComponent(
@@ -54,8 +57,26 @@ watch(
   () => draft.uiScale,
   value => void applyZoom(value)
 )
+watch(
+  () => [
+    draft.skinTheme,
+    draft.skinLibrary,
+    draft.skinBase,
+    draft.skinStyle,
+    draft.skinBackground,
+    draft.skinBackgroundImage,
+    draft.skinBackgroundOpacity,
+    draft.skinBackgroundBlur,
+    draft.skinBackgroundFit,
+    draft.skinBackgroundPosition,
+  ],
+  (_value, previous) =>
+    applySkin(draft, { includeCustom: false, animate: Boolean(previous) }),
+  { immediate: true }
+)
 onBeforeUnmount(() => {
   void applyZoom(settings.uiScale)
+  applySkin(settings, { animate: false })
 })
 
 const runtimeValues = reactive<Record<string, string>>({
@@ -120,6 +141,8 @@ function pageOf(key: SettingKey): SettingsPageId | undefined {
 }
 
 function closeDialog(): void {
+  applySkin(settings, { animate: false })
+  void applyZoom(settings.uiScale)
   if (IS_TAURI) {
     closeWindow()
     return
@@ -167,7 +190,18 @@ function submit(): void {
     }
   }
 
-  save(normalized)
+  try {
+    save(normalized)
+  } catch (error) {
+    toast.error({
+      title: '设置保存失败',
+      description:
+        error instanceof DOMException && error.name === 'QuotaExceededError'
+          ? '本地存储空间不足，请移除背景图或换用更小的图片后重试'
+          : String(error),
+    })
+    return
+  }
   toast.success('设置已保存')
   closeDialog()
 }
@@ -210,6 +244,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     <header
       class="settings-titlebar"
       data-tauri-drag-region
+      @dblclick.self="toggleMaximizeWindow"
     >
       <h1
         id="settings-title"
@@ -240,6 +275,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           ref="aiPanel"
         />
         <ConnectionBackupPanel v-else-if="activePageId === 'backup'" />
+        <ThemeSkinPanel
+          v-else-if="activePageId === 'skin'"
+          :values="draft"
+          @update="Object.assign(draft, $event)"
+        />
         <SettingsPanel
           v-else
           :key="activePage.id"
@@ -283,6 +323,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </footer>
       </div>
     </div>
+    <WindowResizeHandles />
   </WindowFrame>
 </template>
 

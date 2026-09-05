@@ -6,6 +6,7 @@ import {
 } from '@/types/settings'
 import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
+import { normalizeSkinSettings } from '@/utils/skin'
 
 const STORAGE_KEY = 'miraihub.settings.v1'
 const CHANGE_EVENT = 'miraihub:settings-changed'
@@ -37,7 +38,7 @@ export function loadSettings(): SettingsValues {
   }
 
   defaults.uiScale = String(normalizeUiScale(defaults.uiScale))
-  return defaults
+  return normalizeSkinSettings(defaults)
 }
 
 export function saveSettings(settings: SettingsValues): void {

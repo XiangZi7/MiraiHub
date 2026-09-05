@@ -244,12 +244,11 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
         WebviewUrl::App("index.html?window=settings".into()),
     )
     .title("设置")
-    .inner_size(620.0, 480.0)
-    .min_inner_size(620.0, 480.0)
-    .max_inner_size(620.0, 480.0)
-    .resizable(false)
+    .inner_size(1000.0, 760.0)
+    .min_inner_size(740.0, 560.0)
+    .resizable(true)
     .minimizable(false)
-    .maximizable(false)
+    .maximizable(true)
     .decorations(false)
     // 与主窗口一致：透明 WebView 透出 Windows Blur / Acrylic。
     .transparent(true)

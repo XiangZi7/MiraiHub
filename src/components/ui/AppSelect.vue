@@ -158,7 +158,7 @@ function selectOption(option: SelectOption): void {
 
   model.value = option.value
   closeMenu()
-  trigger.value?.focus()
+  trigger.value?.focus({ preventScroll: true })
 }
 
 function moveActive(step: 1 | -1): void {
@@ -228,9 +228,16 @@ useEventListener(window, 'scroll', updatePosition, {
 watch(activeIndex, async index => {
   if (!open.value || index < 0) return
   await nextTick()
-  document
-    .getElementById(`${listboxId}-option-${index}`)
-    ?.scrollIntoView({ block: 'nearest' })
+  const option = document.getElementById(`${listboxId}-option-${index}`)
+  const list = menu.value
+  if (!option || !list) return
+  // Scroll only the menu. scrollIntoView also moves the settings window and
+  // its clipped ancestors when a dropdown is opened near the bottom edge.
+  const top = option.offsetTop
+  const bottom = top + option.offsetHeight
+  if (top < list.scrollTop) list.scrollTop = top
+  else if (bottom > list.scrollTop + list.clientHeight)
+    list.scrollTop = bottom - list.clientHeight
 })
 
 watch(search, () => {
@@ -354,7 +361,8 @@ watch(
                 option.disabled && 'pointer-events-none opacity-40',
               ]"
               @pointerenter="!option.disabled && (activeIndex = index)"
-              @pointerdown.prevent="selectOption(option)"
+              @pointerdown.prevent
+              @click="selectOption(option)"
             >
               <span
                 class="app-select-indicator"

@@ -1,11 +1,12 @@
 import { onBeforeUnmount, reactive, shallowRef, toRefs, watch } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
+import { useDebounceFn, useEventListener } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import * as localTerminal from '@/api/local-terminal'
 import { errorMessage } from '@/api/ssh'
-import { TERMINAL_THEME } from '@/constants/terminal'
+import { currentTerminalTheme } from '@/constants/terminal'
+import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
 import {
   settingNumber,
   settingsSnapshot,
@@ -33,6 +34,9 @@ export function useLocalTerminal() {
   const { settings } = useSettings()
   const term = shallowRef<Terminal>()
   const fitAddon = shallowRef<FitAddon>()
+  useEventListener(window, SKIN_CHANGE_EVENT, () => {
+    if (term.value) term.value.options.theme = currentTerminalTheme()
+  })
   const state = reactive({
     sessionId: '',
     status: 'disconnected' as SshSessionStatus,
@@ -52,7 +56,8 @@ export function useLocalTerminal() {
       cursorStyle: settings.terminalCursor as 'block' | 'bar' | 'underline',
       cursorBlink: settings.terminalCursorBlink,
       scrollback: settingNumber('terminalScrollback', 5000),
-      theme: TERMINAL_THEME,
+      theme: currentTerminalTheme(),
+      allowTransparency: true,
       macOptionIsMeta: true,
     })
     const fit = new FitAddon()

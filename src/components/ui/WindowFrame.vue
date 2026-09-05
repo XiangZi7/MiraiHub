@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { cn } from '@/utils/cn'
+import SkinBackground from './SkinBackground.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +22,7 @@ const classes = computed(() =>
 
 <template>
   <section :class="classes">
+    <SkinBackground />
     <slot />
   </section>
 </template>

@@ -7,6 +7,7 @@ import {
   toRef,
   toRefs,
   watch,
+  useTemplateRef,
 } from 'vue'
 import { useDebounceFn, useEventListener, useStorage } from '@vueuse/core'
 import * as database from '@/api/database'
@@ -57,6 +58,8 @@ import DatabaseTableDesigner from './database/DatabaseTableDesigner.vue'
 import DatabaseTableView from './database/DatabaseTableView.vue'
 import SqlEditor from './database/SqlEditor.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
+import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
+import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
 
 interface QueryTab extends TabItem {
   kind: 'query'
@@ -102,6 +105,13 @@ const emit = defineEmits<{
 // AI 布局与查询编辑器独立，审批始终绑定后端会话及活动库。
 const agentState = reactive({ agentOpen: false, agentSplit: false })
 const { agentOpen, agentSplit } = toRefs(agentState)
+const agentContainer = useTemplateRef<HTMLElement>('agentContainer')
+const {
+  width: agentWidth,
+  min: agentMin,
+  max: agentMax,
+  style: agentStyle,
+} = useAgentPaneWidth(agentContainer, 'database')
 const agentTarget = computed(() => ({
   kind: 'database' as const,
   sessionId: connected.value ? sessionId.value : '',
@@ -1135,7 +1145,10 @@ watch(
           @click="toggleAgentSplit"
         />
       </div>
-      <div class="flex min-h-0 min-w-0 flex-1 gap-2">
+      <div
+        ref="agentContainer"
+        class="flex min-h-0 min-w-0 flex-1"
+      >
         <div
           v-show="!agentOpen || agentSplit"
           class="flex min-h-0 min-w-0 flex-1 flex-col"
@@ -1326,13 +1339,21 @@ watch(
             />
           </template>
         </div>
+        <AppResizeHandle
+          v-if="agentOpen && agentSplit"
+          v-model="agentWidth"
+          pane-side="right"
+          :min="agentMin"
+          :max="agentMax"
+          label="调整数据库 AI Agent 宽度"
+        />
         <AiAgentPanel
           v-show="agentOpen"
           :target="agentTarget"
           :title="databaseName"
           :active="active !== false && agentOpen"
           :split="agentSplit"
-          :class="agentSplit && 'database-agent-split'"
+          :style="agentSplit ? agentStyle : undefined"
           @split="toggleAgentSplit"
           @close="agentOpen = false"
         />
@@ -1380,10 +1401,6 @@ watch(
 </template>
 
 <style scoped>
-.database-agent-split {
-  flex: 0 0 43%;
-  min-width: 280px;
-}
 .query-workspace {
   display: grid;
   min-height: 0;

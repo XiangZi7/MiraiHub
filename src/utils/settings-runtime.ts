@@ -4,6 +4,7 @@ import { pinia } from '@/stores'
 import { useSettingsStore } from '@/stores/settings'
 import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
+import { applySkin } from '@/utils/skin-runtime'
 
 let started = false
 
@@ -31,6 +32,24 @@ export function startSettingsRuntime(): void {
       root.classList.toggle('reduce-motion', reduceMotion)
       root.classList.toggle('material-solid', material === 'solid')
     },
+    { immediate: true }
+  )
+
+  watch(
+    () => [
+      settings.skinTheme,
+      settings.skinLibrary,
+      settings.skinBase,
+      settings.skinStyle,
+      settings.skinCustomCss,
+      settings.skinBackground,
+      settings.skinBackgroundImage,
+      settings.skinBackgroundOpacity,
+      settings.skinBackgroundBlur,
+      settings.skinBackgroundFit,
+      settings.skinBackgroundPosition,
+    ],
+    () => applySkin(settings),
     { immediate: true }
   )
 

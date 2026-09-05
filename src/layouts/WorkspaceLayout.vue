@@ -333,6 +333,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               "
               :size="14"
               :title="machineOpen ? '收起机器面板' : '展开机器面板'"
+              :aria-expanded="machineOpen"
               @click="machineOpen = !machineOpen"
             />
             <IconButton

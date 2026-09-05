@@ -173,6 +173,7 @@
      直角：无装饰窗口在系统层面就是直角，CSS 再切圆角只会露出原生底色 */
   .win {
     @apply bg-window relative flex flex-col overflow-hidden;
+    isolation: isolate;
     box-shadow: var(--shadow-win);
     backdrop-filter: blur(28px) saturate(180%);
     -webkit-backdrop-filter: blur(28px) saturate(180%);
@@ -402,4 +403,45 @@
 }
 .win.w-screen {
   width: calc(100dvw / var(--preview-zoom, 1));
+}
+
+/* Theme fades and panel movement share one timing curve. */
+:root {
+  --motion-panel: 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
+}
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 360ms;
+  animation-timing-function: ease;
+}
+.skin-changing *,
+.skin-changing *::before,
+.skin-changing *::after {
+  transition:
+    background-color 360ms ease,
+    color 360ms ease,
+    border-color 360ms ease,
+    box-shadow 360ms ease;
+}
+body.app-resizing-columns .app-sidebar,
+body.app-resizing-columns .app-collapse {
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html.reduce-motion::view-transition-old(root),
+html.reduce-motion::view-transition-new(root) {
+  animation: none !important;
 }
