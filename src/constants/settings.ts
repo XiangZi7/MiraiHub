@@ -355,6 +355,9 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     ],
   },
   {
+    id: 'backup', label: '备份与恢复', title: '连接备份与恢复', description: '导出、预览和恢复连接配置', icon: 'lucide:archive-restore', groups: [],
+  },
+  {
     id: 'data',
     label: '数据',
     title: '数据设置',

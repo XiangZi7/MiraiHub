@@ -10,6 +10,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 import * as ssh from '@/api/ssh'
 import { useFileTransfers } from '@/composables/useFileTransfers'
 import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
+import { useRemoteEditor } from '@/composables/useRemoteEditor'
 import { useRemoteFiles } from '@/composables/useRemoteFiles'
 import { settings, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
@@ -54,6 +55,7 @@ const { save: saveSettings } = useSettings()
 const filterText = shallowRef('')
 function toggleHidden(): void { saveSettings({ ...settings, showHiddenFiles: !settings.showHiddenFiles }) }
 const transfers = useFileTransfers()
+const editor = useRemoteEditor()
 const dropZone = useTemplateRef<HTMLElement>('dropZone')
 const browserDragging = shallowRef(false)
 const state = reactive({
@@ -101,7 +103,8 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     return []
   const directory = file.kind === 'directory'
   return [
-    { id: 'open', label: directory ? '打开目录' : '打开文件', icon: directory ? 'lucide:folder-open' : 'lucide:external-link' },
+    { id: 'open', label: directory || file.kind === 'symlink' ? '打开目录' : '编辑文本文件', icon: directory ? 'lucide:folder-open' : 'lucide:file-pen-line' },
+    { id: 'external', label: '下载并用外部程序打开', icon: 'lucide:external-link', disabled: directory },
     { id: 'download', label: '下载到…', icon: 'lucide:download', disabled: directory },
     { id: 'rename', label: '重命名', icon: 'lucide:pencil', separatorBefore: true },
     { id: 'delete', label: '删除', icon: 'lucide:trash-2', danger: true, separatorBefore: true },
@@ -273,6 +276,10 @@ async function openRemote(file: SshRemoteFile): Promise<void> {
     return
   }
 
+  editor.open({ sessionId: props.sessionId, path: file.path, connectionName: props.connectionName })
+}
+
+async function openExternal(file: SshRemoteFile): Promise<void> {
   const localPath = await transfers.download({
     sessionId: props.sessionId,
     connectionName: props.connectionName,
@@ -296,6 +303,8 @@ function runContextAction(action: string): void {
     return
   if (action === 'open')
     void openRemote(file)
+  else if (action === 'external')
+    void openExternal(file).catch(error => toast.error({ title: '打开文件失败', description: ssh.errorMessage(error) }))
   else if (action === 'download')
     void download(file)
   else if (action === 'rename')

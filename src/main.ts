@@ -24,7 +24,7 @@ addCollection(MIRAI_ICONS)
 if (IS_TAURI)
   document.documentElement.classList.add('is-tauri')
 
-// 启动画面只有一张黑底 logo，不参与缩放 / 材质等设置；其余窗口在挂载前先把设置套上，避免首帧闪一下
+// 启动画面使用独立 Logo 与 Blur，不参与工作区缩放 / 材质设置；其余窗口在挂载前先应用设置
 const windowSurface = new URLSearchParams(window.location.search).get('window')
 if (windowSurface !== 'splash')
   startSettingsRuntime()

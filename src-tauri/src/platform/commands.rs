@@ -64,7 +64,7 @@ pub async fn app_ready(app: AppHandle) -> AppResult<()> {
     Ok(())
 }
 
-/// 切换所有业务窗口的原生材质（启动画面始终保持纯色）。
+/// 切换所有业务窗口的原生材质（启动画面单独使用 Blur）。
 #[tauri::command]
 pub async fn set_window_material(app: AppHandle, material: String) -> AppResult<()> {
     for (label, webview) in app.webview_windows() {

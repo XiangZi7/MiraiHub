@@ -3,64 +3,120 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
     <title>MiraiHub</title>
+    <link rel="preload" as="image" href="logo-app-icon.png" />
     <style>
       html,
       body {
         margin: 0;
         width: 100%;
         height: 100%;
-        background: #000;
-        color: #fff;
+        background: transparent;
         overflow: hidden;
       }
       body {
+        color: #f7f4ff;
+        font-family: system-ui, sans-serif;
+        user-select: none;
+      }
+      .splash {
+        position: relative;
+        box-sizing: border-box;
+        width: 100%;
+        height: 100%;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        font-family: system-ui, sans-serif;
-        user-select: none;
+        overflow: hidden;
+        isolation: isolate;
+        background: linear-gradient(
+          145deg,
+          rgb(36 32 51 / 0.62),
+          rgb(17 20 29 / 0.56)
+        );
+        border: 1px solid rgb(232 223 255 / 0.16);
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+        backdrop-filter: blur(28px) saturate(140%);
+        -webkit-backdrop-filter: blur(28px) saturate(140%);
       }
-      svg {
-        width: 64px;
-        height: 64px;
-        animation: breathe 1.8s ease-in-out infinite;
+      .splash::before {
+        content: "";
+        position: absolute;
+        inset: -50px;
+        z-index: -1;
+        pointer-events: none;
+        background:
+          radial-gradient(
+            ellipse at 24% 12%,
+            rgb(151 109 247 / 0.27),
+            transparent 55%
+          ),
+          radial-gradient(
+            ellipse at 89% 90%,
+            rgb(205 120 203 / 0.12),
+            transparent 53%
+          );
+        filter: blur(24px);
+      }
+      .brand {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-top: -18px;
+      }
+      .logo {
+        display: block;
+        width: 80px;
+        height: 80px;
+        object-fit: contain;
+        filter: drop-shadow(0 9px 18px rgb(7 4 18 / 0.25));
+        animation: breathe 2.6s ease-in-out infinite;
       }
       h1 {
-        margin: 14px 0 18px;
-        font-size: 20px;
-        letter-spacing: 0.04em;
+        margin: 9px 0 19px;
+        font-size: 21px;
+        font-weight: 600;
+        line-height: 1.25;
+        letter-spacing: 0.025em;
       }
       .track {
-        width: 96px;
+        width: 104px;
         height: 3px;
-        background: #282828;
+        background: rgb(224 213 255 / 0.14);
         border-radius: 3px;
         overflow: hidden;
       }
       .track::after {
-        content: '';
+        content: "";
         display: block;
         width: 40%;
         height: 100%;
-        background: #b09aff;
-        animation: progress 1.2s ease-in-out infinite alternate;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #a98aff, #d4b8ff);
+        animation: progress 1.25s ease-in-out infinite alternate;
       }
-      p {
+      .status {
+        margin: 10px 0 0;
         font-size: 11px;
-        color: #aaa;
+        line-height: 1.5;
+        color: #d0c9df;
       }
-      footer {
+      .copyright {
         position: absolute;
-        bottom: 18px;
+        right: 12px;
+        bottom: 17px;
+        left: 12px;
+        margin: 0;
+        text-align: center;
         font-size: 10px;
-        color: #777;
+        line-height: 1.5;
+        color: #a9a2b9;
       }
       @keyframes breathe {
         50% {
-          opacity: 0.65;
-          transform: scale(0.95);
+          transform: translateY(-3px);
         }
       }
       @keyframes progress {
@@ -69,7 +125,7 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        svg,
+        .logo,
         .track::after {
           animation: none;
         }
@@ -77,14 +133,21 @@
     </style>
   </head>
   <body>
-    <svg aria-hidden="true" viewBox="0 0 64 64" fill="white">
-      <path
-        d="M9 11h11.5v42H9z M20.5 11 32 30.6 43.5 11v12.8L32 43.2 20.5 23.8z M43.5 11H55v18.9l-11.5 5.4z M43.5 40.3 55 34.9V53H43.5z"
-      />
-    </svg>
-    <h1>MiraiHub</h1>
-    <div class="track" aria-hidden="true"></div>
-    <p role="status">正在启动工作空间…</p>
-    <footer>MiraiHub · All rights reserved.</footer>
+    <main class="splash">
+      <div class="brand">
+        <img
+          class="logo"
+          src="logo-app-icon.png"
+          width="80"
+          height="80"
+          alt="MiraiHub Logo"
+          draggable="false"
+        />
+        <h1>MiraiHub</h1>
+        <div class="track" aria-hidden="true"></div>
+        <p class="status" role="status">正在启动工作空间…</p>
+      </div>
+      <p class="copyright">MiraiHub · All rights reserved.</p>
+    </main>
   </body>
 </html>

@@ -13,6 +13,7 @@ import { closeWindow, IS_TAURI } from '@/utils/window'
 import { applyZoom } from '@/utils/settings-runtime'
 import SettingsPanel from './SettingsPanel.vue'
 import AiSettingsPanel from './AiSettingsPanel.vue'
+import ConnectionBackupPanel from './ConnectionBackupPanel.vue'
 import SettingsSidebar from './SettingsSidebar.vue'
 import packageInfo from '../../../package.json'
 
@@ -98,6 +99,7 @@ function resetToDefaults(): void {
 }
 
 function submit(): void {
+  if (activePageId.value === 'backup') return
   if (activePageId.value === 'ai') { void aiPanel.value?.save(); return }
   const firstInvalid = (Object.keys(errors.value) as SettingKey[])[0]
   if (firstInvalid) {
@@ -164,6 +166,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
       <div class="flex min-w-0 flex-1 flex-col">
         <AiSettingsPanel v-if="activePageId === 'ai'" ref="aiPanel" />
+        <ConnectionBackupPanel v-else-if="activePageId === 'backup'" />
         <SettingsPanel v-else
           :key="activePage.id"
           :page="activePage"
@@ -173,7 +176,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           @update="updateSetting"
         />
 
-        <footer v-if="activePageId !== 'ai'" class="settings-footer">
+        <footer v-if="activePageId !== 'ai' && activePageId !== 'backup'" class="settings-footer">
           <AppButton size="sm" @click="resetToDefaults">
             重置为默认
           </AppButton>

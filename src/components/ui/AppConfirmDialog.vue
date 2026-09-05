@@ -1,42 +1,88 @@
 <script setup lang="ts">
-import { useEventListener } from '@vueuse/core'
-import AppButton from './AppButton.vue'
-import AppIcon from './AppIcon.vue'
+import { nextTick, onBeforeUnmount, useId, useTemplateRef, watch } from "vue";
+import { useEventListener } from "@vueuse/core";
+import AppButton from "./AppButton.vue";
+import AppIcon from "./AppIcon.vue";
 
-const props = withDefaults(defineProps<{
-  open: boolean
-  title: string
-  description: string
-  confirmLabel?: string
-  danger?: boolean
-}>(), {
-  confirmLabel: '确认',
-  danger: false,
-})
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    title: string;
+    description: string;
+    confirmLabel?: string;
+    danger?: boolean;
+  }>(),
+  {
+    confirmLabel: "确认",
+    danger: false,
+  },
+);
 
 const emit = defineEmits<{
-  close: []
-  confirm: []
-}>()
+  close: [];
+  confirm: [];
+}>();
 
-useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-  if (props.open && event.key === 'Escape') {
-    event.preventDefault()
-    emit('close')
+const titleId = useId();
+const dialog = useTemplateRef<HTMLElement>("dialog");
+let previous: HTMLElement | null = null;
+watch(
+  () => props.open,
+  async (open) => {
+    if (open) {
+      previous = document.activeElement as HTMLElement;
+      await nextTick();
+      dialog.value?.querySelector<HTMLButtonElement>("button")?.focus();
+    } else previous?.focus();
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (props.open) previous?.focus();
+});
+useEventListener(window, "keydown", (event: KeyboardEvent) => {
+  if (props.open && event.key === "Tab" && dialog.value) {
+    const buttons = [
+      ...dialog.value.querySelectorAll<HTMLButtonElement>(
+        "button:not([disabled])",
+      ),
+    ];
+    if (event.shiftKey && document.activeElement === buttons[0]) {
+      event.preventDefault();
+      buttons.at(-1)?.focus();
+    } else if (!event.shiftKey && document.activeElement === buttons.at(-1)) {
+      event.preventDefault();
+      buttons[0]?.focus();
+    }
   }
-})
+  if (props.open && event.key === "Escape") {
+    event.preventDefault();
+    emit("close");
+  }
+});
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="confirm-dialog">
       <div v-if="open" class="app-confirm-backdrop" @click.self="emit('close')">
-        <section class="app-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
-          <div :class="['app-confirm-icon', danger && 'app-confirm-icon-danger']">
-            <AppIcon :name="danger ? 'lucide:triangle-alert' : 'lucide:circle-help'" :size="18" />
+        <section
+          ref="dialog"
+          class="app-confirm-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          :aria-labelledby="titleId"
+        >
+          <div
+            :class="['app-confirm-icon', danger && 'app-confirm-icon-danger']"
+          >
+            <AppIcon
+              :name="danger ? 'lucide:triangle-alert' : 'lucide:circle-help'"
+              :size="18"
+            />
           </div>
           <div class="min-w-0 flex-1">
-            <h2 id="confirm-title" class="text-[13px] font-semibold text-txt">
+            <h2 :id="titleId" class="text-[13px] font-semibold text-txt">
               {{ title }}
             </h2>
             <p class="mt-1 text-[11px] leading-4 text-txt-3">
@@ -47,7 +93,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             <AppButton size="sm" autofocus @click="emit('close')">
               取消
             </AppButton>
-            <AppButton size="sm" :class="danger ? 'app-confirm-danger-button' : ''" @click="emit('confirm')">
+            <AppButton
+              size="sm"
+              :class="danger ? 'app-confirm-danger-button' : ''"
+              @click="emit('confirm')"
+            >
               {{ confirmLabel }}
             </AppButton>
           </footer>

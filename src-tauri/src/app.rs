@@ -51,6 +51,7 @@ fn register_plugins(builder: Builder<Wry>) -> Builder<Wry> {
 fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
     builder
         .manage(agent::AgentManager::default())
+        .manage(ssh::editor::EditorManager::default())
         .manage(ssh::tunnels::TunnelManager::default())
         .manage(ssh::batch::BatchManager::default())
         .manage(ssh::SessionManager::new())
@@ -63,6 +64,13 @@ fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
 /// 启动后的一次性初始化。
 fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::Manager;
+
+    // 材质就绪后再显示启动窗，避免先闪出不透明底色。
+    if let Some(splash) = app.get_webview_window(platform::window::SPLASH_WINDOW) {
+        platform::window::enable_splash_material(&splash);
+        platform::window::enable_window_shadow(&splash);
+        splash.show()?;
+    }
 
     if let Some(main) = app.get_webview_window("main") {
         platform::window::enable_window_material(&main);

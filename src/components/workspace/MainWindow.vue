@@ -42,6 +42,8 @@ import SshTerminalWorkspace from './SshTerminalWorkspace.vue'
 import NotificationCenter from './NotificationCenter.vue'
 import WorkspaceHelp from './WorkspaceHelp.vue'
 import TransferCenter from './TransferCenter.vue'
+import RemoteEditorHost from '@/components/operations/RemoteEditorHost.vue'
+import ServerOperations from '@/components/operations/ServerOperations.vue'
 
 const { fullscreen, toggleFullscreen } = useFullscreen()
 
@@ -538,6 +540,7 @@ async function runWorkspaceAction(action: string): Promise<void> {
             @reorder="reorderWorkspaceTabs"
           />
           <div class="flex items-center gap-0.5 pb-1.5">
+            <ServerOperations :session-id="activeSshTab?.sessionId" />
             <IconButton
               v-if="!activeTerminalTab || activeSshTab"
               :icon="machineOpen ? 'lucide:panel-right-close' : 'lucide:panel-right-open'"
@@ -635,6 +638,8 @@ async function runWorkspaceAction(action: string): Promise<void> {
         </div>
       </div>
     </div>
+
+    <RemoteEditorHost />
 
     <!-- 命令面板浮层 -->
     <Transition name="palette">

@@ -78,22 +78,30 @@ impl SessionManager {
 
     /// 列出所有活跃会话。
     pub async fn list(&self) -> Vec<SessionInfo> {
-        self.sessions
+        let sessions: Vec<_> = self
+            .sessions
             .read()
             .await
             .values()
-            .map(|entry| {
-                let config = entry.session.config();
-                SessionInfo {
-                    id: entry.session.id().to_owned(),
-                    host: config.host.clone(),
-                    port: config.port,
-                    username: config.username.clone(),
-                    status: SessionStatus::Connected,
-                    connected_at: entry.connected_at,
-                }
-            })
-            .collect()
+            .map(|entry| (entry.session.clone(), entry.connected_at))
+            .collect();
+        let mut result = Vec::new();
+        for (session, connected_at) in sessions {
+            if session.is_closed().await {
+                continue;
+            }
+            let config = session.config();
+            result.push(SessionInfo {
+                id: session.id().to_owned(),
+                host: config.host.clone(),
+                port: config.port,
+                username: config.username.clone(),
+                status: SessionStatus::Connected,
+                connected_at,
+            });
+        }
+        result.sort_by_key(|session| session.connected_at);
+        result
     }
 
     /// 断开全部会话。应用退出时调用，给远端一个干净的 disconnect。

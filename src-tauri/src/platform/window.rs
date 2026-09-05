@@ -56,6 +56,23 @@ pub fn enable_window_material(window: &WebviewWindow) {
     }
 }
 
+/// 启动页独立使用桌面 Blur，不受尚未加载的用户设置影响。
+pub fn enable_splash_material(window: &WebviewWindow) {
+    #[cfg(windows)]
+    {
+        let effects = EffectsBuilder::new()
+            .effect(Effect::Blur)
+            .color(tauri::webview::Color(20, 18, 30, 80))
+            .build();
+        if let Err(error) = window.set_effects(effects) {
+            log::warn!("启用启动页 Blur 失败，使用深色背景: {error}");
+            let _ = window.set_background_color(Some(tauri::webview::Color(23, 22, 31, 255)));
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = window.set_background_color(Some(tauri::webview::Color(23, 22, 31, 255)));
+}
+
 /// 按用户设置切换窗口材质。
 #[cfg(windows)]
 pub fn set_window_material(window: &WebviewWindow, material: &str) -> AppResult<()> {

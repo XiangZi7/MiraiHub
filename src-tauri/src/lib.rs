@@ -13,6 +13,7 @@
 
 pub mod agent;
 pub mod app;
+pub mod backup;
 pub mod db;
 pub mod error;
 pub mod ipc;

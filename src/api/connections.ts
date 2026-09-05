@@ -362,3 +362,25 @@ export function subscribe(handler: () => void): () => void {
     window.removeEventListener('focus', handler)
   }
 }
+
+/** 连接备份只包含连接、分组、标签；AI 密钥与查询记录不在此范围。 */
+export async function backupSnapshot(): Promise<import('@/utils/connection-backup').ConnectionSnapshot> {
+  return { connections: readAll(), groups: await listGroups(), tags: readTags() }
+}
+
+/** 预览后再次检查当前配置，失败时恢复原有三项存储。 */
+export function applyBackupSnapshot(expected: import('@/utils/connection-backup').ConnectionSnapshot, next: import('@/utils/connection-backup').ConnectionSnapshot): void {
+  const current = { connections: readAll(), groups: readGroups().sort((a, b) => a.createdAt - b.createdAt), tags: readTags() }
+  if (JSON.stringify(current) !== JSON.stringify(expected)) throw new Error('预览后连接配置发生变化，请重新读取备份并预览')
+  const keys = [STORAGE_KEY, GROUP_STORAGE_KEY, TAG_STORAGE_KEY]
+  const before = keys.map(key => localStorage.getItem(key))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next.connections))
+    localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(next.groups))
+    localStorage.setItem(TAG_STORAGE_KEY, JSON.stringify(next.tags))
+  } catch (error) {
+    keys.forEach((key, index) => { const value = before[index]; if (value === null || value === undefined) localStorage.removeItem(key); else localStorage.setItem(key, value) })
+    throw error
+  }
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT))
+}

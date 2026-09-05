@@ -66,6 +66,7 @@ export type SettingsValues = {
 export type SettingKey = keyof SettingsValues
 
 export type SettingsPageId =
+  | 'backup'
   | 'ai'
   | 'general'
   | 'appearance'

@@ -18,8 +18,20 @@ use crate::{agent, db, local_terminal, platform, ssh};
 /// 这样命令清单与应用装配彻底分离，两边各自演进互不干扰。
 pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
-        ssh::tunnels::ssh_tunnel_start, ssh::tunnels::ssh_tunnel_list, ssh::tunnels::ssh_tunnel_stop, ssh::tunnels::ssh_tunnel_remove,
-        ssh::batch::ssh_batch_prepare, ssh::batch::ssh_batch_run, ssh::batch::ssh_batch_get, ssh::batch::ssh_batch_cancel, ssh::batch::ssh_batch_forget,
+        crate::backup::connection_backup_write,
+        crate::backup::connection_backup_read,
+        ssh::editor::ssh_text_open,
+        ssh::editor::ssh_text_save,
+        ssh::editor::ssh_text_close,
+        ssh::tunnels::ssh_tunnel_start,
+        ssh::tunnels::ssh_tunnel_list,
+        ssh::tunnels::ssh_tunnel_stop,
+        ssh::tunnels::ssh_tunnel_remove,
+        ssh::batch::ssh_batch_prepare,
+        ssh::batch::ssh_batch_run,
+        ssh::batch::ssh_batch_get,
+        ssh::batch::ssh_batch_cancel,
+        ssh::batch::ssh_batch_forget,
         agent::ai_get_config,
         agent::ai_save_config,
         agent::ai_test_config,
