@@ -1,59 +1,13 @@
-import { computed, reactive, readonly, watch } from "vue";
+import { useSavedQueriesStore } from '@/stores/saved-queries'
+import { computed, readonly } from "vue";
 import type {
   PersistedDatabaseQueryTab,
   PersistedDatabaseQueryWorkspace,
   SavedDatabaseQuery,
 } from "@/types/database-query";
 
-const QUERY_STORAGE_KEY = "miraihub.database-saved-queries.v1";
 const WORKSPACE_STORAGE_PREFIX = "miraihub.database-query-workspace.v1";
-const MAX_QUERIES = 500;
 const MAX_TABS = 40;
-
-function isSavedQuery(value: unknown): value is SavedDatabaseQuery {
-  if (!value || typeof value !== "object") return false;
-  const query = value as Partial<SavedDatabaseQuery>;
-  return typeof query.id === "string"
-    && typeof query.connectionId === "string"
-    && typeof query.database === "string"
-    && typeof query.name === "string"
-    && typeof query.sql === "string"
-    && typeof query.createdAt === "number"
-    && typeof query.updatedAt === "number";
-}
-
-function readQueries(): SavedDatabaseQuery[] {
-  if (typeof localStorage === "undefined") return [];
-  try {
-    const value = JSON.parse(localStorage.getItem(QUERY_STORAGE_KEY) ?? "[]") as unknown;
-    return Array.isArray(value) ? value.filter(isSavedQuery).slice(0, MAX_QUERIES) : [];
-  } catch {
-    return [];
-  }
-}
-
-const state = reactive({ items: readQueries() });
-let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
-
-function persistQueries(): void {
-  if (typeof localStorage === "undefined") return;
-  try {
-    localStorage.setItem(QUERY_STORAGE_KEY, JSON.stringify(state.items.slice(0, MAX_QUERIES)));
-  } catch {
-    // 存储空间或隐私设置不可用时仍保留当前运行内的数据。
-  }
-}
-
-watch(
-  () => state.items,
-  () => {
-    if (persistenceTimer) clearTimeout(persistenceTimer);
-    persistenceTimer = setTimeout(persistQueries, 180);
-  },
-  { deep: true },
-);
-
-if (typeof window !== "undefined") window.addEventListener("beforeunload", persistQueries);
 
 function nextId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -72,6 +26,8 @@ function isPersistedTab(value: unknown): value is PersistedDatabaseQueryTab {
 }
 
 export function useSavedDatabaseQueries(connectionId: string) {
+  const state = useSavedQueriesStore()
+  const { persistQueries } = state
   const queries = computed(() => state.items
     .filter(query => query.connectionId === connectionId)
     .sort((a, b) => b.updatedAt - a.updatedAt));

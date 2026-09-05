@@ -3,7 +3,6 @@ import type { Pinia } from 'pinia'
 import { SETTINGS_PAGES } from '@/constants/settings'
 import { useConnectionsStore } from '@/stores/connections'
 import { useWorkspaceStore } from '@/stores/workspace'
-import { isDatabaseConnection } from '@/types/connection'
 import { routes } from './routes'
 import { isWorkspaceNav, type WindowEntry } from './window-entry'
 
@@ -63,5 +62,5 @@ export function createAppRouter(pinia: Pinia, entry: WindowEntry, history: Route
 }
 
 export function connectionLocation(connection: { id: string; kind: string }) {
-  return { name: isDatabaseConnection(connection as Parameters<typeof isDatabaseConnection>[0]) ? 'databases' : 'servers', params: { connectionId: connection.id } }
+  return { name: connection.kind === 'mysql' || connection.kind === 'postgresql' ? 'databases' : 'servers', params: { connectionId: connection.id } }
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, toRaw } from 'vue'
+import { computed, reactive, toRaw, toRef } from 'vue'
+import { RouterLink } from 'vue-router'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -17,8 +18,9 @@ import DatabaseTransferDialog from './database/DatabaseTransferDialog.vue'
 import type { DatabaseTransferMode } from './database/DatabaseTransferDialog.vue'
 import SidebarProjects from './SidebarProjects.vue'
 
-// 当前选中的主视图，由 MainWindow 通过 v-model:active 控制
-const active = defineModel<NavId>('active', { required: true })
+// 当前选中项来自路由；导航由 RouterLink 提交。
+const props = defineProps<{ active: NavId }>()
+const active = toRef(props, 'active')
 const width = defineModel<number>('width', { required: true })
 const collapsed = defineModel<boolean>('collapsed', { default: false })
 
@@ -278,10 +280,11 @@ async function confirmRemoval(): Promise<void> {
       <!-- 工作区 -->
       <p v-if="!collapsed" class="group-label mb-1.5">Workspace</p>
       <nav class="space-y-0.5">
-        <button
+        <RouterLink
           v-for="item in NAV_ITEMS"
           :key="item.id"
-          type="button"
+          :to="{ name: item.id }"
+          :aria-current="active === item.id ? 'page' : undefined"
           :class="
             cn(
               'nav-item w-full',
@@ -290,11 +293,10 @@ async function confirmRemoval(): Promise<void> {
             )
           "
           :title="collapsed ? item.label : undefined"
-          @click="active = item.id"
         >
           <AppIcon :name="item.icon" :size="15" class="text-txt-3" />
           <span v-if="!collapsed">{{ item.label }}</span>
-        </button>
+        </RouterLink>
       </nav>
 
       <SidebarProjects

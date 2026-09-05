@@ -24,28 +24,28 @@ const state = reactive({
 })
 
 /** 从存储层重新拉取 */
-let revision = 0
 let disposed = false
-async function refresh(): Promise<void> {
-  const current = ++revision
-  const [items, groups, tags] = await Promise.all([store.list(), store.listGroups(), store.listTags()])
-  if (disposed || current !== revision) return
-  state.error = ''
-  // 对外暴露的是只读数组代理，保持数组身份不变才能让已挂载窗口持续收到刷新。
-  state.items.splice(0, state.items.length, ...items)
-  state.groups.splice(0, state.groups.length, ...groups)
-  state.tags.splice(0, state.tags.length, ...tags)
-  state.loaded = true
-}
-
-let initialization: Promise<void> | undefined
-function initialize(): Promise<void> {
-  return initialization ??= refresh().catch(error => {
+let pending: Promise<void> | undefined
+let refreshRequested = false
+function refresh(): Promise<void> {
+  refreshRequested = true
+  return pending ??= (async () => {
+    do {
+      refreshRequested = false
+      const [items, groups, tags] = await Promise.all([store.list(), store.listGroups(), store.listTags()])
+      if (disposed) return
+      state.items.splice(0, state.items.length, ...items)
+      state.groups.splice(0, state.groups.length, ...groups)
+      state.tags.splice(0, state.tags.length, ...tags)
+      state.loaded = true
+      state.error = ''
+    } while (refreshRequested)
+  })().catch(error => {
     state.error = error instanceof Error ? error.message : String(error)
-    initialization = undefined
     throw error
-  })
+  }).finally(() => { pending = undefined })
 }
+function initialize(): Promise<void> { return pending ?? (state.loaded ? Promise.resolve() : refresh()) }
 const unsubscribe = store.subscribe(() => {
   void refresh().catch(error => { state.error = String(error) })
 })

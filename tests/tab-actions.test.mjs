@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { nextTick, reactive, watch } from 'vue'
 import ts from 'typescript'
+import { createPinia, disposePinia, setActivePinia } from 'pinia'
+import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 
 function moduleUrl(path, replacements = {}) {
   let { outputText } = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
@@ -96,10 +98,10 @@ test('查询操作精确定位右键标签，空 SQL、非查询及已移除目�
 test('工作区批量关闭保留共享数组引用，不激活即将被关闭的连接', async () => {
   const storage = new Map()
   globalThis.localStorage = { setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }
-  const { useWorkspaceTabs } = await import(moduleUrl('../src/composables/useWorkspaceTabs.ts', {
-    '@/utils/tab-actions': helpersUrl,
-    '@/composables/useSettings': 'data:text/javascript,export const settings={restoreLastSession:true}',
-  }))
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const load = sourceLoader({ '@/stores/settings': dataModule('export const useSettingsStore=()=>({values:{restoreLastSession:true}})') })
+  const { useWorkspaceTabs } = await load('src/composables/useWorkspaceTabs.ts')
   const workspace = useWorkspaceTabs()
   const shared = workspace.tabs
   for (const id of ['a', 'b', 'c', 'd']) workspace.open({ id, name: id })
@@ -120,6 +122,7 @@ test('工作区批量关闭保留共享数组引用，不激活即将被关闭�
   assert.deepEqual(shared, [])
   assert.deepEqual(JSON.parse(storage.get('miraihub:workspace-tabs')), { ids: [], activeId: '' })
   stop()
+  disposePinia(pinia)
   delete globalThis.localStorage
 })
 

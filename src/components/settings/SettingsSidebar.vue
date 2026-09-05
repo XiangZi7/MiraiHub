@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { RouterLink } from 'vue-router'
 import { SETTINGS_PAGES } from '@/constants/settings'
 import type { SettingsPageId } from '@/types/settings'
 
@@ -7,25 +8,21 @@ defineProps<{
   active: SettingsPageId
 }>()
 
-const emit = defineEmits<{
-  select: [page: SettingsPageId]
-}>()
 </script>
 
 <template>
   <aside class="settings-sidebar scroll-thin">
     <nav class="space-y-1 p-3" aria-label="设置分类">
-      <button
+      <RouterLink
         v-for="page in SETTINGS_PAGES"
         :key="page.id"
-        type="button"
+        :to="{ name: 'settings', params: { section: page.id } }"
         :aria-current="active === page.id ? 'page' : undefined"
         :class="['settings-nav-item', active === page.id && 'settings-nav-item-active']"
-        @click="emit('select', page.id)"
       >
         <AppIcon :name="page.icon" :size="14" class="shrink-0" />
         <span>{{ page.label }}</span>
-      </button>
+      </RouterLink>
     </nav>
   </aside>
 </template>

@@ -1,23 +1,21 @@
 <script setup lang="ts">
-import { shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import BrandLogo from '@/components/ui/BrandLogo.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { closeWindow, IS_TAURI } from '@/utils/window'
-import DatabaseConnectionForm from './DatabaseConnectionForm.vue'
-import LocalConnectionForm from './LocalConnectionForm.vue'
-import SshConnectionForm from './SshConnectionForm.vue'
+import DatabaseConnectionForm from '@/components/connection/DatabaseConnectionForm.vue'
+import LocalConnectionForm from '@/components/connection/LocalConnectionForm.vue'
+import SshConnectionForm from '@/components/connection/SshConnectionForm.vue'
 
-const searchParams = new URLSearchParams(window.location.search)
-const requestedKind = searchParams.get('type')
-const connectionId = searchParams.get('connectionId') ?? ''
-const isDatabase = requestedKind === 'database'
-const isLocal = requestedKind === 'local'
+const props = defineProps<{ kind: string; connectionId: string }>()
+const isDatabase = computed(() => props.kind === 'database')
+const isLocal = computed(() => props.kind === 'local')
 const databaseKind = shallowRef<'mysql' | 'postgresql'>('mysql')
-const title = connectionId
-  ? isDatabase ? 'Edit Database Connection' : isLocal ? 'Edit Local Terminal' : 'Edit SSH Connection'
-  : isDatabase ? 'Add Database Connection' : isLocal ? 'Add Local Terminal' : 'Add SSH Connection'
+const title = computed(() => props.connectionId
+  ? isDatabase.value ? 'Edit Database Connection' : isLocal.value ? 'Edit Local Terminal' : 'Edit SSH Connection'
+  : isDatabase.value ? 'Add Database Connection' : isLocal.value ? 'Add Local Terminal' : 'Add SSH Connection')
 
 function closeDialog(): void {
   if (IS_TAURI) {

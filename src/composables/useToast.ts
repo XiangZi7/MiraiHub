@@ -1,167 +1,25 @@
-import { computed, readonly, reactive } from 'vue'
-import { settingsSnapshot } from '@/composables/useSettings'
-import { playNotificationSound } from '@/utils/sound'
+import { readonly } from 'vue'
+import { storeToRefs } from 'pinia'
+import { pinia } from '@/stores'
+import { useNotificationsStore } from '@/stores/notifications'
+import type { ToastInput } from '@/types/notification'
+export type { ToastTone, ToastOptions, ToastItem, NotificationItem } from '@/types/notification'
 
-export type ToastTone = 'success' | 'error' | 'warning' | 'info'
-
-export interface ToastOptions {
-  title: string
-  description?: string
-  duration?: number
-}
-
-export interface ToastItem extends Required<Omit<ToastOptions, 'description'>> {
-  id: string
-  description: string
-  tone: ToastTone
-}
-
-type ToastInput = string | ToastOptions
-
-interface ToastTimer {
-  handle: ReturnType<typeof setTimeout>
-  remaining: number
-  startedAt: number
-  paused: boolean
-}
-
-const DEFAULT_DURATIONS: Record<ToastTone, number> = {
-  success: 3500,
-  info: 4000,
-  warning: 5000,
-  error: 6500,
-}
-
-const MAX_VISIBLE_TOASTS = 4
-const items = reactive<ToastItem[]>([])
-export interface NotificationItem extends ToastItem { createdAt: number, read: boolean }
-const notifications = reactive<NotificationItem[]>([])
-const timers = new Map<string, ToastTimer>()
-let nextId = 0
-
-function dismiss(id: string): void {
-  const timer = timers.get(id)
-  if (timer) {
-    clearTimeout(timer.handle)
-    timers.delete(id)
-  }
-
-  const index = items.findIndex(item => item.id === id)
-  if (index !== -1)
-    items.splice(index, 1)
-}
-
-function startTimer(id: string, duration: number): void {
-  if (duration <= 0)
-    return
-
-  const timer: ToastTimer = {
-    handle: setTimeout(() => dismiss(id), duration),
-    remaining: duration,
-    startedAt: Date.now(),
-    paused: false,
-  }
-  timers.set(id, timer)
-}
-
-function pause(id: string): void {
-  const timer = timers.get(id)
-  if (!timer || timer.paused)
-    return
-
-  clearTimeout(timer.handle)
-  timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt))
-  timer.paused = true
-}
-
-function resume(id: string): void {
-  const timer = timers.get(id)
-  if (!timer || !timer.paused)
-    return
-
-  if (timer.remaining <= 0) {
-    dismiss(id)
-    return
-  }
-
-  timer.startedAt = Date.now()
-  timer.paused = false
-  timer.handle = setTimeout(() => dismiss(id), timer.remaining)
-}
-
-function show(tone: ToastTone, input: ToastInput): string {
-  const options = typeof input === 'string' ? { title: input } : input
-  const title = options.title.trim()
-  if (!title)
-    return ''
-
-  // 「错误与异常」通知关闭后，失败原因仍留在各自的面板里，只是不再弹出
-  if (tone === 'error' && !settingsSnapshot().notifyErrors)
-    return ''
-
-  const description = options.description?.trim() ?? ''
-  const duplicate = items.find(item => item.tone === tone && item.title === title && item.description === description)
-  if (duplicate)
-    dismiss(duplicate.id)
-
-  while (items.length >= MAX_VISIBLE_TOASTS)
-    dismiss(items[0].id)
-
-  const id = `toast-${Date.now()}-${nextId++}`
-  const duration = options.duration ?? DEFAULT_DURATIONS[tone]
-  items.push({ id, tone, title, description, duration })
-  notifications.unshift({ id, tone, title, description, duration, createdAt: Date.now(), read: false })
-  notifications.splice(100)
-  startTimer(id, duration)
-
-  if (settingsSnapshot().notificationSound)
-    playNotificationSound(tone)
-
-  return id
-}
-
-function clear(): void {
-  for (const item of [...items])
-    dismiss(item.id)
-}
-
-interface ToastFunction {
-  (input: ToastInput): string
-  success: (input: ToastInput) => string
-  error: (input: ToastInput) => string
-  warning: (input: ToastInput) => string
-  info: (input: ToastInput) => string
-  dismiss: (id: string) => void
-  clear: () => void
-}
-
-export const toast = Object.assign(
-  (input: ToastInput) => show('info', input),
-  {
-    success: (input: ToastInput) => show('success', input),
-    error: (input: ToastInput) => show('error', input),
-    warning: (input: ToastInput) => show('warning', input),
-    info: (input: ToastInput) => show('info', input),
-    dismiss,
-    clear,
-  },
-) as ToastFunction
-
+/** 工具函数只在被调用时取 store，不在模块加载阶段创建状态或计时器。 */
+export const toast = Object.assign((input: ToastInput) => useNotificationsStore(pinia).show('info', input), {
+  success: (input: ToastInput) => useNotificationsStore(pinia).show('success', input),
+  error: (input: ToastInput) => useNotificationsStore(pinia).show('error', input),
+  warning: (input: ToastInput) => useNotificationsStore(pinia).show('warning', input),
+  info: (input: ToastInput) => useNotificationsStore(pinia).show('info', input),
+  dismiss: (id: string) => useNotificationsStore(pinia).dismiss(id),
+  clear: () => useNotificationsStore(pinia).clear(),
+})
 export function useToast() {
-  return {
-    toasts: readonly(items),
-    dismiss,
-    pause,
-    resume,
-  }
+  const store = useNotificationsStore()
+  return { toasts: readonly(store.items), dismiss: store.dismiss, pause: store.pause, resume: store.resume }
 }
-
-/** 本次运行的通知记录，不持久化服务器错误或路径信息。 */
 export function useNotifications() {
-  return {
-    notifications: readonly(notifications),
-    unreadCount: computed(() => notifications.filter(item => !item.read).length),
-    markAllRead: () => { for (const item of notifications) item.read = true },
-    clearNotifications: () => notifications.splice(0),
-  }
+  const store = useNotificationsStore()
+  const { unreadCount } = storeToRefs(store)
+  return { notifications: readonly(store.notifications), unreadCount, markAllRead: store.markAllRead, clearNotifications: store.clearNotifications }
 }

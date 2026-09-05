@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, useTemplateRef, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useEventListener } from '@vueuse/core'
 import { getTauriVersion, getVersion } from '@tauri-apps/api/app'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -11,16 +12,21 @@ import { SETTINGS_PAGES } from '@/constants/settings'
 import type { SettingKey, SettingValue, SettingsPageId, SettingsValues } from '@/types/settings'
 import { closeWindow, IS_TAURI } from '@/utils/window'
 import { applyZoom } from '@/utils/settings-runtime'
-import SettingsPanel from './SettingsPanel.vue'
-import AiSettingsPanel from './AiSettingsPanel.vue'
-import ConnectionBackupPanel from './ConnectionBackupPanel.vue'
-import SettingsSidebar from './SettingsSidebar.vue'
+import SettingsPanel from '@/components/settings/SettingsPanel.vue'
+import AiSettingsPanel from '@/components/settings/AiSettingsPanel.vue'
+import ConnectionBackupPanel from '@/components/settings/ConnectionBackupPanel.vue'
+import SettingsSidebar from '@/components/settings/SettingsSidebar.vue'
 import packageInfo from '../../../package.json'
 
 const { settings, save, defaults } = useSettings()
 const aiPanel = useTemplateRef<InstanceType<typeof AiSettingsPanel>>('aiPanel')
 
-const activePageId = shallowRef<SettingsPageId>('general')
+const route = useRoute()
+const router = useRouter()
+const activePageId = computed<SettingsPageId>({
+  get: () => route.params.section as SettingsPageId,
+  set: section => { void router.push({ name: 'settings', params: { section } }) },
+})
 const draft = reactive<SettingsValues>({ ...settings })
 // 仅在设置窗口预览，取消时不更改已保存值或其他窗口。
 watch(() => draft.uiScale, value => void applyZoom(value))
@@ -162,7 +168,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </header>
 
     <div class="relative z-10 flex min-h-0 flex-1">
-      <SettingsSidebar :active="activePageId" @select="activePageId = $event" />
+      <SettingsSidebar :active="activePageId" />
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AiSettingsPanel v-if="activePageId === 'ai'" ref="aiPanel" />

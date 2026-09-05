@@ -13,6 +13,10 @@ import '@/assets/styles/main.css'
 import { MIRAI_ICONS } from '@/constants/icons'
 import { startSettingsRuntime } from '@/utils/settings-runtime'
 import { IS_TAURI } from '@/utils/window'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { pinia } from '@/stores'
+import { createAppRouter } from '@/router'
+import { resolveWindowEntry } from '@/router/window-entry'
 
 // 图标离线化：本地注册整套 lucide，避免 @iconify/vue 运行时去请求远端 API
 addCollection(lucideIcons as IconifyJSON)
@@ -25,8 +29,20 @@ if (IS_TAURI)
   document.documentElement.classList.add('is-tauri')
 
 // 启动画面使用独立 Logo 与 Blur，不参与工作区缩放 / 材质设置；其余窗口在挂载前先应用设置
-const windowSurface = new URLSearchParams(window.location.search).get('window')
-if (windowSurface !== 'splash')
-  startSettingsRuntime()
-
-createApp(App).mount('#app')
+const entry = resolveWindowEntry(window.location.search, window.location.hash, IS_TAURI ? getCurrentWindow().label : undefined)
+const app = createApp(App)
+app.use(pinia)
+if (entry.surface !== 'splash') startSettingsRuntime()
+// 保留旧版子窗口 query，同时让第一次导航直接命中正式路由。
+if (!window.location.hash && entry.surface !== 'workspace')
+  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + '#' + entry.path)
+const router = createAppRouter(pinia, entry)
+app.use(router)
+router.onError(error => { console.error('页面加载失败：', error) })
+router.isReady().then(() => app.mount('#app')).catch(() => {
+  const root = document.getElementById('app')
+  if (root) {
+    root.textContent = '页面加载失败，请重新启动 MiraiHub。'
+    root.style.cssText = 'padding:32px;color:#eee'
+  }
+})
