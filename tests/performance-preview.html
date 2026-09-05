@@ -8,6 +8,7 @@
     <div id="app"></div>
     <script type="module">
       import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      import { emit } from '@tauri-apps/api/event'
       const snapshot = {
         id: 'preview',
         sessionId: 'preview',
@@ -19,14 +20,26 @@
         backupPath: null,
       }
       mockWindows('preview')
-      mockIPC((command, args) => {
-        if (command === 'ssh_text_open') return { ...snapshot }
-        if (command === 'ssh_text_save') {
-          snapshot.text = args.text
-          return { ...snapshot, backupPath: '/etc/nginx/nginx.conf.backup' }
-        }
-        if (command === 'plugin:event|listen') return 1
-      })
+      mockIPC(
+        (command, args) => {
+          if (command === 'remote_editor_target')
+            return {
+              sessionId: snapshot.sessionId,
+              path: snapshot.path,
+              connectionName: 'Preview Server',
+            }
+          if (command === 'plugin:window|is_maximized') return false
+          if (command === 'plugin:window|close') {
+            return emit('remote-editor-close-requested')
+          }
+          if (command === 'ssh_text_open') return { ...snapshot }
+          if (command === 'ssh_text_save') {
+            snapshot.text = args.text
+            return { ...snapshot, backupPath: '/etc/nginx/nginx.conf.backup' }
+          }
+        },
+        { shouldMockEvents: true }
+      )
       const [
         { createApp, h, ref, computed, onMounted, nextTick },
         { pinia },
@@ -41,7 +54,7 @@
         import('@iconify/vue'),
         import('virtual:mirai-icons'),
         import('/src/constants/icons.ts'),
-        import('/src/components/operations/RemoteTextEditor.vue'),
+        import('/src/components/operations/RemoteEditorWindow.vue'),
         import('/src/components/workspace/RemoteFileList.vue'),
       ])
       await import('/src/assets/styles/main.css')
@@ -113,21 +126,7 @@
                     }),
                   ]
                 )
-              : h(
-                  'main',
-                  {
-                    style:
-                      'height:100vh;display:flex;background:var(--color-window)',
-                  },
-                  [
-                    h(Editor, {
-                      sessionId: snapshot.sessionId,
-                      path: snapshot.path,
-                      connectionName: 'Preview Server',
-                      standalone: true,
-                    }),
-                  ]
-                )
+              : h(Editor, { style: 'height:100vh' })
         },
       })
         .use(pinia)

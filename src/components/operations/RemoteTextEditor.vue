@@ -237,6 +237,8 @@ defineExpose({ requestClose })
   padding: 14px;
   border: 1px solid var(--color-line);
   border-radius: 7px;
+  outline: none;
+  box-shadow: none;
   background: color-mix(in oklch, var(--color-terminal) 40%, transparent);
   color: var(--color-txt);
   font: 12px/1.8 var(--font-mono);

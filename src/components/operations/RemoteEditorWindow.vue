@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  computed,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -9,6 +10,7 @@ import {
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import RemoteTextEditor from './RemoteTextEditor.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import WindowControls from '@/components/ui/WindowControls.vue'
 import * as api from '@/api/operations'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
 
@@ -22,6 +24,11 @@ const state = reactive({
   closing: false,
 })
 const { target, error, closing } = toRefs(state)
+const caption = computed(() => {
+  if (!state.target) return 'MiraiHub'
+  const name = state.target.path.split('/').pop() || '远端文件'
+  return `${name} — ${state.target.connectionName} — MiraiHub`
+})
 const editor = useTemplateRef<InstanceType<typeof RemoteTextEditor>>('editor')
 let alive = true
 let unlisten: (() => void) | undefined
@@ -79,6 +86,18 @@ onBeforeUnmount(() => {
     class="remote-editor-window"
     :aria-busy="closing"
   >
+    <header
+      class="remote-editor-titlebar"
+      data-tauri-drag-region
+    >
+      <span
+        class="remote-editor-caption"
+        data-tauri-drag-region
+      >
+        {{ caption }}
+      </span>
+      <WindowControls />
+    </header>
     <p
       v-if="error"
       role="alert"
@@ -118,6 +137,23 @@ onBeforeUnmount(() => {
 .remote-editor-window :deep(.operation-window) {
   flex: 1;
   min-height: 0;
+}
+.remote-editor-titlebar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 32px;
+  user-select: none;
+}
+.remote-editor-caption {
+  flex: 1;
+  min-width: 0;
+  padding-left: 18px;
+  overflow: hidden;
+  color: var(--color-txt-2);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .window-error {
   flex: none;

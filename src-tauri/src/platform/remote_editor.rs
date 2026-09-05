@@ -177,7 +177,7 @@ pub async fn open_remote_editor_window(
     }
     let label = format!("{PREFIX}{}", random_id());
     windows.register(label.clone(), request.clone());
-    // The system title bar owns dragging, resize, maximize, minimize and snapping.
+    // Use the app's transparent title bar: the native caption paints an opaque strip over Acrylic.
     // No parent relationship: closing/hiding main must not destroy unsaved drafts.
     let result = WebviewWindowBuilder::new(
         &app,
@@ -187,14 +187,14 @@ pub async fn open_remote_editor_window(
     .title(title(&request, false))
     .inner_size(1040.0, 720.0)
     .min_inner_size(640.0, 420.0)
-    .decorations(true)
+    .decorations(false)
     .resizable(true)
     .minimizable(true)
     .maximizable(true)
     .transparent(true)
     .background_color(tauri::webview::Color(0, 0, 0, 0))
     .theme(Some(tauri::Theme::Dark))
-    .shadow(true)
+    .shadow(false)
     .visible(false)
     .center()
     .build();
@@ -205,6 +205,7 @@ pub async fn open_remote_editor_window(
             return Err(native_error(error));
         }
     };
+    super::window::enable_window_shadow(&editor);
     let app_events = app.clone();
     let editor_events = editor.clone();
     let label_events = label.clone();
