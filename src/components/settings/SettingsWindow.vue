@@ -164,7 +164,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     <div class="relative z-10 flex min-h-0 flex-1">
       <SettingsSidebar :active="activePageId" @select="activePageId = $event" />
 
-      <div class="flex min-w-0 flex-1 flex-col">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AiSettingsPanel v-if="activePageId === 'ai'" ref="aiPanel" />
         <ConnectionBackupPanel v-else-if="activePageId === 'backup'" />
         <SettingsPanel v-else

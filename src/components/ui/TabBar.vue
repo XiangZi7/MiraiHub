@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
 import AppIcon from './AppIcon.vue'
+import AppContextMenu from './AppContextMenu.vue'
+import type { ContextMenuItem } from '@/types/context-menu'
+import { useTabContextMenu } from '@/composables/useTabContextMenu'
 import StatusDot from './StatusDot.vue'
 import { useTabReorder } from '@/composables/useTabReorder'
 import { cn } from '@/utils/cn'
@@ -24,12 +27,15 @@ const props = defineProps<{
   tabs: readonly TabItem[]
   /** 是否显示新建按钮 */
   addable?: boolean
+  contextItems?: (id: string) => readonly ContextMenuItem[]
 }>()
 
 const emit = defineEmits<{
   add: []
   /** 请求关闭某个标签 */
   close: [id: string]
+  closeMany: [ids: string[]]
+  contextAction: [id: string, action: string]
   /** 请求父组件将标签从一个索引移动到另一个索引 */
   reorder: [fromIndex: number, toIndex: number]
 }>()
@@ -41,6 +47,13 @@ const reorder = useTabReorder({
   container: () => tabList.value,
   onReorder: (fromIndex, toIndex) => emit('reorder', fromIndex, toIndex),
 })
+const menu = useTabContextMenu({
+  tabs: () => props.tabs, container: () => tabList.value, active: () => active.value,
+  extraItems: id => props.contextItems?.(id) ?? [],
+  close: id => emit('close', id), closeMany: ids => emit('closeMany', ids),
+  reorder: (from, to) => emit('reorder', from, to), action: (id, action) => emit('contextAction', id, action),
+})
+function closeFromPointer(id: string): void { if (props.tabs.find(tab => tab.id === id)?.closable) emit('close', id) }
 const draggedTab = computed(() => props.tabs.find(tab => tab.id === reorder.draggedId.value))
 
 function activateTab(id: string): void {
@@ -49,6 +62,16 @@ function activateTab(id: string): void {
 }
 
 function handleTabKeydown(event: KeyboardEvent, id: string): void {
+  if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { menu.show(event, id); return }
+  if ((event.target as HTMLElement).closest('[data-tab-action]')) return
+  if (!event.altKey && !event.ctrlKey && !event.metaKey && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault(); event.stopPropagation()
+    const index = props.tabs.findIndex(tab => tab.id === id)
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? props.tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + props.tabs.length) % props.tabs.length
+    const next = props.tabs[nextIndex]
+    if (next) { active.value = next.id; tabList.value?.querySelectorAll<HTMLElement>('[role="tab"]')[nextIndex]?.focus() }
+    return
+  }
   if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
     event.preventDefault()
     event.stopPropagation()
@@ -75,7 +98,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       :aria-selected="active === tab.id"
       :aria-posinset="index + 1"
       :aria-setsize="tabs.length"
-      :title="`${tab.label} · 拖动排序，Alt + ←/→ 键可调整位置`"
+      :title="`${tab.label} · 右键操作，中键关闭；拖动或 Alt + ←/→ 排序`"
       :style="active === tab.id ? { borderBottomColor: tab.accent || 'var(--color-accent)' } : undefined"
       :class="cn(
         'tab-item group flex h-full shrink-0 items-center gap-2 rounded-t-lg border-b-2 px-3 text-xs transition-colors duration-150 motion-reduce:transition-none',
@@ -89,6 +112,8 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       @click="activateTab(tab.id)"
       @keydown="handleTabKeydown($event, tab.id)"
       @pointerdown="reorder.start($event, tab.id)"
+      @contextmenu="menu.show($event, tab.id)"
+      @auxclick.middle.stop.prevent="closeFromPointer(tab.id)"
     >
       <StatusDot v-if="tab.dot" :tone="tab.dot" :size="6" :glow="tab.dot !== 'txt-3'" />
       <AppIcon v-else-if="tab.icon" :name="tab.icon" :size="13" />
@@ -99,7 +124,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
         v-if="tab.closable"
         type="button"
         data-tab-action
-        class="-mr-1 grid size-4 shrink-0 place-items-center rounded opacity-0 transition-opacity hover:bg-hover group-hover:opacity-60 hover:opacity-100!"
+        class="-mr-1 grid size-4 shrink-0 place-items-center rounded opacity-0 transition-opacity hover:bg-hover group-hover:opacity-60 group-focus-within:opacity-60 hover:opacity-100!"
         :title="`关闭 ${tab.label}`"
         @click.stop="emit('close', tab.id)"
       >
@@ -117,6 +142,8 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
     >
       <AppIcon name="lucide:plus" :size="14" />
     </button>
+
+    <AppContextMenu scrollable :open="menu.state.open" :x="menu.state.x" :y="menu.state.y" :items="menu.items.value" label="标签页操作" @select="menu.select" @close="menu.dismiss" />
 
     <Teleport to="body">
       <div v-if="reorder.dragging.value && draggedTab" class="tab-drag-ghost" :style="reorder.dragStyle.value" aria-hidden="true">

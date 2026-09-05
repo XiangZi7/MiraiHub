@@ -182,7 +182,7 @@ function apply(): void {
           type="checkbox"
           :disabled="busy"
         />包含连接密码、私钥口令和 SSH 启动命令（需要加密）</label
-      ><label class="field"
+      ><label class="backup-field"
         >备份密码<input
           v-model="password"
           type="password"
@@ -209,7 +209,7 @@ function apply(): void {
           path || "尚未选择"
         }}</span>
       </div>
-      <label class="field"
+      <label class="backup-field"
         >解密密码<input
           v-model="restorePassword"
           type="password"
@@ -220,7 +220,7 @@ function apply(): void {
         busy ? "处理中…" : "读取并预览恢复内容"
       }}</AppButton>
       <template v-if="archive && plan"
-        ><label class="field"
+        ><label class="backup-field"
           >同 ID 连接的处理方式<select
             v-model="mode"
             @change="reviewed = false"
@@ -334,13 +334,13 @@ function apply(): void {
   line-height: 1.7;
   color: var(--color-txt-3);
 }
-.field {
+.backup-field {
   display: flex;
   flex-direction: column;
   gap: 7px;
 }
-.field input,
-.field select {
+.backup-field input,
+.backup-field select {
   padding: 8px;
   border: 1px solid var(--color-line);
   border-radius: 6px;

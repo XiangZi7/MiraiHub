@@ -37,6 +37,7 @@ const target = computed(() => ({
   database: "",
 }));
 const primary = useTemplateRef<InstanceType<typeof TerminalPanel>>("primary");
+const secondary = useTemplateRef<InstanceType<typeof TerminalPanel>>("secondary");
 function statusChanged(status: SshSessionStatus, sessionId: string): void {
   state.sessionId = status === "connected" ? sessionId : "";
   emit("status", status, sessionId);
@@ -50,6 +51,8 @@ function showTerminal(): void {
   void nextTick(() => primary.value?.focus());
 }
 defineExpose({
+  reconnectFor: async (id: string) => { if (props.connectionId !== id) return; await primary.value?.reconnect(); await secondary.value?.reconnect(); },
+  disconnectFor: async (id: string) => { if (props.connectionId !== id) return; await primary.value?.disconnect(); await secondary.value?.disconnect(); },
   focusFor: (id: string) => {
     if (props.connectionId === id) {
       showTerminal();
@@ -116,6 +119,7 @@ defineExpose({
           @status="statusChanged"
         />
         <TerminalPanel
+          ref="secondary"
           v-if="split"
           :config="config"
           :title="`${title || config.host} · 分屏`"

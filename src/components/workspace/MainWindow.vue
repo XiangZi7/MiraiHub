@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, toRefs, useTemplateRef, watch } from 'vue'
 import { useEventListener, useStorage, useWindowSize } from '@vueuse/core'
-import type { TabItem } from '@/components/ui/TabBar.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import BrandLogo from '@/components/ui/BrandLogo.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import SearchField from '@/components/ui/SearchField.vue'
-import TabBar from '@/components/ui/TabBar.vue'
+import WorkspaceTabBar from './WorkspaceTabBar.vue'
 import WindowControls from '@/components/ui/WindowControls.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { useFullscreen } from '@/composables/useFullscreen'
@@ -48,11 +47,15 @@ import ServerOperations from '@/components/operations/ServerOperations.vue'
 const { fullscreen, toggleFullscreen } = useFullscreen()
 
 const sshWorkspaces = useTemplateRef<Array<InstanceType<typeof SshTerminalWorkspace>>>('sshWorkspaces')
+const localTerminals = useTemplateRef<Array<InstanceType<typeof LocalTerminalPanel>>>('localTerminals')
 const machinePanel = useTemplateRef<InstanceType<typeof MachinePanel>>('machinePanel')
 
 const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
 const databaseViews = useTemplateRef<Array<{
   refreshForConnection: (connectionId: string) => void
+  reconnectFor: (connectionId: string) => Promise<void>
+  disconnectFor: (connectionId: string) => Promise<void>
+  closeWarningFor: (ids: string[]) => string
   newQueryForConnection: (connectionId: string, database: string) => Promise<void>
 }>>('databaseViews')
 const { width: viewportWidth } = useWindowSize()
@@ -74,6 +77,7 @@ const {
   active: activeTab,
   open,
   close,
+  closeMany,
   activate,
   reorder: reorderWorkspaceTabs,
   setStatus,
@@ -162,22 +166,6 @@ watch(machineMaxWidth, (maxWidth) => {
   if (state.machineWidth > maxWidth)
     state.machineWidth = maxWidth
 }, { immediate: true })
-
-/**
- * 打开的连接 → 标签栏数据。
- * 状态点直接反映连接状态：连上是绿的、连接中是黄的、断开是灰的，
- * 不用切进标签也能看出哪台机器掉线了。
- */
-const tabItems = computed<TabItem[]>(() =>
-  openTabs.map(tab => ({
-    id: tab.id,
-    label: tab.connection.name,
-    dot: tab.status === 'connected'
-      ? 'success'
-      : tab.status === 'connecting' ? 'amber' : 'txt-3',
-    closable: true,
-  })),
-)
 
 /**
  * 每个 SSH 标签各自持有一个终端实例。
@@ -381,6 +369,23 @@ function closeTab(id: string): void {
   state.activeNav = isDatabaseConnection(activeTab.value.connection) ? 'databases' : 'servers'
 }
 
+function closeTabs(ids: string[]): void {
+  closeMany(ids)
+  if (activeTab.value) state.activeNav = isDatabaseConnection(activeTab.value.connection) ? 'databases' : 'servers'
+}
+function closeWarning(ids: string[]): string { return (databaseViews.value ?? []).map(view => view.closeWarningFor(ids)).filter(Boolean).join('；') }
+async function tabAction(id: string, action: string): Promise<void> {
+  if (!openTabs.some(tab => tab.id === id)) return
+  selectTab(id)
+  if (action === 'split' || action === 'files') { await runWorkspaceAction(action); return }
+  try {
+    for (const view of [...(sshWorkspaces.value ?? []), ...(localTerminals.value ?? []), ...(databaseViews.value ?? [])]) {
+      if (action === 'reconnect') await view.reconnectFor(id)
+      else if (action === 'disconnect') await view.disconnectFor(id)
+    }
+  } catch (error) { toast.error({ title: '连接操作失败', description: error instanceof Error ? error.message : String(error) }) }
+}
+
 function handleSshStatus(
   tabId: string,
   status: Parameters<typeof setStatus>[1],
@@ -529,14 +534,16 @@ async function runWorkspaceAction(action: string): Promise<void> {
       <div class="flex min-w-0 flex-1 flex-col">
         <!-- 连接标签栏 -->
         <div class="flex h-11 shrink-0 items-end gap-2 border-b border-line-soft px-2.5">
-          <TabBar
+          <WorkspaceTabBar
             :active="activeId"
-            :tabs="tabItems"
+            :tabs="openTabs"
+            :close-warning="closeWarning"
             addable
             class="flex-1"
             @update:active="selectTab"
             @add="addConnection"
-            @close="closeTab"
+            @close-many="closeTabs"
+            @action="tabAction"
             @reorder="reorderWorkspaceTabs"
           />
           <div class="flex items-center gap-0.5 pb-1.5">
@@ -571,6 +578,8 @@ async function runWorkspaceAction(action: string): Promise<void> {
             />
 
             <LocalTerminalPanel
+              ref="localTerminals"
+              :connection-id="tab.id"
               v-for="tab in localTabViews"
               v-show="activeId === tab.id"
               :key="tab.id"

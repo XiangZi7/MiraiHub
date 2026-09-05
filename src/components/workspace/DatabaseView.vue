@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, toRef, toRefs, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, shallowRef, toRef, toRefs, watch } from "vue";
 import { useDebounceFn, useEventListener, useStorage } from "@vueuse/core";
 import * as database from "@/api/database";
 import { addQueryHistory, clearQueryHistory, listQueryHistory } from "@/api/database-history";
@@ -12,6 +12,8 @@ import type { TabItem } from "@/components/ui/TabBar.vue";
 import IconButton from "@/components/ui/IconButton.vue";
 import TabBar from "@/components/ui/TabBar.vue";
 import { databaseObjectKey, useDatabaseSession } from "@/composables/useDatabaseSession";
+import { useDatabaseTabActions } from "@/composables/useDatabaseTabActions";
+import { activeAfterTabClose } from "@/utils/tab-actions";
 import { useSavedDatabaseQueries } from "@/composables/useSavedDatabaseQueries";
 import { toast } from "@/composables/useToast";
 import type { SavedConnection } from "@/types/connection";
@@ -226,10 +228,9 @@ const persistedQueryTabs = computed<PersistedDatabaseQueryTab[]>(() => queryStat
   savedQueryId: tab.savedQueryId,
 }] : []));
 const lastActiveQueryId = shallowRef(activeQuery.value?.id ?? persistedQueryTabs.value[0]?.id ?? "");
-const persistQueryWorkspace = (): void => saveQueryWorkspace({
-  activeId: lastActiveQueryId.value,
-  tabs: persistedQueryTabs.value,
-});
+let workspaceDisposed = false;
+const persistQueryWorkspace = (): void => { if (!workspaceDisposed) saveQueryWorkspace({ activeId: lastActiveQueryId.value, tabs: persistedQueryTabs.value }); };
+onBeforeUnmount(() => { persistQueryWorkspace(); persistQueries(); workspaceDisposed = true; });
 const persistQueryWorkspaceSoon = useDebounceFn(persistQueryWorkspace, 220, { maxWait: 900 });
 
 watch(activeQuery, (tab) => {
@@ -298,7 +299,11 @@ async function newQueryForConnection(connectionId: string, targetDatabase: strin
   await newQueryForSchema(targetDatabase || undefined);
 }
 
-defineExpose({ refreshForConnection, newQueryForConnection });
+defineExpose({ refreshForConnection, newQueryForConnection,
+  reconnectFor: async (id: string) => { if (props.connection?.id === id) await connect(); },
+  disconnectFor: async (id: string) => { if (props.connection?.id === id) await disconnect(); },
+  closeWarningFor: (ids: string[]) => props.connection && ids.includes(props.connection.id) && designerTabs.value.length ? props.connection.name + ' 有 ' + designerTabs.value.length + ' 个建表草稿，关闭连接后将丢失。' : '',
+});
 
 async function refreshAll(): Promise<void> {
   await Promise.all([refreshDatabases(), refreshObjects()]);
@@ -323,15 +328,23 @@ function addQueryTab(sql = "", targetDatabase = session.value?.database || confi
 }
 
 function closeTab(id: string): void {
-  const index = queryState.tabs.findIndex((tab) => tab.id === id);
-  if (index === -1) return;
-  queryState.tabs.splice(index, 1);
-  if (!queryState.tabs.length) {
-    addQueryTab();
-    return;
-  }
-  if (queryState.activeId === id) queryState.activeId = (queryState.tabs[index] ?? queryState.tabs[index - 1]).id;
+  closeQueryTabs([id]);
 }
+function closeQueryTabs(ids: string[]): void {
+  const closing = new Set(ids);
+  const next = activeAfterTabClose(queryState.tabs, queryState.activeId, ids);
+  queryState.tabs = queryState.tabs.filter(tab => !closing.has(tab.id));
+  queryState.activeId = next;
+  if (!queryState.tabs.length) addQueryTab();
+}
+const queryTabActions = useDatabaseTabActions({
+  tabs: () => queryState.tabs,
+  close: closeQueryTabs,
+  hasSavedQuery: id => savedQueries.value.some(query => query.id === id),
+  save: id => saveQueryTab(id),
+  duplicate: id => { const source = queryState.tabs.find(tab => tab.id === id); if (source?.kind === 'query') { const duplicate = addQueryTab(source.sql, source.database); duplicate.label = source.label + ' 副本'; } },
+  copy: async id => { const tab = queryState.tabs.find(tab => tab.id === id); if (tab?.kind !== 'query') return; try { await copyText(tab.sql); toast.success('SQL 已复制'); } catch { toast.error('复制失败，请检查剪贴板权限'); } },
+});
 
 function reorderTabs(fromIndex: number, toIndex: number): void {
   if (
@@ -421,9 +434,10 @@ async function openSavedQuery(query: SavedDatabaseQuery): Promise<void> {
   queryState.activeId = id;
 }
 
-function saveActiveQuery(): void {
-  const tab = activeQuery.value;
-  if (!tab) return;
+function saveActiveQuery(): void { if (activeQuery.value) saveQueryTab(activeQuery.value.id); }
+function saveQueryTab(id: string): void {
+  const tab = queryState.tabs.find(tab => tab.id === id);
+  if (tab?.kind !== 'query') return;
   if (tab.savedQueryId) {
     updateSavedQuery(tab.savedQueryId, { sql: tab.sql, database: tab.database || databaseName.value });
     persistQueries();
@@ -743,7 +757,7 @@ watch(() => props.connection?.id, (id) => {
       <div class="flex min-h-0 min-w-0 flex-1 gap-2">
       <div v-show="!agentOpen || agentSplit" class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="flex h-10 shrink-0 items-end border-b border-line-soft px-2">
-        <TabBar v-model:active="queryState.activeId" :tabs="queryState.tabs" addable @add="addQueryTab()" @close="closeTab" @reorder="reorderTabs" />
+        <TabBar v-model:active="queryState.activeId" :tabs="queryState.tabs" :context-items="queryTabActions.contextItems" addable @add="addQueryTab()" @close="queryTabActions.requestClose([$event])" @close-many="queryTabActions.requestClose" @context-action="queryTabActions.action" @reorder="reorderTabs" />
       </div>
 
       <div class="flex h-9 shrink-0 items-center gap-1.5 border-b border-line-soft px-2.5">
@@ -787,6 +801,7 @@ watch(() => props.connection?.id, (id) => {
       @close="nameDialog.open = false"
       @submit="submitNameAction"
     />
+    <AppConfirmDialog :open="!!queryTabActions.state.pendingIds.length" title="关闭未保存的标签？" :description="queryTabActions.description.value" confirm-label="放弃草稿并关闭" danger @close="queryTabActions.cancel" @confirm="queryTabActions.confirm" />
     <AppConfirmDialog :open="deleteDialog.open" :title="deleteTitle" :description="deleteDescription" :confirm-label="deleteDialog.savedQuery ? '删除查询' : '确认删除'" danger @close="deleteDialog.open = false" @confirm="confirmDelete" />
   </div>
 </template>

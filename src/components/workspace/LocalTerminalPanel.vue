@@ -10,6 +10,7 @@ import type { SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 
 const props = defineProps<{
+  connectionId?: string
   title: string
   settings: LocalConnectionSettings
 }>()
@@ -60,6 +61,10 @@ useResizeObserver(containerRef, () => resize())
 function reconnect(): void {
   void connect(props.settings).catch(() => {})
 }
+defineExpose({
+  reconnectFor: async (id: string) => { if (props.connectionId === id) await connect(props.settings).catch(() => {}) },
+  disconnectFor: async (id: string) => { if (props.connectionId === id) await disconnect() },
+})
 </script>
 
 <template>

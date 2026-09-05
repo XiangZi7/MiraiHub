@@ -319,7 +319,7 @@ function interceptTerminalInput(data: string): boolean {
 
 setInputInterceptor(interceptTerminalInput)
 setSubmitHandler(line => void completion.trackSubmittedCommand(line))
-defineExpose({ focus: () => term.value?.focus() })
+defineExpose({ focus: () => term.value?.focus(), reconnect, disconnect: disconnectSession })
 </script>
 
 <template>

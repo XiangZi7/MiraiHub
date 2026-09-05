@@ -9,6 +9,7 @@
  */
 
 import { computed, reactive, readonly, watch } from 'vue'
+import { activeAfterTabClose } from '@/utils/tab-actions'
 import { settings } from '@/composables/useSettings'
 import type { SavedConnection } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
@@ -96,17 +97,16 @@ function open(connection: SavedConnection): void {
  * 与浏览器、编辑器的行为一致，符合肌肉记忆。
  */
 function close(id: string): void {
-  const index = state.tabs.findIndex(tab => tab.id === id)
-  if (index === -1)
-    return
+  closeMany([id])
+}
 
-  state.tabs.splice(index, 1)
-
-  if (state.activeId !== id)
-    return
-
-  const next = state.tabs[index] ?? state.tabs[index - 1]
-  state.activeId = next?.id ?? ''
+/** 一次更新集合，避免连续关闭时短暂激活即将被移除的标签。 */
+function closeMany(ids: readonly string[]): void {
+  const closing = new Set(ids)
+  const next = activeAfterTabClose(state.tabs, state.activeId, ids)
+  const survivors = state.tabs.filter(tab => !closing.has(tab.id))
+  state.tabs.splice(0, state.tabs.length, ...survivors)
+  state.activeId = next
 }
 
 /** 切换激活标签 */
@@ -191,6 +191,7 @@ export function useWorkspaceTabs() {
     active,
     open,
     close,
+    closeMany,
     activate,
     reorder,
     setStatus,

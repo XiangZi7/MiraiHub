@@ -11,6 +11,7 @@ const props = defineProps<{
   y: number
   items: readonly ContextMenuItem[]
   label?: string
+  scrollable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -121,6 +122,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
         v-if="open"
         ref="menu"
         class="app-context-menu"
+        :class="scrollable && 'app-context-menu-scroll scroll-thin'"
         role="menu"
         aria-orientation="vertical"
         :aria-label="label ?? 'Context menu'"
@@ -195,6 +197,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
 }
 
 .app-context-menu { position: fixed; z-index: 100; }
+.app-context-menu-scroll { max-height: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain; }
 .app-context-menu-entry { position: relative; }
 .app-context-submenu {
   position: absolute;

@@ -13,7 +13,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <aside class="settings-sidebar">
+  <aside class="settings-sidebar scroll-thin">
     <nav class="space-y-1 p-3" aria-label="设置分类">
       <button
         v-for="page in SETTINGS_PAGES"
