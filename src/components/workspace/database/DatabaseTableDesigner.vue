@@ -80,7 +80,7 @@ const panelItems = computed(() => [
   {
     id: 'indexes' as const,
     label: '索引',
-    icon: 'lucide:list-key',
+    icon: 'lucide:list-tree',
     count: draft.indexes.length,
   },
   {

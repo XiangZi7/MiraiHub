@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.pnpm-store/
 dist
 dist-ssr
 *.local
@@ -19,6 +20,25 @@ public/pdfjs/
 
 # 代理特权服务的编译产物：由 scripts/build-proxy-service.mjs 从 cargo target 复制
 src-tauri/resources/
+
+# Local environment configuration (keep shareable templates)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+!.env.*.example
+!.env.*.sample
+!.env.*.template
+
+# Compiler caches and generated test reports
+*.tsbuildinfo
+/coverage/
+/test-results/
+/playwright-report/
+
+# Machine-specific AI tool preferences; shared rules/commands remain versioned
+.claude/settings.local.json
 
 # Editor directories and files
 .vscode/*

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   computed,
+  defineAsyncComponent,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -26,10 +27,15 @@ import type {
 import { closeWindow, IS_TAURI } from '@/utils/window'
 import { applyZoom } from '@/utils/settings-runtime'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
-import AiSettingsPanel from '@/components/settings/AiSettingsPanel.vue'
-import ConnectionBackupPanel from '@/components/settings/ConnectionBackupPanel.vue'
 import SettingsSidebar from '@/components/settings/SettingsSidebar.vue'
 import packageInfo from '../../../package.json'
+
+const AiSettingsPanel = defineAsyncComponent(
+  () => import('@/components/settings/AiSettingsPanel.vue')
+)
+const ConnectionBackupPanel = defineAsyncComponent(
+  () => import('@/components/settings/ConnectionBackupPanel.vue')
+)
 
 const { settings, save, defaults } = useSettings()
 const aiPanel = useTemplateRef<InstanceType<typeof AiSettingsPanel>>('aiPanel')

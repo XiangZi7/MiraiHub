@@ -1,7 +1,15 @@
-import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
-import { useClipboard, useEventListener } from '@vueuse/core'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  toRef,
+  watch,
+} from 'vue'
+import { refDebounced, useClipboard, useEventListener } from '@vueuse/core'
 import * as api from '@/api/operations'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
+import { textMetrics } from '@/utils/text-metrics'
 import { scheduleClipboardClear } from '@/utils/clipboard'
 
 export function useRemoteTextDocument(
@@ -33,8 +41,12 @@ export function useRemoteTextDocument(
   const dirty = computed(
     () => !!state.document && state.draft !== state.document.text
   )
-  const lines = computed(() => state.draft.split('\n').length)
-  const bytes = computed(() => new TextEncoder().encode(state.draft).length)
+  const settledDraft = refDebounced(toRef(state, 'draft'), 180, {
+    maxWait: 500,
+  })
+  const metrics = computed(() => textMetrics(settledDraft.value))
+  const lines = computed(() => metrics.value.lines)
+  const bytes = computed(() => metrics.value.bytes)
   const { copy } = useClipboard()
   let alive = true
   async function load(): Promise<void> {
@@ -61,7 +73,7 @@ export function useRemoteTextDocument(
   }
   function review(): void {
     if (!dirty.value || state.busy) return
-    if (bytes.value > 1024 * 1024) {
+    if (textMetrics(state.draft).bytes > 1024 * 1024) {
       state.error = '草稿超过 1 MB，请缩短后再保存'
       return
     }

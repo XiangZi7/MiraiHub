@@ -1,6 +1,6 @@
-import { createApp } from 'vue'
+import { createApp, nextTick } from 'vue'
 import { addCollection, type IconifyJSON } from '@iconify/vue'
-import lucideIcons from '@iconify-json/lucide/icons.json'
+import lucideIcons from 'virtual:mirai-icons'
 import App from './App.vue'
 
 // 离线字体：打包进产物，断网也能正常渲染
@@ -12,13 +12,14 @@ import '@fontsource-variable/jetbrains-mono'
 import '@/assets/styles/main.css'
 import { MIRAI_ICONS } from '@/constants/icons'
 import { startSettingsRuntime } from '@/utils/settings-runtime'
-import { appReady, IS_TAURI } from '@/utils/window'
+import { appReady, windowReady, IS_TAURI } from '@/utils/window'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { pinia } from '@/stores'
 import { createAppRouter } from '@/router'
 import { resolveWindowEntry } from '@/router/window-entry'
+import { loadSettings } from '@/api/settings'
 
-// 图标离线化：本地注册整套 lucide，避免 @iconify/vue 运行时去请求远端 API
+// 构建时自动收集实际使用的图标，保留离线能力而不加载整套图标集。
 addCollection(lucideIcons as IconifyJSON)
 // 自绘补充集：实心文件/文件夹 + Windows 窗口控制符号
 addCollection(MIRAI_ICONS)
@@ -50,7 +51,22 @@ router.onError(error => {
 })
 router
   .isReady()
-  .then(() => app.mount('#app'))
+  .then(async () => {
+    app.mount('#app')
+    if (IS_TAURI && entry.surface === 'settings') {
+      await getCurrentWindow().listen('settings-hidden', () => {
+        window.dispatchEvent(new Event('miraihub:settings-hidden'))
+      })
+      await getCurrentWindow().listen('settings-reopen', async () => {
+        await router.replace('/settings/general')
+        window.dispatchEvent(new Event('miraihub:settings-reopen'))
+        await nextTick()
+        await windowReady(loadSettings().windowMaterial)
+      })
+    }
+    if (entry.surface !== 'workspace' && entry.surface !== 'splash')
+      await windowReady(loadSettings().windowMaterial)
+  })
   .catch(() => {
     const root = document.getElementById('app')
     if (root) {
@@ -58,5 +74,7 @@ router
       root.style.cssText = 'padding:32px;color:#eee'
       // 启动失败也显示可读错误，避免主窗口一直隐藏在启动画面后。
       if (entry.surface === 'workspace') void appReady()
+      else if (entry.surface !== 'splash')
+        void windowReady(loadSettings().windowMaterial)
     }
   })

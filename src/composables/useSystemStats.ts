@@ -9,11 +9,15 @@
 import {
   computed,
   onBeforeUnmount,
+  onActivated,
+  onDeactivated,
+  shallowRef,
   reactive,
   toRefs,
   watch,
   type Ref,
 } from 'vue'
+import { useDocumentVisibility } from '@vueuse/core'
 import * as ssh from '@/api/ssh'
 import type { SshSystemStats } from '@/types/ssh'
 
@@ -46,7 +50,11 @@ export function useSystemStats(sessionId: Ref<string>) {
   let timer: ReturnType<typeof setTimeout> | undefined
   // 每次会话变化都递增。旧请求回来时用它判断结果是否已经过期，
   // 同时只阻止同一代请求重入，不妨碍切换服务器后立刻采新机器。
+  const visible = useDocumentVisibility()
+  const active = shallowRef(true)
+  const polling = computed(() => active.value && visible.value === 'visible')
   let generation = 0
+  const inflightSessions = new Set<string>()
   let inflightGeneration = -1
 
   /** 把新采样推进历史，超长丢最早的 */
@@ -70,8 +78,14 @@ export function useSystemStats(sessionId: Ref<string>) {
     const id = sessionId.value
     const requestGeneration = generation
 
-    if (!id || inflightGeneration === requestGeneration) return
+    if (
+      !id ||
+      inflightSessions.has(id) ||
+      inflightGeneration === requestGeneration
+    )
+      return
 
+    inflightSessions.add(id)
     inflightGeneration = requestGeneration
 
     if (!state.stats) state.loading = true
@@ -87,8 +101,10 @@ export function useSystemStats(sessionId: Ref<string>) {
       state.error = ''
       pushHistory(snapshot)
     } catch (err) {
-      state.error = ssh.errorMessage(err)
+      if (generation === requestGeneration && sessionId.value === id)
+        state.error = ssh.errorMessage(err)
     } finally {
+      inflightSessions.delete(id)
       if (generation === requestGeneration) {
         inflightGeneration = -1
         state.loading = false
@@ -104,6 +120,7 @@ export function useSystemStats(sessionId: Ref<string>) {
    */
   function schedule(expectedGeneration = generation): void {
     stop()
+    if (!polling.value || !sessionId.value) return
 
     timer = setTimeout(async () => {
       await refresh()
@@ -120,27 +137,31 @@ export function useSystemStats(sessionId: Ref<string>) {
     }
   }
 
-  /** 会话变化时重置并重新开始 */
+  /** Pause cached/hidden views without disconnecting their terminal sessions. */
   watch(
-    sessionId,
-    async id => {
+    [sessionId, polling],
+    async ([id, enabled], previous) => {
       stop()
       const currentGeneration = ++generation
       inflightGeneration = -1
-
-      state.stats = null
       state.loading = false
-      state.error = ''
-      state.history = { cpu: [], memory: [], disk: [], network: [] }
-
-      if (!id) return
-
+      if (!previous || id !== previous[0]) {
+        state.stats = null
+        state.error = ''
+        state.history = { cpu: [], memory: [], disk: [], network: [] }
+      }
+      if (!id || !enabled) return
       await refresh()
-
       if (generation === currentGeneration) schedule(currentGeneration)
     },
     { immediate: true }
   )
+  onActivated(() => {
+    active.value = true
+  })
+  onDeactivated(() => {
+    active.value = false
+  })
 
   onBeforeUnmount(() => {
     // 让正在等待的初次 refresh 失效，避免它在组件卸载后又把轮询定时器续起来。

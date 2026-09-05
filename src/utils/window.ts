@@ -2,6 +2,27 @@ import { readonly, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
+/** Wait for layout and a paint opportunity before revealing a native child window. */
+export async function windowReady(material: string): Promise<void> {
+  if (!IS_TAURI) return
+  // Hidden WebViews may throttle animation frames, so retain a bounded fallback.
+  await new Promise<void>(resolve => {
+    let first = 0,
+      second = 0
+    const finish = () => {
+      clearTimeout(timer)
+      cancelAnimationFrame(first)
+      cancelAnimationFrame(second)
+      resolve()
+    }
+    const timer = setTimeout(finish, 100)
+    first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(finish)
+    })
+  })
+  await invoke('window_ready', { material })
+}
+
 /**
  * 是否运行在 Tauri 容器内。
  * 浏览器里直接预览（pnpm dev 开 localhost）时为 false，

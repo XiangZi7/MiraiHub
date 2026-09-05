@@ -3,7 +3,7 @@
 //! 主窗是无边框 + 透明的，各平台补齐原生观感的手段不同，
 //! 集中放在这里，避免 `lib.rs` 里堆 `#[cfg]` 分支。
 
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::error::{AppError, AppResult};
 
@@ -149,13 +149,9 @@ pub fn open_connection_window(
     connection_id: Option<&str>,
 ) -> AppResult<()> {
     if let Some(dialog) = app.get_webview_window(CONNECTION_WINDOW) {
-        dialog.show().map_err(to_app_error)?;
-        dialog.set_focus().map_err(to_app_error)?;
-
-        if let Some(main) = app.get_webview_window("main") {
-            main.set_enabled(false).map_err(to_app_error)?;
+        if dialog.is_visible().map_err(to_app_error)? {
+            dialog.set_focus().map_err(to_app_error)?;
         }
-
         return Ok(());
     }
 
@@ -195,6 +191,7 @@ pub fn open_connection_window(
             // enable_window_shadow() 用 DWM 绘制，避免无边框窗口出现亮色描边。
             .shadow(false)
             .skip_taskbar(true)
+            .visible(false)
             .center();
 
     if let Some(parent) = main.as_ref() {
@@ -222,12 +219,6 @@ pub fn open_connection_window(
         });
     }
 
-    dialog.set_focus().map_err(to_app_error)?;
-
-    if let Some(parent) = main {
-        parent.set_enabled(false).map_err(to_app_error)?;
-    }
-
     Ok(())
 }
 
@@ -237,13 +228,12 @@ pub fn open_connection_window(
 /// 固定尺寸和原生父子关系让它保持设置对话框的行为：显示时禁用主窗，关闭后恢复。
 pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
     if let Some(dialog) = app.get_webview_window(SETTINGS_WINDOW) {
-        dialog.show().map_err(to_app_error)?;
-        dialog.set_focus().map_err(to_app_error)?;
-
-        if let Some(main) = app.get_webview_window("main") {
-            main.set_enabled(false).map_err(to_app_error)?;
+        if dialog.is_visible().map_err(to_app_error)? {
+            dialog.set_focus().map_err(to_app_error)?;
+        } else {
+            // The existing WebView resets drafts and acknowledges with window_ready.
+            dialog.emit("settings-reopen", ()).map_err(to_app_error)?;
         }
-
         return Ok(());
     }
 
@@ -266,6 +256,7 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
     .background_color(tauri::webview::Color(0, 0, 0, 0))
     .shadow(false)
     .skip_taskbar(true)
+    .visible(false)
     .center();
 
     if let Some(parent) = main.as_ref() {
@@ -282,20 +273,41 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
 
     if let Some(parent) = main.as_ref() {
         let parent_on_destroy = parent.clone();
-        dialog.on_window_event(move |event| {
-            if matches!(event, tauri::WindowEvent::Destroyed) {
+        let cached_dialog = dialog.clone();
+        dialog.on_window_event(move |event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                if cached_dialog.hide().is_ok() {
+                    let _ = cached_dialog.emit("settings-hidden", ());
+                    let _ = parent_on_destroy.set_enabled(true);
+                    let _ = parent_on_destroy.set_focus();
+                }
+            }
+            tauri::WindowEvent::Destroyed => {
                 let _ = parent_on_destroy.set_enabled(true);
                 let _ = parent_on_destroy.set_focus();
             }
+            _ => {}
+        });
+        // A cached, hidden settings WebView must not keep the application alive.
+        let cached_dialog = dialog.clone();
+        parent.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                let _ = cached_dialog.destroy();
+            }
         });
     }
+    Ok(())
+}
 
-    dialog.set_focus().map_err(to_app_error)?;
-
-    if let Some(parent) = main {
-        parent.set_enabled(false).map_err(to_app_error)?;
+pub fn show_child_window(window: &WebviewWindow) -> AppResult<()> {
+    window.show().map_err(to_app_error)?;
+    window.set_focus().map_err(to_app_error)?;
+    if matches!(window.label(), SETTINGS_WINDOW | CONNECTION_WINDOW) {
+        if let Some(main) = window.app_handle().get_webview_window("main") {
+            main.set_enabled(false).map_err(to_app_error)?;
+        }
     }
-
     Ok(())
 }
 

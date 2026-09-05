@@ -113,7 +113,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--color-panel);
+  background: var(--color-window);
 }
 .remote-editor-window :deep(.operation-window) {
   flex: 1;

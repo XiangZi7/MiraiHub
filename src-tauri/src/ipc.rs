@@ -48,6 +48,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         platform::remote_editor::remote_editor_finish,
         platform::commands::open_connection_window,
         platform::commands::open_settings_window,
+        platform::commands::window_ready,
         platform::commands::app_ready,
         platform::commands::set_window_material,
         platform::commands::set_tray_visible,

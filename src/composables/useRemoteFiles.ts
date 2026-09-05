@@ -7,6 +7,7 @@
 
 import {
   computed,
+  markRaw,
   onBeforeUnmount,
   reactive,
   toRefs,
@@ -15,6 +16,8 @@ import {
 } from 'vue'
 import * as ssh from '@/api/ssh'
 import type { SshRemoteFile } from '@/types/ssh'
+
+const fileCollator = new Intl.Collator()
 
 export function useRemoteFiles(sessionId: Ref<string>) {
   // 响应式状态
@@ -42,7 +45,7 @@ export function useRemoteFiles(sessionId: Ref<string>) {
 
       if (aDir !== bDir) return aDir ? -1 : 1
 
-      return a.name.localeCompare(b.name)
+      return fileCollator.compare(a.name, b.name)
     })
   )
 
@@ -84,7 +87,7 @@ export function useRemoteFiles(sessionId: Ref<string>) {
       if (currentRequest !== requestId || sessionId.value !== id) return false
 
       state.path = listing.path
-      state.entries = listing.entries
+      state.entries = markRaw(listing.entries)
       state.selected = ''
 
       if (record) pushHistory(listing.path)

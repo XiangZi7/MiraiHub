@@ -170,7 +170,12 @@ export function useLocalTerminal() {
     const fit = fitAddon.value
     if (!terminal || !fit) return
 
+    if (!terminal.element?.clientWidth || !terminal.element?.clientHeight)
+      return
+    const cols = terminal.cols,
+      rows = terminal.rows
     fit.fit()
+    if (terminal.cols === cols && terminal.rows === rows) return
     if (state.status === 'connected' && state.sessionId) {
       void localTerminal
         .resize(state.sessionId, terminal.cols, terminal.rows)

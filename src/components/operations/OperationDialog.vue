@@ -31,7 +31,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (document.querySelector('[role=alertdialog]')) return
   if (event.key === 'Escape') {
     event.preventDefault()
-    event.stopPropagation()
+    // Vue can flush between native window listeners; do not let this same Esc
+    // immediately dismiss the confirmation dialog opened by requestClose.
+    event.stopImmediatePropagation()
     if (!props.busy) emit('close')
   }
   if (event.key === 'Tab' && dialog.value) {
@@ -70,10 +72,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         :class="wide && 'wide'"
         :role="standalone ? 'region' : 'dialog'"
         :aria-modal="standalone ? undefined : true"
-        :aria-labelledby="titleId"
+        :aria-labelledby="standalone ? undefined : titleId"
+        :aria-label="standalone ? title : undefined"
         tabindex="-1"
       >
-        <header>
+        <header v-if="!standalone">
           <h2 :id="titleId">{{ title }}</h2>
           <div class="flex-1" />
           <IconButton
@@ -146,7 +149,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   width: 100%;
   height: 100%;
   padding: 0;
-  background: var(--color-panel);
+  background: transparent;
   backdrop-filter: none;
 }
 .operation-window .operation-dialog.wide {
@@ -157,6 +160,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  background: transparent;
 }
 @media (max-width: 700px) {
   .operation-backdrop {

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MiraiHub 本地性能验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      const snapshot = {
+        id: 'preview',
+        sessionId: 'preview',
+        endpoint: 'preview-server:22',
+        path: '/etc/nginx/nginx.conf',
+        text: '# MiraiHub editor preview\nworker_processes auto;\n\nevents {\n    worker_connections 1024;\n}\n\nhttp {\n    include mime.types;\n    sendfile on;\n    keepalive_timeout 65;\n}\n',
+        lineEnding: 'LF',
+        bom: false,
+        backupPath: null,
+      }
+      mockWindows('preview')
+      mockIPC((command, args) => {
+        if (command === 'ssh_text_open') return { ...snapshot }
+        if (command === 'ssh_text_save') {
+          snapshot.text = args.text
+          return { ...snapshot, backupPath: '/etc/nginx/nginx.conf.backup' }
+        }
+        if (command === 'plugin:event|listen') return 1
+      })
+      const [
+        { createApp, h, ref, computed, onMounted, nextTick },
+        { pinia },
+        { addCollection },
+        { default: icons },
+        { MIRAI_ICONS },
+        { default: Editor },
+        { default: List },
+      ] = await Promise.all([
+        import('vue'),
+        import('/src/stores/index.ts'),
+        import('@iconify/vue'),
+        import('virtual:mirai-icons'),
+        import('/src/constants/icons.ts'),
+        import('/src/components/operations/RemoteTextEditor.vue'),
+        import('/src/components/workspace/RemoteFileList.vue'),
+      ])
+      await import('/src/assets/styles/main.css')
+      addCollection(icons)
+      addCollection(MIRAI_ICONS)
+      const files = Array.from({ length: 10000 }, (_, i) => ({
+        path: '/preview/file-' + i,
+        name: 'file-' + String(i).padStart(5, '0') + '.txt',
+        size: 2048,
+        kind: 'file',
+        permissions: '-rw-r--r--',
+        owner: 'preview',
+        group: 'preview',
+        modifiedAt: 1788600000000,
+      }))
+      createApp({
+        setup() {
+          const selected = ref(''),
+            query = ref(''),
+            opened = ref('')
+          const filtered = computed(() =>
+            files.filter(f => f.name.includes(query.value))
+          )
+          const count = ref(0)
+          onMounted(() => {
+            const observer = new MutationObserver(() => {
+              count.value = document.querySelectorAll('[role=option]').length
+            })
+            observer.observe(document.getElementById('app'), {
+              childList: true,
+              subtree: true,
+            })
+          })
+          return () =>
+            new URLSearchParams(location.search).get('view') === 'files'
+              ? h(
+                  'main',
+                  {
+                    style:
+                      'height:100vh;display:flex;flex-direction:column;padding:16px',
+                  },
+                  [
+                    h('input', {
+                      'aria-label': '筛选测试文件',
+                      placeholder: '筛选 10,000 个文件',
+                      value: query.value,
+                      onInput: e => {
+                        query.value = e.target.value
+                      },
+                      style: 'padding:12px',
+                    }),
+                    h(
+                      'p',
+                      { role: 'status' },
+                      `10,000 个测试文件 · 已渲染 ${count.value} 行 · ${opened.value}`
+                    ),
+                    h(List, {
+                      files: filtered.value,
+                      selected: selected.value,
+                      onSelect: p => {
+                        selected.value = p
+                      },
+                      onOpen: f => {
+                        opened.value = f.name
+                      },
+                      onContextmenu: (_e, f) => {
+                        opened.value = '菜单: ' + f.name
+                      },
+                    }),
+                  ]
+                )
+              : h(
+                  'main',
+                  {
+                    style:
+                      'height:100vh;display:flex;background:var(--color-window)',
+                  },
+                  [
+                    h(Editor, {
+                      sessionId: snapshot.sessionId,
+                      path: snapshot.path,
+                      connectionName: 'Preview Server',
+                      standalone: true,
+                    }),
+                  ]
+                )
+        },
+      })
+        .use(pinia)
+        .mount('#app')
+    </script>
+  </body>
+</html>

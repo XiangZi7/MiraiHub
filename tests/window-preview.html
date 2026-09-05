@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>设置窗口复用验证</title>
+  </head>
+  <body style="margin: 0; background: #222; color: white">
+    <nav>
+      <button id="hide">模拟关闭设置</button
+      ><button id="show">模拟重新打开</button>
+    </nav>
+    <iframe
+      title="设置预览"
+      id="settings"
+      src="/?window=settings"
+      style="width: 620px; height: 480px; border: 0"
+    ></iframe>
+    <script>
+      const frame = document.getElementById('settings')
+      document.getElementById('hide').onclick = () =>
+        frame.contentWindow.dispatchEvent(new Event('miraihub:settings-hidden'))
+      document.getElementById('show').onclick = () =>
+        frame.contentWindow.dispatchEvent(new Event('miraihub:settings-reopen'))
+    </script>
+  </body>
+</html>

@@ -24,15 +24,12 @@ import { useRemoteEditor } from '@/composables/useRemoteEditor'
 import { useRemoteFiles } from '@/composables/useRemoteFiles'
 import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
-import { FILE_KIND_META, extensionOf } from '@/constants/files'
 import type { ContextMenuItem } from '@/types/context-menu'
 import type { SshRemoteFile } from '@/types/ssh'
-import { cn } from '@/utils/cn'
 import { scheduleClipboardClear } from '@/utils/clipboard'
-import { formatBytes } from '@/utils/format'
-import { formatDateTime } from '@/utils/time'
 import FileConflictDialog from './FileConflictDialog.vue'
 import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
+import RemoteFileList from './RemoteFileList.vue'
 import RemotePathInput from './RemotePathInput.vue'
 
 const { settings } = useSettings()
@@ -105,13 +102,14 @@ const pathEntries = computed(() =>
     file => settings.showHiddenFiles || !file.name.startsWith('.')
   )
 )
-const visibleEntries = computed(() =>
-  pathEntries.value.filter(file =>
-    file.name
-      .toLocaleLowerCase()
-      .includes(filterText.value.trim().toLocaleLowerCase())
-  )
-)
+const visibleEntries = computed(() => {
+  const query = filterText.value.trim().toLocaleLowerCase()
+  return query
+    ? pathEntries.value.filter(file =>
+        file.name.toLocaleLowerCase().includes(query)
+      )
+    : pathEntries.value
+})
 watch(
   () => props.sessionId,
   () => {
@@ -172,21 +170,6 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     },
   ]
 })
-
-function metaOf(file: SshRemoteFile): { icon: string; tone: string } {
-  if (file.kind === 'directory') return FILE_KIND_META.folder
-  if (file.kind === 'symlink')
-    return { icon: 'lucide:link', tone: 'text-violet' }
-  return FILE_KIND_META[extensionOf(file.name)]
-}
-
-function sizeOf(file: SshRemoteFile): string {
-  return file.kind === 'directory' ? '–' : formatBytes(file.size)
-}
-
-function modifiedOf(file: SshRemoteFile): string {
-  return file.modifiedAt ? formatDateTime(file.modifiedAt) : '—'
-}
 
 const summary = computed(() => {
   const dirs = visibleEntries.value.filter(
@@ -565,39 +548,13 @@ defineExpose({ pickUploadFiles })
       <span>Modified</span>
     </div>
 
-    <div class="scroll-thin min-h-0 flex-1 overflow-y-auto py-1">
-      <button
-        v-for="file in visibleEntries"
-        :key="file.path"
-        type="button"
-        :class="
-          cn(
-            'grid w-full grid-cols-[1fr_80px_130px] items-center gap-3 px-3 py-1.75 text-left text-xs transition-colors',
-            selected === file.path ? 'bg-raised' : 'hover:bg-hover'
-          )
-        "
-        :title="`${file.permissions}  ${file.owner}:${file.group}`"
-        @click="selected = file.path"
-        @dblclick="openRemote(file)"
-        @contextmenu.prevent.stop="openMenu($event, file)"
-      >
-        <span class="flex min-w-0 items-center gap-2">
-          <AppIcon
-            :name="metaOf(file).icon"
-            :size="15"
-            :class="metaOf(file).tone"
-          />
-          <span class="text-txt truncate">{{ file.name }}</span>
-          <span
-            v-if="file.linkTarget"
-            class="text-txt-4 shrink-0 truncate text-[10.5px]"
-            >→ {{ file.linkTarget }}</span
-          >
-        </span>
-        <span class="text-txt-3 text-right">{{ sizeOf(file) }}</span>
-        <span class="text-txt-3 truncate">{{ modifiedOf(file) }}</span>
-      </button>
-
+    <RemoteFileList
+      :files="visibleEntries"
+      :selected="selected"
+      @select="selected = $event"
+      @open="openRemote"
+      @contextmenu="openMenu"
+    >
       <p
         v-if="loading"
         class="text-txt-4 py-8 text-center text-xs"
@@ -622,7 +579,7 @@ defineExpose({ pickUploadFiles })
               : '这个目录是空的'
         }}
       </p>
-    </div>
+    </RemoteFileList>
 
     <footer
       class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px]"

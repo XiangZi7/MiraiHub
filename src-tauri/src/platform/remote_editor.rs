@@ -161,9 +161,10 @@ pub async fn open_remote_editor_window(
     let _opening = windows.opening.lock().await;
     if let Some(label) = windows.existing(&request) {
         if let Some(editor) = app.get_webview_window(&label) {
-            editor.show().map_err(native_error)?;
-            editor.unminimize().map_err(native_error)?;
-            editor.set_focus().map_err(native_error)?;
+            if editor.is_visible().map_err(native_error)? {
+                editor.unminimize().map_err(native_error)?;
+                editor.set_focus().map_err(native_error)?;
+            }
             return Ok(());
         }
         windows.remove(&label);
@@ -190,8 +191,8 @@ pub async fn open_remote_editor_window(
     .resizable(true)
     .minimizable(true)
     .maximizable(true)
-    .transparent(false)
-    .background_color(tauri::webview::Color(20, 20, 26, 255))
+    .transparent(true)
+    .background_color(tauri::webview::Color(0, 0, 0, 0))
     .theme(Some(tauri::Theme::Dark))
     .shadow(true)
     .visible(false)
@@ -230,11 +231,7 @@ pub async fn open_remote_editor_window(
         }
         _ => {}
     });
-    if let Err(error) = editor.show().and_then(|_| editor.set_focus()) {
-        let _ = editor.destroy();
-        windows.remove(&label);
-        return Err(native_error(error));
-    }
+    // The page's window_ready handshake applies the user's material and reveals it.
     Ok(())
 }
 #[tauri::command]

@@ -101,7 +101,7 @@ function removeIndex(id: string): void {
         <div class="index-card-heading">
           <span class="index-icon"
             ><AppIcon
-              name="lucide:list-key"
+              name="lucide:list-tree"
               :size="14"
           /></span>
           <label class="field-label"
@@ -191,7 +191,7 @@ function removeIndex(id: string): void {
         class="empty-state"
       >
         <AppIcon
-          name="lucide:list-key"
+          name="lucide:list-tree"
           :size="24"
         />
         <p>尚未配置额外索引</p>

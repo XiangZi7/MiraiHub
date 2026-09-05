@@ -66,7 +66,7 @@ let pageRevision = 0
 const tablePanels: Array<{ id: DetailPanel; label: string; icon: string }> = [
   { id: 'data', label: '数据', icon: 'lucide:table-2' },
   { id: 'columns', label: '字段', icon: 'lucide:columns-3' },
-  { id: 'indexes', label: '索引', icon: 'lucide:list-key' },
+  { id: 'indexes', label: '索引', icon: 'lucide:list-tree' },
   { id: 'relations', label: '外键', icon: 'lucide:git-branch' },
   { id: 'ddl', label: 'DDL', icon: 'lucide:file-code-2' },
 ]
@@ -909,7 +909,7 @@ watch(
           >
             <div class="text-txt flex items-center gap-2 text-xs">
               <AppIcon
-                :name="index.primary ? 'lucide:key-round' : 'lucide:list-key'"
+                :name="index.primary ? 'lucide:key-round' : 'lucide:list-tree'"
                 :size="13"
                 :class="index.primary ? 'text-amber' : 'text-violet'"
               />{{ index.name

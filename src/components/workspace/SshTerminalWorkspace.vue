@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {
   computed,
+  defineAsyncComponent,
+  watch,
   nextTick,
   reactive,
   shallowRef,
@@ -9,9 +11,12 @@ import {
 } from 'vue'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import TerminalPanel from './TerminalPanel.vue'
-import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+
+const AiAgentPanel = defineAsyncComponent(
+  () => import('@/components/agent/AiAgentPanel.vue')
+)
 
 const props = withDefaults(
   defineProps<{
@@ -31,6 +36,14 @@ const split = shallowRef(false)
 // AI 始终绑定主终端的会话；切换连接后不复用旧会话审批。
 const state = reactive({ aiOpen: false, aiSplit: false, sessionId: '' })
 const { aiOpen, aiSplit } = toRefs(state)
+const aiVisited = shallowRef(false)
+watch(
+  aiOpen,
+  open => {
+    if (open) aiVisited.value = true
+  },
+  { flush: 'sync' }
+)
 const target = computed(() => ({
   kind: 'ssh' as const,
   sessionId: state.sessionId,
@@ -144,6 +157,7 @@ defineExpose({
         />
       </div>
       <AiAgentPanel
+        v-if="aiVisited"
         v-show="aiOpen"
         :target="target"
         :title="title || config.host"

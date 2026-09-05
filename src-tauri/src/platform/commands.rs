@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 use crate::error::AppResult;
 
@@ -18,6 +18,7 @@ use super::window;
 #[derive(Clone, Default)]
 pub struct WindowPreferences {
     minimize_to_tray: Arc<AtomicBool>,
+    opening: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl WindowPreferences {
@@ -33,16 +34,39 @@ impl WindowPreferences {
 #[tauri::command]
 pub async fn open_connection_window(
     app: AppHandle,
+    preferences: tauri::State<'_, WindowPreferences>,
     kind: Option<String>,
     connection_id: Option<String>,
 ) -> AppResult<()> {
+    let _opening = preferences.opening.lock().await;
     window::open_connection_window(&app, kind.as_deref(), connection_id.as_deref())
 }
 
 /// 打开原生设置子窗口。
 #[tauri::command]
-pub async fn open_settings_window(app: AppHandle) -> AppResult<()> {
+pub async fn open_settings_window(
+    app: AppHandle,
+    preferences: tauri::State<'_, WindowPreferences>,
+) -> AppResult<()> {
+    let _opening = preferences.opening.lock().await;
     window::open_settings_window(&app)
+}
+
+/// Child windows are revealed only after their first usable frame is ready.
+#[tauri::command]
+pub async fn window_ready(window: WebviewWindow, material: String) -> AppResult<()> {
+    let label = window.label();
+    if label != "settings"
+        && label != "connection"
+        && !label.starts_with(super::remote_editor::PREFIX)
+    {
+        return Err(crate::error::AppError::invalid_input("不是子窗口"));
+    }
+    // A material failure must never leave an otherwise usable window hidden.
+    if let Err(error) = window::set_window_material(&window, &material) {
+        log::warn!("应用子窗口材质失败: {error}");
+    }
+    window::show_child_window(&window)
 }
 
 /// 首屏挂载完成后再显示主窗口，避免初始化期间闪出未渲染页面。
@@ -68,7 +92,7 @@ pub async fn app_ready(app: AppHandle) -> AppResult<()> {
 #[tauri::command]
 pub async fn set_window_material(app: AppHandle, material: String) -> AppResult<()> {
     for (label, webview) in app.webview_windows() {
-        if label != window::SPLASH_WINDOW && !label.starts_with(super::remote_editor::PREFIX) {
+        if label != window::SPLASH_WINDOW {
             window::set_window_material(&webview, &material)?;
         }
     }
