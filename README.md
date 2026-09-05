@@ -21,14 +21,16 @@ pnpm build
 
 ## 自动打包与版本发布
 
-将代码提交到 GitHub 后，推送 `v` 开头的版本标签即可触发 `.github/workflows/release.yml`，自动测试、打包 Windows x64，并发布 GitHub Release。
+先提交准备发布的源码，再运行一条命令，自动递增版本、提交版本文件并推送当前分支和新标签，触发 GitHub Actions 测试、打包 Windows x64 并发布 GitHub Release：
 
 ```powershell
-git tag -a v0.2.0 -m "MiraiHub v0.2.0"
-git push origin v0.2.0
+pnpm release               # 补丁版本 +1，例如 v1.0.1 → v1.0.2
+pnpm release minor         # 次版本 +1，例如 v1.0.2 → v1.1.0
+pnpm release major         # 主版本 +1，例如 v1.1.0 → v2.0.0
+pnpm release --dry-run     # 仅预览，不发版
 ```
 
-标签版本自动同步到应用“关于”页、Tauri 配置和 Rust 包。正式版使用 `v0.2.0`，测试版使用 `v0.2.0-beta.1`（也支持 `alpha`、`rc`）。每次发布应使用新标签。
+上面的命令各自独立，日常发版只需运行 `pnpm release`。版本基于本地配置、本地标签和远程标签中的最高版本递增，自动同步到应用“关于”页、Tauri 配置和 Rust 包。正式发版要求工作区无未提交改动，并具有 `origin` 的推送权限。测试版仍可手动推送 `v0.2.0-beta.1` 等标签（也支持 `alpha`、`rc`）。
 
 发布附件包括安装程序、免安装 ZIP、SHA-256 校验文件和版本信息。免安装版需要系统已安装 WebView2 Runtime；数据仍使用应用的用户数据目录。
 

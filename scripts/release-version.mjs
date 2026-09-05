@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
-const versionFiles = [
+export const versionFiles = [
   "package.json",
   "src-tauri/tauri.conf.json",
   "src-tauri/Cargo.toml",

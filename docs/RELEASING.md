@@ -1,25 +1,61 @@
 # GitHub 上传与自动发版
 
+## 一条命令发版
+
+先提交准备发布的源码，再运行：
+
+```powershell
+pnpm release
+```
+
+脚本默认递增补丁版本，依次检查工作区和远程分支、读取本地与远程版本标签、同步四个版本文件、创建 `chore(release): vX.Y.Z` 提交和附注标签，然后将当前分支与新标签一起推送到 `origin`。GitHub Actions 接着自动测试、构建安装版和免安装版、上传附件并公开 Release，无需手动填写版本号或创建 Release。
+
+| 命令                                   | 用途                                                     |
+| -------------------------------------- | -------------------------------------------------------- |
+| `pnpm release` 或 `pnpm release patch` | 补丁版本 +1，例如 `1.0.1 → 1.0.2`                        |
+| `pnpm release minor`                   | 次版本 +1，补丁归零，例如 `1.0.2 → 1.1.0`                |
+| `pnpm release major`                   | 主版本 +1，其余归零，例如 `1.1.0 → 2.0.0`                |
+| `pnpm release --dry-run`               | 联网读取标签并预览，不修改文件、创建提交、创建标签或推送 |
+| `pnpm release --retry v1.0.2`          | 推送失败后重试同一版本，不再递增                         |
+
+自动递增以本地 `package.json`、本地标签、`origin` 推送目标的远程标签中最高的主/次/补丁版本为基准。例如源码仍是 `0.1.0`，远程已有 `v1.0.1`，下一次默认发版就是 `v1.0.2`。预发布标签的数值版本也参与比较；该命令总是递增所选数字段并生成正式版，例如基准为 `v2.0.0-beta.1` 时默认生成 `v2.0.1`。需要发布预览版时，使用下文的手动标签流程。
+
+正式发版要求：
+
+- 源码、暂存区和未跟踪文件均无待提交改动；脚本只自动提交四个版本文件。`--dry-run` 可在有改动时预览。
+- 已配置 Git 作者信息和唯一的 `origin` 推送地址，并拥有当前分支与标签的推送权限。
+- 当前检出的是分支，且包含远程同名分支的最新提交；落后或分叉时，先自行拉取并整合。
+
+分支与新标签使用原子推送：任一项被拒绝，两者都不会更新。不会强制推送、覆盖旧标签或顺带推送其他标签。推送失败时保留本地版本提交和标签，按报错提示执行 `pnpm release --retry vX.Y.Z`。重试要求版本文件与标签一致、标签指向当前 HEAD；若这期间又提交了代码，先检查并处理原版本提交。
+
+命令成功表示版本提交和标签已推送，最终安装包是否发布成功请看 **Actions → Release**。如果标签已推送而 CI 失败，直接在 Actions 重试失败任务；`--retry` 推送已存在的标签不会重新触发工作流。
+
 ## 首次上传
 
 当前仓库的远程地址为 `https://github.com/XiangZi7/MiraiHub.git`，开发分支为 `master`。
 
 1. 在 GitHub 仓库的 Actions 页面确认工作流已启用。工作流使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需个人 Token 或额外 Secret。
 2. 检查本地改动，将准备发布的源码、锁文件、`scripts`、`tests` 和 `.github/workflows/release.yml` 一起提交。不要上传本地连接备份、SSH 私钥或 AI API Key。`node_modules`、`dist`、Rust `target` 和 `release-output` 已被忽略。
-3. 上传当前分支，再创建版本标签。
+3. 提交后运行一键发版命令；它会一并上传当前分支并创建新版本标签。
 
 ```powershell
 git status
 # 使用编辑器的源代码管理界面选择需要上传的文件并暂存；也可逐个 git add。
-git commit -m "Add automated Windows releases"
-git push -u origin master
-git tag -a v0.2.0 -m "MiraiHub v0.2.0"
-git push origin v0.2.0
+git commit -m "chore: prepare release"
+pnpm release
 ```
 
 如果你克隆到了另一仓库，先通过 `git remote -v` 确认 `origin`，再推送。工作流从 GitHub 上下文读取仓库名，不写死发布目标。
 
-## 标签与版本号
+## 手动标签与版本号
+
+也可以手动指定版本并推送标签，适合测试版或需要精确指定版本号的情况。先提交源码并推送分支，再使用一个尚未发布的新标签，例如：
+
+```powershell
+git push origin master
+git tag -a v1.1.0-beta.1 -m "MiraiHub v1.1.0-beta.1"
+git push origin v1.1.0-beta.1
+```
 
 | 标签            | 应用版本       | Release 类型               |
 | --------------- | -------------- | -------------------------- |
@@ -37,14 +73,14 @@ CI 以标签为唯一版本来源，在构建前同时更新：
 - `src-tauri/Cargo.toml` 中的 MiraiHub 版本
 - `src-tauri/Cargo.lock` 中的 MiraiHub 版本
 
-这些同步只发生在 GitHub 的临时构建目录，不会向 `master` 自动提交。只推标签也能得到正确版本的安装包。若希望本地源码也显示新版本，可先执行并提交：
+手动推标签时，这些同步只发生在 GitHub 的临时构建目录，不会向 `master` 自动提交；使用 `pnpm release` 则会先在本地同步并提交版本文件。手动发版若希望本地源码也显示新版本，可先执行并提交：
 
 ```powershell
 pnpm version:set v0.2.0
 pnpm version:check
 ```
 
-版本升级幅度由你决定：修复用修订版本、新功能用次版本、不兼容变化用主版本。工作流不会猜测或自增版本号。Windows 文件属性中的数值版本受系统格式限制；应用内和发行文件名保留完整的测试版后缀。
+版本升级幅度由你决定：修复用修订版本、新功能用次版本、不兼容变化用主版本。`pnpm release` 在本地按所选幅度递增，GitHub 工作流使用推送的标签，不会再次递增。Windows 文件属性中的数值版本受系统格式限制；应用内和发行文件名保留完整的测试版后缀。
 
 ## 工作流与下载
 
