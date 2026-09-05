@@ -30,7 +30,7 @@ import { applyZoom } from '@/utils/settings-runtime'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 import SettingsSidebar from '@/components/settings/SettingsSidebar.vue'
 import ThemeSkinPanel from '@/components/settings/ThemeSkinPanel.vue'
-import { applySkin } from '@/utils/skin-runtime'
+import { useSkinPreview } from '@/composables/useSkinPreview'
 import packageInfo from '../../../package.json'
 
 const AiSettingsPanel = defineAsyncComponent(
@@ -52,31 +52,14 @@ const activePageId = computed<SettingsPageId>({
   },
 })
 const draft = reactive<SettingsValues>({ ...settings })
-// 仅在设置窗口预览，取消时不更改已保存值或其他窗口。
+const skinPreview = useSkinPreview(draft, settings)
+// 界面缩放仅在设置窗口预览。
 watch(
   () => draft.uiScale,
   value => void applyZoom(value)
 )
-watch(
-  () => [
-    draft.skinTheme,
-    draft.skinLibrary,
-    draft.skinBase,
-    draft.skinStyle,
-    draft.skinBackground,
-    draft.skinBackgroundImage,
-    draft.skinBackgroundOpacity,
-    draft.skinBackgroundBlur,
-    draft.skinBackgroundFit,
-    draft.skinBackgroundPosition,
-  ],
-  (_value, previous) =>
-    applySkin(draft, { includeCustom: false, animate: Boolean(previous) }),
-  { immediate: true }
-)
 onBeforeUnmount(() => {
   void applyZoom(settings.uiScale)
-  applySkin(settings, { animate: false })
 })
 
 const runtimeValues = reactive<Record<string, string>>({
@@ -140,8 +123,8 @@ function pageOf(key: SettingKey): SettingsPageId | undefined {
   )?.id
 }
 
-function closeDialog(): void {
-  applySkin(settings, { animate: false })
+async function closeDialog(): Promise<void> {
+  await skinPreview.finish()
   void applyZoom(settings.uiScale)
   if (IS_TAURI) {
     closeWindow()

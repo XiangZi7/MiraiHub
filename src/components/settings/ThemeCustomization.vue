@@ -103,7 +103,7 @@ function loadCss(): void {
         @update:model-value="emit('update', { skinCustomCss: $event })"
       />
       <p>
-        在上方预览中实时查看，保存后应用。可覆盖颜色变量，也可编写组件样式。
+        上方预览与主窗口实时同步，保存后保留，取消可还原。支持颜色变量和组件样式。
       </p>
     </section>
     <div class="customization-row background-heading">

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>主窗口皮肤同步与撤销验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, reactive } from 'vue'
+      import WindowFrame from '/src/components/ui/WindowFrame.vue'
+      import { pinia } from '/src/stores/index.ts'
+      import { DEFAULT_SETTINGS } from '/src/types/settings.ts'
+      import { saveSettings, loadSettings } from '/src/api/settings.ts'
+      import { startSettingsRuntime } from '/src/utils/settings-runtime.ts'
+      import { skinRuntime } from '/src/utils/skin-runtime.ts'
+      import '/src/assets/styles/main.css'
+
+      const storageKey = 'miraihub.settings.v1'
+      const original = localStorage.getItem(storageKey)
+      const state = reactive({ results: [], complete: false })
+      saveSettings({ ...DEFAULT_SETTINGS, reduceMotion: true })
+      startSettingsRuntime({ skinPreview: true })
+      createApp({
+        render: () =>
+          h(
+            WindowFrame,
+            { class: 'h-screen w-screen', style: 'padding:20px;overflow:auto' },
+            () => [
+              h('h1', { style: 'font-size:18px' }, '主窗口皮肤同步与撤销验证'),
+              h(
+                'p',
+                { id: 'test-status' },
+                state.complete ? '验证完成' : '验证中'
+              ),
+              h(
+                'ul',
+                { id: 'test-results' },
+                state.results.map(result => h('li', result))
+              ),
+              h('div', { id: 'settings-frame' }),
+            ]
+          ),
+      })
+        .use(pinia)
+        .mount('#app')
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+      async function until(check, message) {
+        for (let i = 0; i < 100; i++) {
+          if (check()) return
+          await wait(40)
+        }
+        throw new Error(message)
+      }
+      function assert(value, message) {
+        if (!value) throw new Error(message)
+      }
+      async function check(name, fn) {
+        try {
+          await fn()
+          state.results.push('PASS · ' + name)
+        } catch (e) {
+          state.results.push('FAIL · ' + name + ': ' + e.message)
+        }
+      }
+      let frame
+      async function closeFrame() {
+        if (!frame) return
+        frame.contentWindow.dispatchEvent(new Event('miraihub:settings-hidden'))
+        await wait(40)
+        frame.remove()
+        frame = undefined
+      }
+      async function openSettings() {
+        await closeFrame()
+        frame = document.createElement('iframe')
+        frame.src = '/?window=settings#/settings/skin'
+        frame.title = '真实设置窗口'
+        frame.style =
+          'width:1000px;height:600px;max-width:100%;border:1px solid var(--color-line);margin-top:20px'
+        document.getElementById('settings-frame').append(frame)
+        await until(
+          () => frame.contentDocument?.querySelector('.mirai-card'),
+          '设置未挂载'
+        )
+        return frame.contentDocument
+      }
+      function button(doc, label) {
+        return [...doc.querySelectorAll('button')].find(
+          el => el.textContent.trim() === label || el.title === label
+        )
+      }
+      await check(
+        '切换和调节参数同步主窗口，预览期间已保存值不变',
+        async () => {
+          const doc = await openSettings()
+          doc.querySelector('.mirai-card').click()
+          await until(
+            () => document.documentElement.dataset.skin === 'kuriyama-mirai',
+            '主窗口未同步皮肤'
+          )
+          const slider = doc.querySelector('.app-slider input')
+          slider.value = '72'
+          slider.dispatchEvent(new Event('input', { bubbles: true }))
+          await until(() => skinRuntime.opacity === 0.72, '背景参数未同步')
+          assert(loadSettings().skinTheme === 'default', '预览被提前保存')
+          button(doc, '取消').click()
+          await until(
+            () =>
+              document.documentElement.dataset.skin === 'default' &&
+              !skinRuntime.background,
+            '取消没有恢复原皮肤'
+          )
+        }
+      )
+      await check('自定义 CSS 实时同步主窗口，取消恢复原样', async () => {
+        const doc = await openSettings()
+        const accent = getComputedStyle(document.documentElement)
+          .getPropertyValue('--color-accent')
+          .trim()
+        doc.querySelector('[role=combobox]').click()
+        await until(() => doc.querySelector('[role=option]'), '样式菜单未打开')
+        const option = [...doc.querySelectorAll('[role=option]')].find(el =>
+          el.textContent.includes('自定义 CSS')
+        )
+        option.click()
+        await until(() => doc.querySelector('textarea'), 'CSS 编辑器未显示')
+        const editor = doc.querySelector('textarea')
+        editor.value = ':root { --color-accent: #123456; }'
+        editor.dispatchEvent(new Event('input', { bubbles: true }))
+        await until(
+          () =>
+            getComputedStyle(document.documentElement)
+              .getPropertyValue('--color-accent')
+              .trim() === '#123456',
+          '主窗口 CSS 未同步'
+        )
+        assert(loadSettings().skinLibrary === '[]', '自定义皮肤被提前保存')
+        button(doc, '取消').click()
+        await until(
+          () =>
+            getComputedStyle(document.documentElement)
+              .getPropertyValue('--color-accent')
+              .trim() === accent,
+          'CSS 没有恢复'
+        )
+      })
+      for (const action of ['Esc', '关闭按钮', '原生隐藏', '页面关闭'])
+        await check(
+          `${action} 撤销未确认皮肤，重开从已保存状态开始`,
+          async () => {
+            const doc = await openSettings()
+            assert(
+              doc
+                .querySelector('.default-card')
+                .getAttribute('aria-pressed') === 'true',
+              '重开保留了未确认皮肤'
+            )
+            doc.querySelector('.mirai-card').click()
+            await until(() => skinRuntime.background, '主窗口未预览')
+            if (action === 'Esc')
+              frame.contentWindow.dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'Escape' })
+              )
+            else if (action === '关闭按钮') button(doc, '关闭 (Esc)').click()
+            else if (action === '原生隐藏')
+              frame.contentWindow.dispatchEvent(
+                new Event('miraihub:settings-hidden')
+              )
+            else
+              frame.contentWindow.dispatchEvent(
+                new PageTransitionEvent('pagehide')
+              )
+            await until(() => !skinRuntime.background, '没有撤销预览')
+            assert(
+              loadSettings().skinTheme === 'default',
+              '关闭错误修改了保存值'
+            )
+          }
+        )
+      await check('快速切换后立即取消，不会被迟到预览覆盖', async () => {
+        const doc = await openSettings()
+        doc.querySelector('.mirai-card').click()
+        button(doc, '取消').click()
+        await wait(200)
+        assert(
+          document.documentElement.dataset.skin === 'default',
+          '迟到的预览覆盖了取消'
+        )
+      })
+      await check(
+        '保存后关闭保留新皮肤，再次预览取消回到新保存值',
+        async () => {
+          let doc = await openSettings()
+          doc.querySelector('.mirai-card').click()
+          button(doc, '保存设置').click()
+          await until(
+            () =>
+              loadSettings().skinTheme === 'kuriyama-mirai' &&
+              skinRuntime.background,
+            '保存后没有保留皮肤'
+          )
+          doc = await openSettings()
+          doc.querySelector('.default-card').click()
+          await until(() => !skinRuntime.background, '第二次预览未生效')
+          button(doc, '取消').click()
+          await until(() => skinRuntime.background, '取消没有恢复新保存的皮肤')
+          assert(
+            loadSettings().skinTheme === 'kuriyama-mirai',
+            '取消覆盖了保存值'
+          )
+        }
+      )
+      await closeFrame()
+      await wait(80)
+      if (original === null) localStorage.removeItem(storageKey)
+      else localStorage.setItem(storageKey, original)
+      window.dispatchEvent(new Event('miraihub:settings-changed'))
+      state.complete = true
+    </script>
+  </body>
+</html>

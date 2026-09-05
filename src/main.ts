@@ -36,7 +36,8 @@ const entry = resolveWindowEntry(
 )
 const app = createApp(App)
 app.use(pinia)
-if (entry.surface !== 'splash') startSettingsRuntime()
+if (entry.surface !== 'splash')
+  startSettingsRuntime({ skinPreview: entry.surface === 'workspace' })
 // 保留旧版子窗口 query，同时让第一次导航直接命中正式路由。
 if (!window.location.hash && entry.surface !== 'workspace')
   window.history.replaceState(

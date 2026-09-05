@@ -5,6 +5,9 @@ import { useSettingsStore } from '@/stores/settings'
 import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
 import { applySkin } from '@/utils/skin-runtime'
+import { loadSettings } from '@/api/settings'
+import { subscribeSkinPreview } from '@/api/skin-preview'
+import type { SkinSettings } from '@/utils/skin'
 
 let started = false
 
@@ -14,10 +17,21 @@ let started = false
  * 每个 WebView 窗口都各自调用一次，这样设置窗口、连接窗口也跟着变；
  * 托盘、材质、自启动这类只能由主窗口触发一次的动作放在 WorkspaceLayout 里。
  */
-export function startSettingsRuntime(): void {
+export function startSettingsRuntime(
+  options: { skinPreview?: boolean } = {}
+): void {
   if (started) return
   started = true
   const settings = useSettingsStore(pinia).values
+  let preview: SkinSettings | null = null
+  if (options.skinPreview) {
+    const stop = subscribeSkinPreview(skin => {
+      preview = skin
+      // Read durable values on rollback, even if the save notification is still in flight.
+      applySkin(skin ?? loadSettings())
+    })
+    import.meta.hot?.dispose(stop)
+  }
 
   watch(
     () =>
@@ -49,7 +63,7 @@ export function startSettingsRuntime(): void {
       settings.skinBackgroundFit,
       settings.skinBackgroundPosition,
     ],
-    () => applySkin(settings),
+    () => applySkin(preview ?? settings),
     { immediate: true }
   )
 
