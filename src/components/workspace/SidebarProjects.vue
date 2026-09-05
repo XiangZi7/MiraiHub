@@ -47,6 +47,7 @@ const state = reactive({
   menuConnection: null as SavedConnection | null,
   menuGroup: null as ConnectionGroupView | null,
 });
+let menuTrigger: HTMLElement | null = null;
 
 const contextItems = computed<ContextMenuItem[]>(() => {
   if (state.menuConnection) {
@@ -61,12 +62,14 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         icon: database ? "lucide:database" : "lucide:square-terminal",
       },
       ...(database
-        ? [{
-            id: "new-database-query",
-            label: "新建查询",
-            icon: "lucide:square-terminal",
-            iconTone: "blue" as const,
-          }]
+        ? [
+            {
+              id: "new-database-query",
+              label: "新建查询",
+              icon: "lucide:square-terminal",
+              iconTone: "blue" as const,
+            },
+          ]
         : []),
       { id: "edit", label: "编辑连接", icon: "lucide:pencil" },
       { id: "duplicate", label: "复制连接", icon: "lucide:copy" },
@@ -104,16 +107,40 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     ];
   }
 
-  return [
-    { id: "rename-group", label: "重命名分组", icon: "lucide:pencil" },
+  const group = props.groups.find((group) => group.id === state.menuGroup?.id);
+  if (!group) return [];
+
+  const items: ContextMenuItem[] = [
     {
-      id: "delete-group",
-      label: "删除分组",
-      icon: "lucide:trash-2",
-      danger: true,
+      id: "add-connection",
+      label: group.kind === "database" ? "新建数据库连接" : "新建 SSH 连接",
+      icon: group.kind === "database" ? "lucide:database" : "lucide:server",
+    },
+    { id: "create-group", label: "新建分组", icon: "lucide:folder-plus" },
+    {
+      id: "toggle-group",
+      label: isExpanded(group.id) ? "收起分组" : "展开分组",
+      icon: isExpanded(group.id)
+        ? "lucide:folder-closed"
+        : "lucide:folder-open",
       separatorBefore: true,
     },
   ];
+
+  // 默认分组是未分组连接的归属桶，仅持久化分组支持重命名和删除。
+  if (!group.virtual) {
+    items.push(
+      { id: "rename-group", label: "重命名分组", icon: "lucide:pencil" },
+      {
+        id: "delete-group",
+        label: "删除分组",
+        icon: "lucide:trash-2",
+        danger: true,
+        separatorBefore: true,
+      },
+    );
+  }
+  return items;
 });
 
 function isExpanded(groupId: string): boolean {
@@ -152,8 +179,11 @@ function openConnection(connection: SavedConnection): void {
   emit("open", connection);
 }
 
-function eventPoint(event: MouseEvent): { x: number; y: number } {
-  if (event.clientX || event.clientY)
+function eventPoint(event: MouseEvent | KeyboardEvent): {
+  x: number;
+  y: number;
+} {
+  if ("clientX" in event && (event.clientX || event.clientY))
     return { x: event.clientX, y: event.clientY };
 
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -165,6 +195,7 @@ function openConnectionMenu(
   connection: SavedConnection,
 ): void {
   const point = eventPoint(event);
+  menuTrigger = event.currentTarget as HTMLElement;
   state.menuConnection = connection;
   state.menuGroup = null;
   state.menuX = point.x;
@@ -172,10 +203,12 @@ function openConnectionMenu(
   state.menuOpen = true;
 }
 
-function openGroupMenu(event: MouseEvent, group: ConnectionGroupView): void {
-  if (group.virtual) return;
-
+function openGroupMenu(
+  event: MouseEvent | KeyboardEvent,
+  group: ConnectionGroupView,
+): void {
   const point = eventPoint(event);
+  menuTrigger = event.currentTarget as HTMLElement;
   state.menuConnection = null;
   state.menuGroup = group;
   state.menuX = point.x;
@@ -183,11 +216,30 @@ function openGroupMenu(event: MouseEvent, group: ConnectionGroupView): void {
   state.menuOpen = true;
 }
 
+function handleGroupKeydown(
+  event: KeyboardEvent,
+  group: ConnectionGroupView,
+): void {
+  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
+    return;
+  event.preventDefault();
+  event.stopPropagation();
+  openGroupMenu(event, group);
+}
+
+function closeContextMenu(): void {
+  state.menuOpen = false;
+  // 同步恢复焦点，让随后挂载的分组编辑框或确认框接管焦点。
+  if (document.hasFocus()) menuTrigger?.focus();
+  menuTrigger = null;
+}
+
 function runContextAction(action: string): void {
   const connection = state.menuConnection;
   if (connection) {
     if (action === "open") emit("open", connection);
-    else if (action === "new-database-query") emit("newDatabaseQuery", connection);
+    else if (action === "new-database-query")
+      emit("newDatabaseQuery", connection);
     else if (action === "edit") emit("edit", connection);
     else if (action === "duplicate") emit("duplicate", connection);
     else if (action === "export-database") emit("exportDatabase", connection);
@@ -196,11 +248,16 @@ function runContextAction(action: string): void {
     return;
   }
 
-  const group = state.menuGroup;
+  const group = props.groups.find((group) => group.id === state.menuGroup?.id);
   if (!group) return;
 
-  if (action === "rename-group") state.editingGroupId = group.id;
-  else if (action === "delete-group") emit("removeGroup", group);
+  if (action === "add-connection") emit("addConnection");
+  else if (action === "create-group") state.creatingGroup = true;
+  else if (action === "toggle-group") toggleGroup(group.id);
+  else if (action === "rename-group" && !group.virtual)
+    state.editingGroupId = group.id;
+  else if (action === "delete-group" && !group.virtual)
+    emit("removeGroup", group);
 }
 </script>
 
@@ -247,8 +304,11 @@ function runContextAction(action: string): void {
           type="button"
           class="nav-item w-full"
           :aria-expanded="isExpanded(group.id)"
+          aria-haspopup="menu"
+          aria-keyshortcuts="Shift+F10"
           @click="toggleGroup(group.id)"
           @contextmenu.prevent.stop="openGroupMenu($event, group)"
+          @keydown="handleGroupKeydown($event, group)"
         >
           <AppIcon
             name="lucide:chevron-right"
@@ -332,10 +392,12 @@ function runContextAction(action: string): void {
       :y="state.menuY"
       :items="contextItems"
       :label="
-        state.menuConnection ? `${state.menuConnection.name} 操作` : '分组操作'
+        state.menuConnection
+          ? `${state.menuConnection.name} 操作`
+          : `${state.menuGroup?.name ?? ''} 分组操作`
       "
       @select="runContextAction"
-      @close="state.menuOpen = false"
+      @close="closeContextMenu"
     />
 
     <Teleport to="body">

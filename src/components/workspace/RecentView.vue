@@ -5,7 +5,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import { useConnections } from '@/composables/useConnections'
-import { settingNumber, settings } from '@/composables/useSettings'
+import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { RECENT_BUCKETS, RECENT_FILTERS, SESSION_KIND_META } from '@/constants/recent'
 import type { RecentFilter, RecentGroup, SessionKind } from '@/types'
@@ -13,6 +13,8 @@ import type { SavedConnection } from '@/types/connection'
 import { endpointOf } from '@/types/connection'
 import { cn } from '@/utils/cn'
 import { formatRelative } from '@/utils/time'
+
+const { settings } = useSettings()
 
 /**
  * 最近会话。

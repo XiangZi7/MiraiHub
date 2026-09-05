@@ -79,12 +79,13 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
             @click="emit('close')"
           />
         </header>
-        <div class="operation-body"><slot /></div>
+        <div class="operation-body scroll-thin"><slot /></div>
       </section></div
   ></Teleport>
 </template>
 <style scoped>
 .operation-backdrop {
+  --operation-inset: 22px;
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -92,14 +93,16 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
   place-items: center;
   background: #0008;
   backdrop-filter: blur(5px);
-  padding: 22px;
+  padding: var(--operation-inset);
 }
 .operation-dialog {
   display: flex;
   flex-direction: column;
   width: min(800px, 100%);
-  max-height: calc(100dvh - 44px);
-  min-height: 250px;
+  max-height: calc(100dvh - var(--operation-inset) * 2);
+  min-height: min(250px, calc(100dvh - var(--operation-inset) * 2));
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--color-line-strong);
   border-radius: 12px;
   background: var(--color-panel);
@@ -125,6 +128,8 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
   padding: 18px;
   overflow: auto;
   min-height: 0;
+  min-width: 0;
+  overscroll-behavior: contain;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -149,6 +154,9 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
   box-shadow: none;
 }
 @media (max-width: 700px) {
+  .operation-backdrop {
+    --operation-inset: 12px;
+  }
   .operation-window .operation-body {
     padding: 12px;
     gap: 10px;

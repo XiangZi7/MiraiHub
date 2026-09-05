@@ -6,7 +6,7 @@ import { Terminal } from '@xterm/xterm'
 import * as localTerminal from '@/api/local-terminal'
 import { errorMessage } from '@/api/ssh'
 import { TERMINAL_THEME } from '@/constants/terminal'
-import { settingNumber, settings } from '@/composables/useSettings'
+import { settingNumber, settingsSnapshot, useSettings } from '@/composables/useSettings'
 import type { LocalConnectionSettings } from '@/types/connection'
 import type {
   LocalTerminalOutputEvent,
@@ -20,10 +20,11 @@ function terminalFontFamily(): string {
     'cascadia-code': '"Cascadia Code", ui-monospace, monospace',
     'consolas': 'Consolas, ui-monospace, monospace',
   }
-  return families[settings.terminalFont] ?? families['jetbrains-mono']!
+  return families[settingsSnapshot().terminalFont] ?? families['jetbrains-mono']!
 }
 
 export function useLocalTerminal() {
+  const { settings } = useSettings()
   const term = shallowRef<Terminal>()
   const fitAddon = shallowRef<FitAddon>()
   const state = reactive({

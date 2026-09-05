@@ -7,7 +7,7 @@ import AppTextField from '@/components/ui/AppTextField.vue'
 import * as connectionsStore from '@/api/connections'
 import { errorMessage } from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
-import { settings } from '@/composables/useSettings'
+import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { LOCAL_SHELL_OPTIONS } from '@/constants/connection'
 import type {
@@ -18,6 +18,8 @@ import type {
 import { isLocalConnection } from '@/types/connection'
 import { IS_TAURI } from '@/utils/window'
 import ConnectionTagEditor from './ConnectionTagEditor.vue'
+
+const { settings } = useSettings()
 
 const props = withDefaults(defineProps<{
   connectionId?: string

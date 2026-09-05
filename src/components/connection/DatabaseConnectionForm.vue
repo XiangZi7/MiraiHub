@@ -9,12 +9,14 @@ import AppTextarea from '@/components/ui/AppTextarea.vue'
 import * as connectionsStore from '@/api/connections'
 import * as databaseApi from '@/api/database'
 import { useConnections } from '@/composables/useConnections'
-import { settingNumber, settings } from '@/composables/useSettings'
+import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { NewConnection } from '@/types/connection'
 import { isDatabaseConnection } from '@/types/connection'
 import type { DatabaseConfig, DatabaseKind, DatabaseSslMode } from '@/types/database'
 import ConnectionFilePathField from './ConnectionFilePathField.vue'
+
+const { settings } = useSettings()
 
 type SectionId = 'general' | 'ssl'
 

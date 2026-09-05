@@ -9,7 +9,7 @@ import * as privateKeysStore from '@/api/private-keys'
 import * as ssh from '@/api/ssh'
 import { useConnections } from '@/composables/useConnections'
 import { usePrivateKeys } from '@/composables/usePrivateKeys'
-import { settingNumber, settings } from '@/composables/useSettings'
+import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { ConnectionTagColor, NewConnection } from '@/types/connection'
 import { isSshConnection } from '@/types/connection'
@@ -17,6 +17,8 @@ import type { SshAuthMethod, SshConfig } from '@/types/ssh'
 import ConnectionTagEditor from './ConnectionTagEditor.vue'
 import PrivateKeySelector from './PrivateKeySelector.vue'
 import StartupCommandPresetField from './StartupCommandPresetField.vue'
+
+const { settings } = useSettings()
 
 type SectionId = 'general' | 'advanced' | 'ssh-key' | 'proxy'
 

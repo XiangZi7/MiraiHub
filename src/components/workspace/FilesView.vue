@@ -12,7 +12,7 @@ import { useFileTransfers } from '@/composables/useFileTransfers'
 import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
 import { useRemoteEditor } from '@/composables/useRemoteEditor'
 import { useRemoteFiles } from '@/composables/useRemoteFiles'
-import { settings, useSettings } from '@/composables/useSettings'
+import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { FILE_KIND_META, extensionOf } from '@/constants/files'
 import type { ContextMenuItem } from '@/types/context-menu'
@@ -24,6 +24,8 @@ import { formatDateTime } from '@/utils/time'
 import FileConflictDialog from './FileConflictDialog.vue'
 import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
 import RemotePathInput from './RemotePathInput.vue'
+
+const { settings } = useSettings()
 
 type ConflictAction = 'overwrite' | 'skip' | 'cancel'
 

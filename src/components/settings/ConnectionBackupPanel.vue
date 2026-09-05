@@ -11,10 +11,12 @@ import {
   type ConnectionSnapshot,
   type RestoreMode,
 } from "@/utils/connection-backup";
-import { settings } from "@/composables/useSettings";
+import { useSettings } from '@/composables/useSettings'
 import { IS_TAURI } from "@/utils/window";
 import AppButton from "@/components/ui/AppButton.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
+
+const { settings } = useSettings()
 // 导入必须先验证和预览；密码仅保存在当前页面内存。
 const state = reactive({
   snapshot: null as ConnectionSnapshot | null,

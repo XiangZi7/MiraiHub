@@ -11,7 +11,7 @@ import WindowControls from '@/components/ui/WindowControls.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useConnections } from '@/composables/useConnections'
-import { settings } from '@/composables/useSettings'
+import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { COMMAND_TARGETS } from '@/constants/workspace'
@@ -43,6 +43,8 @@ import WorkspaceHelp from './WorkspaceHelp.vue'
 import TransferCenter from './TransferCenter.vue'
 import RemoteEditorHost from '@/components/operations/RemoteEditorHost.vue'
 import ServerOperations from '@/components/operations/ServerOperations.vue'
+
+const { settings } = useSettings()
 
 const { fullscreen, toggleFullscreen } = useFullscreen()
 

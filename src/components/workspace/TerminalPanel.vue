@@ -5,12 +5,14 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSshTerminal } from '@/composables/useSshTerminal'
 import { useSshShellCompletion } from '@/composables/useSshShellCompletion'
-import { settings } from '@/composables/useSettings'
+import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from './TerminalSuggestions.vue'
 import TerminalActions from './TerminalActions.vue'
+
+const { settings } = useSettings()
 
 const props = defineProps<{
   /** 当前工作区是否已开启分屏 */

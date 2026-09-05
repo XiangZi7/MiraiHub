@@ -1,6 +1,7 @@
 import { watch } from 'vue'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
-import { settings } from '@/composables/useSettings'
+import { pinia } from '@/stores'
+import { useSettingsStore } from '@/stores/settings'
 import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
 
@@ -16,6 +17,7 @@ export function startSettingsRuntime(): void {
   if (started)
     return
   started = true
+  const settings = useSettingsStore(pinia).values
 
   watch(
     () => [settings.compactLayout, settings.reduceMotion, settings.windowMaterial] as const,

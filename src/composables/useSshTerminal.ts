@@ -16,7 +16,7 @@ import { Terminal } from '@xterm/xterm'
 import * as ssh from '@/api/ssh'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import { TERMINAL_THEME } from '@/constants/terminal'
-import { settingNumber, settings } from '@/composables/useSettings'
+import { settingNumber, settingsSnapshot, useSettings } from '@/composables/useSettings'
 
 function terminalFontFamily(): string {
   const families: Record<string, string> = {
@@ -24,7 +24,7 @@ function terminalFontFamily(): string {
     'cascadia-code': '"Cascadia Code", ui-monospace, monospace',
     'consolas': 'Consolas, ui-monospace, monospace',
   }
-  return families[settings.terminalFont] ?? families['jetbrains-mono']!
+  return families[settingsSnapshot().terminalFont] ?? families['jetbrains-mono']!
 }
 
 interface TerminalConnectOptions {
@@ -36,6 +36,7 @@ type InputInterceptor = (data: string) => boolean
 type SubmitHandler = (line: string) => void
 
 export function useSshTerminal() {
+  const { settings } = useSettings()
   // xterm 实例不参与响应式：它内部持有大量 DOM 与缓冲区，
   // 被 Vue 深度代理会显著拖慢渲染
   const term = shallowRef<Terminal>()

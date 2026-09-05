@@ -3,9 +3,11 @@ import { computed, shallowRef } from 'vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import IconButton from '@/components/ui/IconButton.vue'
-import { settings } from '@/composables/useSettings'
+import { useSettings } from '@/composables/useSettings'
 import { formatShortcut } from '@/utils/shortcut'
 import { openSettingsWindow } from '@/utils/window'
+
+const { settings } = useSettings()
 const open = shallowRef(false)
 function openSettings(): void {
   open.value = false
