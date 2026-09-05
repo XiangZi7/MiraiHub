@@ -23,6 +23,8 @@ tauri-plugin-opener = "2"
 tauri-plugin-log = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 # 异步运行时。Tauri 内部已用 tokio，这里显式声明是因为 ssh 模块直接用了
 # timeout / spawn / 同步原语；features 按需取，不开 "full"。
@@ -69,6 +71,7 @@ rust_decimal = "1"
 # 仅用于给无边框主窗补 DWM 原生阴影，见 platform/window.rs 的 enable_window_shadow。
 windows = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Security_Cryptography",
     "Win32_Graphics_Dwm",
     "Win32_UI_Controls",
 ] }

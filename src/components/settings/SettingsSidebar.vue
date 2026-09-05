@@ -32,7 +32,10 @@ const emit = defineEmits<{
 
 <style scoped>
 .settings-sidebar {
-  width: 174px;
+  overflow-y: auto;
+  width: 25%;
+  min-width: 100px;
+  max-width: 174px;
   flex-shrink: 0;
   border-right: 1px solid var(--color-line-soft);
   background: color-mix(in oklch, var(--color-panel) 50%, transparent);

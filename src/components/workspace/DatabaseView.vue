@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, toRef, watch } from "vue";
+import { computed, reactive, shallowRef, toRef, toRefs, watch } from "vue";
 import { useDebounceFn, useEventListener, useStorage } from "@vueuse/core";
 import * as database from "@/api/database";
 import { addQueryHistory, clearQueryHistory, listQueryHistory } from "@/api/database-history";
@@ -36,6 +36,7 @@ import DatabaseRoutineView from "./database/DatabaseRoutineView.vue";
 import DatabaseTableDesigner from "./database/DatabaseTableDesigner.vue";
 import DatabaseTableView from "./database/DatabaseTableView.vue";
 import SqlEditor from "./database/SqlEditor.vue";
+import AiAgentPanel from "@/components/agent/AiAgentPanel.vue";
 
 interface QueryTab extends TabItem {
   kind: "query";
@@ -65,12 +66,18 @@ interface SqlEditorExpose {
 
 const props = defineProps<{
   connection?: SavedConnection;
+  active?: boolean;
 }>();
 
 const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string];
 }>();
 
+// AI 布局与查询编辑器独立，审批始终绑定后端会话及活动库。
+const agentState = reactive({ agentOpen: false, agentSplit: false });
+const { agentOpen, agentSplit } = toRefs(agentState);
+const agentTarget = computed(() => ({ kind: "database" as const, sessionId: connected.value ? sessionId.value : "", database: session.value?.database ?? "" }));
+function toggleAgentSplit(): void { agentState.agentSplit = !(agentState.agentOpen && agentState.agentSplit); agentState.agentOpen = true; }
 const connection = toRef(props, "connection");
 const password = shallowRef("");
 const editor = shallowRef<SqlEditorExpose | null>(null);
@@ -695,6 +702,7 @@ watch(() => props.connection?.id, (id) => {
 
   <div v-else class="pane flex-1 flex-row">
     <DatabaseObjectTree
+      v-show="!agentOpen || agentSplit"
       :database-name="databaseName"
       :database-kind="databaseKind"
       :active-database="session?.database ?? ''"
@@ -726,7 +734,14 @@ watch(() => props.connection?.id, (id) => {
       @remove-object="requestDeleteObject"
     />
 
-    <div class="flex min-w-0 flex-1 flex-col">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div class="flex h-9 shrink-0 items-center gap-3 border-b border-line-soft px-3">
+        <button type="button" class="h-full border-b-2 text-[11px]" :class="!agentOpen ? 'border-accent text-txt' : 'border-transparent text-txt-3'" @click="agentOpen = false">Query</button>
+        <button type="button" class="flex h-full items-center gap-1.5 border-b-2 text-[11px]" :class="agentOpen ? 'border-accent text-txt' : 'border-transparent text-txt-3'" @click="agentOpen = true"><AppIcon name="lucide:bot" :size="13" />AI Agent <span class="rounded bg-blue-400/10 px-1 text-[8px] text-blue-300">BETA</span></button>
+        <div class="flex-1" /><IconButton icon="lucide:columns-2" :size="14" title="AI Agent 分屏" :class="agentOpen && agentSplit && 'text-accent'" @click="toggleAgentSplit" />
+      </div>
+      <div class="flex min-h-0 min-w-0 flex-1 gap-2">
+      <div v-show="!agentOpen || agentSplit" class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="flex h-10 shrink-0 items-end border-b border-line-soft px-2">
         <TabBar v-model:active="queryState.activeId" :tabs="queryState.tabs" addable @add="addQueryTab()" @close="closeTab" @reorder="reorderTabs" />
       </div>
@@ -756,6 +771,9 @@ watch(() => props.connection?.id, (id) => {
         <DatabaseRoutineView v-for="tab in routineTabs" v-show="queryState.activeId === tab.id" :key="tab.id" :session-id="sessionId" :database-kind="databaseKind" :object="tab.object" @query="openQuery" />
         <DatabaseTableDesigner v-for="tab in designerTabs" v-show="queryState.activeId === tab.id" :key="tab.id" :session-id="sessionId" :database-kind="databaseKind" :schema="tab.schema" :objects="objects" @query="openQuery" @created="(schema, name) => handleTableCreated(tab.id, schema, name)" />
       </template>
+      </div>
+      <AiAgentPanel v-show="agentOpen" :target="agentTarget" :title="databaseName" :active="active !== false && agentOpen" :split="agentSplit" :class="agentSplit && 'database-agent-split'" @split="toggleAgentSplit" @close="agentOpen = false" />
+      </div>
     </div>
 
     <AppContextMenu :open="historyMenu.open" :x="historyMenu.x" :y="historyMenu.y" :items="historyItems" label="查询历史" @close="historyMenu.open = false" @select="handleHistoryAction" />
@@ -774,6 +792,7 @@ watch(() => props.connection?.id, (id) => {
 </template>
 
 <style scoped>
+.database-agent-split { flex: 0 0 43%; min-width: 280px; }
 .query-workspace {
   display: grid;
   min-height: 0;

@@ -150,6 +150,7 @@ impl RunningQuery {
 }
 
 struct SessionEntry {
+    revision: u64,
     pool: DatabasePool,
     config: DatabaseConfig,
     /// 当前活动库。MySQL 允许为空（未选库）。
@@ -323,6 +324,7 @@ impl DatabaseManager {
         self.sessions.write().await.insert(
             id,
             SessionEntry {
+                revision: 0,
                 pool,
                 config,
                 database,
@@ -340,6 +342,28 @@ impl DatabaseManager {
             .get(id)
             .map(|entry| entry.pool.clone())
             .ok_or_else(|| DatabaseError::SessionNotFound(id.to_owned()))
+    }
+
+    /// Capture AI targets atomically; manual USE/SET cannot alter the isolated AI pool.
+    pub(crate) async fn agent_config(
+        &self,
+        id: &str,
+        database: &str,
+    ) -> DatabaseResult<(DatabaseConfig, u64)> {
+        let sessions = self.sessions.read().await;
+        let entry = sessions
+            .get(id)
+            .ok_or_else(|| DatabaseError::SessionNotFound(id.into()))?;
+        if entry.database != database {
+            return Err(DatabaseError::InvalidInput(
+                "活动数据库已改变，请重新发起 AI 请求".into(),
+            ));
+        }
+        let mut config = entry.config.clone();
+        config.database = entry.database.clone();
+        config.max_connections = 2;
+        config.timeout_secs = 10;
+        Ok((config, entry.revision))
     }
 
     pub async fn describe_session(&self, id: &str) -> DatabaseResult<DatabaseSession> {
@@ -382,6 +406,7 @@ impl DatabaseManager {
                 .get_mut(id)
                 .ok_or_else(|| DatabaseError::SessionNotFound(id.to_owned()))?;
             let previous = std::mem::replace(&mut entry.pool, pool);
+            entry.revision += 1;
             entry.config = config.clone();
             entry.database = config.database.clone();
             entry.server_version = server_version.clone();

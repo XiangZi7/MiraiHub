@@ -31,9 +31,11 @@ pub async fn ssh_connect(
 /// 断开会话。
 #[tauri::command]
 pub async fn ssh_disconnect(
+    tunnels: State<'_, super::tunnels::TunnelManager>,
     manager: State<'_, SessionManager>,
     session_id: String,
 ) -> AppResult<()> {
+    tunnels.stop_session(&session_id).await;
     Ok(manager.disconnect(&session_id).await?)
 }
 

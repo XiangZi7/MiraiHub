@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MiraiHub</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        color: #fff;
+        overflow: hidden;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, sans-serif;
+        user-select: none;
+      }
+      svg {
+        width: 64px;
+        height: 64px;
+        animation: breathe 1.8s ease-in-out infinite;
+      }
+      h1 {
+        margin: 14px 0 18px;
+        font-size: 20px;
+        letter-spacing: 0.04em;
+      }
+      .track {
+        width: 96px;
+        height: 3px;
+        background: #282828;
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .track::after {
+        content: '';
+        display: block;
+        width: 40%;
+        height: 100%;
+        background: #b09aff;
+        animation: progress 1.2s ease-in-out infinite alternate;
+      }
+      p {
+        font-size: 11px;
+        color: #aaa;
+      }
+      footer {
+        position: absolute;
+        bottom: 18px;
+        font-size: 10px;
+        color: #777;
+      }
+      @keyframes breathe {
+        50% {
+          opacity: 0.65;
+          transform: scale(0.95);
+        }
+      }
+      @keyframes progress {
+        to {
+          transform: translateX(150%);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        svg,
+        .track::after {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg aria-hidden="true" viewBox="0 0 64 64" fill="white">
+      <path
+        d="M9 11h11.5v42H9z M20.5 11 32 30.6 43.5 11v12.8L32 43.2 20.5 23.8z M43.5 11H55v18.9l-11.5 5.4z M43.5 40.3 55 34.9V53H43.5z"
+      />
+    </svg>
+    <h1>MiraiHub</h1>
+    <div class="track" aria-hidden="true"></div>
+    <p role="status">正在启动工作空间…</p>
+    <footer>MiraiHub · All rights reserved.</footer>
+  </body>
+</html>

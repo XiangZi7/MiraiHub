@@ -1,4 +1,4 @@
-import { readonly, reactive } from 'vue'
+import { computed, readonly, reactive } from 'vue'
 import { settingsSnapshot } from '@/composables/useSettings'
 import { playNotificationSound } from '@/utils/sound'
 
@@ -34,6 +34,8 @@ const DEFAULT_DURATIONS: Record<ToastTone, number> = {
 
 const MAX_VISIBLE_TOASTS = 4
 const items = reactive<ToastItem[]>([])
+export interface NotificationItem extends ToastItem { createdAt: number, read: boolean }
+const notifications = reactive<NotificationItem[]>([])
 const timers = new Map<string, ToastTimer>()
 let nextId = 0
 
@@ -108,6 +110,8 @@ function show(tone: ToastTone, input: ToastInput): string {
   const id = `toast-${Date.now()}-${nextId++}`
   const duration = options.duration ?? DEFAULT_DURATIONS[tone]
   items.push({ id, tone, title, description, duration })
+  notifications.unshift({ id, tone, title, description, duration, createdAt: Date.now(), read: false })
+  notifications.splice(100)
   startTimer(id, duration)
 
   if (settingsSnapshot().notificationSound)
@@ -149,5 +153,15 @@ export function useToast() {
     dismiss,
     pause,
     resume,
+  }
+}
+
+/** 本次运行的通知记录，不持久化服务器错误或路径信息。 */
+export function useNotifications() {
+  return {
+    notifications: readonly(notifications),
+    unreadCount: computed(() => notifications.filter(item => !item.read).length),
+    markAllRead: () => { for (const item of notifications) item.read = true },
+    clearNotifications: () => notifications.splice(0),
   }
 }

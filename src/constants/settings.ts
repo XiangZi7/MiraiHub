@@ -2,6 +2,7 @@ import type { SettingsPage } from '@/types/settings'
 import { LOCAL_SHELL_OPTIONS } from '@/constants/connection'
 
 export const SETTINGS_PAGES: readonly SettingsPage[] = [
+  { id: 'ai', label: 'AI Agent', title: 'AI Agent', description: '模型配置与操作审批', icon: 'lucide:bot', groups: [] },
   {
     id: 'general',
     label: '通用',
@@ -107,15 +108,9 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           },
           {
             key: 'uiScale',
-            label: '界面缩放',
-            control: 'select',
-            size: 'sm',
-            options: [
-              { value: '90', label: '90%' },
-              { value: '100', label: '100%' },
-              { value: '110', label: '110%' },
-              { value: '125', label: '125%' },
-            ],
+            label: '全局字体与界面大小',
+            description: '80%–150%，统一缩放文字与控件；保存后同步到所有窗口',
+            control: 'scale',
           },
           {
             key: 'reduceMotion',

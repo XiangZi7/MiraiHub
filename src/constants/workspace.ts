@@ -26,9 +26,9 @@ export const QUICK_ACTIONS: QuickAction[] = [
   { id: 'terminal', label: 'Terminal', icon: 'lucide:square-terminal', tone: 'text-accent' },
   { id: 'files', label: 'Files', icon: 'mirai:folder', tone: 'text-blue' },
   { id: 'database', label: 'Database', icon: 'lucide:database', tone: 'text-pink' },
-  { id: 'port', label: 'Port Forward', icon: 'lucide:share-2', tone: 'text-cyan' },
+  { id: 'refresh', label: '刷新指标', icon: 'lucide:refresh-cw', tone: 'text-cyan' },
   { id: 'upload', label: 'Upload', icon: 'lucide:upload', tone: 'text-amber' },
-  { id: 'more', label: 'More', icon: 'lucide:ellipsis', tone: 'text-txt-2' },
+  { id: 'copy-info', label: '复制信息', icon: 'lucide:copy', tone: 'text-txt-2' },
 ]
 
 /** 命令面板分组。id 语义化，COMMAND_TARGETS 靠它决定跳转落点 */

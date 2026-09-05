@@ -13,6 +13,7 @@ import type {
   SettingsValues,
 } from '@/types/settings'
 import { IS_TAURI } from '@/utils/window'
+import ScaleControl from './ScaleControl.vue'
 import ShortcutRecorder from './ShortcutRecorder.vue'
 
 const props = withDefaults(defineProps<{
@@ -150,6 +151,8 @@ function displayValue(field: SettingField): string {
                 :class="['shrink-0', controlWidth(field.size)]"
                 @update:model-value="emit('update', field.key, $event)"
               />
+
+              <ScaleControl v-else-if="field.control === 'scale'" :model-value="stringValue(field.key)" :label="field.label" @update:model-value="emit('update', field.key, $event)" />
 
               <ShortcutRecorder
                 v-else-if="field.control === 'shortcut'"
@@ -297,6 +300,12 @@ function displayValue(field: SettingField): string {
 .settings-input-invalid:focus-visible {
   border-color: color-mix(in oklch, var(--color-danger) 70%, transparent);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-danger) 12%, transparent);
+}
+
+@container settings (max-width: 560px) {
+  .settings-row { flex-wrap: wrap; gap: 8px; }
+  .settings-row > div:first-child { flex-basis: 100%; }
+  .settings-page-header, .settings-group { padding-right: 10px; padding-left: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

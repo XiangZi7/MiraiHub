@@ -11,7 +11,7 @@ import * as ssh from '@/api/ssh'
 import { useFileTransfers } from '@/composables/useFileTransfers'
 import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
 import { useRemoteFiles } from '@/composables/useRemoteFiles'
-import { settings } from '@/composables/useSettings'
+import { settings, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { FILE_KIND_META, extensionOf } from '@/constants/files'
 import type { ContextMenuItem } from '@/types/context-menu'
@@ -50,6 +50,9 @@ const {
   refresh,
 } = useRemoteFiles(toRef(props, 'sessionId'))
 
+const { save: saveSettings } = useSettings()
+const filterText = shallowRef('')
+function toggleHidden(): void { saveSettings({ ...settings, showHiddenFiles: !settings.showHiddenFiles }) }
 const transfers = useFileTransfers()
 const dropZone = useTemplateRef<HTMLElement>('dropZone')
 const browserDragging = shallowRef(false)
@@ -72,7 +75,9 @@ const { isDragging: nativeDragging } = useNativeFileDrop(dropZone, paths => void
 const dropActive = computed(() => nativeDragging.value || browserDragging.value)
 const connected = computed(() => Boolean(props.sessionId))
 const selectedFile = computed(() => entries.value.find(file => file.path === selected.value))
-const visibleEntries = computed(() => sortedEntries.value.filter(file => settings.showHiddenFiles || !file.name.startsWith('.')))
+const pathEntries = computed(() => sortedEntries.value.filter(file => settings.showHiddenFiles || !file.name.startsWith('.')))
+const visibleEntries = computed(() => pathEntries.value.filter(file => file.name.toLocaleLowerCase().includes(filterText.value.trim().toLocaleLowerCase())))
+watch(() => props.sessionId, () => { filterText.value = '' })
 const pathClip = useClipboard({ copiedDuring: 1600 })
 
 watch(visibleEntries, (files) => {
@@ -172,7 +177,7 @@ function settleConflict(action: ConflictAction): void {
 }
 
 async function uploadPaths(localPaths: readonly string[]): Promise<void> {
-  if (!connected.value || !localPaths.length)
+  if (!connected.value || !path.value || !localPaths.length)
     return
 
   let policy: Exclude<ConflictAction, 'cancel'> | undefined
@@ -232,9 +237,18 @@ async function uploadPaths(localPaths: readonly string[]): Promise<void> {
 }
 
 async function pickUploadFiles(): Promise<void> {
+  const session = props.sessionId
+  if (!session) { toast.info('请先连接服务器'); return }
+  if (!path.value && !await load('')) return
+  if (props.sessionId !== session || !path.value) return
+  const directory = path.value
   const result = await openFileDialog({ title: '选择要上传的文件', multiple: true, directory: false })
   if (!result)
     return
+  if (props.sessionId !== session || path.value !== directory) {
+    toast.warning('当前服务器或目录已变化，请重新选择上传文件')
+    return
+  }
   await uploadPaths(Array.isArray(result) ? result : [result])
 }
 
@@ -336,6 +350,7 @@ function handleBrowserDrop(event: DragEvent): void {
   if (paths.length)
     void uploadPaths(paths)
 }
+defineExpose({ pickUploadFiles })
 </script>
 
 <template>
@@ -353,12 +368,23 @@ function handleBrowserDrop(event: DragEvent): void {
       <IconButton icon="lucide:arrow-right" :size="14" title="前进" :disabled="!canGoForward" @click="goForward" />
       <IconButton icon="lucide:arrow-up" :size="14" title="上一级" :disabled="!connected || path === '/'" @click="goUp" />
 
-      <RemotePathInput :path="path" :entries="visibleEntries" :connected="connected" :loading="loading" @navigate="load" />
+      <div class="flex-1" />
 
       <IconButton :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'" :size="14" title="复制路径" :disabled="!path" @click="copyPath" />
       <IconButton icon="lucide:upload" :size="14" title="上传文件" :disabled="!connected" @click="pickUploadFiles" />
       <IconButton icon="lucide:download" :size="14" title="下载选中文件" :disabled="!selectedFile || selectedFile.kind === 'directory'" @click="selectedFile && download(selectedFile)" />
+      <IconButton :icon="settings.showHiddenFiles ? 'lucide:eye' : 'lucide:eye-off'" :size="14" :title="settings.showHiddenFiles ? '隐藏点文件' : '显示隐藏文件'" @click="toggleHidden" />
       <IconButton icon="lucide:rotate-cw" :size="14" title="刷新" :disabled="!connected" @click="refresh" />
+    </div>
+
+    <div class="flex shrink-0 border-b border-line-soft px-2 py-1.5">
+      <RemotePathInput :path="path" :entries="pathEntries" :connected="connected" :loading="loading" @navigate="load" />
+    </div>
+
+    <div class="flex shrink-0 items-center gap-2 border-b border-line-soft px-3 py-1.5">
+      <AppIcon name="lucide:search" :size="13" class="text-txt-3" />
+      <input v-model="filterText" aria-label="筛选当前目录文件" placeholder="筛选当前目录文件…" class="min-w-0 flex-1 bg-transparent text-xs text-txt outline-none" @keydown.esc.stop="filterText = ''">
+      <IconButton v-if="filterText" icon="lucide:x" :size="12" title="清除文件筛选" @click="filterText = ''" />
     </div>
 
     <div class="grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b border-line-soft px-3 py-1.5 text-[11px] font-medium text-txt-3">
@@ -389,7 +415,7 @@ function handleBrowserDrop(event: DragEvent): void {
 
       <p v-if="loading" class="py-8 text-center text-xs text-txt-4">正在读取目录…</p>
       <p v-else-if="!connected" class="py-8 text-center text-xs text-txt-4">连上服务器后可以浏览远端文件</p>
-      <p v-else-if="!visibleEntries.length && !error" class="py-8 text-center text-xs text-txt-4">{{ entries.length ? '隐藏文件已在设置中隐藏' : '这个目录是空的' }}</p>
+      <p v-else-if="!visibleEntries.length && !error" class="py-8 text-center text-xs text-txt-4">{{ filterText.trim() ? '没有匹配的文件' : entries.length ? '隐藏文件已在设置中隐藏' : '这个目录是空的' }}</p>
     </div>
 
     <footer class="flex h-7 shrink-0 items-center gap-3 border-t border-line-soft px-3 text-[11px] text-txt-3">

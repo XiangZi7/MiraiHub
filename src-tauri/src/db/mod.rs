@@ -7,11 +7,11 @@ mod browse;
 pub mod commands;
 pub mod error;
 pub mod manager;
-mod metadata;
+pub(crate) mod metadata;
 pub mod models;
 mod mutation;
 mod object_ops;
-mod query;
+pub(crate) mod query;
 mod sql;
 mod transfer;
 

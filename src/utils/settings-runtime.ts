@@ -1,6 +1,7 @@
 import { watch } from 'vue'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { settings } from '@/composables/useSettings'
+import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
 
 let started = false
@@ -30,9 +31,8 @@ export function startSettingsRuntime(): void {
   watch(() => settings.uiScale, scale => void applyZoom(scale), { immediate: true })
 }
 
-async function applyZoom(value: string): Promise<void> {
-  const percent = Number(value)
-  const factor = Number.isFinite(percent) && percent > 0 ? percent / 100 : 1
+export async function applyZoom(value: string): Promise<void> {
+  const factor = normalizeUiScale(value) / 100
 
   if (IS_TAURI) {
     try {
@@ -47,4 +47,5 @@ async function applyZoom(value: string): Promise<void> {
   // 浏览器预览没有原生缩放，退回 CSS zoom
   const style = document.documentElement.style as CSSStyleDeclaration & { zoom: string }
   style.zoom = factor === 1 ? '' : String(factor)
+  style.setProperty('--preview-zoom', String(factor))
 }

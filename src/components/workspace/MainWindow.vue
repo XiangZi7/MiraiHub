@@ -10,6 +10,7 @@ import SearchField from '@/components/ui/SearchField.vue'
 import TabBar from '@/components/ui/TabBar.vue'
 import WindowControls from '@/components/ui/WindowControls.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
+import { useFullscreen } from '@/composables/useFullscreen'
 import { useConnections } from '@/composables/useConnections'
 import { settings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
@@ -22,6 +23,7 @@ import { formatShortcut, matchesShortcut } from '@/utils/shortcut'
 import {
   launchAtStartupEnabled,
   openConnectionWindow,
+  openSettingsWindow,
   setLaunchAtStartup,
   setMinimizeToTray,
   setTrayVisible,
@@ -36,7 +38,15 @@ import LocalTerminalPanel from './LocalTerminalPanel.vue'
 import RecentView from './RecentView.vue'
 import SshKeysView from './SshKeysView.vue'
 import TerminalPanel from './TerminalPanel.vue'
+import SshTerminalWorkspace from './SshTerminalWorkspace.vue'
+import NotificationCenter from './NotificationCenter.vue'
+import WorkspaceHelp from './WorkspaceHelp.vue'
 import TransferCenter from './TransferCenter.vue'
+
+const { fullscreen, toggleFullscreen } = useFullscreen()
+
+const sshWorkspaces = useTemplateRef<Array<InstanceType<typeof SshTerminalWorkspace>>>('sshWorkspaces')
+const machinePanel = useTemplateRef<InstanceType<typeof MachinePanel>>('machinePanel')
 
 const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
 const databaseViews = useTemplateRef<Array<{
@@ -397,6 +407,8 @@ function addConnection(): void {
  * 命令 → 落点的对应表见 COMMAND_TARGETS。
  */
 function runCommand(item: CommandItem): void {
+  if (item.id === 'split-terminal') { void runWorkspaceAction('split'); return }
+  if (item.id === 'upload-files') { void runWorkspaceAction('upload'); return }
   const target = COMMAND_TARGETS[item.id]
   if (!target)
     return
@@ -418,6 +430,32 @@ function runCommand(item: CommandItem): void {
   // 等面板关闭后再抢焦点，否则会被卸载中的输入框吞掉
   if (target.focusSearch)
     void nextTick(() => searchRef.value?.focus())
+}
+function resetLayout(): void {
+  state.sidebarWidth = DEFAULT_SIDEBAR_WIDTH
+  state.sidebarCollapsed = false
+  state.machineWidth = Math.min(DEFAULT_MACHINE_WIDTH, machineMaxWidth.value)
+  state.machineOpen = true
+  toast.success('已恢复默认布局')
+}
+
+async function runWorkspaceAction(action: string): Promise<void> {
+  if (action === 'database') { openConnectionWindow('database'); return }
+  const tab = activeSshTab.value
+  if (!tab) { toast.info('请先打开一个 SSH 连接'); return }
+  state.activeNav = 'servers'
+  if (action === 'files' || action === 'upload') {
+    state.machineOpen = true
+    state.machineView = 'files'
+    await nextTick()
+    if (action === 'upload') await machinePanel.value?.upload()
+    return
+  }
+  await nextTick()
+  for (const workspace of sshWorkspaces.value ?? []) {
+    if (action === 'split') await workspace.splitFor(tab.id)
+    else workspace.focusFor(tab.id)
+  }
 }
 </script>
 
@@ -448,14 +486,16 @@ function runCommand(item: CommandItem): void {
         <IconButton icon="lucide:command" :title="`命令面板 (${formatShortcut(settings.shortcutPalette)})`" @click="paletteOpen = true" />
         <IconButton icon="lucide:plus" title="新建连接" @click="addConnection" />
         <TransferCenter />
-        <IconButton icon="lucide:bell" title="通知" />
-        <IconButton icon="lucide:life-buoy" title="帮助" />
+        <NotificationCenter />
+        <WorkspaceHelp />
 
         <button
           type="button"
           class="ml-1 size-7 shrink-0 rounded-full border border-line-strong"
           style="background: linear-gradient(140deg, var(--color-orange), var(--color-pink))"
-          title="账户"
+          title="设置"
+          aria-label="打开设置"
+          @click="openSettingsWindow"
         />
       </div>
 
@@ -472,6 +512,7 @@ function runCommand(item: CommandItem): void {
         @open="openConnection"
         @new-database-query="newDatabaseQuery"
         @database-imported="refreshImportedDatabase"
+        @reset-layout="resetLayout"
       />
       <AppResizeHandle
         v-if="!sidebarCollapsed"
@@ -504,7 +545,7 @@ function runCommand(item: CommandItem): void {
               :title="machineOpen ? '收起机器面板' : '展开机器面板'"
               @click="machineOpen = !machineOpen"
             />
-            <IconButton icon="lucide:maximize" :size="14" title="全屏" />
+            <IconButton :icon="fullscreen ? 'lucide:minimize' : 'lucide:maximize'" :size="14" :title="fullscreen ? '退出全屏 (Esc)' : '全屏 (F11)'" @click="toggleFullscreen" />
           </div>
         </div>
 
@@ -512,8 +553,11 @@ function runCommand(item: CommandItem): void {
         <div class="flex min-h-0 flex-1 p-2.5">
           <div v-show="activeNav === 'servers'" class="contents">
             <!-- SSH 标签保持挂载，只隐藏非活动项；关闭标签时才真正卸载并断开 -->
-            <TerminalPanel
+            <SshTerminalWorkspace
               v-for="tab in sshTabViews"
+              ref="sshWorkspaces"
+              :connection-id="tab.id"
+              :active="activeId === tab.id && activeNav === 'servers'"
               v-show="activeId === tab.id"
               :key="tab.id"
               :config="tab.config"
@@ -547,7 +591,8 @@ function runCommand(item: CommandItem): void {
             />
 
             <MachinePanel
-              v-if="machineOpen && Boolean(activeSshTab)"
+              ref="machinePanel"
+              @action="runWorkspaceAction"              v-if="machineOpen && Boolean(activeSshTab)"
               v-model:view="machineView"
               :connection="activeSshTab?.connection"
               :session-id="activeSshTab?.sessionId ?? ''"
@@ -563,6 +608,7 @@ function runCommand(item: CommandItem): void {
               ref="databaseViews"
               :key="tab.id"
               :connection="tab.connection"
+              :active="activeId === tab.id && activeNav === 'databases'"
               @status="(status, sessionId) => handleSshStatus(tab.id, status, sessionId)"
             />
             <DatabaseView v-if="!activeDatabaseConnection" />

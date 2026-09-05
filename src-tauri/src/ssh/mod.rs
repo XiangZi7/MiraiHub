@@ -29,3 +29,6 @@ pub mod transfers;
 
 pub use manager::SessionManager;
 pub use transfers::TransferManager;
+
+pub mod tunnels;
+pub mod batch;

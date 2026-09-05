@@ -8,6 +8,7 @@ import { useSystemStats } from '@/composables/useSystemStats'
 import { toast } from '@/composables/useToast'
 import { QUICK_ACTIONS } from '@/constants/workspace'
 import type { SavedConnection } from '@/types/connection'
+import { scheduleClipboardClear } from '@/utils/clipboard'
 import { formatRate, formatUptime, percent, splitKb } from '@/utils/format'
 
 /**
@@ -22,7 +23,9 @@ const props = defineProps<{
   sessionId: string
 }>()
 
-const { stats, loading, error, history, ready } = useSystemStats(toRef(props, 'sessionId'))
+const emit = defineEmits<{ action: [id: string] }>()
+
+const { stats, loading, error, history, ready, refresh } = useSystemStats(toRef(props, 'sessionId'))
 const lastNotifiedError = shallowRef('')
 
 watch(error, (message) => {
@@ -119,6 +122,20 @@ const facts = computed(() => {
     { label: 'Online users', value: String(snapshot.onlineUsers) },
   ]
 })
+async function runAction(id: string): Promise<void> {
+  if (id === 'refresh') { await refresh(); return }
+  if (id === 'copy-info') {
+    try {
+      const text = [props.connection?.name, subtitle.value, ...facts.value.map(fact => fact.label + ': ' + fact.value)].filter(Boolean).join('\n')
+      await navigator.clipboard.writeText(text)
+      scheduleClipboardClear(text)
+      toast.success('服务器信息已复制')
+    }
+    catch (error) { toast.error({ title: '复制服务器信息失败', description: String(error) }) }
+    return
+  }
+  emit('action', id)
+}
 </script>
 
 <template>
@@ -148,7 +165,7 @@ const facts = computed(() => {
         </p>
       </div>
 
-      <IconButton icon="lucide:ellipsis" title="更多" />
+      <IconButton icon="lucide:rotate-cw" title="刷新系统信息" :disabled="!connected || loading" @click="refresh" />
     </header>
 
     <!-- 资源指标 -->
@@ -208,12 +225,14 @@ const facts = computed(() => {
       <h2 class="mb-2.5 text-[13px] font-medium text-txt-2">
         Quick Actions
       </h2>
-      <div class="grid grid-cols-6 gap-2.5">
+      <div class="grid grid-cols-3 gap-2.5">
         <button
           v-for="action in QUICK_ACTIONS"
           :key="action.id"
           type="button"
-          class="card-action flex min-w-0 flex-col items-center justify-center gap-2 px-1 py-3.5"
+          class="card-action flex min-w-0 flex-col items-center justify-center gap-2 px-1 py-3.5 disabled:opacity-35"
+          :disabled="!connected && ['upload', 'refresh', 'copy-info'].includes(action.id)"
+          @click="runAction(action.id)"
         >
           <AppIcon :name="action.icon" :size="19" :class="action.tone" />
           <span class="max-w-full truncate text-[11px] text-txt-2">{{ action.label }}</span>

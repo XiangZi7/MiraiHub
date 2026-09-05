@@ -2,7 +2,6 @@
 import { computed, nextTick, onBeforeUnmount, shallowRef, useTemplateRef, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSshTerminal } from '@/composables/useSshTerminal'
 import { useSshShellCompletion } from '@/composables/useSshShellCompletion'
@@ -11,8 +10,11 @@ import { toast } from '@/composables/useToast'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from './TerminalSuggestions.vue'
+import TerminalActions from './TerminalActions.vue'
 
 const props = defineProps<{
+  /** 当前工作区是否已开启分屏 */
+  split?: boolean
   /**
    * 要连接的目标。为空表示还没选服务器，此时展示空状态而不是一个连不上的终端。
    * 由上层在用户选中连接后传入。
@@ -27,6 +29,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  /** 请求打开或关闭副终端 */
+  split: []
   /**
    * 连接状态变化。带上后端会话 id，
    * 让机器面板能用它去查系统指标与目录列表。
@@ -45,6 +49,7 @@ const {
   inputLine,
   mount,
   connect,
+  disconnect,
   resize,
   sendInput,
   setInputInterceptor,
@@ -120,17 +125,18 @@ const connectingText = computed(() => {
 
 /**
  * 挂载并连接。
- * 容器要等 v-if 渲染出来才有尺寸，所以由 watch 在 config 就位后触发，
- * 而不是在 onMounted 里抢跑 —— 那时容器高度还是 0，fit 会算出 1 行。
+ * 同时等待配置与容器就位，避免首次挂载或新建分屏时漏掉初始化。
+ * 比较配置内容，避免标签列表重新计算出的同值对象触发其他终端重连。
  */
 watch(
-  () => props.config,
-  async (config) => {
-    if (!config || !containerRef.value)
+  [containerRef, () => JSON.stringify([props.config, props.terminalType, props.startupCommand])],
+  async ([container]) => {
+    const config = props.config
+    if (!config || !container)
       return
 
     if (!mounted) {
-      mount(containerRef.value)
+      mount(container)
       mounted = true
     }
 
@@ -260,6 +266,14 @@ async function reconnect(): Promise<void> {
   }
 }
 
+async function disconnectSession(): Promise<void> {
+  intentionalReconnect = true
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = undefined
+  try { await disconnect() }
+  finally { intentionalReconnect = false }
+}
+
 function currentToken(line: string): string {
   return line.match(/\S+$/)?.[0] ?? ''
 }
@@ -305,12 +319,13 @@ function interceptTerminalInput(data: string): boolean {
 
 setInputInterceptor(interceptTerminalInput)
 setSubmitHandler(line => void completion.trackSubmittedCommand(line))
+defineExpose({ focus: () => term.value?.focus() })
 </script>
 
 <template>
   <section class="pane min-w-0 flex-1 bg-terminal">
     <!-- 会话工具条 -->
-    <div class="flex h-9 shrink-0 items-center gap-2.5 border-b border-line-soft px-3">
+    <div class="flex min-h-9 shrink-0 items-center gap-2.5 border-b border-line-soft px-3">
       <span :class="['flex items-center gap-1.5 text-[11px]', statusMeta.tone]">
         <StatusDot :tone="statusMeta.dot" :size="6" :glow="status === 'connected'" />
         <span>{{ statusMeta.text }}</span>
@@ -326,10 +341,8 @@ setSubmitHandler(line => void completion.trackSubmittedCommand(line))
 
       <div class="flex-1" />
 
-      <IconButton icon="lucide:columns-2" :size="14" title="分屏" />
-      <IconButton icon="lucide:search" :size="14" title="搜索" />
-      <IconButton icon="lucide:rotate-cw" :size="14" title="重连" @click="reconnect" />
-      <IconButton icon="lucide:ellipsis" :size="14" title="更多" />
+      <TerminalActions :terminal="term" :status="status" :split="split" :available="Boolean(config)"
+        @split="emit('split')" @reconnect="reconnect" @disconnect="disconnectSession" />
     </div>
 
     <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染 -->

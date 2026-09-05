@@ -1,5 +1,6 @@
 import { emit, listen } from '@tauri-apps/api/event'
 import { DEFAULT_SETTINGS, type SettingKey, type SettingsValues } from '@/types/settings'
+import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
 
 const STORAGE_KEY = 'miraihub.settings.v1'
@@ -33,6 +34,7 @@ export function loadSettings(): SettingsValues {
     console.warn('读取设置失败，已恢复默认值：', error)
   }
 
+  defaults.uiScale = String(normalizeUiScale(defaults.uiScale))
   return defaults
 }
 

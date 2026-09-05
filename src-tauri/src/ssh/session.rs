@@ -234,6 +234,61 @@ impl SshSession {
         })
     }
 
+    /// AI uses a separate channel with a deadline and bounded output.
+    pub async fn exec_agent(&self, command: &str) -> SshResult<CommandOutput> {
+        let mut channel = self.handle.lock().await.channel_open_session().await?;
+        channel.exec(true, command).await?;
+        let read = async {
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let mut exit_code = None;
+            while let Some(message) = channel.wait().await {
+                match message {
+                    ChannelMsg::Data { data } => stdout.extend_from_slice(
+                        &data[..data
+                            .len()
+                            .min(16384usize.saturating_sub(stdout.len() + stderr.len()))],
+                    ),
+                    ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(
+                        &data[..data
+                            .len()
+                            .min(16384usize.saturating_sub(stdout.len() + stderr.len()))],
+                    ),
+                    ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
+                    ChannelMsg::Close => break,
+                    _ => {}
+                }
+                if stdout.len() + stderr.len() >= 16384 {
+                    stderr.extend_from_slice(b"\n[Output limit reached; channel closed]");
+                    break;
+                }
+            }
+            CommandOutput {
+                stdout: String::from_utf8_lossy(&stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&stderr).into_owned(),
+                exit_code,
+            }
+        };
+        let result = tokio::time::timeout(Duration::from_secs(30), read).await;
+        let _ = channel.close().await;
+        result.map_err(|_| {
+            SshError::InvalidInput("AI 命令超过 30 秒；已关闭通道，远端进程可能仍在运行".into())
+        })
+    }
+
+    pub async fn is_closed(&self) -> bool { self.handle.lock().await.is_closed() }
+
+    pub async fn forward_stream(&self, host: &str, port: u16, origin: std::net::SocketAddr) -> SshResult<russh::ChannelStream<Msg>> {
+        let channel = self.handle.lock().await.channel_open_direct_tcpip(host, port as u32, origin.ip().to_string(), origin.port() as u32).await?;
+        Ok(channel.into_stream())
+    }
+
+    pub async fn open_raw_sftp(&self) -> SshResult<russh_sftp::client::RawSftpSession> {
+        let channel = self.handle.lock().await.channel_open_session().await?;
+        channel.request_subsystem(true, "sftp").await?;
+        Ok(russh_sftp::client::RawSftpSession::new(channel.into_stream()))
+    }
+
     /// 为一次文件操作打开独立的 SFTP 子系统通道。
     /// 每个传输使用独立通道，暂停大文件时不会挡住目录浏览或其他传输。
     pub async fn open_sftp(&self) -> SshResult<SftpSession> {

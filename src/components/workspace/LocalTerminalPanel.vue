@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useTemplateRef, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
-import IconButton from '@/components/ui/IconButton.vue'
+import TerminalActions from './TerminalActions.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useLocalTerminal } from '@/composables/useLocalTerminal'
 import { toast } from '@/composables/useToast'
@@ -19,7 +19,7 @@ const emit = defineEmits<{
 }>()
 
 const containerRef = useTemplateRef<HTMLElement>('terminal')
-const { status, sessionId, error, mount, connect, resize } = useLocalTerminal()
+const { term, status, sessionId, error, mount, connect, disconnect, resize } = useLocalTerminal()
 let mounted = false
 
 const shellLabel = computed(() => ({
@@ -42,17 +42,17 @@ watch(error, (message) => {
 })
 
 watch(
-  () => props.settings,
-  async (settings) => {
-    if (!containerRef.value)
+  [containerRef, () => JSON.stringify(props.settings)],
+  async ([container]) => {
+    if (!container)
       return
     if (!mounted) {
-      mount(containerRef.value)
+      mount(container)
       mounted = true
     }
-    await connect(settings).catch(() => {})
+    await connect(props.settings).catch(() => {})
   },
-  { immediate: true, deep: true, flush: 'post' },
+  { immediate: true, flush: 'post' },
 )
 
 useResizeObserver(containerRef, () => resize())
@@ -75,9 +75,7 @@ function reconnect(): void {
       <span class="truncate text-[11px] text-txt-2">{{ title }}</span>
       <span class="truncate font-mono text-[10px] text-txt-4">{{ shellLabel }}</span>
       <div class="flex-1" />
-      <IconButton icon="lucide:search" :size="14" title="搜索" />
-      <IconButton icon="lucide:rotate-cw" :size="14" title="重新启动" @click="reconnect" />
-      <IconButton icon="lucide:ellipsis" :size="14" title="更多" />
+      <TerminalActions :terminal="term" :status="status" available local @reconnect="reconnect" @disconnect="disconnect" />
     </div>
     <div ref="terminal" class="min-h-0 flex-1 p-2" />
   </section>

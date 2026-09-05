@@ -23,6 +23,7 @@ const width = defineModel<number>('width', { required: true })
 const collapsed = defineModel<boolean>('collapsed', { default: false })
 
 const emit = defineEmits<{
+  resetLayout: []
   /** 请求打开某条连接 */
   open: [connection: SavedConnection]
   /** 在数据库连接的默认数据库中新建查询 */
@@ -258,7 +259,7 @@ async function confirmRemoval(): Promise<void> {
           title="侧边栏"
           @click="collapsed = true"
         />
-        <IconButton icon="lucide:layout-grid" title="布局" />
+        <IconButton icon="lucide:layout-grid" title="恢复默认布局" @click="emit('resetLayout')" />
         <div class="flex-1" />
       </template>
       <IconButton

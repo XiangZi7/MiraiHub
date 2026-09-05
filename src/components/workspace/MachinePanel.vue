@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toRef } from 'vue'
+import { nextTick, toRef, useTemplateRef } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { MACHINE_VIEWS } from '@/constants/workspace'
@@ -28,11 +28,20 @@ const props = defineProps<{
 const view = defineModel<MachineViewId>('view', { required: true })
 
 defineEmits<{
+  action: [id: string]
   /** 请求收起面板 */
   close: []
 }>()
 
 // 转成 ref 传给子组件的 composable：它们 watch 会话 id 的变化来重新取数
+const filesView = useTemplateRef<InstanceType<typeof FilesView>>('filesView')
+async function upload(): Promise<void> {
+  view.value = 'files'
+  await nextTick()
+  await filesView.value?.pickUploadFiles()
+}
+defineExpose({ upload })
+
 const sessionId = toRef(props, 'sessionId')
 </script>
 
@@ -65,9 +74,11 @@ const sessionId = toRef(props, 'sessionId')
       v-if="view === 'overview'"
       :connection="connection"
       :session-id="sessionId"
+      @action="$emit('action', $event)"
     />
     <FilesView
       v-else
+      ref="filesView"
       :session-id="sessionId"
       :connection-name="connection ? `${connection.name} (${connection.host})` : ''"
     />

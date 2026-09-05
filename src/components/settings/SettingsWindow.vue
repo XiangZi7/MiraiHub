@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, shallowRef, useTemplateRef, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { getTauriVersion, getVersion } from '@tauri-apps/api/app'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -10,14 +10,21 @@ import { toast } from '@/composables/useToast'
 import { SETTINGS_PAGES } from '@/constants/settings'
 import type { SettingKey, SettingValue, SettingsPageId, SettingsValues } from '@/types/settings'
 import { closeWindow, IS_TAURI } from '@/utils/window'
+import { applyZoom } from '@/utils/settings-runtime'
 import SettingsPanel from './SettingsPanel.vue'
+import AiSettingsPanel from './AiSettingsPanel.vue'
 import SettingsSidebar from './SettingsSidebar.vue'
 import packageInfo from '../../../package.json'
 
 const { settings, save, defaults } = useSettings()
+const aiPanel = useTemplateRef<InstanceType<typeof AiSettingsPanel>>('aiPanel')
 
 const activePageId = shallowRef<SettingsPageId>('general')
 const draft = reactive<SettingsValues>({ ...settings })
+// 仅在设置窗口预览，取消时不更改已保存值或其他窗口。
+watch(() => draft.uiScale, value => void applyZoom(value))
+onBeforeUnmount(() => { void applyZoom(settings.uiScale) })
+
 const runtimeValues = reactive<Record<string, string>>({
   version: packageInfo.version,
   tauriVersion: IS_TAURI ? '读取中…' : '浏览器预览',
@@ -91,6 +98,7 @@ function resetToDefaults(): void {
 }
 
 function submit(): void {
+  if (activePageId.value === 'ai') { void aiPanel.value?.save(); return }
   const firstInvalid = (Object.keys(errors.value) as SettingKey[])[0]
   if (firstInvalid) {
     const page = pageOf(firstInvalid)
@@ -142,7 +150,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </script>
 
 <template>
-  <WindowFrame class="h-screen w-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <WindowFrame class="settings-window h-screen w-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header class="settings-titlebar" data-tauri-drag-region>
       <h1 id="settings-title" class="text-[13px] font-semibold tracking-tight text-txt" data-tauri-drag-region>
         设置
@@ -155,7 +163,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <SettingsSidebar :active="activePageId" @select="activePageId = $event" />
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <SettingsPanel
+        <AiSettingsPanel v-if="activePageId === 'ai'" ref="aiPanel" />
+        <SettingsPanel v-else
           :key="activePage.id"
           :page="activePage"
           :values="draft"
@@ -164,7 +173,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           @update="updateSetting"
         />
 
-        <footer class="settings-footer">
+        <footer v-if="activePageId !== 'ai'" class="settings-footer">
           <AppButton size="sm" @click="resetToDefaults">
             重置为默认
           </AppButton>
@@ -183,6 +192,12 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </template>
 
 <style scoped>
+.settings-window { container-type: inline-size; container-name: settings; }
+@container settings (max-width: 560px) {
+  .settings-footer > span { display: none; }
+  .settings-footer { flex-wrap: wrap; padding: 8px; }
+}
+
 .settings-titlebar {
   position: relative;
   z-index: 10;

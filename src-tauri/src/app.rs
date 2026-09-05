@@ -11,7 +11,7 @@ use tauri::{
     App, AppHandle, Builder, RunEvent, Wry,
 };
 
-use crate::{db, ipc, local_terminal, platform, ssh};
+use crate::{agent, db, ipc, local_terminal, platform, ssh};
 
 /// 组装并启动应用。
 pub fn run() {
@@ -50,6 +50,9 @@ fn register_plugins(builder: Builder<Wry>) -> Builder<Wry> {
 /// 每个业务模块一个容器：SSH 有会话表，数据库有连接池。
 fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
     builder
+        .manage(agent::AgentManager::default())
+        .manage(ssh::tunnels::TunnelManager::default())
+        .manage(ssh::batch::BatchManager::default())
         .manage(ssh::SessionManager::new())
         .manage(ssh::TransferManager::new())
         .manage(db::DatabaseManager::new())
@@ -134,6 +137,8 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
     // 退出前给每条连接发一个正常的 disconnect，
     // 否则远端要等 TCP 超时才回收 session
     if let RunEvent::Exit = event {
+        tauri::async_runtime::block_on(app.state::<ssh::tunnels::TunnelManager>().shutdown());
+        tauri::async_runtime::block_on(app.state::<ssh::batch::BatchManager>().shutdown());
         let transfers = app.state::<ssh::TransferManager>();
         tauri::async_runtime::block_on(transfers.cancel_all());
         let manager = app.state::<ssh::SessionManager>();

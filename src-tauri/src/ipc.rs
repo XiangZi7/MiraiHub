@@ -10,7 +10,7 @@
 use tauri::ipc::Invoke;
 use tauri::Wry;
 
-use crate::{db, local_terminal, platform, ssh};
+use crate::{agent, db, local_terminal, platform, ssh};
 
 /// 构造全部命令的分发闭包，交给 `tauri::Builder::invoke_handler`。
 ///
@@ -18,6 +18,17 @@ use crate::{db, local_terminal, platform, ssh};
 /// 这样命令清单与应用装配彻底分离，两边各自演进互不干扰。
 pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        ssh::tunnels::ssh_tunnel_start, ssh::tunnels::ssh_tunnel_list, ssh::tunnels::ssh_tunnel_stop, ssh::tunnels::ssh_tunnel_remove,
+        ssh::batch::ssh_batch_prepare, ssh::batch::ssh_batch_run, ssh::batch::ssh_batch_get, ssh::batch::ssh_batch_cancel, ssh::batch::ssh_batch_forget,
+        agent::ai_get_config,
+        agent::ai_save_config,
+        agent::ai_test_config,
+        agent::ai_start,
+        agent::ai_send,
+        agent::ai_step,
+        agent::ai_respond,
+        agent::ai_cancel,
+        agent::ai_forget,
         // ---------- 平台 / 窗口 ----------
         platform::commands::open_connection_window,
         platform::commands::open_settings_window,

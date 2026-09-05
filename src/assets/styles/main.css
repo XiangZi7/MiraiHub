@@ -402,3 +402,7 @@
   backdrop-filter: blur(32px) saturate(180%);
   -webkit-backdrop-filter: blur(32px) saturate(180%);
 }
+
+/* CSS zoom 不会重算 vh/vw，浏览器预览时补偿窗口尺寸以保留底部操作栏。 */
+.win.h-screen { height: calc(100dvh / var(--preview-zoom, 1)); }
+.win.w-screen { width: calc(100dvw / var(--preview-zoom, 1)); }

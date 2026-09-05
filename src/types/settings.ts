@@ -60,10 +60,13 @@ export const DEFAULT_SETTINGS = {
   notificationSound: false,
 } satisfies Record<string, SettingValue>
 
-export type SettingsValues = typeof DEFAULT_SETTINGS
+export type SettingsValues = {
+  [K in keyof typeof DEFAULT_SETTINGS]: typeof DEFAULT_SETTINGS[K] extends boolean ? boolean : string
+}
 export type SettingKey = keyof SettingsValues
 
 export type SettingsPageId =
+  | 'ai'
   | 'general'
   | 'appearance'
   | 'shortcuts'
@@ -91,7 +94,7 @@ export interface EditableSettingField {
   key: SettingKey
   label: string
   description?: string
-  control: 'switch' | 'select' | 'text' | 'shortcut' | 'directory'
+  control: 'switch' | 'select' | 'text' | 'shortcut' | 'directory' | 'scale'
   options?: readonly SettingOption[]
   placeholder?: string
   inputmode?: 'text' | 'numeric' | 'url'

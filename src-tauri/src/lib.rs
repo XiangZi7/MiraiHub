@@ -11,6 +11,7 @@
 //! 每个业务模块内部自下而上分层：`models` → `error` → 业务实现 → `commands`，
 //! 其中 `commands.rs` 只做转调与错误转换，逻辑写在下层以便 `cargo test` 覆盖。
 
+pub mod agent;
 pub mod app;
 pub mod db;
 pub mod error;
