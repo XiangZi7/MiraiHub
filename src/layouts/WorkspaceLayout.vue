@@ -12,6 +12,7 @@ import { useEventListener } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { RouterView } from 'vue-router'
 import BrandLogo from '@/components/ui/BrandLogo.vue'
+import BrandWordmark from '@/components/ui/BrandWordmark.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import SearchField from '@/components/ui/SearchField.vue'
@@ -226,12 +227,16 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       @dblclick="handleTitleBarDblClick"
     >
       <div
-        class="flex items-center gap-2"
+        class="flex shrink-0 items-center gap-2"
         data-tauri-drag-region
       >
         <BrandLogo />
-        <h1 class="text-txt text-[13px] font-medium tracking-tight">
-          MiraiHub
+        <h1
+          class="pointer-events-none"
+          data-tauri-drag-region
+        >
+          <span class="sr-only">MiraiHub</span>
+          <BrandWordmark />
         </h1>
       </div>
 
