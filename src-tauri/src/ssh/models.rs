@@ -144,6 +144,12 @@ pub struct UploadFileRequest {
     pub overwrite: bool,
     #[serde(default = "default_transfer_buffer_size_kb")]
     pub buffer_size_kb: usize,
+    #[serde(default = "default_upload_concurrency")]
+    pub concurrency: usize,
+}
+
+fn default_upload_concurrency() -> usize {
+    4
 }
 
 #[derive(Debug, Clone, Deserialize)]

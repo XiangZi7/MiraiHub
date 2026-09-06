@@ -198,6 +198,7 @@ export async function uploadFile(options: {
   remotePath: string
   overwrite: boolean
   bufferSizeKb: number
+  concurrency?: number
 }): Promise<string> {
   ensureTauri()
   return invoke<string>('ssh_upload_file', { request: options })

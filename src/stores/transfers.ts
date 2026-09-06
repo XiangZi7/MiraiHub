@@ -3,7 +3,6 @@ import * as ssh from '@/api/ssh'
 import { settingNumber } from '@/composables/useSettings'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useSettingsStore } from '@/stores/settings'
-import { toast } from '@/composables/useToast'
 import type { SshTransferEvent, SshTransferStatus } from '@/types/ssh'
 import { IS_TAURI } from '@/utils/window'
 
@@ -70,7 +69,11 @@ function loadTransferHistory(): FileTransferTask[] {
 
 export const useTransfersStore = defineStore('transfers', () => {
   const settings = useSettingsStore().values
-  const state = reactive({ items: loadTransferHistory() })
+  const state = reactive({
+    items: loadTransferHistory(),
+    // 尚未在导航栏传输中心查看的任务结果。
+    unreadTaskIds: [] as string[],
+  })
   let disposed = false
   let unlisten: (() => void) | undefined
   onScopeDispose(() => {
@@ -178,7 +181,10 @@ export const useTransfersStore = defineStore('transfers', () => {
   }
 
   function pumpQueue(): void {
-    const limit = Math.max(1, settingNumber('maxFileTransfers', 3))
+    const limit = Math.min(
+      8,
+      Math.max(1, Math.floor(settingNumber('maxFileTransfers', 3)))
+    )
     while (runningJobs < limit && pendingJobs.length) {
       const job = pendingJobs.shift()
       if (!job) return
@@ -200,19 +206,34 @@ export const useTransfersStore = defineStore('transfers', () => {
   watch(() => settings.maxFileTransfers, pumpQueue)
 
   function notifyFinished(task: FileTransferTask): void {
-    if (settings.notifyTransferComplete) {
-      toast.success({
-        title: task.direction === 'upload' ? '上传完成' : '下载完成',
-        description: task.fileName,
-      })
-    }
+    if (settings.notifyTransferComplete) markUnread(task)
   }
 
   function notifyFailed(task: FileTransferTask): void {
-    toast.error({
-      title: task.direction === 'upload' ? '上传失败' : '下载失败',
-      description: task.error || task.fileName,
+    markUnread(task)
+  }
+
+  function markUnread(task: FileTransferTask): void {
+    if (!state.unreadTaskIds.includes(task.id))
+      state.unreadTaskIds.push(task.id)
+  }
+
+  function markAllSeen(): void {
+    state.unreadTaskIds.splice(0)
+  }
+
+  function recordUploadError(options: UploadOptions, error: unknown): void {
+    const task = createTask({
+      direction: 'upload',
+      fileName: nameOf(options.localPath),
+      source: options.localPath,
+      target: options.remotePath,
+      connectionName: options.connectionName ?? '',
     })
+    task.status = 'error'
+    task.error = ssh.errorMessage(error)
+    task.completedAt = Date.now()
+    notifyFailed(task)
   }
 
   async function upload(options: UploadOptions): Promise<boolean> {
@@ -238,6 +259,13 @@ export const useTransfersStore = defineStore('transfers', () => {
               remotePath: options.remotePath,
               overwrite: options.overwrite ?? false,
               bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
+              concurrency: Math.min(
+                8,
+                Math.max(
+                  1,
+                  Math.floor(settingNumber('folderUploadConcurrency', 4))
+                )
+              ),
             })
             if (findTask(task.id)?.status !== 'cancelled') {
               task.status = 'completed'
@@ -374,7 +402,15 @@ export const useTransfersStore = defineStore('transfers', () => {
       ['queued', 'running', 'paused'].includes(task.status)
     )
     state.items.splice(0, state.items.length, ...active)
+    markAllSeen()
   }
+
+  const unreadCount = computed(() => state.unreadTaskIds.length)
+  const hasUnreadError = computed(() =>
+    state.items.some(
+      task => task.status === 'error' && state.unreadTaskIds.includes(task.id)
+    )
+  )
 
   const activeTasks = computed(() =>
     state.items.filter(task =>
@@ -396,6 +432,10 @@ export const useTransfersStore = defineStore('transfers', () => {
     activeTasks,
     completedTasks,
     failedTasks,
+    unreadCount,
+    hasUnreadError,
+    markAllSeen,
+    recordUploadError,
     upload,
     download,
     pause,

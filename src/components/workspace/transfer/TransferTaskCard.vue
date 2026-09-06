@@ -49,7 +49,9 @@ const sizeLabel = computed(() => {
   const current = formatBytes(props.task.transferredBytes)
   return props.task.totalBytes
     ? `${current} / ${formatBytes(props.task.totalBytes)}`
-    : `${current} / Calculating`
+    : ['completed', 'error', 'cancelled'].includes(props.task.status)
+      ? current
+      : `${current} / Calculating`
 })
 </script>
 
@@ -178,13 +180,9 @@ const sizeLabel = computed(() => {
   min-height: 64px;
   grid-template-columns: 31px minmax(0, 1fr) auto;
   column-gap: 9px;
-  border: 1px solid rgb(255 255 255 / 1.8%);
+  border: 1px solid var(--color-line-soft);
   border-radius: 7px;
-  background: linear-gradient(
-    105deg,
-    rgb(255 255 255 / 3.2%),
-    rgb(255 255 255 / 1.2%)
-  );
+  background: color-mix(in oklch, var(--color-txt) 3%, transparent);
   box-shadow: 0 3px 12px rgb(0 0 0 / 12%);
   padding: 8px 9px 7px 14px;
   transition:
@@ -193,8 +191,8 @@ const sizeLabel = computed(() => {
 }
 
 .transfer-file:hover {
-  border-color: rgb(255 255 255 / 6%);
-  background-color: rgb(255 255 255 / 2%);
+  border-color: var(--color-line-strong);
+  background-color: color-mix(in oklch, var(--color-txt) 4%, transparent);
 }
 
 .transfer-file-icon {
@@ -223,14 +221,14 @@ const sizeLabel = computed(() => {
 }
 
 .transfer-file-name {
-  color: #eef1f3;
+  color: var(--color-txt);
   font-size: 10.5px;
   font-weight: 500;
   line-height: 14px;
 }
 
 .transfer-file-path {
-  color: #68727b;
+  color: var(--color-txt-3);
   font-size: 9px;
   line-height: 12px;
 }
@@ -238,7 +236,7 @@ const sizeLabel = computed(() => {
 .transfer-file-meta {
   display: flex;
   justify-content: space-between;
-  color: #828c95;
+  color: var(--color-txt-3);
   font-size: 8.5px;
   line-height: 12px;
 }
@@ -248,7 +246,7 @@ const sizeLabel = computed(() => {
   overflow: hidden;
   margin-top: 1px;
   border-radius: 999px;
-  background: #181d21;
+  background: var(--color-line-soft);
 }
 
 .transfer-file-progress {
@@ -270,11 +268,11 @@ const sizeLabel = computed(() => {
 }
 
 .transfer-progress-error {
-  background: #e15b64;
+  background: var(--color-danger);
 }
 
 .transfer-file-error {
-  color: #e66c75;
+  color: var(--color-danger);
 }
 
 .transfer-file-actions {
@@ -297,7 +295,7 @@ const sizeLabel = computed(() => {
 
 .transfer-action {
   cursor: pointer;
-  color: #9aa4ac;
+  color: var(--color-txt-2);
   outline: none;
   transition:
     color 150ms ease,
@@ -306,12 +304,12 @@ const sizeLabel = computed(() => {
 
 .transfer-action:hover,
 .transfer-action:focus-visible {
-  background: rgb(255 255 255 / 6%);
-  color: #eef2f4;
+  background: color-mix(in oklch, var(--color-txt) 6%, transparent);
+  color: var(--color-txt);
 }
 
 .transfer-action-cancel {
-  color: #84ded2;
+  color: var(--color-txt-2);
 }
 
 .transfer-result-success {
@@ -319,11 +317,11 @@ const sizeLabel = computed(() => {
 }
 
 .transfer-result-error {
-  color: #e15b64;
+  color: var(--color-danger);
 }
 
 .transfer-result-cancelled {
-  color: #77828b;
+  color: var(--color-txt-3);
 }
 
 @media (prefers-reduced-motion: reduce) {

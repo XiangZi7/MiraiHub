@@ -8,7 +8,13 @@ export type {
 export function useFileTransfers() {
   const store = useTransfersStore()
   void store.ensureListener()
-  const { activeTasks, completedTasks, failedTasks } = storeToRefs(store)
+  const {
+    activeTasks,
+    completedTasks,
+    failedTasks,
+    unreadCount,
+    hasUnreadError,
+  } = storeToRefs(store)
   const {
     upload,
     download,
@@ -18,12 +24,18 @@ export function useFileTransfers() {
     pauseAll,
     resumeAll,
     clearSettled,
+    markAllSeen,
+    recordUploadError,
   } = store
   return {
     tasks: readonly(store.tasks),
     activeTasks,
     completedTasks,
     failedTasks,
+    unreadCount,
+    hasUnreadError,
+    markAllSeen,
+    recordUploadError,
     upload,
     download,
     pause,

@@ -4,6 +4,7 @@ import { nextTick, shallowRef, useTemplateRef, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ContextMenuItem } from '@/types/context-menu'
 import AppIcon from './AppIcon.vue'
+import AppMenuSurface from './AppMenuSurface.vue'
 
 const props = defineProps<{
   open: boolean
@@ -20,7 +21,11 @@ const emit = defineEmits<{
 }>()
 
 const menu = useTemplateRef<HTMLElement>('menu')
-const menuStyle = shallowRef<CSSProperties>({ left: '8px', top: '8px' })
+const menuStyle = shallowRef<CSSProperties>({
+  left: '8px',
+  top: '8px',
+  visibility: 'hidden',
+})
 const submenuLeft = shallowRef(false)
 
 function rootEnabledItems(): HTMLButtonElement[] {
@@ -33,10 +38,14 @@ function rootEnabledItems(): HTMLButtonElement[] {
 
 async function positionMenu(): Promise<void> {
   if (!props.open) return
-  menuStyle.value = { left: `${props.x}px`, top: `${props.y}px` }
+  menuStyle.value = {
+    left: `${props.x}px`,
+    top: `${props.y}px`,
+    visibility: 'hidden',
+  }
   await nextTick()
   const element = menu.value
-  if (!element) return
+  if (!element || !props.open) return
   const padding = 8
   const width = element.offsetWidth
   const height = element.offsetHeight
@@ -117,7 +126,7 @@ watch(
   ([open]) => {
     if (open) void positionMenu()
   },
-  { deep: true }
+  { deep: true, immediate: true }
 )
 
 useEventListener(
@@ -136,7 +145,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
   <Teleport to="body">
     <Transition name="context-menu">
       <div
-        v-if="open"
+        v-show="open"
         ref="menu"
         class="app-context-menu"
         :class="scrollable && 'app-context-menu-scroll scroll-thin'"
@@ -147,6 +156,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
         @keydown="handleKeydown"
         @contextmenu.prevent
       >
+        <AppMenuSurface />
         <template
           v-for="item in items"
           :key="item.id"
@@ -219,6 +229,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
               role="menu"
               :aria-label="item.label"
             >
+              <AppMenuSurface />
               <template
                 v-for="child in item.children"
                 :key="child.id"
@@ -290,20 +301,11 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
   width: 224px;
   border: 1px solid color-mix(in oklch, var(--color-line-strong) 88%, white 5%);
   border-radius: 11px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklch, white 3%, transparent),
-      transparent 32%
-    ),
-    color-mix(in oklch, var(--color-panel) 94%, transparent);
   box-shadow:
     0 18px 48px rgb(0 0 0 / 34%),
     0 3px 12px rgb(0 0 0 / 22%),
     inset 0 1px rgb(255 255 255 / 4%);
   padding: 6px;
-  backdrop-filter: blur(28px) saturate(175%);
-  -webkit-backdrop-filter: blur(28px) saturate(175%);
 }
 
 .app-context-menu {
@@ -320,6 +322,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
 }
 .app-context-submenu {
   position: absolute;
+  z-index: 1;
   top: -6px;
   left: calc(100% - 1px);
   display: none;
@@ -426,17 +429,13 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
   white-space: nowrap;
 }
 
-.context-menu-enter-active,
-.context-menu-leave-active {
-  transform-origin: var(--menu-origin-x, 0%) var(--menu-origin-y, 0%);
-  transition:
-    opacity 140ms ease,
-    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+.context-menu-enter-active {
+  /* 整层 opacity 动画会限制背景采样，透明窗口中会闪白。
+     保持玻璃层不透明，只做轻微位移；滤镜随 v-show 常驻复用。 */
+  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.context-menu-enter-from,
-.context-menu-leave-to {
-  transform: translateY(-3px) scale(0.97);
-  opacity: 0;
+.context-menu-enter-from {
+  transform: translateY(3px);
 }
 
 @media (prefers-reduced-motion: reduce) {

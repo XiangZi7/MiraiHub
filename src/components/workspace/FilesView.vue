@@ -22,6 +22,7 @@ import { useFileTransfers } from '@/composables/useFileTransfers'
 import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
 import { useRemoteEditor } from '@/composables/useRemoteEditor'
 import { useRemoteFiles } from '@/composables/useRemoteFiles'
+import { useRemoteUploads } from '@/composables/useRemoteUploads'
 import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { ContextMenuItem } from '@/types/context-menu'
@@ -33,8 +34,6 @@ import RemoteFileList from './RemoteFileList.vue'
 import RemotePathInput from './RemotePathInput.vue'
 
 const { settings } = useSettings()
-
-type ConflictAction = 'overwrite' | 'skip' | 'cancel'
 
 const props = withDefaults(
   defineProps<{
@@ -79,14 +78,23 @@ const state = reactive({
   menuFile: null as SshRemoteFile | null,
   pendingDelete: null as SshRemoteFile | null,
   renaming: null as SshRemoteFile | null,
-  conflictOpen: false,
-  conflictFileName: '',
-  conflictRemaining: 0,
-  conflictAlways: false,
 })
 
-let resolveConflict:
-  ((result: { action: ConflictAction; always: boolean }) => void) | undefined
+const {
+  conflictOpen,
+  conflictFileName,
+  conflictRemaining,
+  conflictAlways,
+  settleConflict,
+  uploadPaths,
+} = useRemoteUploads({
+  context: () => ({
+    sessionId: props.sessionId,
+    connectionName: props.connectionName,
+    directory: path.value,
+  }),
+  refresh,
+})
 
 const { isDragging: nativeDragging } = useNativeFileDrop(
   dropZone,
@@ -184,23 +192,6 @@ function remoteChildPath(name: string): string {
     : `${path.value.replace(/\/$/, '')}/${name}`
 }
 
-function localName(localPath: string): string {
-  return localPath.split(/[\\/]/).filter(Boolean).at(-1) ?? localPath
-}
-
-async function availableRemotePath(fileName: string): Promise<string> {
-  const dot = fileName.lastIndexOf('.')
-  const hasExtension = dot > 0
-  const base = hasExtension ? fileName.slice(0, dot) : fileName
-  const extension = hasExtension ? fileName.slice(dot) : ''
-
-  for (let index = 1; index < 10_000; index++) {
-    const candidate = remoteChildPath(`${base} (${index})${extension}`)
-    if (!(await ssh.pathExists(props.sessionId, candidate))) return candidate
-  }
-  throw new Error('无法为上传文件生成可用名称')
-}
-
 function defaultDownloadPath(fileName: string): string {
   const directory = settings.defaultDownloadDirectory.trim()
   if (!directory) return fileName
@@ -208,110 +199,38 @@ function defaultDownloadPath(fileName: string): string {
   return `${directory.replace(/[\\/]$/, '')}${separator}${fileName}`
 }
 
-function askConflict(
-  fileName: string,
-  remaining: number
-): Promise<{ action: ConflictAction; always: boolean }> {
-  state.conflictFileName = fileName
-  state.conflictRemaining = remaining
-  state.conflictAlways = false
-  state.conflictOpen = true
-  return new Promise(resolve => {
-    resolveConflict = resolve
-  })
-}
-
-function settleConflict(action: ConflictAction): void {
-  const resolver = resolveConflict
-  resolveConflict = undefined
-  state.conflictOpen = false
-  resolver?.({ action, always: state.conflictAlways })
-}
-
-async function uploadPaths(localPaths: readonly string[]): Promise<void> {
-  if (!connected.value || !path.value || !localPaths.length) return
-
-  let policy: Exclude<ConflictAction, 'cancel'> | undefined
-  let changed = false
-
-  for (let index = 0; index < localPaths.length; index++) {
-    const localPath = localPaths[index]
-    if (!localPath) continue
-    let remotePath = remoteChildPath(localName(localPath))
-
-    try {
-      let action: Exclude<ConflictAction, 'cancel'> = 'overwrite'
-      const exists = await ssh.pathExists(props.sessionId, remotePath)
-      if (exists) {
-        const existingEntry = entries.value.find(
-          entry => entry.name === localName(localPath)
-        )
-        if (settings.overwriteBehavior === 'rename') {
-          remotePath = await availableRemotePath(localName(localPath))
-        } else if (existingEntry?.kind === 'directory') {
-          toast.error(`无法上传“${localName(localPath)}”：远端已有同名目录`)
-          continue
-        } else if (settings.overwriteBehavior === 'overwrite') {
-          action = 'overwrite'
-        } else if (policy) {
-          action = policy
-        } else {
-          const decision = await askConflict(
-            localName(localPath),
-            localPaths.length - index - 1
-          )
-          if (decision.action === 'cancel') break
-          action = decision.action
-          if (decision.always) policy = action
-        }
-      }
-
-      if (
-        exists &&
-        settings.overwriteBehavior !== 'rename' &&
-        action === 'skip'
-      )
-        continue
-
-      changed =
-        (await transfers.upload({
-          sessionId: props.sessionId,
-          connectionName: props.connectionName,
-          localPath,
-          remotePath,
-          overwrite:
-            exists &&
-            settings.overwriteBehavior !== 'rename' &&
-            action === 'overwrite',
-        })) || changed
-    } catch (uploadError) {
-      toast.error({
-        title: `上传“${localName(localPath)}”失败`,
-        description: ssh.errorMessage(uploadError),
-      })
-    }
-  }
-
-  if (changed) await refresh()
-}
-
 async function pickUploadFiles(): Promise<void> {
+  await pickUpload(false)
+}
+
+async function pickUploadFolder(): Promise<void> {
+  await pickUpload(true)
+}
+
+async function pickUpload(directoryOnly: boolean): Promise<void> {
   const session = props.sessionId
-  if (!session) {
-    toast.info('请先连接服务器')
-    return
-  }
+  if (!session) return
   if (!path.value && !(await load(''))) return
   if (props.sessionId !== session || !path.value) return
   const directory = path.value
   const result = await openFileDialog({
-    title: '选择要上传的文件',
+    title: directoryOnly ? '选择要上传的文件夹' : '选择要上传的文件',
     multiple: true,
-    directory: false,
+    directory: directoryOnly,
   })
   if (!result) return
   if (props.sessionId !== session || path.value !== directory) {
-    toast.warning('当前服务器或目录已变化，请重新选择上传文件')
+    for (const localPath of Array.isArray(result) ? result : [result]) {
+      transfers.recordUploadError(
+        {
+          sessionId: session,
+          connectionName: props.connectionName,
+          localPath,
+          remotePath: directory,
+        },
+        '当前服务器或目录已变化，请重新选择上传项目'
+      )
+    }
     return
   }
   await uploadPaths(Array.isArray(result) ? result : [result])
@@ -424,7 +343,7 @@ function handleBrowserDrop(event: DragEvent): void {
     .filter(Boolean)
   if (paths.length) void uploadPaths(paths)
 }
-defineExpose({ pickUploadFiles })
+defineExpose({ pickUploadFiles, pickUploadFolder })
 </script>
 
 <template>
@@ -483,6 +402,13 @@ defineExpose({ pickUploadFiles })
         title="上传文件"
         :disabled="!connected"
         @click="pickUploadFiles"
+      />
+      <IconButton
+        icon="lucide:folder-up"
+        :size="14"
+        title="上传文件夹"
+        :disabled="!connected"
+        @click="pickUploadFolder"
       />
       <IconButton
         icon="lucide:download"
@@ -605,7 +531,7 @@ defineExpose({ pickUploadFiles })
         </div>
         <p class="text-txt mt-3 text-[13px] font-semibold">松开即可上传</p>
         <p class="text-txt-3 mt-1 text-[10.5px]">
-          文件会上传到 {{ path || '主目录' }}
+          文件或文件夹会上传到 {{ path || '主目录' }}
         </p>
       </div>
     </Transition>
@@ -643,10 +569,10 @@ defineExpose({ pickUploadFiles })
   />
 
   <FileConflictDialog
-    v-model:always="state.conflictAlways"
-    :open="state.conflictOpen"
-    :file-name="state.conflictFileName"
-    :remaining="state.conflictRemaining"
+    v-model:always="conflictAlways"
+    :open="conflictOpen"
+    :file-name="conflictFileName"
+    :remaining="conflictRemaining"
     @overwrite="settleConflict('overwrite')"
     @skip="settleConflict('skip')"
     @cancel="settleConflict('cancel')"

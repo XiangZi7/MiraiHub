@@ -46,18 +46,15 @@ const emit = defineEmits<{
   position: relative;
   min-height: 56px;
   flex: 0 0 auto;
-  border-top: 1px solid rgb(255 255 255 / 5%);
+  border-top: 1px solid var(--color-line-soft);
   padding: 8px 11px;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 2%), transparent),
-    rgb(10 14 18 / 58%);
-  backdrop-filter: blur(18px) saturate(150%);
+  background: transparent;
 }
 
 .transfer-footer-summary {
   overflow: hidden;
   padding-right: 2px;
-  color: #9ba4ac;
+  color: var(--color-txt-2);
   font-size: 9px;
   line-height: 13px;
   text-overflow: ellipsis;
@@ -70,11 +67,11 @@ const emit = defineEmits<{
   margin-top: 3px;
   margin-left: auto;
   cursor: pointer;
-  border: 1px solid rgb(255 255 255 / 5%);
+  border: 1px solid var(--color-line-soft);
   border-radius: 5px;
-  background: #20252a;
+  background: color-mix(in oklch, var(--color-txt) 5%, transparent);
   padding: 0 10px;
-  color: #d7dce0;
+  color: var(--color-txt-2);
   font-size: 10px;
   font-weight: 500;
   outline: none;
@@ -87,9 +84,9 @@ const emit = defineEmits<{
 
 .transfer-footer-button:hover,
 .transfer-footer-button:focus-visible {
-  border-color: rgb(255 255 255 / 10%);
-  background: #282e34;
-  color: #fff;
+  border-color: var(--color-line-strong);
+  background: color-mix(in oklch, var(--color-txt) 8%, transparent);
+  color: var(--color-txt);
 }
 
 .transfer-footer-button:disabled {

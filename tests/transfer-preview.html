@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>文件传输验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, nextTick, reactive } from 'vue'
+      import { createPinia } from 'pinia'
+      import TransferCenter from '/src/components/workspace/TransferCenter.vue'
+      import { useTransfersStore } from '/src/stores/transfers'
+      import lightSkin from '/src/assets/styles/skins/kuriyama-mirai.css?raw'
+      import '/src/assets/styles/main.css'
+      const historyKey = 'miraihub:file-transfer-history'
+      const savedHistory = localStorage.getItem(historyKey)
+      localStorage.removeItem(historyKey)
+      const state = reactive({ light: false, results: [] })
+      const skin = document.createElement('style')
+      document.head.append(skin)
+      let store
+      function fail() {
+        store.recordUploadError(
+          {
+            sessionId: 'fixture',
+            connectionName: 'Test server',
+            localPath: 'C:/project',
+            remotePath: '/uploads/project',
+          },
+          '测试错误：远端目录没有写入权限'
+        )
+      }
+      const app = createApp({
+        setup() {
+          store = useTransfersStore()
+          return () =>
+            h(
+              'main',
+              {
+                style:
+                  'height:100vh;padding:24px;background:repeating-linear-gradient(135deg,transparent 0 60px,#57949033 60px 120px)',
+              },
+              [
+                h(
+                  'h1',
+                  { style: 'font-size:18px' },
+                  '文件传输 · 毛玻璃与结果标记'
+                ),
+                h(
+                  'button',
+                  {
+                    class: 'btn',
+                    onClick: () => {
+                      state.light = !state.light
+                      skin.textContent = state.light ? lightSkin : ''
+                    },
+                  },
+                  '切换明暗主题'
+                ),
+                h(
+                  'button',
+                  { class: 'btn', style: 'margin-left:12px', onClick: fail },
+                  '模拟上传失败'
+                ),
+                h(
+                  'ul',
+                  { id: 'results', style: 'margin-top:18px' },
+                  state.results.map(result => h('li', result))
+                ),
+                h('div', { style: 'position:fixed;right:14px;top:10px' }, [
+                  h(TransferCenter),
+                ]),
+              ]
+            )
+        },
+      })
+      app.use(createPinia()).mount('#app')
+      const assert = (value, message) => {
+        if (!value) throw new Error(message)
+        state.results.push('PASS · ' + message)
+      }
+      try {
+        await nextTick()
+        fail()
+        await nextTick()
+        assert(
+          document.querySelector('.transfer-unread.transfer-badge-error'),
+          '上传失败显示导航栏红点'
+        )
+        document.querySelector('[aria-label="文件传输"]').click()
+        await nextTick()
+        await nextTick()
+        assert(
+          document
+            .querySelector('.transfer-file-error')
+            .textContent.includes('没有写入权限'),
+          '失败原因显示在传输中心'
+        )
+        assert(
+          !document.querySelector('.transfer-unread'),
+          '查看传输中心后清除未读标记'
+        )
+        assert(
+          document.querySelector('.transfer-overview-label').textContent ===
+            'Failed',
+          '失败任务不显示完成状态'
+        )
+        const css = getComputedStyle(document.querySelector('.transfer-center'))
+        assert(
+          css.backdropFilter.includes('blur') && css.backgroundImage === 'none',
+          '面板使用背景模糊且没有固定渐变底图'
+        )
+        assert(
+          getComputedStyle(document.querySelector('.transfer-footer'))
+            .backgroundColor === 'rgba(0, 0, 0, 0)',
+          '底部保持透明'
+        )
+      } catch (error) {
+        state.results.push('FAIL · ' + error.message)
+      }
+      window.addEventListener('beforeunload', () => {
+        if (savedHistory === null) localStorage.removeItem(historyKey)
+        else localStorage.setItem(historyKey, savedHistory)
+      })
+    </script>
+  </body>
+</html>

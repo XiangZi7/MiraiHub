@@ -52,17 +52,19 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               id="file-conflict-title"
               class="text-txt text-[13px] font-semibold"
             >
-              远端已有同名文件
+              远端已有同名文件或文件夹
             </h2>
             <p class="text-txt-3 mt-1 text-[11px] leading-4 break-all">
-              “{{ fileName }}”已经存在。要覆盖远端文件，还是跳过本次上传？
+              “{{
+                fileName
+              }}”已经存在。文件夹会合并，并覆盖其中的同名文件；远端其他文件会保留。是否继续？
             </p>
             <AppCheckbox
               v-if="remaining > 0"
               v-model="always"
               class="mt-3"
               label="总是执行本次选择"
-              :description="`应用到本批次后续 ${remaining} 个文件的同名冲突`"
+              :description="`应用到本批次后续 ${remaining} 个项目的同名冲突`"
             />
           </div>
           <footer class="col-span-2 mt-2 flex justify-end gap-2">
@@ -81,7 +83,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               variant="primary"
               autofocus
               @click="emit('overwrite')"
-              >覆盖</AppButton
+              >合并 / 覆盖</AppButton
             >
           </footer>
         </section>

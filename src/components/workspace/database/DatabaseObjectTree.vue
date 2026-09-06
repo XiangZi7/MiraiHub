@@ -44,6 +44,8 @@ const emit = defineEmits<{
   newQuery: [schema?: string]
   renameDatabase: [name: string]
   removeDatabase: [name: string]
+  exportDatabase: [name: string]
+  importDatabase: [name: string]
   renameObject: [object: DatabaseObject]
   removeObject: [object: DatabaseObject]
   createSavedQuery: [database: string]
@@ -183,6 +185,31 @@ function createObjectItems(schema: string): ContextMenuItem[] {
   ]
 }
 
+const transferDatabase = computed(() =>
+  context.target === 'database' && props.databaseKind === 'mysql'
+    ? context.database
+    : props.activeDatabase
+)
+const transferItems = computed<ContextMenuItem[]>(() => [
+  {
+    id: 'export-database',
+    label:
+      props.databaseKind === 'postgresql' ? '导出当前数据库…' : '导出数据库…',
+    icon: 'lucide:database-backup',
+    iconTone: 'blue',
+    separatorBefore: true,
+    disabled: props.loading || !transferDatabase.value,
+  },
+  {
+    id: 'import-database',
+    label:
+      props.databaseKind === 'postgresql' ? '导入到当前数据库…' : '导入数据库…',
+    icon: 'lucide:file-input',
+    iconTone: 'blue',
+    disabled: props.loading || !transferDatabase.value,
+  },
+])
+
 const contextItems = computed<ContextMenuItem[]>(() => {
   if (context.target === 'root') {
     return [
@@ -204,6 +231,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         icon: 'lucide:rotate-cw',
         separatorBefore: true,
       },
+      ...transferItems.value,
     ]
   }
 
@@ -235,6 +263,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
           icon: 'lucide:rotate-cw',
           separatorBefore: true,
         },
+        ...transferItems.value,
       ]
     }
     const active = context.database === props.activeDatabase
@@ -259,6 +288,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         icon: 'lucide:plus',
         children: createObjectItems(context.database),
       },
+      ...transferItems.value,
       {
         id: 'rename-database',
         label:
@@ -437,6 +467,10 @@ function handleContextAction(id: string): void {
   else if (id === 'activate-database' && context.database)
     emit('selectDatabase', context.database)
   else if (id === 'new-query') emit('newQuery', context.database || undefined)
+  else if (id === 'export-database')
+    emit('exportDatabase', transferDatabase.value)
+  else if (id === 'import-database')
+    emit('importDatabase', transferDatabase.value)
   else if (id === 'create-saved-query')
     emit('createSavedQuery', context.database)
   else if (id === 'open-saved-query' && savedQuery)

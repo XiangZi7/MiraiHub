@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>数据库导入导出与菜单模糊验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWindow: { label: 'main' } },
+      }
+    </script>
+    <script type="module">
+      import { createApp, reactive } from 'vue/dist/vue.esm-bundler.js'
+      import { addCollection } from '@iconify/vue'
+      import { pinia } from '../src/stores'
+      import icons from 'virtual:mirai-icons'
+      import DatabaseView from '../src/components/workspace/DatabaseView.vue'
+      import ToastHost from '../src/components/ui/ToastHost.vue'
+      import '../src/assets/styles/main.css'
+      addCollection(icons)
+      const state = reactive({
+        active: 'jac',
+        failSwitch: false,
+        calls: [],
+        native: true,
+      })
+      const session = () => ({
+        sessionId: 'fixture-session',
+        kind: 'mysql',
+        database: state.active,
+        serverVersion: '8.0',
+        user: 'fixture',
+      })
+      window.__TAURI_INTERNALS__ = {
+        invoke: async (command, args = {}) => {
+          if (command === 'db_connect') return session()
+          if (command === 'db_list_databases')
+            return ['jac', 'tts_gateway', 'videoaitag']
+          if (command === 'db_list_objects')
+            return [
+              {
+                schema: state.active,
+                name: 'background_text_should_be_blurred',
+                kind: 'table',
+                identity: '',
+                rowEstimate: 2,
+                comment: null,
+              },
+            ]
+          if (command === 'db_use_database') {
+            if (state.failSwitch) throw new Error('模拟目标库连接失败')
+            state.active = args.database
+            return session()
+          }
+          if (command === 'plugin:dialog|save') return 'C:/fixture/target.sql'
+          if (command === 'plugin:dialog|open') return 'C:/fixture/source.sql'
+          if (command === 'db_export_sql') {
+            state.calls.push({ command, database: state.active, ...args })
+            return { objects: 1, rows: 2, bytes: 128, elapsedMs: 5 }
+          }
+          if (command === 'db_import_sql') {
+            state.calls.push({ command, database: state.active, ...args })
+            return { statements: 2, rowsAffected: 2, elapsedMs: 5 }
+          }
+          if (command === 'db_disconnect') return
+          throw new Error(`Unexpected fixture command: ${command}`)
+        },
+      }
+      const connection = {
+        id: 'database-transfer-fixture',
+        name: 'localhost',
+        kind: 'mysql',
+        settings: {
+          database: 'jac',
+          host: 'localhost',
+          port: 3306,
+          username: 'fixture',
+          password: '',
+          timeoutSecs: 5,
+        },
+      }
+      document.documentElement.classList.add('is-tauri')
+      createApp({
+        components: { DatabaseView, ToastHost },
+        setup: () => ({
+          state,
+          connection,
+          setNative: event =>
+            document.documentElement.classList.toggle(
+              'is-tauri',
+              event.target.checked
+            ),
+        }),
+        template: `<div style="height:100vh;display:flex;flex-direction:column;background:linear-gradient(110deg,#54344c88,#192a4466)">
+    <header style="padding:12px;display:flex;gap:18px"><label><input type="checkbox" v-model="state.failSwitch"> 模拟切库失败</label><label><input type="checkbox" v-model="state.native" @change="setNative"> 透明窗口滤镜</label><span>当前库：{{ state.active }}</span></header>
+    <DatabaseView :connection="connection" active />
+    <pre style="height:90px;overflow:auto;padding:8px" aria-label="模拟数据库调用">{{ JSON.stringify(state.calls, null, 2) }}</pre><ToastHost /></div>`,
+      })
+        .use(pinia)
+        .mount('#app')
+    </script>
+  </body>
+</html>

@@ -76,7 +76,7 @@ const filters: Array<{
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   border-bottom: 1px solid rgb(255 255 255 / 6%);
-  background: rgb(8 12 16 / 42%);
+  background: transparent;
   padding: 7px 9px;
 }
 
@@ -102,7 +102,7 @@ const filters: Array<{
 .transfer-filter:hover,
 .transfer-filter:focus-visible {
   border-color: rgb(255 255 255 / 9%);
-  background: rgb(255 255 255 / 5%);
+  background: color-mix(in oklch, var(--color-txt) 5%, transparent);
   color: var(--color-txt);
 }
 
@@ -116,7 +116,7 @@ const filters: Array<{
 .transfer-filter-count {
   min-width: 14px;
   border-radius: 999px;
-  background: rgb(255 255 255 / 6%);
+  background: color-mix(in oklch, var(--color-txt) 6%, transparent);
   padding: 1px 3px;
   color: var(--color-txt-4);
   font-size: 8px;

@@ -26,6 +26,7 @@ pub mod session;
 pub mod shell;
 pub mod stats;
 pub mod transfers;
+mod upload_plan;
 
 pub use manager::SessionManager;
 pub use transfers::TransferManager;

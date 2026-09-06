@@ -21,6 +21,7 @@ const props = defineProps<{
   mode: DatabaseTransferMode
   connection: SavedConnection | null
   sessionId: string
+  databaseName?: string
 }>()
 
 const emit = defineEmits<{
@@ -41,6 +42,7 @@ const state = reactive({
 const isExport = computed(() => props.mode === 'export')
 const title = computed(() => (isExport.value ? '导出数据库' : '导入 SQL 文件'))
 const databaseName = computed(() => {
+  if (props.databaseName) return props.databaseName
   const connection = props.connection
   return connection && isDatabaseConnection(connection)
     ? connection.settings.database || connection.name

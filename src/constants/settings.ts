@@ -248,37 +248,6 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           },
         ],
       },
-      {
-        title: '文件传输',
-        fields: [
-          {
-            key: 'maxFileTransfers',
-            label: '最大并发传输数',
-            description: '超出的任务排队等待',
-            control: 'select',
-            size: 'sm',
-            options: [
-              { value: '1', label: '1' },
-              { value: '3', label: '3' },
-              { value: '5', label: '5' },
-            ],
-          },
-          {
-            key: 'transferBufferSizeKb',
-            label: '传输缓冲区大小（KB）',
-            description:
-              '更大的缓冲区能提升大文件吞吐，部分服务器不支持超过 256 KB 的数据包',
-            control: 'select',
-            size: 'sm',
-            options: [
-              { value: '32', label: '32' },
-              { value: '64', label: '64' },
-              { value: '128', label: '128' },
-              { value: '256', label: '256' },
-            ],
-          },
-        ],
-      },
     ],
   },
   {
@@ -358,9 +327,56 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     id: 'files',
     label: '文件',
     title: '文件设置',
-    description: '远端文件浏览与下载行为。',
+    description: '远端文件浏览、上传并发与下载行为。',
     icon: 'lucide:folder',
     groups: [
+      {
+        title: '文件传输',
+        fields: [
+          {
+            key: 'maxFileTransfers',
+            label: '同时传输的任务数',
+            description:
+              '多选或拖入文件时同时上传，超出的任务排队等待；上传和下载共享此上限',
+            control: 'select',
+            size: 'sm',
+            options: [
+              { value: '1', label: '1' },
+              { value: '2', label: '2' },
+              { value: '3', label: '3（默认）' },
+              { value: '5', label: '5' },
+              { value: '8', label: '8' },
+            ],
+          },
+          {
+            key: 'folderUploadConcurrency',
+            label: '文件夹上传并发数',
+            description: '每个文件夹内同时上传的文件数量，新上传任务生效',
+            control: 'select',
+            size: 'md',
+            options: [
+              { value: '1', label: '1（串行）' },
+              { value: '2', label: '2' },
+              { value: '4', label: '4（默认）' },
+              { value: '8', label: '8' },
+            ],
+          },
+          {
+            key: 'transferBufferSizeKb',
+            label: '传输缓冲区大小（KB）',
+            description:
+              '更大的缓冲区能提升大文件吞吐，部分服务器不支持超过 256 KB 的数据包',
+            control: 'select',
+            size: 'sm',
+            options: [
+              { value: '32', label: '32' },
+              { value: '64', label: '64' },
+              { value: '128', label: '128' },
+              { value: '256', label: '256' },
+            ],
+          },
+        ],
+      },
       {
         title: '文件浏览',
         fields: [
@@ -518,6 +534,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           {
             key: 'notifyTransferComplete',
             label: '文件传输完成',
+            description: '在导航栏文件传输入口显示完成标记',
             control: 'switch',
           },
           {

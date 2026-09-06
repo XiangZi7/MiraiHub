@@ -12,7 +12,7 @@ pub struct TransferControl {
     paused: AtomicBool,
     cancelled: AtomicBool,
     transferred: AtomicU64,
-    total: u64,
+    total: AtomicU64,
     wake: Notify,
 }
 
@@ -22,7 +22,7 @@ impl TransferControl {
             paused: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
             transferred: AtomicU64::new(0),
-            total,
+            total: AtomicU64::new(total),
             wake: Notify::new(),
         }
     }
@@ -48,8 +48,19 @@ impl TransferControl {
         self.transferred.store(value, Ordering::Relaxed);
     }
 
+    pub fn add_transferred(&self, value: u64) -> u64 {
+        self.transferred.fetch_add(value, Ordering::Relaxed) + value
+    }
+
+    pub fn set_total(&self, total: u64) {
+        self.total.store(total, Ordering::Relaxed);
+    }
+
     pub fn progress(&self) -> (u64, u64) {
-        (self.transferred.load(Ordering::Relaxed), self.total)
+        (
+            self.transferred.load(Ordering::Relaxed),
+            self.total.load(Ordering::Relaxed),
+        )
     }
 }
 

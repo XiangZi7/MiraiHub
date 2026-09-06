@@ -76,7 +76,7 @@ const headingPrefix = computed(() =>
 
 .transfer-group-title {
   overflow: hidden;
-  color: #e9edef;
+  color: var(--color-txt);
   font-size: 10.5px;
   font-weight: 500;
   line-height: 18px;
@@ -85,14 +85,14 @@ const headingPrefix = computed(() =>
 }
 
 .transfer-group-title span {
-  color: #9dc4ef;
+  color: var(--color-blue);
 }
 
 .transfer-group-meta {
   display: flex;
   justify-content: space-between;
   margin-top: 2px;
-  color: #a1a9b0;
+  color: var(--color-txt-2);
   font-size: 9.5px;
   line-height: 16px;
 }

@@ -56,6 +56,9 @@ import DatabaseQueryResizeHandle from './database/DatabaseQueryResizeHandle.vue'
 import DatabaseRoutineView from './database/DatabaseRoutineView.vue'
 import DatabaseTableDesigner from './database/DatabaseTableDesigner.vue'
 import DatabaseTableView from './database/DatabaseTableView.vue'
+import DatabaseTransferDialog, {
+  type DatabaseTransferMode,
+} from './database/DatabaseTransferDialog.vue'
 import SqlEditor from './database/SqlEditor.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
@@ -210,6 +213,15 @@ const deleteDialog = reactive({
   object: null as DatabaseObject | null,
   savedQuery: null as SavedDatabaseQuery | null,
 })
+
+// 响应式状态
+const state = reactive({
+  // 当前导入或导出弹窗的模式；关闭时为空。
+  transferMode: null as DatabaseTransferMode | null,
+  // 正在切换到右键选中的目标库，防止重复打开弹窗。
+  preparingTransfer: false,
+})
+const { transferMode } = toRefs(state)
 
 const {
   sessionId,
@@ -965,6 +977,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 async function runQuery(sqlOverride?: string): Promise<void> {
+  if (state.transferMode || state.preparingTransfer) return
   const sql = (
     sqlOverride ??
     editor.value?.runnableSql() ??
@@ -1011,10 +1024,40 @@ function handleHistoryAction(id: string): void {
 }
 
 async function changeDatabase(value: string): Promise<void> {
+  if (state.transferMode) return
   if (!value || value === session.value?.database) return
   for (const tab of [...queryState.tabs])
     if (tab.kind === 'object' || tab.kind === 'table-designer') closeTab(tab.id)
   await switchDatabase(value)
+}
+
+async function openDatabaseTransfer(
+  name: string,
+  mode: DatabaseTransferMode
+): Promise<void> {
+  if (!connected.value || !name || state.preparingTransfer) return
+  if (queryLoading.value) {
+    toast.warning('请等待当前查询完成后再导入或导出数据库')
+    return
+  }
+  state.preparingTransfer = true
+  const originalSessionId = sessionId.value
+  try {
+    await changeDatabase(name)
+    // 切库失败或连接已重建时，不允许误用旧库继续操作。
+    if (
+      sessionId.value !== originalSessionId ||
+      session.value?.database !== name
+    )
+      return
+    state.transferMode = mode
+  } finally {
+    state.preparingTransfer = false
+  }
+}
+
+function handleDatabaseTransferFinished(mode: DatabaseTransferMode): void {
+  if (mode === 'import') void refreshAll()
 }
 
 watch(
@@ -1077,6 +1120,8 @@ watch(
       @query="createObjectQuery"
       @copy="copyObjectName"
       @select-database="changeDatabase"
+      @export-database="openDatabaseTransfer($event, 'export')"
+      @import-database="openDatabaseTransfer($event, 'import')"
       @create-database="showNameDialog('create-database')"
       @create-object="createObjectTemplate"
       @new-query="newQueryForSchema"
@@ -1378,6 +1423,15 @@ watch(
       :loading="nameDialog.loading"
       @close="nameDialog.open = false"
       @submit="submitNameAction"
+    />
+    <DatabaseTransferDialog
+      :open="transferMode !== null"
+      :mode="transferMode ?? 'export'"
+      :connection="connection"
+      :session-id="sessionId"
+      :database-name="session?.database"
+      @close="state.transferMode = null"
+      @finished="handleDatabaseTransferFinished"
     />
     <AppConfirmDialog
       :open="!!queryTabActions.state.pendingIds.length"

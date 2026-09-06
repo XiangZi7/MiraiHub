@@ -28,6 +28,9 @@ interface TransferGroupView {
 const {
   tasks,
   activeTasks,
+  unreadCount,
+  hasUnreadError,
+  markAllSeen,
   pause,
   resume,
   cancel,
@@ -133,8 +136,13 @@ const canResume = computed(
 
 const statusLabel = computed(() => {
   const active = activeTasks.value
-  if (!active.length) return tasks.length ? 'Complete' : 'Idle'
-  if (!active.some(task => task.status === 'running')) return 'Paused'
+  if (!active.length) {
+    if (tasks.some(task => task.status === 'error')) return 'Failed'
+    if (tasks.some(task => task.status === 'cancelled')) return 'Cancelled'
+    return tasks.length ? 'Complete' : 'Idle'
+  }
+  if (!active.some(task => task.status === 'running'))
+    return active.some(task => task.status === 'queued') ? 'Queued' : 'Paused'
   const directions = new Set(active.map(task => task.direction))
   if (directions.size > 1) return 'Transferring'
   return directions.has('upload') ? 'Uploading' : 'Downloading'
@@ -150,7 +158,9 @@ const footerSummary = computed(() => {
         : 'Transfer'
   const total = aggregate.value.totalBytes
     ? formatBytes(aggregate.value.totalBytes)
-    : 'Calculating'
+    : activeTasks.value.length
+      ? 'Calculating'
+      : formatBytes(0)
   const rate = aggregate.value.rate ? formatRate(aggregate.value.rate) : '--'
   const remaining = aggregate.value.remainingMs
     ? ` • ${formatDuration(aggregate.value.remainingMs)} remaining`
@@ -167,6 +177,10 @@ const emptyLabel = computed(() => {
 
 watch(activeTab, () => {
   statusFilter.value = 'all'
+})
+
+watch([open, unreadCount], ([visible]) => {
+  if (visible) markAllSeen()
 })
 
 useEventListener(
@@ -198,7 +212,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     <button
       type="button"
       class="icon-btn relative"
-      title="File Transfer"
+      :title="
+        hasUnreadError
+          ? '文件传输：有失败的任务'
+          : unreadCount
+            ? '文件传输：有新的传输结果'
+            : '文件传输'
+      "
+      aria-label="文件传输"
       :aria-expanded="open"
       aria-haspopup="dialog"
       @click="open = !open"
@@ -209,9 +230,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       />
       <span
         v-if="activeTasks.length"
-        class="transfer-badge"
+        :class="['transfer-badge', hasUnreadError && 'transfer-badge-error']"
         >{{ Math.min(activeTasks.length, 9) }}</span
       >
+      <span
+        v-else-if="unreadCount"
+        :class="['transfer-unread', hasUnreadError && 'transfer-badge-error']"
+        aria-hidden="true"
+      />
     </button>
 
     <Teleport to="body">
@@ -286,11 +312,25 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   place-items: center;
   border: 1px solid var(--color-panel);
   border-radius: 999px;
-  background: #4798ff;
+  background: var(--color-blue);
   padding: 0 3px;
   color: #fff;
   font-size: 8px;
   line-height: 1;
+}
+
+.transfer-unread {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.transfer-badge-error {
+  background: var(--color-danger);
 }
 
 .transfer-center {
@@ -303,17 +343,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   height: min(598px, calc(100vh - 50px));
   overflow: hidden;
   flex-direction: column;
-  border: 1px solid rgb(255 255 255 / 11%);
+  border: 1px solid var(--color-line-strong);
   border-radius: 12px;
-  background:
-    linear-gradient(150deg, rgb(255 255 255 / 7%), transparent 38%),
-    radial-gradient(circle at 18% 0%, rgb(60 138 190 / 16%), transparent 40%),
-    rgb(10 14 19 / 80%);
+  background: color-mix(in oklch, var(--color-panel) 85%, transparent);
   box-shadow:
-    0 24px 70px rgb(0 0 0 / 54%),
+    0 24px 70px rgb(0 0 0 / 30%),
     inset 0 1px rgb(255 255 255 / 5%);
-  backdrop-filter: blur(34px) saturate(165%);
-  -webkit-backdrop-filter: blur(34px) saturate(165%);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
 }
 
 .transfer-content {
@@ -329,7 +366,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   place-items: center;
   align-content: center;
   gap: 9px;
-  color: #58636c;
+  color: var(--color-txt-3);
   font-size: 10.5px;
   text-align: center;
 }

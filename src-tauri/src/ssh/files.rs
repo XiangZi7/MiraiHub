@@ -15,6 +15,7 @@ use super::models::{DownloadFileRequest, UploadFileRequest};
 use super::session::SshSession;
 use super::shell::quote;
 use super::transfers::{TransferControl, TransferManager};
+use super::upload_plan::{build_upload_plan, run_upload_jobs};
 
 fn transfer_buffer_size(size_kb: usize) -> usize {
     size_kb.clamp(32, 256) * 1024
@@ -150,28 +151,107 @@ pub async fn upload_file(
         return Err(SshError::InvalidInput("本地文件路径不能为空".into()));
     }
 
-    let metadata = tokio::fs::metadata(&request.local_path).await?;
-    if !metadata.is_file() {
-        return Err(SshError::InvalidInput(format!(
-            "目前仅支持上传文件：{}",
-            request.local_path
-        )));
+    let control = transfers.begin(&request.task_id, 0).await?;
+    let result: SshResult<()> = async {
+        let plan = build_upload_plan(
+            Path::new(&request.local_path),
+            &request.remote_path,
+            &control,
+        )
+        .await?;
+        let total = plan.total_bytes;
+        control.set_total(total);
+        control.checkpoint().await?;
+        let sftp = session.open_sftp().await?;
+        let result: SshResult<()> = async {
+            emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
+            // 先检查整棵目录的冲突，避免类型不匹配时已经覆盖前面的文件。
+            for entry in &plan.entries {
+                control.checkpoint().await?;
+                if sftp
+                    .try_exists(&entry.remote_path)
+                    .await
+                    .map_err(sftp_error)?
+                {
+                    if !request.overwrite {
+                        return Err(SshError::RemoteFileExists(entry.remote_path.clone()));
+                    }
+                    let destination = sftp
+                        .symlink_metadata(&entry.remote_path)
+                        .await
+                        .map_err(sftp_error)?;
+                    if (entry.is_directory && !destination.is_dir())
+                        || (!entry.is_directory && !destination.is_regular())
+                    {
+                        return Err(SshError::InvalidInput(format!(
+                            "远端同名路径类型不同，无法合并或覆盖：{}",
+                            entry.remote_path
+                        )));
+                    }
+                }
+            }
+            // 父目录按计划顺序创建，文件随后使用同一 SFTP 会话并行上传。
+            for entry in &plan.entries {
+                control.checkpoint().await?;
+                if entry.is_directory {
+                    if sftp
+                        .try_exists(&entry.remote_path)
+                        .await
+                        .map_err(sftp_error)?
+                    {
+                        let destination = sftp
+                            .symlink_metadata(&entry.remote_path)
+                            .await
+                            .map_err(sftp_error)?;
+                        if !destination.is_dir() {
+                            return Err(SshError::InvalidInput(format!(
+                                "远端同名路径不是目录：{}",
+                                entry.remote_path
+                            )));
+                        }
+                    } else {
+                        sftp.create_dir(&entry.remote_path)
+                            .await
+                            .map_err(sftp_error)?;
+                    }
+                }
+            }
+            let upload_sftp = &sftp;
+            let upload_control = control.as_ref();
+            let file_entries: Vec<_> = plan
+                .entries
+                .into_iter()
+                .filter(|entry| !entry.is_directory)
+                .collect();
+            run_upload_jobs(file_entries, request.concurrency, |entry| async move {
+                upload_control.checkpoint().await?;
+                let file_request = UploadFileRequest {
+                    local_path: entry.local_path.to_string_lossy().into_owned(),
+                    remote_path: entry.remote_path.clone(),
+                    ..request.clone()
+                };
+                upload_inner(app, upload_sftp, &file_request, upload_control, total).await
+            })
+            .await?;
+            control.checkpoint().await?;
+            Ok(())
+        }
+        .await;
+        let _ = sftp.close().await;
+        result
     }
-    let total = metadata.len();
-    let control = transfers.begin(&request.task_id, total).await?;
-    let result = upload_inner(app, session, request, &control, total).await;
+    .await;
     transfers.finish(&request.task_id).await;
     result.map(|()| request.remote_path.clone())
 }
 
 async fn upload_inner(
     app: &AppHandle,
-    session: &SshSession,
+    sftp: &SftpSession,
     request: &UploadFileRequest,
     control: &TransferControl,
     total: u64,
 ) -> SshResult<()> {
-    let sftp = session.open_sftp().await?;
     if sftp
         .try_exists(&request.remote_path)
         .await
@@ -190,8 +270,6 @@ async fn upload_inner(
     let mut target = sftp.create(&temp_path).await.map_err(sftp_error)?;
     let result: SshResult<()> = async {
         let mut buffer = vec![0_u8; transfer_buffer_size(request.buffer_size_kb)];
-        let mut transferred = 0_u64;
-        emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
 
         loop {
             control.checkpoint().await?;
@@ -200,8 +278,7 @@ async fn upload_inner(
                 break;
             }
             target.write_all(&buffer[..read]).await?;
-            transferred += read as u64;
-            control.set_transferred(transferred);
+            let transferred = control.add_transferred(read as u64);
             emit_transfer(
                 app,
                 TransferEvent::progress(&request.task_id, transferred, total),
@@ -222,12 +299,12 @@ async fn upload_inner(
             }
 
             let destination = sftp
-                .metadata(&request.remote_path)
+                .symlink_metadata(&request.remote_path)
                 .await
                 .map_err(sftp_error)?;
-            if destination.is_dir() {
+            if !destination.is_regular() {
                 return Err(SshError::InvalidInput(format!(
-                    "同名路径是目录，不能用文件覆盖：{}",
+                    "同名路径不是普通文件，不能用文件覆盖：{}",
                     request.remote_path
                 )));
             }
@@ -258,7 +335,6 @@ async fn upload_inner(
         let _ = target.shutdown().await;
         let _ = sftp.remove_file(&temp_path).await;
     }
-    let _ = sftp.close().await;
     result
 }
 

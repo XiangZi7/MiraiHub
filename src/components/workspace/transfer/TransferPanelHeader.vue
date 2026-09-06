@@ -93,7 +93,7 @@ const emit = defineEmits<{
 <style scoped>
 .transfer-header {
   flex: 0 0 auto;
-  border-bottom: 1px solid rgb(255 255 255 / 5%);
+  border-bottom: 1px solid var(--color-line-soft);
 }
 
 .transfer-titlebar {
@@ -105,12 +105,12 @@ const emit = defineEmits<{
 
 .transfer-title-icon,
 .transfer-overview-icon {
-  color: #17b8ed;
+  color: var(--color-blue);
 }
 
 .transfer-title {
   margin-left: 7px;
-  color: #f1f4f6;
+  color: var(--color-txt);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -124,7 +124,7 @@ const emit = defineEmits<{
   cursor: pointer;
   place-items: center;
   border-radius: 5px;
-  color: #89929b;
+  color: var(--color-txt-3);
   outline: none;
   transition:
     color 150ms ease,
@@ -133,8 +133,8 @@ const emit = defineEmits<{
 
 .transfer-close:hover,
 .transfer-close:focus-visible {
-  background: rgb(255 255 255 / 6%);
-  color: #e7ebee;
+  background: color-mix(in oklch, var(--color-txt) 6%, transparent);
+  color: var(--color-txt);
 }
 
 .transfer-overview {
@@ -148,7 +148,7 @@ const emit = defineEmits<{
 
 .transfer-overview-label,
 .transfer-overview-percent {
-  color: #9ba5ad;
+  color: var(--color-txt-2);
   font-size: 9.5px;
   line-height: 1;
 }
@@ -161,7 +161,7 @@ const emit = defineEmits<{
   height: 4px;
   overflow: hidden;
   border-radius: 999px;
-  background: #171c20;
+  background: var(--color-line-soft);
 }
 
 .transfer-overview-bar {
@@ -184,7 +184,7 @@ const emit = defineEmits<{
   min-width: 58px;
   cursor: pointer;
   padding: 1px 8px 0;
-  color: #707982;
+  color: var(--color-txt-3);
   font-size: 10.5px;
   font-weight: 500;
   outline: none;
@@ -205,11 +205,11 @@ const emit = defineEmits<{
 .transfer-tab:hover,
 .transfer-tab:focus-visible,
 .transfer-tab-active {
-  color: #e9edef;
+  color: var(--color-txt);
 }
 
 .transfer-tab-active::after {
-  background: #4e9eff;
+  background: var(--color-blue);
 }
 
 @media (prefers-reduced-motion: reduce) {
