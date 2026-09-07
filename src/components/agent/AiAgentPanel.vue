@@ -19,6 +19,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentApprovalCard from './AgentApprovalCard.vue'
 import AgentMarkdown from './AgentMarkdown.vue'
+import AgentConversationMenu from './AgentConversationMenu.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -31,10 +32,31 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ split: []; close: [] }>()
 const profiles = useAgentProfiles(() => {
-  void clear()
+  newConversation()
 })
-const { run, busy, error, awaitingApproval, send, decide, stop, clear } =
-  useAiAgent(toRef(props, 'target'), toRef(props, 'active'), profiles.activeId)
+const {
+  run,
+  busy,
+  error,
+  awaitingApproval,
+  conversations,
+  historyLoading,
+  historyError,
+  historyMutating,
+  switchingConversation,
+  selectConversation,
+  removeConversation,
+  renameConversation,
+  refreshHistory,
+  send,
+  decide,
+  stop,
+  clear,
+} = useAiAgent(
+  toRef(props, 'target'),
+  toRef(props, 'active'),
+  profiles.activeId
+)
 const {
   activeId,
   active: activeProfile,
@@ -43,8 +65,9 @@ const {
   switching,
   error: profileError,
 } = profiles
-// 输入与显示状态；敏感会话不会持久化。
+// 输入草稿与显示状态；聊天记录由后端加密保存。
 const state = reactive({ prompt: '', copied: false })
+let draftVersion = 0
 const { prompt, copied } = toRefs(state)
 const scroll = useTemplateRef<HTMLElement>('scroll')
 const isDatabase = computed(() => props.target.kind === 'database')
@@ -72,6 +95,9 @@ const canSend = computed(() =>
     activeProfile.value?.enabled &&
     !profilesLoading.value &&
     !switching.value &&
+    !historyLoading.value &&
+    !historyMutating.value &&
+    !switchingConversation.value &&
     state.prompt.trim() &&
     !busy.value &&
     !awaitingApproval.value
@@ -89,13 +115,33 @@ const statusLabel = computed(
 )
 async function submit(): Promise<void> {
   if (!canSend.value) return
+  const version = ++draftVersion
   const text = state.prompt
   state.prompt = ''
-  if (!(await send(text)) && !state.prompt) state.prompt = text
+  if (!(await send(text)) && version === draftVersion && !state.prompt)
+    state.prompt = text
+}
+function newConversation(): void {
+  draftVersion++
+  state.prompt = ''
+  void clear()
+}
+function switchConversation(id: string): void {
+  if (run.value?.conversationId === id) return
+  draftVersion++
+  state.prompt = ''
+  void selectConversation(id)
 }
 function suggest(text: string): void {
   state.prompt = text
 }
+watch(
+  () => JSON.stringify(props.target),
+  () => {
+    draftVersion++
+    state.prompt = ''
+  }
+)
 function keydown(event: KeyboardEvent): void {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault()
@@ -121,7 +167,7 @@ async function copyConversation(): Promise<void> {
   }
 }
 watch(
-  () => run.value?.entries.length,
+  () => [run.value?.conversationId, run.value?.entries.length],
   async () => {
     state.copied = false
     await nextTick()
@@ -175,11 +221,29 @@ watch(
         @click="copyConversation"
       />
       <IconButton
-        icon="lucide:trash-2"
+        icon="lucide:plus"
         :size="14"
-        title="停止并清空对话"
-        :disabled="!run && !busy"
-        @click="clear"
+        title="新建聊天"
+        :disabled="
+          switchingConversation ||
+          historyLoading ||
+          historyMutating ||
+          !target.sessionId
+        "
+        @click="newConversation"
+      />
+      <AgentConversationMenu
+        :conversations="conversations"
+        :active-id="run?.conversationId ?? ''"
+        :loading="historyLoading"
+        :mutating="historyMutating"
+        :disabled="switchingConversation || !target.sessionId"
+        :error="historyError"
+        :context-key="JSON.stringify(target)"
+        @select="switchConversation"
+        @remove="removeConversation"
+        @rename="renameConversation"
+        @refresh="refreshHistory()"
       />
       <IconButton
         icon="lucide:x"
@@ -199,6 +263,13 @@ watch(
       ref="scroll"
       class="agent-scroll"
     >
+      <p
+        v-if="historyLoading || switchingConversation"
+        class="text-txt-3 mb-3 text-[11px]"
+        role="status"
+      >
+        正在加载聊天记录…
+      </p>
       <div
         v-if="!run"
         class="agent-intro"
@@ -312,7 +383,7 @@ watch(
           </details>
         </article>
         <AgentApprovalCard
-          v-if="run.approval"
+          v-if="run.id && run.approval"
           :approval="run.approval"
           :target="run.target"
           :busy="busy"
@@ -333,6 +404,13 @@ watch(
           已停止后续步骤。正在执行的操作可能已生效，请核对远端状态。
         </p>
       </div>
+      <p
+        v-if="run?.saveError"
+        role="alert"
+        class="text-danger mt-3 text-[11px]"
+      >
+        {{ run.saveError }}
+      </p>
       <p
         v-if="error"
         role="alert"
@@ -375,7 +453,12 @@ watch(
           rows="2"
           maxlength="8000"
           aria-label="发送给 AI 的消息"
-          :disabled="!target.sessionId || awaitingApproval"
+          :disabled="
+            !target.sessionId ||
+            awaitingApproval ||
+            switchingConversation ||
+            historyLoading
+          "
           @keydown="keydown"
         /><IconButton
           v-if="busy"
@@ -408,7 +491,7 @@ watch(
         variant="ghost"
         size="sm"
         class="mt-1"
-        @click="clear"
+        @click="newConversation"
         >开始新对话</AppButton
       >
     </footer>
@@ -442,7 +525,6 @@ watch(
   padding: 0 10px;
   min-height: 41px;
   border-bottom: 1px solid var(--color-line-soft);
-  flex-wrap: wrap;
 }
 .status-dot {
   width: 6px;

@@ -1210,12 +1210,13 @@ watch(
           class="flex min-h-0 min-w-0 flex-1 flex-col"
         >
           <div
-            class="border-line-soft flex h-10 shrink-0 items-end border-b px-2"
+            class="database-tab-toolbar border-line-soft flex h-10 min-w-0 shrink-0 items-center gap-1.5 border-b px-2"
           >
             <TabBar
               v-model:active="queryState.activeId"
               :tabs="queryState.tabs"
               :context-items="queryTabActions.contextItems"
+              class="flex-1"
               addable
               @add="addQueryTab()"
               @close="queryTabActions.requestClose([$event])"
@@ -1223,114 +1224,116 @@ watch(
               @context-action="queryTabActions.action"
               @reorder="reorderTabs"
             />
-          </div>
-
-          <div
-            class="border-line-soft flex h-9 shrink-0 items-center gap-1.5 border-b px-2.5"
-          >
-            <IconButton
-              v-if="activeQuery"
-              :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'"
-              :size="12"
-              :class="[
-                'bg-accent-deep hover:bg-accent size-6 text-white hover:text-white',
-                queryLoading && '[&_svg]:animate-spin',
-              ]"
-              title="执行选中内容或全部 SQL（Ctrl+Enter）"
-              :disabled="!canRun"
-              @click="runQuery()"
-            />
-            <IconButton
-              :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
-              :size="13"
-              :title="connected ? '断开连接' : '重新连接'"
-              :disabled="status === 'connecting'"
-              @click="connected ? disconnect() : connect()"
-            />
-            <IconButton
-              v-if="activeQuery"
-              icon="lucide:history"
-              :size="13"
-              title="查询历史"
-              @click="showHistory"
-            />
-            <IconButton
-              v-if="activeQuery"
-              :icon="
-                activeQuery.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'
-              "
-              :size="13"
-              :title="
-                activeQuery.savedQueryId
-                  ? '立即保存查询（Ctrl+S）'
-                  : '保存到 Queries（Ctrl+S）'
-              "
-              @click="saveActiveQuery"
-            />
-            <AppButton
-              v-if="queryLoading"
-              variant="danger"
-              size="sm"
-              class="h-6"
-              title="取消当前查询"
-              @click="cancelQuery"
-              ><AppIcon
-                name="lucide:square"
-                :size="10"
-              /><span>停止</span></AppButton
-            >
-            <span
-              v-if="activeObject"
-              class="text-txt-3 min-w-0 truncate text-[11px]"
-              >{{ activeObject.object.schema }}.<span class="text-txt-2">{{
-                activeObject.object.name
-              }}</span></span
-            >
-            <span
-              v-else-if="activeDesigner"
-              class="text-txt-3 min-w-0 truncate text-[11px]"
-              >{{ activeDesigner.schema }}.<span class="text-txt-2"
-                >新建表</span
-              ></span
-            >
-            <span
-              v-else-if="activeQuery?.savedQueryId"
-              class="text-cyan flex items-center gap-1 text-[9.5px]"
-              ><AppIcon
-                name="lucide:cloud-check"
-                :size="10"
-              />自动保存</span
-            >
-            <div class="flex-1" />
             <div
-              v-if="connected && databaseOptions.length"
-              class="w-40"
+              class="scroll-none flex h-full max-w-3/4 min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto"
+              role="group"
+              aria-label="数据库工具栏"
             >
-              <AppSelect
-                v-model="selectedDatabase"
-                label="活动数据库"
-                :options="databaseOptions"
-                :disabled="databasesLoading || queryLoading"
-                hide-label
-                compact
-                searchable
+              <IconButton
+                v-if="activeQuery"
+                :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'"
+                :size="12"
+                :class="[
+                  'bg-accent-deep hover:bg-accent size-6 text-white hover:text-white',
+                  queryLoading && '[&_svg]:animate-spin',
+                ]"
+                title="执行选中内容或全部 SQL（Ctrl+Enter）"
+                :disabled="!canRun"
+                @click="runQuery()"
               />
+              <IconButton
+                :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
+                :size="13"
+                :title="connected ? '断开连接' : '重新连接'"
+                :disabled="status === 'connecting'"
+                @click="connected ? disconnect() : connect()"
+              />
+              <IconButton
+                v-if="activeQuery"
+                icon="lucide:history"
+                :size="13"
+                title="查询历史"
+                @click="showHistory"
+              />
+              <IconButton
+                v-if="activeQuery"
+                :icon="
+                  activeQuery.savedQueryId
+                    ? 'lucide:cloud-check'
+                    : 'lucide:save'
+                "
+                :size="13"
+                :title="
+                  activeQuery.savedQueryId
+                    ? '立即保存查询（Ctrl+S）'
+                    : '保存到 Queries（Ctrl+S）'
+                "
+                @click="saveActiveQuery"
+              />
+              <AppButton
+                v-if="queryLoading"
+                variant="danger"
+                size="sm"
+                class="h-6"
+                title="取消当前查询"
+                @click="cancelQuery"
+                ><AppIcon
+                  name="lucide:square"
+                  :size="10"
+                /><span>停止</span></AppButton
+              >
+              <span
+                v-if="activeObject"
+                class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
+                >{{ activeObject.object.schema }}.<span class="text-txt-2">{{
+                  activeObject.object.name
+                }}</span></span
+              >
+              <span
+                v-else-if="activeDesigner"
+                class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
+                >{{ activeDesigner.schema }}.<span class="text-txt-2"
+                  >新建表</span
+                ></span
+              >
+              <span
+                v-else-if="activeQuery?.savedQueryId"
+                class="database-toolbar-detail text-cyan flex shrink-0 items-center gap-1 text-[9.5px]"
+                ><AppIcon
+                  name="lucide:cloud-check"
+                  :size="10"
+                />自动保存</span
+              >
+              <div
+                v-if="connected && databaseOptions.length"
+                class="database-toolbar-select w-40 shrink-0"
+              >
+                <AppSelect
+                  v-model="selectedDatabase"
+                  label="活动数据库"
+                  :options="databaseOptions"
+                  :disabled="databasesLoading || queryLoading"
+                  hide-label
+                  compact
+                  searchable
+                />
+              </div>
+              <span
+                class="database-toolbar-detail text-txt-3 max-w-32 truncate text-[11px]"
+                :title="
+                  session
+                    ? `${session.endpoint}\n${session.serverVersion}`
+                    : sessionId || connectionError
+                "
+                >{{
+                  connected
+                    ? `${databaseKind} · ${session?.serverVersion || databaseName}`
+                    : status === 'connecting'
+                      ? 'Connecting…'
+                      : 'Disconnected'
+                }}</span
+              >
             </div>
-            <span
-              class="text-txt-3 max-w-56 truncate text-[11px]"
-              :title="
-                session
-                  ? `${session.endpoint}\n${session.serverVersion}`
-                  : sessionId || connectionError
-              "
-              >{{
-                connected
-                  ? `${databaseKind} · ${session?.serverVersion || databaseName}`
-                  : status === 'connecting'
-                    ? 'Connecting…'
-                    : 'Disconnected'
-              }}</span
-            >
           </div>
 
           <DatabaseConnectionState
@@ -1347,7 +1350,12 @@ watch(
               :loading="objectsLoading"
               :error="objectsError"
               @open="openObject"
-              @refresh="refreshObjects"
+              @inspect="inspectObject"
+              @query="createObjectQuery"
+              @copy="copyObjectName"
+              @rename-object="showNameDialog('rename-object', $event)"
+              @remove-object="requestDeleteObject"
+              @refresh="refreshAll"
             />
             <div
               v-show="Boolean(activeQuery)"
@@ -1474,6 +1482,26 @@ watch(
 </template>
 
 <style scoped>
+.database-tab-toolbar {
+  container: database-toolbar / inline-size;
+}
+
+@container database-toolbar (max-width: 760px) {
+  .database-toolbar-detail {
+    display: none;
+  }
+
+  .database-toolbar-select {
+    width: 128px;
+  }
+}
+
+@container database-toolbar (max-width: 420px) {
+  .database-toolbar-select {
+    width: 96px;
+  }
+}
+
 .query-workspace {
   display: grid;
   min-height: 0;

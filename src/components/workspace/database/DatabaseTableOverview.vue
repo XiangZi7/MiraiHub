@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, reactive, toRefs, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { databaseObjectKey } from '@/composables/useDatabaseSession'
 import type { DatabaseObject } from '@/types/database'
+import DatabaseObjectContextMenu from './DatabaseObjectContextMenu.vue'
 
 const props = defineProps<{
   objects: readonly DatabaseObject[]
@@ -12,9 +13,23 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  open: [object: DatabaseObject]
+  open: [object: DatabaseObject, panel?: 'data' | 'columns']
+  inspect: [object: DatabaseObject]
+  query: [object: DatabaseObject]
+  copy: [object: DatabaseObject]
+  renameObject: [object: DatabaseObject]
+  removeObject: [object: DatabaseObject]
   refresh: []
 }>()
+
+// 响应式状态
+const state = reactive({
+  // 单击或右键选中的表。
+  selectedKey: '',
+  // 右键菜单的位置及目标表。
+  menu: { open: false, x: 0, y: 0, object: null as DatabaseObject | null },
+})
+const { selectedKey, menu } = toRefs(state)
 
 const tables = computed(() =>
   props.objects.filter(object => object.kind === 'table')
@@ -22,6 +37,32 @@ const tables = computed(() =>
 const showSchema = computed(
   () => new Set(tables.value.map(table => table.schema)).size > 1
 )
+
+function showContext(event: MouseEvent, object: DatabaseObject): void {
+  state.selectedKey = databaseObjectKey(object)
+  state.menu = { open: true, x: event.clientX, y: event.clientY, object }
+}
+
+function handleRowKeydown(event: KeyboardEvent, object: DatabaseObject): void {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    event.stopPropagation()
+    emit('open', object)
+  } else if (
+    event.key === 'ContextMenu' ||
+    (event.shiftKey && event.key === 'F10')
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    state.selectedKey = databaseObjectKey(object)
+    state.menu = { open: true, x: rect.left + 12, y: rect.bottom, object }
+  }
+}
+
+watch([() => props.objects, () => props.loading], () => {
+  state.menu.open = false
+})
 </script>
 
 <template>
@@ -82,16 +123,21 @@ const showSchema = computed(
         <tr
           v-for="table in tables"
           :key="databaseObjectKey(table)"
-          class="even:bg-panel/40 hover:bg-hover/60 focus-within:bg-hover/60"
+          :class="
+            selectedKey === databaseObjectKey(table)
+              ? 'bg-hover/60'
+              : 'even:bg-panel/40 hover:bg-hover/60 focus-within:bg-hover/60'
+          "
+          @click="selectedKey = databaseObjectKey(table)"
           @dblclick="emit('open', table)"
+          @contextmenu.prevent.stop="showContext($event, table)"
+          @keydown="handleRowKeydown($event, table)"
         >
           <td class="border-line-soft border-r px-3 py-2">
             <button
               type="button"
               class="text-txt-2 hover:text-accent focus-visible:outline-accent flex max-w-full items-center gap-2 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-2"
-              :title="`打开表 ${table.schema}.${table.name}`"
-              @click.stop="emit('open', table)"
-              @dblclick.stop
+              :title="`双击打开表 ${table.schema}.${table.name}，右键查看更多操作`"
             >
               <AppIcon
                 name="lucide:table-2"
@@ -117,5 +163,19 @@ const showSchema = computed(
         </tr>
       </tbody>
     </table>
+    <DatabaseObjectContextMenu
+      :open="menu.open"
+      :x="menu.x"
+      :y="menu.y"
+      :object="menu.object"
+      @close="menu.open = false"
+      @open="(object, panel) => emit('open', object, panel)"
+      @inspect="emit('inspect', $event)"
+      @query="emit('query', $event)"
+      @copy="emit('copy', $event)"
+      @rename="emit('renameObject', $event)"
+      @remove="emit('removeObject', $event)"
+      @refresh="emit('refresh')"
+    />
   </section>
 </template>

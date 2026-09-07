@@ -55,11 +55,21 @@ export interface AgentApproval {
   expiresAt: number
 }
 export interface AgentRun {
-    id: string
+  id: string
+  conversationId: string
   target: string
   provider: string
   model: string
   status: 'running' | 'approval' | 'completed' | 'cancelled' | 'failed'
   entries: AgentEntry[]
   approval: AgentApproval | null
+  saveError?: string
+}
+export interface AgentConversation {
+  id: string
+  title: string
+  model: string
+  provider: string
+  createdAt: number
+  updatedAt: number
 }

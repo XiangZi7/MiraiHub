@@ -6,6 +6,7 @@ import type {
   AgentModelListInput,
   AgentRun,
   AgentTarget,
+  AgentConversation,
 } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -26,8 +27,30 @@ export const testConfig = (profileId: string) =>
   call<string>('ai_test_config', { profileId })
 export const onConfigChanged = (handler: () => void) =>
   IS_TAURI ? listen('ai-config-changed', handler) : Promise.resolve(() => {})
-export const start = (target: AgentTarget, prompt: string, profileId: string) =>
-  call<AgentRun>('ai_start', { target, prompt, profileId })
+export const start = (
+  target: AgentTarget,
+  prompt: string,
+  profileId: string,
+  conversationId?: string
+) => call<AgentRun>('ai_start', { target, prompt, profileId, conversationId })
+export const listConversations = (target: AgentTarget) =>
+  call<AgentConversation[]>('ai_list_conversations', { target })
+export const openConversation = (target: AgentTarget, conversationId: string) =>
+  call<AgentRun>('ai_open_conversation', { target, conversationId })
+export const renameConversation = (
+  target: AgentTarget,
+  conversationId: string,
+  title: string
+) =>
+  call<AgentConversation>('ai_rename_conversation', {
+    target,
+    conversationId,
+    title,
+  })
+export const deleteConversation = (
+  target: AgentTarget,
+  conversationId: string
+) => call<void>('ai_delete_conversation', { target, conversationId })
 export const send = (runId: string, prompt: string) =>
   call<AgentRun>('ai_send', { runId, prompt })
 export const step = (runId: string) => call<AgentRun>('ai_step', { runId })

@@ -16,6 +16,7 @@ import type {
 import type { SavedDatabaseQuery } from '@/types/database-query'
 import { cn } from '@/utils/cn'
 import DatabaseObjectCategory from './DatabaseObjectCategory.vue'
+import DatabaseObjectContextMenu from './DatabaseObjectContextMenu.vue'
 import DatabaseSavedQueryCategory from './DatabaseSavedQueryCategory.vue'
 
 const props = defineProps<{
@@ -378,48 +379,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     ]
   }
 
-  const object = context.object
-  if (!object) return []
-  const relation = object.kind === 'table' || object.kind === 'view'
-  return [
-    {
-      id: 'open-object',
-      label: object.kind === 'table' ? '浏览数据' : '打开对象',
-      icon: relation ? 'lucide:table-2' : 'lucide:file-code-2',
-      groupLabel: `${object.schema}.${object.name}`,
-    },
-    {
-      id: 'query-object',
-      label: relation
-        ? '生成 SELECT 查询'
-        : object.kind === 'procedure'
-          ? '生成 CALL 查询'
-          : '生成函数查询',
-      icon: 'lucide:square-terminal',
-    },
-    {
-      id: 'structure-object',
-      label: '查看结构',
-      icon: 'lucide:columns-3',
-      disabled: !relation,
-    },
-    {
-      id: 'copy-object',
-      label: '复制限定名称',
-      icon: 'lucide:copy',
-      separatorBefore: true,
-    },
-    { id: 'rename-object', label: '重命名…', icon: 'lucide:pencil' },
-    { id: 'refresh', label: '刷新对象树', icon: 'lucide:rotate-cw' },
-    {
-      id: 'remove-object',
-      label: `删除${kindLabel(object.kind)}…`,
-      icon: 'lucide:trash-2',
-      iconTone: 'danger',
-      danger: true,
-      separatorBefore: true,
-    },
-  ]
+  return []
 })
 
 function kindLabel(kind: DatabaseObjectKind): string {
@@ -461,7 +421,6 @@ function showContext(
 }
 
 function handleContextAction(id: string): void {
-  const object = context.object
   const savedQuery = context.savedQuery
   if (id === 'create-database') emit('createDatabase')
   else if (id === 'activate-database' && context.database)
@@ -493,14 +452,6 @@ function handleContextAction(id: string): void {
       )
   } else if (id === 'rename-database') emit('renameDatabase', context.database)
   else if (id === 'remove-database') emit('removeDatabase', context.database)
-  else if (id === 'open-object' && object) emit('open', object)
-  else if (id === 'query-object' && object) emit('query', object)
-  else if (id === 'structure-object' && object) {
-    emit('inspect', object)
-    emit('open', object, 'columns')
-  } else if (id === 'copy-object' && object) emit('copy', object)
-  else if (id === 'rename-object' && object) emit('renameObject', object)
-  else if (id === 'remove-object' && object) emit('removeObject', object)
   else if (id === 'refresh') emit('refresh')
 }
 </script>
@@ -752,7 +703,23 @@ function handleContextAction(id: string): void {
       </template>
     </div>
 
+    <DatabaseObjectContextMenu
+      v-if="context.target === 'object'"
+      :open="context.open"
+      :x="context.x"
+      :y="context.y"
+      :object="context.object"
+      @close="context.open = false"
+      @open="(object, panel) => emit('open', object, panel)"
+      @inspect="emit('inspect', $event)"
+      @query="emit('query', $event)"
+      @copy="emit('copy', $event)"
+      @rename="emit('renameObject', $event)"
+      @remove="emit('removeObject', $event)"
+      @refresh="emit('refresh')"
+    />
     <AppContextMenu
+      v-else
       :open="context.open"
       :x="context.x"
       :y="context.y"

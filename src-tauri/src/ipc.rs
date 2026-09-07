@@ -46,6 +46,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         agent::ai_forget,
         agent::history::ai_list_conversations,
         agent::history::ai_open_conversation,
+        agent::history::ai_rename_conversation,
         agent::history::ai_delete_conversation,
         // ---------- 平台 / 窗口 ----------
         platform::locale::get_system_locale,
