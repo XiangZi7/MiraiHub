@@ -120,6 +120,14 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
               { value: 'solid', label: '纯色' },
             ],
           },
+          {
+            key: 'windowBackgroundOpacity',
+            label: '毛玻璃背景强度',
+            description: '50% 保持主题默认效果；调高减少桌面透出，调低则更通透',
+            control: 'slider',
+            range: { min: 0, max: 100 },
+            unit: '%',
+          },
         ],
       },
       {

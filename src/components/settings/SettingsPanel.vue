@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppSlider from '@/components/ui/AppSlider.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 import type {
@@ -187,6 +188,19 @@ function displayValue(field: SettingField): string {
                 @update:model-value="emit('update', field.key, $event)"
               />
 
+              <AppSlider
+                v-else-if="field.control === 'slider'"
+                class="settings-slider"
+                :label="field.label"
+                :min="field.range?.min ?? 0"
+                :max="field.range?.max ?? 100"
+                :unit="field.unit"
+                :disabled="isDisabled(field)"
+                :model-value="Number(stringValue(field.key))"
+                hide-label
+                @update:model-value="emit('update', field.key, String($event))"
+              />
+
               <ShortcutRecorder
                 v-else-if="field.control === 'shortcut'"
                 :model-value="stringValue(field.key)"
@@ -352,6 +366,11 @@ function displayValue(field: SettingField): string {
     color-mix(in oklch, var(--color-danger) 12%, transparent);
 }
 
+.settings-slider {
+  width: 190px;
+  flex-shrink: 0;
+}
+
 @container settings (max-width: 560px) {
   .settings-row {
     flex-wrap: wrap;
@@ -359,6 +378,9 @@ function displayValue(field: SettingField): string {
   }
   .settings-row > div:first-child {
     flex-basis: 100%;
+  }
+  .settings-slider {
+    width: 100%;
   }
   .settings-page-header,
   .settings-group {

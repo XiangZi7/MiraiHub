@@ -8,6 +8,7 @@ import { applySkin } from '@/utils/skin-runtime'
 import { loadSettings } from '@/api/settings'
 import { subscribeSkinPreview } from '@/api/skin-preview'
 import type { SkinSettings } from '@/utils/skin'
+import { applyWindowBackgroundOpacity } from '@/utils/window-appearance'
 
 let started = false
 
@@ -39,12 +40,14 @@ export function startSettingsRuntime(
         settings.compactLayout,
         settings.reduceMotion,
         settings.windowMaterial,
+        settings.windowBackgroundOpacity,
       ] as const,
-    ([compact, reduceMotion, material]) => {
+    ([compact, reduceMotion, material, backgroundOpacity]) => {
       const root = document.documentElement
       root.classList.toggle('compact', compact)
       root.classList.toggle('reduce-motion', reduceMotion)
       root.classList.toggle('material-solid', material === 'solid')
+      applyWindowBackgroundOpacity(backgroundOpacity, root)
     },
     { immediate: true }
   )

@@ -8,6 +8,7 @@ import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
 import { normalizeSkinSettings } from '@/utils/skin'
 import { normalizeLanguage } from '@/utils/locale'
+import { normalizeWindowBackgroundOpacity } from '@/utils/window-appearance'
 
 const STORAGE_KEY = 'miraihub.settings.v1'
 const CHANGE_EVENT = 'miraihub:settings-changed'
@@ -39,6 +40,9 @@ export function loadSettings(): SettingsValues {
   }
 
   defaults.uiScale = String(normalizeUiScale(defaults.uiScale))
+  defaults.windowBackgroundOpacity = normalizeWindowBackgroundOpacity(
+    defaults.windowBackgroundOpacity
+  )
   defaults.language = normalizeLanguage(defaults.language)
   return normalizeSkinSettings(defaults)
 }

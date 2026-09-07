@@ -39,6 +39,7 @@ test('旧设置保留用户偏好，并补齐默认皮肤和背景参数', () =>
   assert.equal(settings.terminalFontSize, '16')
   assert.equal(settings.reduceMotion, true)
   assert.equal(settings.skinTheme, 'default')
+  assert.equal(settings.windowBackgroundOpacity, '50')
   assert.equal(settings.skinBackgroundOpacity, '30')
   assert.equal(settings.skinBackgroundBlur, '0')
 })

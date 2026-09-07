@@ -9,8 +9,16 @@ const props = withDefaults(
     step?: number
     unit?: string
     disabled?: boolean
+    hideLabel?: boolean
   }>(),
-  { min: 0, max: 100, step: 1, unit: '', disabled: false }
+  {
+    min: 0,
+    max: 100,
+    step: 1,
+    unit: '',
+    disabled: false,
+    hideLabel: false,
+  }
 )
 const model = defineModel<number>({ required: true })
 const id = useId()
@@ -29,7 +37,11 @@ const progress = computed(() =>
     class="app-slider"
     :class="{ 'is-disabled': disabled }"
   >
-    <label :for="id">{{ label }}</label>
+    <label
+      :for="id"
+      :class="{ 'sr-only': hideLabel }"
+      >{{ label }}</label
+    >
     <div class="slider-track">
       <input
         :id="id"

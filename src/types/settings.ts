@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS = {
   minimizeToTray: false,
 
   windowMaterial: 'acrylic',
+  windowBackgroundOpacity: '50',
   compactLayout: false,
   uiScale: '100',
   reduceMotion: false,
@@ -113,13 +114,16 @@ export interface EditableSettingField {
   key: SettingKey
   label: string
   description?: string
-  control: 'switch' | 'select' | 'text' | 'shortcut' | 'directory' | 'scale'
+  control:
+    'switch' | 'select' | 'text' | 'shortcut' | 'directory' | 'scale' | 'slider'
   options?: readonly SettingOption[]
   placeholder?: string
   inputmode?: 'text' | 'numeric' | 'url'
   size?: 'sm' | 'md' | 'lg'
-  /** 仅 control = text 且 inputmode = numeric 时生效 */
+  /** 数值文本框或滑杆的合法范围。 */
   range?: SettingRange
+  /** 仅滑杆显示。 */
+  unit?: string
   /** 依赖的开关项为 false 时禁用本项 */
   dependsOn?: SettingKey
 }

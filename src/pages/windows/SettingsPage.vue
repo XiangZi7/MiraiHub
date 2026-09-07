@@ -29,6 +29,7 @@ import type {
 } from '@/types/settings'
 import { closeWindow, IS_TAURI, toggleMaximizeWindow } from '@/utils/window'
 import { applyZoom } from '@/utils/settings-runtime'
+import { applyWindowBackgroundOpacity } from '@/utils/window-appearance'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
 import SettingsSidebar from '@/components/settings/SettingsSidebar.vue'
 import ThemeSkinPanel from '@/components/settings/ThemeSkinPanel.vue'
@@ -63,8 +64,14 @@ watch(
   () => draft.uiScale,
   value => void applyZoom(value)
 )
+watch(
+  () => draft.windowBackgroundOpacity,
+  value => applyWindowBackgroundOpacity(value),
+  { immediate: true }
+)
 onBeforeUnmount(() => {
   void applyZoom(settings.uiScale)
+  applyWindowBackgroundOpacity(settings.windowBackgroundOpacity)
 })
 
 const runtimeValues = reactive<Record<string, string>>({

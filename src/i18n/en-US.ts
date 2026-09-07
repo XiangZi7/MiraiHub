@@ -220,7 +220,7 @@ export default {
     'Restore connection passwords and key passphrases',
   '恢复终端启动命令（下次连接时会自动执行，请先核对备份来源）':
     'Restore terminal startup commands (they run on the next connection; verify the backup source first)',
-  '核对备份中的终端启动命令': 'Review terminal startup commands',
+  核对备份中的终端启动命令: 'Review terminal startup commands',
   '（无启动命令）': '(No startup command)',
   新增: 'Add',
   更新: 'Update',
@@ -285,6 +285,9 @@ export default {
   窗口材质: 'Window material',
   'Mica 仅 Windows 11 可用，其他系统会退回到模糊效果':
     'Mica requires Windows 11; other systems fall back to blur',
+  毛玻璃背景强度: 'Glass background strength',
+  '50% 保持主题默认效果；调高减少桌面透出，调低则更通透':
+    '50% keeps the theme default. Increase it to hide more of the desktop, or decrease it for more transparency.',
   纯色: 'Solid',
   界面: 'Interface',
   紧凑布局: 'Compact layout',
