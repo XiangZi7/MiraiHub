@@ -19,6 +19,7 @@ import type {
   DatabaseSslMode,
 } from '@/types/database'
 import ConnectionFilePathField from './ConnectionFilePathField.vue'
+import ConnectionGroupSelect from './ConnectionGroupSelect.vue'
 
 const { settings } = useSettings()
 
@@ -337,10 +338,9 @@ async function saveConnection(): Promise<void> {
             required
             autofocus
           />
-          <AppTextField
+          <ConnectionGroupSelect
             v-model="form.group"
-            label="Group"
-            placeholder="e.g. Production"
+            kind="database"
           />
         </div>
 

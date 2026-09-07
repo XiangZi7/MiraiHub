@@ -124,6 +124,10 @@ function toggleAgentSplit(): void {
   agentState.agentSplit = !(agentState.agentOpen && agentState.agentSplit)
   agentState.agentOpen = true
 }
+function openAgent(): void {
+  agentState.agentSplit = true
+  agentState.agentOpen = true
+}
 const connection = toRef(props, 'connection')
 const password = shallowRef('')
 const editor = shallowRef<SqlEditorExpose | null>(null)
@@ -1155,7 +1159,7 @@ watch(
           type="button"
           class="h-full border-b-2 text-[11px]"
           :class="
-            !agentOpen
+            !agentOpen || agentSplit
               ? 'border-accent text-txt'
               : 'text-txt-3 border-transparent'
           "
@@ -1171,7 +1175,7 @@ watch(
               ? 'border-accent text-txt'
               : 'text-txt-3 border-transparent'
           "
-          @click="agentOpen = true"
+          @click="openAgent"
         >
           <AppIcon
             name="lucide:bot"

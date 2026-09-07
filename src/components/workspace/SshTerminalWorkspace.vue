@@ -69,6 +69,10 @@ function splitAgent(): void {
   state.aiSplit = !(state.aiOpen && state.aiSplit)
   state.aiOpen = true
 }
+function openAgent(): void {
+  state.aiSplit = true
+  state.aiOpen = true
+}
 function showTerminal(): void {
   state.aiOpen = false
   void nextTick(() => primary.value?.focus())
@@ -115,7 +119,7 @@ defineExpose({
       <button
         type="button"
         :class="aiOpen && 'selected'"
-        @click="aiOpen = true"
+        @click="openAgent"
       >
         <AppIcon
           name="lucide:bot"

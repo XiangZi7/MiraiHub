@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, reactive, toRefs, watch } from 'vue'
+import { useStorage } from '@vueuse/core'
 import ConnectionTagBadge from '@/components/connection/ConnectionTagBadge.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppCollapse from '@/components/ui/AppCollapse.vue'
-import IconButton from '@/components/ui/IconButton.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
 import type { ContextMenuItem } from '@/types/context-menu'
@@ -13,9 +13,16 @@ import { connectionTagColorCss } from '@/constants/connection'
 import { useConnectionGroupDrag } from '@/composables/useConnectionGroupDrag'
 import { cn } from '@/utils/cn'
 import SidebarGroupEditor from './SidebarGroupEditor.vue'
+import ConnectionListTools from './ConnectionListTools.vue'
+import {
+  connectionList,
+  CONNECTION_SORT_OPTIONS,
+  type ConnectionSort,
+} from '@/utils/connection-list'
 
 const props = defineProps<{
   label: string
+  kind?: 'ssh' | 'database'
   groups: readonly ConnectionGroupView[]
   loaded: boolean
   activeId?: string
@@ -39,6 +46,9 @@ const emit = defineEmits<{
 }>()
 
 const state = reactive({
+  // 当前连接列表的搜索词
+  keyword: '',
+  selectedId: props.activeId ?? '',
   collapsed: {} as Record<string, boolean>,
   creatingGroup: false,
   editingGroupId: '',
@@ -48,6 +58,53 @@ const state = reactive({
   menuConnection: null as SavedConnection | null,
   menuGroup: null as ConnectionGroupView | null,
 })
+const { keyword } = toRefs(state)
+const sortPreferences = useStorage<Record<string, ConnectionSort>>(
+  'miraihub:connection-list-sort',
+  { ssh: 'name-asc', database: 'name-asc' }
+)
+const listKind = computed(() => props.kind ?? props.groups[0]?.kind ?? 'ssh')
+const sort = computed<ConnectionSort>({
+  get: () => {
+    const value = sortPreferences.value?.[listKind.value]
+    return CONNECTION_SORT_OPTIONS.some(option => option.value === value)
+      ? value
+      : 'name-asc'
+  },
+  set: value => {
+    sortPreferences.value = {
+      ...sortPreferences.value,
+      [listKind.value]: value,
+    }
+  },
+})
+const visibleGroups = computed(() =>
+  connectionList(props.groups, state.keyword, sort.value)
+)
+const allExpanded = computed(
+  () =>
+    props.groups.length > 0 &&
+    props.groups.every(group => !state.collapsed[group.id])
+)
+watch(listKind, () => {
+  state.keyword = ''
+})
+watch(
+  () => state.keyword,
+  value => {
+    if (value.trim())
+      for (const group of visibleGroups.value) state.collapsed[group.id] = false
+  }
+)
+function setAllExpanded(expanded: boolean): void {
+  for (const group of props.groups) state.collapsed[group.id] = !expanded
+}
+watch(
+  () => props.activeId,
+  id => {
+    state.selectedId = id ?? ''
+  }
+)
 let menuTrigger: HTMLElement | null = null
 
 const contextItems = computed<ContextMenuItem[]>(() => {
@@ -175,8 +232,20 @@ const groupDrag = useConnectionGroupDrag({
   },
 })
 
+let suppressDoubleClick = false
+function selectConnection(
+  event: MouseEvent,
+  connection: SavedConnection
+): void {
+  suppressDoubleClick = groupDrag.consumeSuppressedClick(connection.id)
+  if (suppressDoubleClick) return
+  state.selectedId = connection.id
+  // Native button activation keeps Enter/Space and assistive technology usable.
+  if (event.detail === 0 || connection.kind === 'local')
+    emit('open', connection)
+}
 function openConnection(connection: SavedConnection): void {
-  if (groupDrag.consumeSuppressedClick(connection.id)) return
+  if (suppressDoubleClick || connection.kind === 'local') return
   emit('open', connection)
 }
 
@@ -264,17 +333,15 @@ function runContextAction(action: string): void {
 
 <template>
   <section>
-    <div class="mt-5 mb-1.5 flex items-center justify-between pr-1">
-      <p class="group-label">
-        {{ label }}
-      </p>
-      <IconButton
-        icon="lucide:folder-plus"
-        :size="13"
-        title="新建分组"
-        @click="state.creatingGroup = true"
-      />
-    </div>
+    <ConnectionListTools
+      :key="listKind"
+      v-model:keyword="keyword"
+      v-model:sort="sort"
+      :label="label"
+      :expanded="allExpanded"
+      @create-group="state.creatingGroup = true"
+      @toggle-all="setAllExpanded(!allExpanded)"
+    />
 
     <SidebarGroupEditor
       v-if="state.creatingGroup"
@@ -285,7 +352,7 @@ function runContextAction(action: string): void {
 
     <div class="space-y-0.5">
       <div
-        v-for="group in groups"
+        v-for="group in visibleGroups"
         :key="group.id"
         :data-connection-group-id="group.id"
         :class="[
@@ -344,11 +411,16 @@ function runContextAction(action: string): void {
                   'connection-node-draggable',
                   groupDrag.draggedConnectionId.value === node.id &&
                     'connection-node-dragging',
-                  activeId === node.id && 'nav-item-active'
+                  state.selectedId === node.id && 'nav-item-active'
                 )
               "
-              :title="endpointOf(node)"
-              @click="openConnection(node)"
+              :title="
+                node.kind === 'local'
+                  ? endpointOf(node)
+                  : `${endpointOf(node)} · 双击连接`
+              "
+              @click="selectConnection($event, node)"
+              @dblclick="openConnection(node)"
               @contextmenu.prevent.stop="openConnectionMenu($event, node)"
               @pointerdown="groupDrag.start($event, node, group)"
             >
@@ -389,6 +461,13 @@ function runContextAction(action: string): void {
         </AppCollapse>
       </div>
 
+      <p
+        v-if="loaded && groups.length && !visibleGroups.length"
+        class="text-txt-4 px-3 py-5 text-center text-[11px]"
+        role="status"
+      >
+        没有匹配的连接
+      </p>
       <button
         v-if="loaded && !groups.length"
         type="button"

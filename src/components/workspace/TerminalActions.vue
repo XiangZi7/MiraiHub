@@ -15,6 +15,7 @@ import { toast } from '@/composables/useToast'
 import { scheduleClipboardClear } from '@/utils/clipboard'
 import { findTerminalMatches } from '@/utils/terminal-search'
 import type { SshSessionStatus } from '@/types/ssh'
+import TerminalCommandMenu from './TerminalCommandMenu.vue'
 
 const props = defineProps<{
   terminal?: Terminal
@@ -181,10 +182,20 @@ async function runAction(id: string): Promise<void> {
     toast.error({ title: '终端操作失败', description: String(error) })
   }
 }
+function insertCommand(command: string): void {
+  if (props.status !== 'connected' || !props.terminal) return
+  props.terminal.paste(command)
+  props.terminal.focus()
+}
 </script>
 
 <template>
   <div class="relative flex shrink-0 items-center gap-1">
+    <TerminalCommandMenu
+      v-if="!local"
+      :connected="status === 'connected' && Boolean(terminal)"
+      @insert="insertCommand"
+    />
     <IconButton
       v-if="!local"
       :icon="split ? 'lucide:rows-2' : 'lucide:columns-2'"

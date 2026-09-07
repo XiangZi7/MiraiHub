@@ -15,6 +15,11 @@ export interface AgentConfigInput {
   model: string
   apiKey: string
 }
+export interface AgentModelListInput {
+  baseUrl: string
+  apiKey: string
+  clearKey: boolean
+}
 export interface AgentEntry {
   role: 'user' | 'assistant' | 'tool' | 'audit' | 'error'
   text: string

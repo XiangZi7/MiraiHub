@@ -78,7 +78,12 @@ pub fn read(app: &AppHandle) -> AppResult<Config> {
         Err(error) => Err(error.into()),
     }
 }
-pub fn save(app: &AppHandle, mut next: Config, clear_key: bool) -> AppResult<PublicConfig> {
+// Shared by saving and model discovery; resolving a draft never persists it.
+pub(super) fn resolve_credentials(
+    mut next: Config,
+    previous: Config,
+    clear_key: bool,
+) -> AppResult<Config> {
     next.base_url = next.base_url.trim().trim_end_matches('/').into();
     next.model = next.model.trim().into();
     next.api_key = next.api_key.trim().into();
@@ -86,7 +91,6 @@ pub fn save(app: &AppHandle, mut next: Config, clear_key: bool) -> AppResult<Pub
     if next.model.len() > 200 || next.api_key.len() > 8192 || next.api_key.contains(['\r', '\n']) {
         return Err(AppError::invalid_input("模型或密钥格式无效"));
     }
-    let previous = read(app)?;
     if clear_key {
         next.api_key.clear();
     } else if next.api_key.is_empty() {
@@ -97,6 +101,10 @@ pub fn save(app: &AppHandle, mut next: Config, clear_key: bool) -> AppResult<Pub
         }
         next.api_key = previous.api_key;
     }
+    Ok(next)
+}
+pub fn save(app: &AppHandle, next: Config, clear_key: bool) -> AppResult<PublicConfig> {
+    let next = resolve_credentials(next, read(app)?, clear_key)?;
     if next.enabled {
         next.ready()?;
     }
@@ -158,25 +166,27 @@ fn protect(_bytes: &[u8], _encrypt: bool) -> AppResult<Vec<u8>> {
     ))
 }
 
+pub(super) fn client() -> AppResult<reqwest::Client> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|_| AppError::internal("无法创建模型客户端"))
+}
 pub async fn completion(
     config: &Config,
     messages: &[serde_json::Value],
     tools: Option<serde_json::Value>,
 ) -> AppResult<serde_json::Value> {
     config.ready()?;
-    let _ = rustls::crypto::ring::default_provider().install_default();
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|_| AppError::internal("无法创建模型客户端"))?;
     let mut body = serde_json::json!({"model":config.model,"messages":messages,"stream":false,"max_completion_tokens":4096});
     if let Some(tools) = tools {
         body["tools"] = tools;
         body["parallel_tool_calls"] = false.into();
     }
-    let mut request = client
+    let mut request = client()?
         .post(format!(
             "{}/chat/completions",
             config.base_url.trim_end_matches('/')
@@ -185,6 +195,9 @@ pub async fn completion(
     if !config.api_key.is_empty() {
         request = request.bearer_auth(&config.api_key);
     }
+    request_json(request).await
+}
+pub(super) async fn request_json(request: reqwest::RequestBuilder) -> AppResult<serde_json::Value> {
     let mut response = request.send().await.map_err(|_| {
         AppError::internal("模型请求失败，请检查网络、证书及 API 地址（60 秒超时）")
     })?;

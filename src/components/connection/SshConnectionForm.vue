@@ -15,6 +15,7 @@ import type { ConnectionTagColor, NewConnection } from '@/types/connection'
 import { isSshConnection } from '@/types/connection'
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
 import ConnectionTagEditor from './ConnectionTagEditor.vue'
+import ConnectionGroupSelect from './ConnectionGroupSelect.vue'
 import PrivateKeySelector from './PrivateKeySelector.vue'
 import StartupCommandPresetField from './StartupCommandPresetField.vue'
 
@@ -421,10 +422,9 @@ async function saveConnection(): Promise<void> {
             required
             autofocus
           />
-          <AppTextField
+          <ConnectionGroupSelect
             v-model="form.group"
-            label="Group"
-            placeholder="e.g. Production"
+            kind="ssh"
           />
         </div>
 

@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type {
   AgentConfig,
   AgentConfigInput,
+  AgentModelListInput,
   AgentRun,
   AgentTarget,
 } from '@/types/agent'
@@ -12,6 +13,8 @@ function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args)
 }
 export const getConfig = () => call<AgentConfig>('ai_get_config')
+export const listModels = (input: AgentModelListInput) =>
+  call<string[]>('ai_list_models', { input })
 export const saveConfig = (config: AgentConfigInput, clearKey: boolean) =>
   call<AgentConfig>('ai_save_config', { config, clearKey })
 export const testConfig = () => call<string>('ai_test_config')

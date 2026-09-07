@@ -31,7 +31,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <div
         v-if="open"
         class="file-conflict-backdrop"
-        @click.self="emit('cancel')"
       >
         <section
           class="file-conflict-dialog"

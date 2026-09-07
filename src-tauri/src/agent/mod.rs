@@ -1,5 +1,6 @@
 //! Server-owned conversations and immutable, expiring, single-use approvals.
 mod config;
+mod models;
 mod policy;
 use crate::{
     db,
@@ -312,6 +313,20 @@ pub async fn ai_get_config(
     guard(&window, true)?;
     let _lock = state.config_lock.lock().await;
     Ok(config::read(&app)?.public())
+}
+#[tauri::command]
+pub async fn ai_list_models(
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AgentManager>,
+    input: models::ModelListInput,
+) -> AppResult<Vec<String>> {
+    guard(&window, true)?;
+    let config = {
+        let _lock = state.config_lock.lock().await;
+        input.resolve(config::read(&app)?)?
+    };
+    models::list(&config).await
 }
 #[tauri::command]
 pub async fn ai_save_config(

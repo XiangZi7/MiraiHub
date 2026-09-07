@@ -327,6 +327,7 @@ async function confirmRemoval(): Promise<void> {
 
       <AppCollapse :open="!collapsed">
         <SidebarProjects
+          :kind="currentGroupKind"
           :label="groupsLabel"
           :groups="projectGroups"
           :loaded="loaded"

@@ -4,6 +4,7 @@ import * as api from '@/api/agent'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AiModelField from './AiModelField.vue'
 import { IS_TAURI } from '@/utils/window'
 
 // 密钥仅存在于此输入框，保存后立即清空；不会回填已存储的密钥。
@@ -131,18 +132,13 @@ defineExpose({ save })
               结尾。
             </p>
           </div>
-          <div class="ai-setting-field">
-            <label for="ai-model">模型名称</label>
-            <input
-              id="ai-model"
-              v-model="model"
-              type="text"
-              placeholder="输入服务商提供、支持工具调用的模型 ID"
-              autocomplete="off"
-              spellcheck="false"
-              maxlength="200"
-            />
-          </div>
+          <AiModelField
+            v-model="model"
+            :base-url="baseUrl"
+            :api-key="apiKey"
+            :clear-key="clearKey"
+            :disabled="loading || busy || !IS_TAURI"
+          />
           <div class="ai-setting-field">
             <div class="ai-key-label">
               <label for="ai-api-key">API Key</label
