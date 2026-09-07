@@ -20,7 +20,7 @@
 </div>
 
 ![MiraiHub 产品概览：SSH 终端与数据库工作区](docs/images/overview.png)
-
+![MiraiHub 皮肤预览：默认主题与自定义主题](docs/images/skin.png)
 MiraiHub 是基于 **Tauri 2、Rust、Vue 3 和 TypeScript** 构建的桌面工作台，面向开发者与服务器维护者，将服务器连接、文件传输、数据库操作和 AI 辅助集中到同一个应用中。
 
 在多标签工作区里连接服务器、查看运行状态、编辑远端文件或执行 SQL，需要协助时直接打开当前连接的 AI Agent 面板。
