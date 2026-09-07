@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, shallowRef } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { formatShortcut, shortcutFromEvent } from '@/utils/shortcut'
+
+const { t } = useI18n()
 
 /**
  * 快捷键录制框。
@@ -69,7 +72,9 @@ function handleKeydown(event: KeyboardEvent): void {
     <button
       type="button"
       :class="['shortcut-field', recording && 'shortcut-field-recording']"
-      :aria-label="`${label}：当前为 ${formatShortcut(model)}，按下新的组合键修改`"
+      :aria-label="
+        t('settings.shortcutLabel', { label, shortcut: formatShortcut(model) })
+      "
       :disabled="disabled"
       @focus="recording = true"
       @blur="stop()"
@@ -78,7 +83,7 @@ function handleKeydown(event: KeyboardEvent): void {
       <span
         v-if="recording"
         class="shortcut-hint"
-        >{{ pending || '按下组合键…' }}</span
+        >{{ pending || t('按下组合键…') }}</span
       >
       <template v-else>
         <template
@@ -97,8 +102,8 @@ function handleKeydown(event: KeyboardEvent): void {
     <button
       type="button"
       class="icon-btn size-6 disabled:pointer-events-none disabled:opacity-30"
-      title="恢复默认"
-      aria-label="恢复默认快捷键"
+      :title="t('恢复默认')"
+      :aria-label="t('恢复默认快捷键')"
       :disabled="disabled || isDefault"
       @click="model = defaultValue"
     >

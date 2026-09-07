@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   computed,
   nextTick,
@@ -55,6 +56,8 @@ import {
   toggleMaximizeWindow,
 } from '@/utils/window'
 
+const { t } = useI18n()
+
 const settings = useSettingsStore().values
 const connections = useConnectionsStore()
 const workspace = useWorkspaceStore()
@@ -102,7 +105,7 @@ watch(
       if ((await launchAtStartupEnabled()) !== enabled)
         await setLaunchAtStartup(enabled)
     } catch (error) {
-      toast.error({ title: '更新开机启动失败', description: String(error) })
+      toast.error({ title: t('更新开机启动失败'), description: String(error) })
     }
   },
   { immediate: true }
@@ -156,7 +159,7 @@ async function tabAction(id: string, action: string): Promise<void> {
       .get(isDatabaseConnection(tab.connection) ? 'databases' : 'servers')
       ?.action?.(id, action)
   } catch (error) {
-    toast.error({ title: '连接操作失败', description: String(error) })
+    toast.error({ title: t('连接操作失败'), description: String(error) })
   }
 }
 async function runWorkspaceAction(action: string): Promise<void> {
@@ -166,7 +169,7 @@ async function runWorkspaceAction(action: string): Promise<void> {
   }
   const tab = activeSshTab.value
   if (!tab) {
-    toast.info('请先打开一个 SSH 连接')
+    toast.info(t('请先打开一个 SSH 连接'))
     return
   }
   await tabAction(tab.id, action)
@@ -195,7 +198,7 @@ async function runCommand(item: CommandItem): Promise<void> {
 }
 function resetLayout(): void {
   layout.reset()
-  toast.success('已恢复默认布局')
+  toast.success(t('已恢复默认布局'))
 }
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (matchesShortcut(event, settings.shortcutPalette)) {
@@ -250,7 +253,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         ref="search"
         v-model="keyword"
         icon="lucide:search"
-        placeholder="搜索服务器、文件、命令…"
+        :placeholder="t('搜索服务器、文件、命令…')"
         :shortcut="formatShortcut(settings.shortcutPalette)"
         class="w-75"
       />
@@ -258,12 +261,16 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <div class="flex items-center gap-1.5">
         <IconButton
           icon="lucide:command"
-          :title="`命令面板 (${formatShortcut(settings.shortcutPalette)})`"
+          :title="
+            t('workspace.paletteShortcut', {
+              shortcut: formatShortcut(settings.shortcutPalette),
+            })
+          "
           @click="paletteOpen = true"
         />
         <IconButton
           icon="lucide:plus"
-          title="新建连接"
+          :title="t('新建连接')"
           @click="addConnection"
         />
         <TransferCenter />
@@ -280,8 +287,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               var(--color-pink)
             );
           "
-          title="设置"
-          aria-label="打开设置"
+          :title="t('设置')"
+          :aria-label="t('打开设置')"
           @click="openSettingsWindow"
         />
       </div>
@@ -306,7 +313,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         pane-side="left"
         :min="SIDEBAR_MIN_WIDTH"
         :max="SIDEBAR_MAX_WIDTH"
-        label="调整主侧栏宽度"
+        :label="t('调整主侧栏宽度')"
         overlay
       />
 
@@ -337,14 +344,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
                   : 'lucide:panel-right-open'
               "
               :size="14"
-              :title="machineOpen ? '收起机器面板' : '展开机器面板'"
+              :title="machineOpen ? t('收起机器面板') : t('展开机器面板')"
               :aria-expanded="machineOpen"
               @click="machineOpen = !machineOpen"
             />
             <IconButton
               :icon="fullscreen ? 'lucide:minimize' : 'lucide:maximize'"
               :size="14"
-              :title="fullscreen ? '退出全屏 (Esc)' : '全屏 (F11)'"
+              :title="fullscreen ? t('退出全屏 (Esc)') : t('全屏 (F11)')"
               @click="toggleFullscreen"
             />
           </div>

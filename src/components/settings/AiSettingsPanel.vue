@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useAgentSettings } from '@/composables/useAgentSettings'
 import { AGENT_PROVIDER_PRESETS } from '@/constants/agent-providers'
@@ -8,6 +9,9 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AiProfileForm from './AiProfileForm.vue'
 import { IS_TAURI } from '@/utils/window'
+import { translateLabel } from '@/i18n'
+
+const { t } = useI18n()
 const {
   selectedId,
   preset,
@@ -37,7 +41,7 @@ function confirmDelete(): void {
     <div
       class="ai-settings-scroll scroll-thin"
       role="region"
-      aria-label="AI 配置内容"
+      :aria-label="t('AI 配置内容')"
       tabindex="0"
     >
       <div class="ai-settings-content">
@@ -51,22 +55,22 @@ function confirmDelete(): void {
           <span class="beta">BETA</span>
         </header>
         <p class="subtitle">
-          在 SSH 终端与数据库旁协作，所有增删改操作逐次审批。
+          {{ t('在 SSH 终端与数据库旁协作，所有增删改操作逐次审批。') }}
         </p>
         <p
           v-if="!IS_TAURI"
           class="notice"
         >
-          浏览器仅预览界面。请在桌面程序中配置和使用 AI。
+          {{ t('浏览器仅预览界面。请在桌面程序中配置和使用 AI。') }}
         </p>
         <fieldset
           :disabled="loading || busy"
           class="grid min-w-0 gap-3 border-0 p-0"
-          aria-label="配置管理"
+          :aria-label="t('配置管理')"
         >
           <AppSelect
             v-model="selectedId"
-            label="已保存的配置"
+            :label="t('已保存的配置')"
             :options="options"
             :disabled="loading || busy"
             searchable
@@ -75,8 +79,13 @@ function confirmDelete(): void {
             <div class="min-w-0 flex-1">
               <AppSelect
                 v-model="preset"
-                label="添加配置"
-                :options="AGENT_PROVIDER_PRESETS"
+                :label="t('添加配置')"
+                :options="
+                  AGENT_PROVIDER_PRESETS.map(option => ({
+                    ...option,
+                    label: translateLabel(option.label),
+                  }))
+                "
                 :disabled="loading || busy"
               />
             </div>
@@ -86,11 +95,15 @@ function confirmDelete(): void {
               ><AppIcon
                 name="lucide:plus"
                 :size="13"
-              />添加</AppButton
+              />{{ t('添加') }}</AppButton
             >
           </div>
           <p class="ai-field-help">
-            同一服务可添加多份官网或中转站配置，分别保存地址、密钥和模型。
+            {{
+              t(
+                '同一服务可添加多份官网或中转站配置，分别保存地址、密钥和模型。'
+              )
+            }}
           </p>
         </fieldset>
         <AiProfileForm
@@ -104,17 +117,21 @@ function confirmDelete(): void {
             <AppIcon
               name="lucide:shield-check"
               :size="14"
-            />固定安全规则
+            />{{ t('固定安全规则') }}
           </h3>
           <ul>
-            <li>服务器状态探针、数据库结构读取可自动执行。</li>
-            <li>任意自定义 Shell、SQL 均需审批；无“全部允许”。</li>
-            <li>审批锁定目标和原文，5 分钟过期，只执行一次。</li>
-            <li>切换连接、关闭面板或停止任务会撤销待审批操作。</li>
-            <li>对话仅保留在当前应用内存，清空后不再保留。</li>
+            <li>{{ t('服务器状态探针、数据库结构读取可自动执行。') }}</li>
+            <li>{{ t('任意自定义 Shell、SQL 均需审批；无“全部允许”。') }}</li>
+            <li>{{ t('审批锁定目标和原文，5 分钟过期，只执行一次。') }}</li>
+            <li>{{ t('切换连接、关闭面板或停止任务会撤销待审批操作。') }}</li>
+            <li>{{ t('对话仅保留在当前应用内存，清空后不再保留。') }}</li>
           </ul>
           <p>
-            你输入的消息及工具结果会发送给此模型服务。请确认服务可信，不要输入密码、密钥或不应外传的数据。只读放行不等于数据不会离开本机。
+            {{
+              t(
+                '你输入的消息及工具结果会发送给此模型服务。请确认服务可信，不要输入密码、密钥或不应外传的数据。只读放行不等于数据不会离开本机。'
+              )
+            }}
           </p>
         </div>
       </div>
@@ -139,29 +156,33 @@ function confirmDelete(): void {
           variant="primary"
           :disabled="busy || loading || !IS_TAURI"
           @click="save(false)"
-          >保存并使用</AppButton
+          >{{ t('保存并使用') }}</AppButton
         >
         <AppButton
           :disabled="busy || loading || !IS_TAURI || !draft?.enabled"
           @click="save(true)"
-          >{{ busy ? '处理中…' : '保存并测试连接' }}</AppButton
+          >{{ busy ? t('处理中…') : t('保存并测试连接') }}</AppButton
         >
         <AppButton
           :disabled="busy || loading || !draft || !IS_TAURI"
           variant="ghost"
           @click="deleting = true"
-          >删除当前配置</AppButton
+          >{{ t('删除当前配置') }}</AppButton
         >
       </div>
       <p class="ai-field-help">
-        切换配置会停止并清空旧对话。测试仅发送固定测试消息，不读取服务器或数据库。服务商可能按其标准计费。
+        {{
+          t(
+            '切换配置会停止并清空旧对话。测试仅发送固定测试消息，不读取服务器或数据库。服务商可能按其标准计费。'
+          )
+        }}
       </p>
     </footer>
     <AppConfirmDialog
       :open="deleting"
-      title="删除 AI 配置"
-      :description="`删除「${draft?.name ?? ''}」及其保存的密钥？`"
-      confirm-label="删除配置"
+      :title="t('删除 AI 配置')"
+      :description="t('ai.deleteDescription', { name: draft?.name ?? '' })"
+      :confirm-label="t('删除配置')"
       danger
       @close="deleting = false"
       @confirm="confirmDelete"

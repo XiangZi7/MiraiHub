@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import AppIcon from './AppIcon.vue'
 import {
@@ -8,6 +9,8 @@ import {
   toggleMaximizeWindow,
   trackMaximized,
 } from '@/utils/window'
+
+const { t } = useI18n()
 
 // 订阅句柄不参与渲染，用普通变量即可；卸载时解除，避免热更新越挂越多
 let stopTracking: (() => void) | undefined
@@ -29,21 +32,21 @@ const buttons = computed(() => [
   {
     id: 'min',
     icon: 'mirai:win-min',
-    title: '最小化',
+    title: t('最小化'),
     danger: false,
     run: minimizeWindow,
   },
   {
     id: 'max',
     icon: isMaximized.value ? 'mirai:win-restore' : 'mirai:win-max',
-    title: isMaximized.value ? '向下还原' : '最大化',
+    title: isMaximized.value ? t('向下还原') : t('最大化'),
     danger: false,
     run: toggleMaximizeWindow,
   },
   {
     id: 'close',
     icon: 'mirai:win-close',
-    title: '关闭',
+    title: t('关闭'),
     danger: true,
     run: closeWindow,
   },

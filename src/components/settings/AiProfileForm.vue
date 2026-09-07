@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { AgentProfileDraft } from '@/types/agent'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AiModelField from './AiModelField.vue'
+
+const { t } = useI18n()
 defineProps<{ disabled: boolean }>()
 const draft = defineModel<AgentProfileDraft>({ required: true })
 const formats = [
@@ -14,30 +17,30 @@ const formats = [
   <fieldset
     :disabled="disabled"
     class="grid min-w-0 gap-5 border-0 p-0"
-    aria-label="模型服务配置"
+    :aria-label="t('模型服务配置')"
   >
     <div class="ai-setting-field">
-      <label for="ai-profile-name">配置名称</label>
+      <label for="ai-profile-name">{{ t('配置名称') }}</label>
       <input
         id="ai-profile-name"
         v-model="draft.name"
-        placeholder="例如：Claude 官网、OpenAI 中转站"
+        :placeholder="t('例如：Claude 官网、OpenAI 中转站')"
         maxlength="80"
       />
     </div>
     <AppSelect
       v-model="draft.apiFormat"
-      label="API 格式"
+      :label="t('API 格式')"
       :options="formats"
       :disabled="disabled"
     />
     <AppSwitch
       v-model="draft.enabled"
-      label="启用此配置"
-      description="使用你配置的模型服务；发送消息后才会读取目标数据"
+      :label="t('启用此配置')"
+      :description="t('使用你配置的模型服务；发送消息后才会读取目标数据')"
     />
     <div class="ai-setting-field">
-      <label for="ai-base-url">API 地址</label>
+      <label for="ai-base-url">{{ t('API 地址') }}</label>
       <input
         id="ai-base-url"
         v-model="draft.baseUrl"
@@ -53,10 +56,10 @@ const formats = [
       >
         {{
           draft.apiFormat === 'anthropic'
-            ? 'Claude Messages 格式；例如 https://api.anthropic.com/v1。'
-            : 'OpenAI Chat Completions 格式；可连接官网或兼容的中转站。'
+            ? t('Claude Messages 格式；例如 https://api.anthropic.com/v1。')
+            : t('OpenAI Chat Completions 格式；可连接官网或兼容的中转站。')
         }}
-        基础地址可按服务商要求修改。
+        {{ t('基础地址可按服务商要求修改。') }}
       </p>
     </div>
     <AiModelField
@@ -74,7 +77,7 @@ const formats = [
         ><span
           v-if="draft.hasApiKey"
           class="text-success"
-          >已安全保存</span
+          >{{ t('已安全保存') }}</span
         >
       </div>
       <input
@@ -83,8 +86,8 @@ const formats = [
         type="password"
         :placeholder="
           draft.hasApiKey
-            ? '留空保留已保存密钥'
-            : '输入密钥；本地免鉴权服务可留空'
+            ? t('留空保留已保存密钥')
+            : t('输入密钥；本地免鉴权服务可留空')
         "
         autocomplete="new-password"
         spellcheck="false"
@@ -96,7 +99,7 @@ const formats = [
         id="ai-key-help"
         class="ai-field-help"
       >
-        Windows 用户级加密存储，不进入聊天或普通设置备份。
+        {{ t('Windows 用户级加密存储，不进入聊天或普通设置备份。') }}
       </p>
     </div>
     <label
@@ -105,7 +108,7 @@ const formats = [
       ><input
         v-model="draft.clearKey"
         type="checkbox"
-      />保存时清除旧密钥</label
+      />{{ t('保存时清除旧密钥') }}</label
     >
   </fieldset>
 </template>

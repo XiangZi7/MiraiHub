@@ -1,4 +1,4 @@
-import { createApp, nextTick } from 'vue'
+import { createApp, nextTick, watchEffect } from 'vue'
 import { addCollection, type IconifyJSON } from '@iconify/vue'
 import lucideIcons from 'virtual:mirai-icons'
 import App from './App.vue'
@@ -18,6 +18,8 @@ import { pinia } from '@/stores'
 import { createAppRouter } from '@/router'
 import { resolveWindowEntry } from '@/router/window-entry'
 import { loadSettings } from '@/api/settings'
+import { i18n, translateLabel } from '@/i18n'
+import { startLanguageRuntime } from '@/i18n/runtime'
 
 // 构建时自动收集实际使用的图标，保留离线能力而不加载整套图标集。
 addCollection(lucideIcons as IconifyJSON)
@@ -36,6 +38,7 @@ const entry = resolveWindowEntry(
 )
 const app = createApp(App)
 app.use(pinia)
+app.use(i18n)
 if (entry.surface !== 'splash')
   startSettingsRuntime({ skinPreview: entry.surface === 'workspace' })
 // 保留旧版子窗口 query，同时让第一次导航直接命中正式路由。
@@ -47,11 +50,13 @@ if (!window.location.hash && entry.surface !== 'workspace')
   )
 const router = createAppRouter(pinia, entry)
 app.use(router)
+watchEffect(() => {
+  document.title = `${translateLabel(router.currentRoute.value.meta.title ?? '工作区')} · MiraiHub`
+})
 router.onError(error => {
   console.error('页面加载失败：', error)
 })
-router
-  .isReady()
+Promise.all([router.isReady(), startLanguageRuntime()])
   .then(async () => {
     app.mount('#app')
     if (IS_TAURI && entry.surface === 'settings') {

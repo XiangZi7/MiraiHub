@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, useTemplateRef, watch } from 'vue'
 import { useScroll } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -20,6 +21,8 @@ import {
   type CustomSkin,
 } from '@/utils/skin'
 
+const { t } = useI18n()
+
 const props = defineProps<{ values: SkinSettings }>()
 const emit = defineEmits<{ update: [patch: Partial<SkinSettings>] }>()
 const library = computed(() => readSkinLibrary(props.values.skinLibrary))
@@ -31,7 +34,7 @@ const cards = useTemplateRef<HTMLElement>('cards')
 const { arrivedState, measure } = useScroll(cards)
 const themeName = computed(() =>
   selected.value
-    ? selected.value.name || '未命名皮肤'
+    ? selected.value.name || t('未命名皮肤')
     : props.values.skinTheme === 'kuriyama-mirai'
       ? 'Kuriyama Mirai'
       : 'Default Theme'
@@ -50,7 +53,7 @@ function addTheme(patch: Partial<SkinAppearance> = {}): void {
   const item = createCustomSkin(
     props.values,
     patch,
-    `自定义皮肤 ${library.value.length + 1}`
+    t('skin.newName', { number: library.value.length + 1 })
   )
   emit('update', {
     skinLibrary: JSON.stringify([...library.value, item]),
@@ -158,19 +161,19 @@ watch(
     >
       <header class="skin-header">
         <div>
-          <h2 id="skin-heading">主题皮肤 <span>/ Theme Skin</span></h2>
-          <p>选择你喜欢的主题皮肤</p>
+          <h2 id="skin-heading">{{ t('主题皮肤') }}</h2>
+          <p>{{ t('选择你喜欢的主题皮肤') }}</p>
         </div>
         <div class="gallery-actions">
           <IconButton
             icon="lucide:chevron-left"
-            title="向左浏览皮肤"
+            :title="t('向左浏览皮肤')"
             :disabled="arrivedState.left"
             @click="scrollCards(-1)"
           />
           <IconButton
             icon="lucide:chevron-right"
-            title="向右浏览皮肤"
+            :title="t('向右浏览皮肤')"
             :disabled="arrivedState.right"
             @click="scrollCards(1)"
           />
@@ -180,7 +183,7 @@ watch(
             ><AppIcon
               name="lucide:plus"
               :size="13"
-            />新增皮肤</AppButton
+            />{{ t('新增皮肤') }}</AppButton
           >
         </div>
       </header>
@@ -188,7 +191,7 @@ watch(
         ref="cards"
         class="theme-cards scroll-thin"
         role="group"
-        aria-label="选择主题皮肤"
+        :aria-label="t('选择主题皮肤')"
         @wheel="wheelCards"
       >
         <button
@@ -205,7 +208,7 @@ watch(
           </div>
           <span class="card-copy"
             ><strong>Default Theme</strong
-            ><small>经典深色 · 专注于此刻</small></span
+            ><small>{{ t('经典深色 · 专注于此刻') }}</small></span
           >
           <span
             v-if="values.skinTheme === 'default'"
@@ -224,7 +227,8 @@ watch(
           @click="selectTheme('kuriyama-mirai')"
         >
           <span class="card-copy"
-            ><strong>Kuriyama Mirai</strong><small>《境界的彼方》限定主题</small
+            ><strong>Kuriyama Mirai</strong
+            ><small>{{ t('《境界的彼方》限定主题') }}</small
             ><span class="mirai-quote">「不愉快です。」</span></span
           >
           <span
@@ -239,7 +243,7 @@ watch(
               name="lucide:flower-2"
               :size="11"
             />
-            栗山未来 · 桜</span
+            {{ t('栗山未来 · 桜') }}</span
           >
         </button>
         <button
@@ -256,14 +260,14 @@ watch(
           @click="selectTheme(item.id)"
         >
           <span class="card-copy"
-            ><strong>{{ item.name || '未命名皮肤' }}</strong
+            ><strong>{{ item.name || t('未命名皮肤') }}</strong
             ><small>{{
               item.values.skinStyle === 'custom'
-                ? '自定义 CSS'
+                ? t('自定义配色')
                 : item.values.skinStyle === 'default' ||
                     item.values.skinBase === 'default'
-                  ? '项目默认样式'
-                  : '栗山未来配色'
+                  ? t('项目默认样式')
+                  : t('栗山未来配色')
             }}</small></span
           >
           <span
@@ -277,19 +281,20 @@ watch(
             ><AppIcon
               name="lucide:palette"
               :size="11"
-            />自定义主题</span
+            />{{ t('自定义主题') }}</span
           >
         </button>
         <button
           type="button"
           class="theme-card add-card"
-          aria-label="新增自定义皮肤"
+          :aria-label="t('新增自定义皮肤')"
           @click="addTheme()"
         >
           <AppIcon
             name="lucide:plus"
             :size="24"
-          /><strong>新增自定义皮肤</strong><small>独立保存图片与样式</small>
+          /><strong>{{ t('新增自定义皮肤') }}</strong
+          ><small>{{ t('独立保存图片与样式') }}</small>
         </button>
       </div>
       <div
@@ -297,15 +302,16 @@ watch(
         class="custom-theme-details"
       >
         <label class="theme-name"
-          >皮肤名称<AppInput
+          >{{ t('皮肤名称')
+          }}<AppInput
             :key="selected.id"
             :model-value="selected.name"
             :maxlength="48"
-            aria-label="皮肤名称"
+            :aria-label="t('皮肤名称')"
             @update:model-value="rename"
         /></label>
         <AppSelect
-          label="基础主题"
+          :label="t('基础主题')"
           compact
           :model-value="effective.skinBase"
           :options="[
@@ -320,7 +326,7 @@ watch(
           ><AppIcon
             name="lucide:trash-2"
             :size="13"
-          />删除皮肤</AppButton
+          />{{ t('删除皮肤') }}</AppButton
         >
       </div>
       <section
@@ -328,7 +334,7 @@ watch(
         aria-labelledby="preview-heading"
       >
         <div class="preview-heading">
-          <h3 id="preview-heading">主题预览 <span>/ Preview</span></h3>
+          <h3 id="preview-heading">{{ t('主题预览') }}</h3>
           <span>{{ themeName }}</span>
         </div>
         <ThemePreview :values="values" />

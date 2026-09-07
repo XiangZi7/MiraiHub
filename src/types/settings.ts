@@ -4,9 +4,10 @@ export type SettingValue = string | boolean
  * 全部设置项及默认值。
  *
  * 每一项都必须有消费方：没有地方读取的开关只会让用户误以为它有效。
- * 语言切换与空闲锁定尚无实现基础，暂不提供。
+ * 界面语言默认跟随 Rust 读取的系统语言。
  */
 export const DEFAULT_SETTINGS = {
+  language: 'system',
   launchAtStartup: false,
   restoreLastSession: true,
   timeFormat: '24-hour',
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   skinLibrary: '[]',
   skinStyle: 'builtin',
   skinCustomCss: '',
+  skinCustomColors: '{}',
   skinBackground: 'theme',
   skinBackgroundImage: '',
   skinBackgroundName: '',

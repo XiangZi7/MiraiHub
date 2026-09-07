@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, reactive, useId, useTemplateRef, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import { useAgentModels } from '@/composables/useAgentModels'
 import type { AgentApiFormat } from '@/types/agent'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   profileId?: string
@@ -123,7 +126,7 @@ function focusout(event: FocusEvent): void {
     class="ai-model-field"
     @focusout="focusout"
   >
-    <label :for="id">模型名称</label>
+    <label :for="id">{{ t('模型名称') }}</label>
     <div class="ai-model-row">
       <input
         :id="id"
@@ -131,7 +134,7 @@ function focusout(event: FocusEvent): void {
         v-model="model"
         type="text"
         role="combobox"
-        placeholder="输入服务商提供、支持工具调用的模型 ID"
+        :placeholder="t('输入服务商提供、支持工具调用的模型 ID')"
         autocomplete="off"
         spellcheck="false"
         maxlength="200"
@@ -150,14 +153,14 @@ function focusout(event: FocusEvent): void {
         :aria-busy="fetching"
         @click="fetch"
       >
-        {{ fetching ? '获取中…' : '获取' }}
+        {{ fetching ? t('获取中…') : t('获取') }}
       </AppButton>
       <ul
         v-if="expanded"
         :id="listId"
         ref="menu"
         role="listbox"
-        aria-label="可用模型"
+        :aria-label="t('可用模型')"
         class="ai-model-menu scroll-thin"
       >
         <li
@@ -178,7 +181,7 @@ function focusout(event: FocusEvent): void {
           role="presentation"
           class="text-txt-4"
         >
-          没有匹配模型，可继续手动输入
+          {{ t('没有匹配模型，可继续手动输入') }}
         </li>
       </ul>
     </div>

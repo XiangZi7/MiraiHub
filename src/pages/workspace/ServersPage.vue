@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, nextTick, useTemplateRef } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -20,6 +21,8 @@ import MachinePanel from '@/components/workspace/MachinePanel.vue'
 import LocalTerminalPanel from '@/components/workspace/LocalTerminalPanel.vue'
 import TerminalPanel from '@/components/workspace/TerminalPanel.vue'
 import SshTerminalWorkspace from '@/components/workspace/SshTerminalWorkspace.vue'
+
+const { t } = useI18n()
 const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
@@ -160,7 +163,7 @@ registerWorkspaceController('servers', { action })
           pane-side="right"
           :min="MACHINE_MIN_WIDTH"
           :max="machineMaxWidth"
-          label="调整机器面板宽度"
+          :label="t('调整机器面板宽度')"
         />
 
         <MachinePanel

@@ -26,6 +26,7 @@ test('跨窗口预览只发送当前皮肤，保留自定义 CSS、图片和参�
     {
       skinStyle: 'custom',
       skinCustomCss: ':root { --color-accent: red; }',
+      skinCustomColors: '{"accent":"#123456"}',
       skinBackground: 'custom',
       skinBackgroundImage: 'data:image/webp;base64,UklGRg==',
       skinBackgroundOpacity: '65',
@@ -41,6 +42,7 @@ test('跨窗口预览只发送当前皮肤，保留自定义 CSS、图片和参�
   assert.deepEqual(JSON.parse(snapshot.skinLibrary), [active])
   const resolved = resolveSkinSettings(snapshot)
   assert.equal(resolved.skinCustomCss, active.values.skinCustomCss)
+  assert.equal(resolved.skinCustomColors, active.values.skinCustomColors)
   assert.equal(resolved.skinBackgroundImage, active.values.skinBackgroundImage)
   assert.equal(resolved.skinBackgroundOpacity, '65')
 })

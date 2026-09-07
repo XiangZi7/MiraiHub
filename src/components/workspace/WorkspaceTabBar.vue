@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, reactive } from 'vue'
 import TabBar, { type TabItem } from '@/components/ui/TabBar.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
@@ -7,6 +8,8 @@ import type { ContextMenuItem } from '@/types/context-menu'
 import { copyText } from '@/utils/clipboard'
 import { openConnectionWindow } from '@/utils/window'
 import { toast } from '@/composables/useToast'
+
+const { t } = useI18n()
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{
   tabs: readonly WorkspaceTab[]
@@ -44,17 +47,17 @@ function contextItems(id: string): ContextMenuItem[] {
       label:
         tab.status === 'connected'
           ? local
-            ? '重启本地终端'
-            : '重新连接'
+            ? t('重启本地终端')
+            : t('重新连接')
           : local
-            ? '启动本地终端'
-            : '连接',
+            ? t('启动本地终端')
+            : t('连接'),
       icon: 'lucide:refresh-cw',
       disabled: tab.status === 'connecting',
     },
     {
       id: 'disconnect',
-      label: local ? '停止本地终端' : '断开连接',
+      label: local ? t('停止本地终端') : t('断开连接'),
       icon: 'lucide:unplug',
       disabled: tab.status !== 'connected',
     },
@@ -62,19 +65,23 @@ function contextItems(id: string): ContextMenuItem[] {
       ? [
           {
             id: 'split',
-            label: '新建 / 关闭分屏终端',
+            label: t('新建 / 关闭分屏终端'),
             icon: 'lucide:columns-2',
           },
-          { id: 'files', label: '打开远端文件', icon: 'lucide:folder-open' },
+          { id: 'files', label: t('打开远端文件'), icon: 'lucide:folder-open' },
         ]
       : []),
     {
       id: 'edit',
-      label: '编辑连接配置',
+      label: t('编辑连接配置'),
       icon: 'lucide:settings-2',
       separatorBefore: true,
     },
-    { id: 'copy-connection', label: '复制连接信息', icon: 'lucide:clipboard' },
+    {
+      id: 'copy-connection',
+      label: t('复制连接信息'),
+      icon: 'lucide:clipboard',
+    },
   ]
 }
 async function action(id: string, action: string): Promise<void> {
@@ -99,13 +106,13 @@ async function action(id: string, action: string): Promise<void> {
     const c = tab.connection
     const text =
       c.kind === 'local' && 'shell' in c.settings
-        ? `${c.name}\n${c.settings.shell}\n${c.settings.workingDirectory || '默认工作目录'}`
+        ? `${c.name}\n${c.settings.shell}\n${c.settings.workingDirectory || t('默认工作目录')}`
         : `${c.name}\n${c.kind.toUpperCase()} ${c.username}@${c.host}:${c.port}`
     try {
       await copyText(text)
-      toast.success('连接信息已复制（不含密码和密钥）')
+      toast.success(t('连接信息已复制（不含密码和密钥）'))
     } catch {
-      toast.error('复制失败，请检查剪贴板权限')
+      toast.error(t('复制失败，请检查剪贴板权限'))
     }
     return
   }
@@ -146,9 +153,9 @@ function confirmClose(): void {
   />
   <AppConfirmDialog
     :open="!!state.closingIds.length"
-    title="关闭含建表草稿的连接？"
+    :title="t('关闭含建表草稿的连接？')"
     :description="state.warning"
-    confirm-label="放弃草稿并关闭"
+    :confirm-label="t('放弃草稿并关闭')"
     danger
     @close="cancelClose"
     @confirm="confirmClose"

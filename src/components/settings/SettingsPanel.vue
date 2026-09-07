@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
@@ -15,6 +16,8 @@ import type {
 import { IS_TAURI } from '@/utils/window'
 import ScaleControl from './ScaleControl.vue'
 import ShortcutRecorder from './ShortcutRecorder.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -210,8 +213,8 @@ function displayValue(field: SettingField): string {
                   v-if="stringValue(field.key)"
                   type="button"
                   class="icon-btn size-6"
-                  title="清除"
-                  aria-label="清除目录"
+                  :title="t('清除')"
+                  :aria-label="t('清除目录')"
                   @click="emit('update', field.key, '')"
                 >
                   <AppIcon
@@ -222,8 +225,8 @@ function displayValue(field: SettingField): string {
                 <button
                   type="button"
                   class="icon-btn size-6 disabled:pointer-events-none disabled:opacity-35"
-                  title="选择目录"
-                  aria-label="选择目录"
+                  :title="t('选择目录')"
+                  :aria-label="t('选择目录')"
                   :disabled="!IS_TAURI || isDisabled(field)"
                   @click="browseDirectory(field)"
                 >

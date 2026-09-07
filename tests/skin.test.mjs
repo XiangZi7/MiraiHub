@@ -12,6 +12,8 @@ const load = sourceLoader({
   ),
 })
 const { DEFAULT_SETTINGS } = await load('src/types/settings.ts')
+const { readSkinColors, skinColorsCss } = await load('src/utils/skin-colors.ts')
+
 const {
   normalizeSkinSettings,
   isBackgroundImage,
@@ -281,4 +283,86 @@ test('损坏的自定义皮肤库隔离无效条目，已删除的活动主题�
       .skinTheme,
     'default'
   )
+})
+
+test('颜色控件只接受已知字段和十六进制颜色，拒绝样式注入', () => {
+  const colors = readSkinColors(
+    JSON.stringify({
+      accent: '#12ABEF',
+      text: '#222222',
+      card: 'red; display:none',
+      window: '#123',
+      panel: '</style>',
+      unknown: '#ffffff',
+    })
+  )
+  assert.deepEqual(colors, { accent: '#12abef', text: '#222222' })
+  assert.deepEqual(readSkinColors('{broken'), {})
+  assert.deepEqual(readSkinColors('null'), {})
+  assert.match(skinColorsCss(JSON.stringify(colors)), /--color-violet: #12abef/)
+  assert.match(
+    skinColorsCss(JSON.stringify(colors)),
+    /--color-term-fg: #222222/
+  )
+  assert.doesNotMatch(
+    skinColorsCss(JSON.stringify(colors)),
+    /display|unknown|<\/style>/
+  )
+})
+
+test('自定义颜色独立持久化并叠加到主题；重置和切换内置样式还原颜色', () => {
+  const custom = createCustomSkin(
+    DEFAULT_SETTINGS,
+    {
+      skinStyle: 'custom',
+      skinCustomColors: JSON.stringify({ accent: '#123456', text: '#abcdef' }),
+    },
+    'Colors'
+  )
+  const saved = {
+    ...DEFAULT_SETTINGS,
+    skinTheme: custom.id,
+    skinLibrary: JSON.stringify([custom]),
+  }
+  const roundTrip = normalizeSkinSettings(JSON.parse(JSON.stringify(saved)))
+  assert.equal(
+    resolveSkinSettings(roundTrip).skinCustomColors,
+    custom.values.skinCustomColors
+  )
+  assert.match(skinCss(roundTrip), /--color-accent: #123456/)
+  assert.match(skinCss(roundTrip), /--color-term-fg: #abcdef/)
+  assert.doesNotMatch(
+    skinCss(roundTrip, false),
+    /#123456/,
+    'settings controls keep a readable base style'
+  )
+  assert.equal(skinColorsCss('{}'), '')
+  assert.doesNotMatch(
+    skinCss({ ...roundTrip, ...skinPreset(), skinTheme: 'default' }),
+    /#123456/
+  )
+  assert.equal(
+    resolveSkinSettings(saved).skinCustomColors,
+    custom.values.skinCustomColors
+  )
+})
+
+test('旧设置和无效语言恢复为跟随系统，已选语言和颜色保存后可重载', () => {
+  const storage = new Map()
+  globalThis.localStorage = {
+    getItem: key => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  }
+  globalThis.window = new EventTarget()
+  assert.equal(api.loadSettings().language, 'system')
+  api.saveSettings({ ...DEFAULT_SETTINGS, language: 'invalid' })
+  assert.equal(api.loadSettings().language, 'system')
+  api.saveSettings({
+    ...DEFAULT_SETTINGS,
+    language: 'en-US',
+    skinStyle: 'custom',
+    skinCustomColors: '{"accent":"#123456"}',
+  })
+  assert.equal(api.loadSettings().language, 'en-US')
+  assert.equal(api.loadSettings().skinCustomColors, '{"accent":"#123456"}')
 })

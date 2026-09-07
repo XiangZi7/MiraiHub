@@ -18,6 +18,23 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     icon: 'lucide:settings-2',
     groups: [
       {
+        title: '语言',
+        fields: [
+          {
+            key: 'language',
+            label: '界面语言',
+            description: '默认跟随系统语言，保存后同步到所有窗口',
+            control: 'select',
+            size: 'lg',
+            options: [
+              { value: 'system', label: '跟随系统' },
+              { value: 'zh-CN', label: '简体中文' },
+              { value: 'en-US', label: 'English' },
+            ],
+          },
+        ],
+      },
+      {
         title: '启动',
         fields: [
           {
@@ -506,7 +523,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             control: 'select',
             size: 'md',
             options: [
-              { value: '0', label: '关闭' },
+              { value: '0', label: '禁用' },
               { value: '30', label: '30 秒后' },
               { value: '60', label: '60 秒后' },
               { value: '300', label: '5 分钟后' },

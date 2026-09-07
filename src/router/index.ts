@@ -88,8 +88,6 @@ export function createAppRouter(
 
   router.afterEach((to, _from, failure) => {
     if (failure) return
-    if (typeof document !== 'undefined')
-      document.title = `${to.meta.title ?? '工作区'} · MiraiHub`
     if (to.meta.nav) {
       try {
         localStorage.setItem('miraihub:workspace-route', to.meta.nav)

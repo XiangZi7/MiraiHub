@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { reactive, toRefs, useTemplateRef } from 'vue'
-import AppButton from '@/components/ui/AppButton.vue'
+import { computed, reactive, toRefs, useTemplateRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
-import AppTextarea from '@/components/ui/AppTextarea.vue'
+import ThemeColorControls from './ThemeColorControls.vue'
 import AppSlider from '@/components/ui/AppSlider.vue'
-import {
-  MAX_CUSTOM_CSS_LENGTH,
-  readBackgroundImage,
-  type SkinSettings,
-} from '@/utils/skin'
-import { miraiCss } from '@/utils/skin-runtime'
+import { readBackgroundImage, type SkinSettings } from '@/utils/skin'
 import { DEFAULT_SETTINGS } from '@/types/settings'
+import { translateLabel } from '@/i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{ values: SkinSettings }>()
 const emit = defineEmits<{ update: [patch: Partial<SkinSettings>] }>()
@@ -19,11 +17,11 @@ const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 // Upload feedback stays local; the settings page owns the complete draft.
 const state = reactive({ uploading: false, error: '' })
 const { uploading, error } = toRefs(state)
-const styleOptions = [
-  { value: 'builtin', label: '主题内置样式' },
-  { value: 'default', label: '项目默认样式' },
-  { value: 'custom', label: '自定义 CSS' },
-]
+const styleOptions = computed(() => [
+  { value: 'builtin', label: t('主题内置样式') },
+  { value: 'default', label: t('项目默认样式') },
+  { value: 'custom', label: t('自定义配色') },
+])
 
 async function upload(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
@@ -36,7 +34,7 @@ async function upload(event: Event): Promise<void> {
   try {
     const image = await readBackgroundImage(file)
     if (props.values.skinTheme !== uploadingTheme) {
-      state.error = '已切换皮肤，请在目标皮肤中重新选择图片'
+      state.error = t('已切换皮肤，请在目标皮肤中重新选择图片')
       return
     }
     emit('update', {
@@ -46,20 +44,12 @@ async function upload(event: Event): Promise<void> {
     })
   } catch (error) {
     state.error =
-      error instanceof Error ? error.message : '图片读取失败，请重试'
+      error instanceof Error
+        ? translateLabel(error.message)
+        : t('图片读取失败，请重试')
   } finally {
     state.uploading = false
   }
-}
-
-function loadCss(): void {
-  emit('update', {
-    skinCustomCss:
-      props.values.skinBase === 'kuriyama-mirai' ||
-      props.values.skinTheme === 'kuriyama-mirai'
-        ? miraiCss
-        : ':root {\n  --color-violet: #9b78e6;\n  --color-accent: var(--color-violet);\n  --radius-pane: 12px;\n}\n',
-  })
 }
 </script>
 
@@ -67,11 +57,11 @@ function loadCss(): void {
   <div class="theme-customization">
     <div class="customization-row">
       <div>
-        <h3>界面样式 <span>/ Style</span></h3>
-        <p>搭配主题配色，或保留熟悉的默认外观</p>
+        <h3>{{ t('界面样式') }}</h3>
+        <p>{{ t('搭配主题配色，或保留熟悉的默认外观') }}</p>
       </div>
       <AppSelect
-        label="界面样式"
+        :label="t('界面样式')"
         hide-label
         compact
         :options="styleOptions"
@@ -79,61 +69,39 @@ function loadCss(): void {
         @update:model-value="emit('update', { skinStyle: $event })"
       />
     </div>
-    <section
+    <ThemeColorControls
       v-if="values.skinStyle === 'custom'"
-      class="css-editor"
-    >
-      <div class="editor-heading">
-        <span>自定义 CSS</span
-        ><AppButton
-          size="sm"
-          @click="loadCss"
-          >载入内置 CSS</AppButton
-        >
-      </div>
-      <AppTextarea
-        label="自定义 CSS"
-        hide-label
-        :rows="8"
-        spellcheck="false"
-        class="font-mono"
-        :maxlength="MAX_CUSTOM_CSS_LENGTH"
-        :model-value="values.skinCustomCss"
-        placeholder=":root { --color-accent: #c93478; }"
-        @update:model-value="emit('update', { skinCustomCss: $event })"
-      />
-      <p>
-        上方预览与主窗口实时同步，保存后保留，取消可还原。支持颜色变量和组件样式。
-      </p>
-    </section>
+      :values="values"
+      @update="emit('update', $event)"
+    />
     <div class="customization-row background-heading">
       <div>
-        <h3>背景图片 <span>/ Background</span></h3>
-        <p>让工作区多一点你的风格</p>
+        <h3>{{ t('背景图片') }}</h3>
+        <p>{{ t('让工作区多一点你的风格') }}</p>
       </div>
       <div
         class="background-options"
         role="group"
-        aria-label="背景来源"
+        :aria-label="t('背景来源')"
       >
         <button
           :aria-pressed="values.skinBackground === 'theme'"
           @click="emit('update', { skinBackground: 'theme' })"
         >
-          跟随主题
+          {{ t('跟随主题') }}
         </button>
         <button
           :aria-pressed="values.skinBackground === 'none'"
           @click="emit('update', { skinBackground: 'none' })"
         >
-          无背景
+          {{ t('无背景') }}
         </button>
         <button
           v-if="values.skinBackgroundImage"
           :aria-pressed="values.skinBackground === 'custom'"
           @click="emit('update', { skinBackground: 'custom' })"
         >
-          自定义
+          {{ t('自定义') }}
         </button>
       </div>
     </div>
@@ -142,7 +110,7 @@ function loadCss(): void {
       class="sr-only"
       type="file"
       accept="image/png,image/jpeg,image/webp"
-      aria-label="上传背景图片"
+      :aria-label="t('上传背景图片')"
       tabindex="-1"
       @change="upload"
     />
@@ -155,7 +123,7 @@ function loadCss(): void {
       <img
         v-if="values.skinBackgroundImage"
         :src="values.skinBackgroundImage"
-        alt="已上传的背景缩略图"
+        :alt="t('已上传的背景缩略图')"
       />
       <AppIcon
         v-else
@@ -165,13 +133,13 @@ function loadCss(): void {
       <span
         ><strong>{{
           uploading
-            ? '正在处理图片…'
-            : values.skinBackgroundName || '上传自定义背景'
+            ? t('正在处理图片…')
+            : values.skinBackgroundName || t('上传自定义背景')
         }}</strong
         ><small>{{
           values.skinTheme.startsWith('custom-')
-            ? 'PNG、JPG、WebP · 最大 10 MB'
-            : '上传后新建独立皮肤 · 保留内置主题'
+            ? t('PNG、JPG、WebP · 最大 10 MB')
+            : t('上传后新建独立皮肤 · 保留内置主题')
         }}</small></span
       >
       <AppIcon
@@ -192,8 +160,8 @@ function loadCss(): void {
     >
       <span>{{
         values.skinBackground === 'custom'
-          ? '正在使用自定义背景'
-          : '已保留上传的图片'
+          ? t('正在使用自定义背景')
+          : t('已保留上传的图片')
       }}</span
       ><button
         @click="
@@ -204,7 +172,7 @@ function loadCss(): void {
           })
         "
       >
-        移除图片
+        {{ t('移除图片') }}
       </button>
     </div>
     <template
@@ -217,7 +185,7 @@ function loadCss(): void {
     >
       <AppSlider
         class="background-slider"
-        label="背景不透明度"
+        :label="t('背景不透明度')"
         unit="%"
         :model-value="Number(values.skinBackgroundOpacity)"
         @update:model-value="
@@ -226,7 +194,7 @@ function loadCss(): void {
       />
       <AppSlider
         class="background-slider"
-        label="背景模糊程度"
+        :label="t('背景模糊程度')"
         unit="px"
         :max="20"
         :model-value="Number(values.skinBackgroundBlur)"
@@ -236,24 +204,24 @@ function loadCss(): void {
       />
       <div class="background-layout">
         <AppSelect
-          label="背景显示方式"
+          :label="t('背景显示方式')"
           compact
           :options="[
-            { value: 'cover', label: '铺满窗口' },
-            { value: 'contain', label: '完整显示' },
+            { value: 'cover', label: t('铺满窗口') },
+            { value: 'contain', label: t('完整显示') },
           ]"
           :model-value="values.skinBackgroundFit"
           @update:model-value="emit('update', { skinBackgroundFit: $event })"
         />
         <AppSelect
-          label="背景对齐位置"
+          :label="t('背景对齐位置')"
           compact
           :options="[
-            { value: 'center', label: '居中' },
-            { value: 'top', label: '顶部' },
-            { value: 'bottom', label: '底部' },
-            { value: 'left', label: '左侧' },
-            { value: 'right', label: '右侧' },
+            { value: 'center', label: t('居中') },
+            { value: 'top', label: t('顶部') },
+            { value: 'bottom', label: t('底部') },
+            { value: 'left', label: t('左侧') },
+            { value: 'right', label: t('右侧') },
           ]"
           :model-value="values.skinBackgroundPosition"
           @update:model-value="
@@ -272,7 +240,7 @@ function loadCss(): void {
           })
         "
       >
-        重置背景参数
+        {{ t('重置背景参数') }}
       </button>
     </template>
   </div>
@@ -403,21 +371,6 @@ p {
 }
 .background-slider {
   margin-top: 17px;
-}
-.css-editor {
-  margin-top: 14px;
-  padding: 12px;
-  border: 1px solid var(--color-line);
-  border-radius: 8px;
-  background: var(--color-panel);
-}
-.editor-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  font-size: 10px;
-  color: var(--color-txt-3);
 }
 button:focus-visible,
 input:focus-visible {

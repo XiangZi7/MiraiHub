@@ -45,6 +45,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         agent::ai_cancel,
         agent::ai_forget,
         // ---------- 平台 / 窗口 ----------
+        platform::locale::get_system_locale,
         platform::remote_editor::open_remote_editor_window,
         platform::remote_editor::remote_editor_target,
         platform::remote_editor::remote_editor_status,

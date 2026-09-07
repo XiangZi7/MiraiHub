@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { nextTick, onBeforeUnmount, useId, useTemplateRef, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import AppButton from './AppButton.vue'
 import AppIcon from './AppIcon.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -13,7 +16,7 @@ const props = withDefaults(
     danger?: boolean
   }>(),
   {
-    confirmLabel: '确认',
+    confirmLabel: '',
     danger: false,
   }
 )
@@ -102,14 +105,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               autofocus
               @click="emit('close')"
             >
-              取消
+              {{ t('取消') }}
             </AppButton>
             <AppButton
               size="sm"
               :class="danger ? 'app-confirm-danger-button' : ''"
               @click="emit('confirm')"
             >
-              {{ confirmLabel }}
+              {{ confirmLabel || t('确认') }}
             </AppButton>
           </footer>
         </section>

@@ -7,6 +7,8 @@
   <body>
     <div id="app"></div>
     <script type="module">
+      import { i18n } from '/src/i18n/index.ts'
+      i18n.global.locale.value = 'zh-CN'
       import { createApp, h, reactive, nextTick, watch } from 'vue'
       import { createPinia } from 'pinia'
       import { addCollection } from '@iconify/vue'
@@ -72,7 +74,7 @@
             ),
           ]),
       })
-      app.use(createPinia()).mount('#app')
+      app.use(i18n).use(createPinia()).mount('#app')
       const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
       async function check(name, fn) {
         try {

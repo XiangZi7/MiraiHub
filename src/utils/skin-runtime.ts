@@ -1,4 +1,5 @@
 import { shallowReactive } from 'vue'
+import { skinColorsCss } from './skin-colors'
 import miraiBackground from '@/assets/skins/kuriyama-mirai.png'
 import miraiCss from '@/assets/styles/skins/kuriyama-mirai.css?raw'
 import {
@@ -36,6 +37,9 @@ export function skinCss(settings: SkinSettings, includeCustom = true): string {
     usesMiraiStyle(settings) ? miraiCss : '',
     includeCustom && settings.skinStyle === 'custom'
       ? settings.skinCustomCss
+      : '',
+    includeCustom && settings.skinStyle === 'custom'
+      ? skinColorsCss(settings.skinCustomColors)
       : '',
   ].join('\n')
 }

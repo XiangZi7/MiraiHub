@@ -1,6 +1,7 @@
 import { onScopeDispose, reactive, toRefs, watch } from 'vue'
 import * as api from '@/api/agent'
 import type { AgentModelListInput } from '@/types/agent'
+import { i18n } from '@/i18n'
 
 /** Discover models from the draft without saving settings or changing a run. */
 export function useAgentModels(input: () => AgentModelListInput) {
@@ -47,8 +48,8 @@ export function useAgentModels(input: () => AgentModelListInput) {
       if (request !== version) return false
       state.models = models
       state.message = models.length
-        ? `已获取 ${models.length} 个模型，请选择支持工具调用的模型。`
-        : '服务未返回可用模型，可手动输入模型 ID。'
+        ? i18n.global.t('ai.modelsFound', { count: models.length })
+        : i18n.global.t('服务未返回可用模型，可手动输入模型 ID。')
       return models.length > 0
     } catch (error) {
       if (request === version) state.error = api.errorMessage(error)

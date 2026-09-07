@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, toRefs, watch } from 'vue'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import * as connections from '@/api/connections'
@@ -15,6 +16,8 @@ import { useSettings } from '@/composables/useSettings'
 import { IS_TAURI } from '@/utils/window'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+
+const { t } = useI18n()
 
 const { settings } = useSettings()
 // 导入必须先验证和预览；密码仅保存在当前页面内存。
@@ -84,11 +87,11 @@ async function exportBackup(): Promise<void> {
   state.error = ''
   state.message = ''
   if (state.includeCredentials && !state.password) {
-    state.error = '包含密码或启动命令时必须设置备份密码'
+    state.error = t('包含密码或启动命令时必须设置备份密码')
     return
   }
   if (state.password && new TextEncoder().encode(state.password).length < 10) {
-    state.error = '备份密码至少需要 10 字节'
+    state.error = t('备份密码至少需要 10 字节')
     return
   }
   state.busy = true
@@ -98,13 +101,13 @@ async function exportBackup(): Promise<void> {
       state.includeCredentials
     )
     const path = await save({
-      title: '保存连接备份',
+      title: t('保存连接备份'),
       defaultPath: `MiraiHub-connections-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: 'MiraiHub 连接备份', extensions: ['json'] }],
+      filters: [{ name: t('MiraiHub 连接备份'), extensions: ['json'] }],
     })
     if (path) {
       await api.writeBackup(path, payload, state.password)
-      state.message = `备份已保存：${path}`
+      state.message = t('backup.saved', { path })
       state.password = ''
     }
   } catch (error) {
@@ -115,10 +118,10 @@ async function exportBackup(): Promise<void> {
 }
 async function choose(): Promise<void> {
   const path = await open({
-    title: '选择连接备份',
+    title: t('选择连接备份'),
     multiple: false,
     directory: false,
-    filters: [{ name: 'MiraiHub 连接备份', extensions: ['json'] }],
+    filters: [{ name: t('MiraiHub 连接备份'), extensions: ['json'] }],
   })
   if (typeof path === 'string') {
     state.path = path
@@ -155,7 +158,7 @@ function apply(): void {
   state.error = ''
   try {
     connections.applyBackupSnapshot(state.snapshot, plan.value.next)
-    state.message = `恢复完成：新增 ${counts.value.add}，更新 ${counts.value.update}，跳过 ${counts.value.skip}。未自动连接任何服务器。`
+    state.message = t('backup.restored', counts.value)
     state.snapshot = plan.value.next
     state.archive = null
     state.reviewed = false
@@ -170,82 +173,91 @@ function apply(): void {
       <AppIcon
         name="lucide:archive-restore"
         :size="20"
-      />连接备份与恢复
+      />{{ t('连接备份与恢复') }}
     </h2>
     <p class="muted">
-      备份连接、分组和标签。AI 配置、私钥文件、查询历史不包含在内。
+      {{ t('备份连接、分组和标签。AI 配置、私钥文件、查询历史不包含在内。') }}
     </p>
     <p
       v-if="!IS_TAURI"
       class="muted"
     >
-      请在桌面程序中选择文件进行备份或恢复。
+      {{ t('请在桌面程序中选择文件进行备份或恢复。') }}
     </p>
     <div class="backup-card">
       <h3>
-        导出备份
-        <span class="muted"
-          >{{ snapshot?.connections.length ?? 0 }} 个连接</span
-        >
+        {{ t('导出备份') }}
+        <span class="muted">{{
+          t('backup.count', { count: snapshot?.connections.length ?? 0 })
+        }}</span>
       </h3>
       <label class="check"
         ><input
           v-model="includeCredentials"
           type="checkbox"
           :disabled="busy"
-        />包含连接密码、私钥口令和 SSH 启动命令（需要加密）</label
+        />{{ t('包含连接密码、私钥口令和 SSH 启动命令（需要加密）') }}</label
       ><label class="backup-field"
-        >备份密码<input
+        >{{ t('备份密码')
+        }}<input
           v-model="password"
           type="password"
           autocomplete="new-password"
           :disabled="busy"
-          placeholder="可选；设置后使用密码加密，恢复时需要此密码"
+          :placeholder="t('可选；设置后使用密码加密，恢复时需要此密码')"
       /></label>
       <p class="muted">
-        默认导出不含密码和启动命令。加密备份使用独立密码，可在其他电脑恢复。
+        {{
+          t(
+            '默认导出不含密码和启动命令。加密备份使用独立密码，可在其他电脑恢复。'
+          )
+        }}
       </p>
       <AppButton
         :disabled="busy || !IS_TAURI"
         variant="primary"
         @click="exportBackup"
-        >导出连接备份</AppButton
+        >{{ t('导出连接备份') }}</AppButton
       >
     </div>
     <div class="backup-card">
-      <h3>恢复备份</h3>
+      <h3>{{ t('恢复备份') }}</h3>
       <div class="flex items-center gap-2">
         <AppButton
           :disabled="busy || !IS_TAURI"
           @click="choose"
-          >选择备份文件</AppButton
+          >{{ t('选择备份文件') }}</AppButton
         ><span
           class="text-txt-3 min-w-0 truncate text-[10px]"
           :title="path"
-          >{{ path || '尚未选择' }}</span
+          >{{ path || t('尚未选择') }}</span
         >
       </div>
       <label class="backup-field"
-        >解密密码<input
+        >{{ t('解密密码')
+        }}<input
           v-model="restorePassword"
           type="password"
           autocomplete="off"
           :disabled="busy"
-          placeholder="未加密备份留空" /></label
+          :placeholder="t('未加密备份留空')" /></label
       ><AppButton
         :disabled="busy || !path || !IS_TAURI"
         @click="preview"
-        >{{ busy ? '处理中…' : '读取并预览恢复内容' }}</AppButton
+        >{{ busy ? t('处理中…') : t('读取并预览恢复内容') }}</AppButton
       >
       <template v-if="archive && plan"
         ><label class="backup-field"
-          >同 ID 连接的处理方式<select
+          >{{ t('同 ID 连接的处理方式')
+          }}<select
             v-model="mode"
             @change="reviewed = false"
           >
-            <option value="skip">跳过已有连接（默认）</option>
-            <option value="update">更新同 ID 连接，保留其他连接</option>
-            <option value="copy">全部作为新连接导入</option>
+            <option value="skip">{{ t('跳过已有连接（默认）') }}</option>
+            <option value="update">
+              {{ t('更新同 ID 连接，保留其他连接') }}
+            </option>
+            <option value="copy">{{ t('全部作为新连接导入') }}</option>
           </select></label
         ><label class="check"
           ><input
@@ -253,20 +265,22 @@ function apply(): void {
             type="checkbox"
             :disabled="!settings.rememberPasswords"
             @change="reviewed = false"
-          />恢复备份中的连接密码和私钥口令</label
+          />{{ t('恢复备份中的连接密码和私钥口令') }}</label
         ><label class="check"
           ><input
             v-model="startupCommands"
             type="checkbox"
             @change="reviewed = false"
-          />恢复 SSH 启动命令（下次连接时会自动执行，请先核对备份来源）</label
+          />{{
+            t('恢复 SSH 启动命令（下次连接时会自动执行，请先核对备份来源）')
+          }}</label
         >
         <details
           v-if="startupCommands"
           class="startup-review"
           open
         >
-          <summary>核对备份中的 SSH 启动命令</summary>
+          <summary>{{ t('核对备份中的 SSH 启动命令') }}</summary>
           <div
             v-for="connection in archive.connections.filter(
               c => c.kind === 'ssh'
@@ -280,14 +294,13 @@ function apply(): void {
             >
             <pre>{{
               'startupCommand' in connection.settings
-                ? connection.settings.startupCommand || '（无启动命令）'
+                ? connection.settings.startupCommand || t('（无启动命令）')
                 : ''
             }}</pre>
           </div>
         </details>
         <div class="restore-summary">
-          新增 {{ counts.add }} · 更新 {{ counts.update }} · 跳过
-          {{ counts.skip }}
+          {{ t('backup.summary', counts) }}
         </div>
         <div class="restore-list">
           <div
@@ -295,7 +308,9 @@ function apply(): void {
             :key="index"
           >
             <span>{{
-              { add: '新增', update: '更新', skip: '跳过' }[item.action]
+              { add: t('新增'), update: t('更新'), skip: t('跳过') }[
+                item.action
+              ]
             }}</span
             ><span
               >{{ item.name
@@ -307,15 +322,17 @@ function apply(): void {
           ><input
             v-model="reviewed"
             type="checkbox"
-          />已核对连接目标和恢复方式</label
+          />{{ t('已核对连接目标和恢复方式') }}</label
         ><AppButton
           variant="primary"
           :disabled="!reviewed || busy"
           @click="apply"
-          >确认恢复 {{ counts.add + counts.update }} 个连接</AppButton
+          >{{
+            t('backup.confirm', { count: counts.add + counts.update })
+          }}</AppButton
         >
         <p class="muted">
-          仅恢复配置，不会自动连接服务器或执行备份中的命令。
+          {{ t('仅恢复配置，不会自动连接服务器或执行备份中的命令。') }}
         </p></template
       >
     </div>

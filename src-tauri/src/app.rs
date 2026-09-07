@@ -91,10 +91,18 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    let chinese = crate::platform::locale::get_system_locale().starts_with("zh");
     let tray_menu = MenuBuilder::new(app)
-        .text("show", "打开 MiraiHub")
+        .text(
+            "show",
+            if chinese {
+                "打开 MiraiHub"
+            } else {
+                "Open MiraiHub"
+            },
+        )
         .separator()
-        .quit()
+        .text("quit", if chinese { "退出" } else { "Quit" })
         .build()?;
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("MiraiHub")
@@ -103,6 +111,8 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .on_menu_event(|app, event| {
             if event.id().as_ref() == "show" {
                 show_main_window(app);
+            } else if event.id().as_ref() == "quit" {
+                app.exit(0);
             }
         })
         .on_tray_icon_event(|tray, event| {

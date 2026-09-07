@@ -7,6 +7,8 @@
   <body>
     <div id="app"></div>
     <script type="module">
+      import { i18n } from '/src/i18n/index.ts'
+      i18n.global.locale.value = 'zh-CN'
       import { createApp, h, nextTick, reactive } from 'vue'
       import { createPinia } from 'pinia'
       import TransferCenter from '/src/components/workspace/TransferCenter.vue'
@@ -75,7 +77,7 @@
             )
         },
       })
-      app.use(createPinia()).mount('#app')
+      app.use(i18n).use(createPinia()).mount('#app')
       const assert = (value, message) => {
         if (!value) throw new Error(message)
         state.results.push('PASS · ' + message)

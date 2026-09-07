@@ -11,6 +11,8 @@ const apiUrl = dataModule(`
 const { calls } = await import(apiUrl)
 const load = sourceLoader({ '@/api/agent': apiUrl })
 const { useAgentModels } = await load('src/composables/useAgentModels.ts')
+const { i18n } = await load('src/i18n/index.ts')
+i18n.global.locale.value = 'zh-CN'
 
 function fixture() {
   calls.length = 0

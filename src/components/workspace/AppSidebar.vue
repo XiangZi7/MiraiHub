@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed, reactive, toRaw, toRef } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
@@ -15,9 +16,12 @@ import type { ContextMenuItem } from '@/types/context-menu'
 import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
 import { openConnectionWindow, openSettingsWindow } from '@/utils/window'
+import { translateLabel } from '@/i18n'
 import DatabaseTransferDialog from './database/DatabaseTransferDialog.vue'
 import type { DatabaseTransferMode } from './database/DatabaseTransferDialog.vue'
 import SidebarProjects from './SidebarProjects.vue'
+
+const { t } = useI18n()
 
 // 当前选中项来自路由；导航由 RouterLink 提交。
 const props = defineProps<{ active: NavId }>()
@@ -58,16 +62,16 @@ const state = reactive({
   transferMode: 'export' as DatabaseTransferMode,
 })
 
-const addMenuItems: ContextMenuItem[] = [
-  { id: 'ssh', label: 'SSH Connection', icon: 'lucide:server' },
-  { id: 'local', label: 'Local Terminal', icon: 'lucide:square-terminal' },
+const addMenuItems = computed<ContextMenuItem[]>(() => [
+  { id: 'ssh', label: t('SSH Connection'), icon: 'lucide:server' },
+  { id: 'local', label: t('Local Terminal'), icon: 'lucide:square-terminal' },
   {
     id: 'database',
-    label: 'Database Connection',
+    label: t('Database Connection'),
     icon: 'lucide:database',
     separatorBefore: true,
   },
-]
+])
 
 /**
  * 项目树跟随主视图切换。
@@ -83,7 +87,7 @@ const projectGroups = computed(() =>
 
 /** 分组标题：Databases 视图下叫 Connections 更贴切 */
 const groupsLabel = computed(() =>
-  active.value === 'databases' ? 'Databases' : 'Projects'
+  active.value === 'databases' ? t('Databases') : t('Projects')
 )
 
 const currentGroupKind = computed(() =>
@@ -141,11 +145,11 @@ async function moveConnection(
   try {
     await updateConnection(connectionId, { group: groupName })
     toast.success(
-      groupName ? `连接已移动到“${groupName}”` : '连接已移到 Ungrouped'
+      groupName ? `连接已移动到“${groupName}”` : t('连接已移到 Ungrouped')
     )
   } catch (error) {
     toast.error({
-      title: '移动连接失败',
+      title: t('移动连接失败'),
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -168,7 +172,7 @@ async function duplicateConnection(connection: SavedConnection): Promise<void> {
     toast.success(`连接“${connection.name}”已复制`)
   } catch (error) {
     toast.error({
-      title: '复制连接失败',
+      title: t('复制连接失败'),
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -180,7 +184,7 @@ async function handleCreateGroup(name: string): Promise<void> {
     toast.success(`分组“${name}”已创建`)
   } catch (error) {
     toast.error({
-      title: '创建分组失败',
+      title: t('创建分组失败'),
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -192,7 +196,7 @@ async function handleRenameGroup(groupId: string, name: string): Promise<void> {
     toast.success(`分组已重命名为“${name}”`)
   } catch (error) {
     toast.error({
-      title: '重命名分组失败',
+      title: t('重命名分组失败'),
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -238,14 +242,14 @@ async function confirmRemoval(): Promise<void> {
   try {
     if (connection) {
       await removeConnection(connection.id)
-      toast.success(`连接“${connection.name}”已删除`)
+      toast.success(t('workspace.connectionDeleted', { name: connection.name }))
     } else if (group) {
       await removeGroup(group.id)
-      toast.success(`分组“${group.name}”已删除`)
+      toast.success(t('workspace.groupDeleted', { name: group.name }))
     }
   } catch (error) {
     toast.error({
-      title: '删除失败',
+      title: t('删除失败'),
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -257,7 +261,7 @@ async function confirmRemoval(): Promise<void> {
     class="app-sidebar"
     :class="{ 'is-collapsed': collapsed }"
     :style="{ width: collapsed ? '3.25rem' : `${width}px` }"
-    aria-label="主侧边栏"
+    :aria-label="t('主侧边栏')"
   >
     <!-- 顶部工具条 -->
     <div
@@ -269,19 +273,19 @@ async function confirmRemoval(): Promise<void> {
       <template v-if="!collapsed">
         <IconButton
           icon="lucide:panel-left"
-          title="侧边栏"
+          :title="t('侧边栏')"
           @click="collapsed = true"
         />
         <IconButton
           icon="lucide:layout-grid"
-          title="恢复默认布局"
+          :title="t('恢复默认布局')"
           @click="emit('resetLayout')"
         />
         <div class="flex-1" />
       </template>
       <IconButton
         :icon="collapsed ? 'lucide:chevrons-right' : 'lucide:chevrons-left'"
-        :title="collapsed ? '展开侧栏' : '折叠侧栏'"
+        :title="collapsed ? t('展开侧栏') : t('折叠侧栏')"
         :aria-expanded="!collapsed"
         @click="collapsed = !collapsed"
       />
@@ -295,7 +299,7 @@ async function confirmRemoval(): Promise<void> {
     >
       <!-- 工作区 -->
       <AppCollapse :open="!collapsed">
-        <p class="group-label mb-1.5">Workspace</p>
+        <p class="group-label mb-1.5">{{ t('Workspace') }}</p>
       </AppCollapse>
       <nav class="space-y-0.5">
         <RouterLink
@@ -310,7 +314,7 @@ async function confirmRemoval(): Promise<void> {
               active === item.id && 'nav-item-active'
             )
           "
-          :title="collapsed ? item.label : undefined"
+          :title="collapsed ? translateLabel(item.label) : undefined"
         >
           <AppIcon
             :name="item.icon"
@@ -320,7 +324,7 @@ async function confirmRemoval(): Promise<void> {
           <span
             class="sidebar-label"
             :aria-hidden="collapsed"
-            >{{ item.label }}</span
+            >{{ translateLabel(item.label) }}</span
           >
         </RouterLink>
       </nav>
@@ -360,7 +364,7 @@ async function confirmRemoval(): Promise<void> {
       <button
         type="button"
         :class="['btn', collapsed ? 'size-7 px-0' : 'flex-1']"
-        :title="collapsed ? 'Add Connection' : undefined"
+        :title="collapsed ? t('Add Connection') : undefined"
         @click="openAddMenu"
       >
         <AppIcon
@@ -370,12 +374,12 @@ async function confirmRemoval(): Promise<void> {
         <span
           class="sidebar-label"
           :aria-hidden="collapsed"
-          >Add Connection</span
+          >{{ t('Add Connection') }}</span
         >
       </button>
       <IconButton
         icon="lucide:settings"
-        title="设置"
+        :title="t('设置')"
         @click="openSettingsWindow"
       />
     </div>
@@ -383,13 +387,15 @@ async function confirmRemoval(): Promise<void> {
 
   <AppConfirmDialog
     :open="Boolean(state.pendingConnection || state.pendingGroup)"
-    :title="state.pendingConnection ? '删除连接' : '删除分组'"
+    :title="state.pendingConnection ? t('删除连接') : t('删除分组')"
     :description="
       state.pendingConnection
-        ? `确定删除“${state.pendingConnection.name}”吗？此操作不会删除服务器上的任何数据。`
-        : `确定删除“${state.pendingGroup?.name ?? ''}”吗？其中的连接会移到 Ungrouped。`
+        ? t('workspace.deleteConnection', {
+            name: state.pendingConnection.name,
+          })
+        : t('workspace.deleteGroup', { name: state.pendingGroup?.name ?? '' })
     "
-    confirm-label="删除"
+    :confirm-label="t('删除')"
     danger
     @close="closeConfirmation"
     @confirm="confirmRemoval"
@@ -400,7 +406,7 @@ async function confirmRemoval(): Promise<void> {
     :x="state.addMenuX"
     :y="state.addMenuY"
     :items="addMenuItems"
-    label="新建连接"
+    :label="t('新建连接')"
     @select="selectConnectionKind"
     @close="state.addMenuOpen = false"
   />

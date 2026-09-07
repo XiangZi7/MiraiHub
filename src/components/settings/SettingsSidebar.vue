@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { RouterLink } from 'vue-router'
-import { SETTINGS_PAGES } from '@/constants/settings'
+import { useLocalizedSettings } from '@/composables/useLocalizedSettings'
+const pages = useLocalizedSettings()
 import type { SettingsPageId } from '@/types/settings'
+
+const { t } = useI18n()
 
 defineProps<{
   active: SettingsPageId
@@ -13,10 +17,10 @@ defineProps<{
   <aside class="settings-sidebar scroll-thin">
     <nav
       class="space-y-1 p-3"
-      aria-label="设置分类"
+      :aria-label="t('设置分类')"
     >
       <RouterLink
-        v-for="page in SETTINGS_PAGES"
+        v-for="page in pages"
         :key="page.id"
         :to="{ name: 'settings', params: { section: page.id } }"
         :aria-current="active === page.id ? 'page' : undefined"

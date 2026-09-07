@@ -73,6 +73,7 @@ rust_decimal = "1"
 # 仅用于给无边框主窗补 DWM 原生阴影，见 platform/window.rs 的 enable_window_shadow。
 windows = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Security_Cryptography",
     "Win32_Graphics_Dwm",
     "Win32_UI_Controls",

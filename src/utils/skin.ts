@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, type SettingsValues } from '@/types/settings'
+import { readSkinColors } from './skin-colors'
 
 export type SkinSettings = Pick<
   SettingsValues,
@@ -7,6 +8,7 @@ export type SkinSettings = Pick<
   | 'skinLibrary'
   | 'skinStyle'
   | 'skinCustomCss'
+  | 'skinCustomColors'
   | 'skinBackground'
   | 'skinBackgroundImage'
   | 'skinBackgroundName'
@@ -31,6 +33,7 @@ export function skinPreset(base = 'default'): SkinAppearance {
     skinBase: base === 'kuriyama-mirai' ? base : 'default',
     skinStyle: 'builtin',
     skinCustomCss: '',
+    skinCustomColors: '{}',
     skinBackground: 'theme',
     skinBackgroundImage: '',
     skinBackgroundName: '',
@@ -118,6 +121,9 @@ export function isBackgroundImage(value: string): boolean {
 
 function normalizeAppearance<T extends SkinAppearance>(settings: T): T {
   const normalized = { ...settings }
+  normalized.skinCustomColors = JSON.stringify(
+    readSkinColors(settings.skinCustomColors)
+  )
   if (!['default', 'kuriyama-mirai'].includes(normalized.skinBase))
     normalized.skinBase = 'default'
   if (!['builtin', 'default', 'custom'].includes(normalized.skinStyle))

@@ -1,22 +1,28 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { computed } from 'vue'
 import { useToast, type ToastTone } from '@/composables/useToast'
+
+const { t } = useI18n()
 
 const { toasts, dismiss, pause, resume } = useToast()
 
-const toneMeta: Record<ToastTone, { icon: string; label: string }> = {
-  success: { icon: 'lucide:check', label: '成功' },
-  error: { icon: 'lucide:x', label: '错误' },
-  warning: { icon: 'lucide:triangle-alert', label: '警告' },
-  info: { icon: 'lucide:info', label: '提示' },
-}
+const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
+  () => ({
+    success: { icon: 'lucide:check', label: t('成功') },
+    error: { icon: 'lucide:x', label: t('错误') },
+    warning: { icon: 'lucide:triangle-alert', label: t('警告') },
+    info: { icon: 'lucide:info', label: t('提示') },
+  })
+)
 </script>
 
 <template>
   <Teleport to="body">
     <section
       class="toast-viewport"
-      aria-label="通知"
+      :aria-label="t('通知')"
       aria-live="polite"
       aria-relevant="additions"
     >
@@ -64,8 +70,10 @@ const toneMeta: Record<ToastTone, { icon: string; label: string }> = {
           <button
             type="button"
             class="toast-close"
-            :aria-label="`关闭${toneMeta[item.tone].label}通知`"
-            title="关闭"
+            :aria-label="
+              t('notification.dismiss', { tone: toneMeta[item.tone].label })
+            "
+            :title="t('关闭')"
             @click="dismiss(item.id)"
           >
             <AppIcon

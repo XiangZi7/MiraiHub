@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   computed,
   nextTick,
@@ -12,6 +13,9 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import { COMMAND_GROUPS } from '@/constants/workspace'
 import type { CommandItem } from '@/types'
 import { cn } from '@/utils/cn'
+import { translateLabel } from '@/i18n'
+
+const { t } = useI18n()
 
 const emit = defineEmits<{
   /** 请求关闭面板 */
@@ -35,12 +39,22 @@ const { keyword, cursor } = toRefs(state)
 /** 按关键词过滤分组，空分组自动隐藏 */
 const filteredGroups = computed(() => {
   const kw = state.keyword.trim().toLowerCase()
-  if (!kw) return COMMAND_GROUPS
-
-  return COMMAND_GROUPS.map(group => ({
+  const groups = COMMAND_GROUPS.map(group => ({
     ...group,
-    items: group.items.filter(item => item.label.toLowerCase().includes(kw)),
-  })).filter(group => group.items.length > 0)
+    label: translateLabel(group.label),
+    items: group.items.map(item => ({
+      ...item,
+      label: translateLabel(item.label),
+    })),
+  }))
+  if (!kw) return groups
+
+  return groups
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => item.label.toLowerCase().includes(kw)),
+    }))
+    .filter(group => group.items.length > 0)
 })
 
 /** 扁平列表，用于上下键定位 */
@@ -107,13 +121,13 @@ function indexOf(item: CommandItem): number {
         ref="inputRef"
         v-model="keyword"
         type="text"
-        placeholder="输入命令…"
+        :placeholder="t('输入命令…')"
         class="text-txt placeholder:text-txt-4 w-full bg-transparent text-[13px] outline-none"
       />
       <button
         type="button"
         class="icon-btn size-6"
-        title="关闭 (Esc)"
+        :title="t('关闭 (Esc)')"
         @click="emit('close')"
       >
         <AppIcon
@@ -160,7 +174,7 @@ function indexOf(item: CommandItem): number {
         v-if="!flatItems.length"
         class="text-txt-4 py-8 text-center text-xs"
       >
-        没有匹配的命令
+        {{ t('没有匹配的命令') }}
       </p>
     </div>
 
@@ -173,17 +187,17 @@ function indexOf(item: CommandItem): number {
           name="lucide:corner-down-left"
           :size="11"
         />
-        执行
+        {{ t('执行') }}
       </span>
       <span class="flex items-center gap-1">
         <AppIcon
           name="lucide:arrow-up-down"
           :size="11"
         />
-        切换
+        {{ t('切换') }}
       </span>
       <div class="flex-1" />
-      <span>Esc 关闭</span>
+      <span>{{ t('Esc 关闭') }}</span>
     </footer>
   </div>
 </template>

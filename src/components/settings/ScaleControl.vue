@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import {
@@ -7,6 +8,8 @@ import {
   UI_SCALE_MAX,
   UI_SCALE_STEP,
 } from '@/utils/ui-scale'
+
+const { t } = useI18n()
 const props = defineProps<{ modelValue: string; label: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const percent = computed(() => normalizeUiScale(props.modelValue))
@@ -22,7 +25,7 @@ function change(amount: number): void {
   >
     <IconButton
       icon="lucide:minus"
-      title="缩小全局字体"
+      :title="t('缩小全局字体')"
       :disabled="percent <= UI_SCALE_MIN"
       @click="change(-UI_SCALE_STEP)"
     />
@@ -33,13 +36,13 @@ function change(amount: number): void {
     >
     <IconButton
       icon="lucide:plus"
-      title="放大全局字体"
+      :title="t('放大全局字体')"
       :disabled="percent >= UI_SCALE_MAX"
       @click="change(UI_SCALE_STEP)"
     />
     <IconButton
       icon="lucide:rotate-ccw"
-      title="恢复默认大小 (100%)"
+      :title="t('恢复默认大小 (100%)')"
       :disabled="percent === 100"
       @click="emit('update:modelValue', '100')"
     />

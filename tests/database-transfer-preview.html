@@ -12,6 +12,8 @@
       }
     </script>
     <script type="module">
+      import { i18n } from '/src/i18n/index.ts'
+      i18n.global.locale.value = 'zh-CN'
       import { createApp, reactive } from 'vue/dist/vue.esm-bundler.js'
       import { addCollection } from '@iconify/vue'
       import { pinia } from '../src/stores'
@@ -98,6 +100,7 @@
     <DatabaseView :connection="connection" active />
     <pre style="height:90px;overflow:auto;padding:8px" aria-label="模拟数据库调用">{{ JSON.stringify(state.calls, null, 2) }}</pre><ToastHost /></div>`,
       })
+        .use(i18n)
         .use(pinia)
         .mount('#app')
     </script>

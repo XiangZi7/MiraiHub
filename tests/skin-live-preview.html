@@ -7,6 +7,8 @@
   <body>
     <div id="app"></div>
     <script type="module">
+      import { i18n } from '/src/i18n/index.ts'
+      i18n.global.locale.value = 'zh-CN'
       import { createApp, h, reactive } from 'vue'
       import WindowFrame from '/src/components/ui/WindowFrame.vue'
       import { pinia } from '/src/stores/index.ts'
@@ -19,7 +21,11 @@
       const storageKey = 'miraihub.settings.v1'
       const original = localStorage.getItem(storageKey)
       const state = reactive({ results: [], complete: false })
-      saveSettings({ ...DEFAULT_SETTINGS, reduceMotion: true })
+      saveSettings({
+        ...DEFAULT_SETTINGS,
+        language: 'zh-CN',
+        reduceMotion: true,
+      })
       startSettingsRuntime({ skinPreview: true })
       createApp({
         render: () =>
@@ -42,6 +48,7 @@
             ]
           ),
       })
+        .use(i18n)
         .use(pinia)
         .mount('#app')
       const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -113,7 +120,7 @@
           )
         }
       )
-      await check('自定义 CSS 实时同步主窗口，取消恢复原样', async () => {
+      await check('颜色控件实时同步主窗口，取消恢复原样', async () => {
         const doc = await openSettings()
         const accent = getComputedStyle(document.documentElement)
           .getPropertyValue('--color-accent')
@@ -121,12 +128,16 @@
         doc.querySelector('[role=combobox]').click()
         await until(() => doc.querySelector('[role=option]'), '样式菜单未打开')
         const option = [...doc.querySelectorAll('[role=option]')].find(el =>
-          el.textContent.includes('自定义 CSS')
+          el.textContent.includes('自定义配色')
         )
         option.click()
-        await until(() => doc.querySelector('textarea'), 'CSS 编辑器未显示')
-        const editor = doc.querySelector('textarea')
-        editor.value = ':root { --color-accent: #123456; }'
+        await until(
+          () => doc.querySelector('input[type=color]'),
+          '取色器未显示'
+        )
+        assert(!doc.querySelector('textarea'), '不应再显示 CSS 输入框')
+        const editor = doc.querySelector('input[type=color]')
+        editor.value = '#123456'
         editor.dispatchEvent(new Event('input', { bubbles: true }))
         await until(
           () =>

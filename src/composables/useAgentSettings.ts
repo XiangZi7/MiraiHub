@@ -7,11 +7,13 @@ import type {
 } from '@/types/agent'
 import { newAgentProfile } from '@/constants/agent-providers'
 import { IS_TAURI } from '@/utils/window'
+import { useI18n } from 'vue-i18n'
 
 function editProfile(profile: AgentConfig): AgentProfileDraft {
   return { ...profile, apiKey: '', clearKey: false }
 }
 export function useAgentSettings() {
+  const { t } = useI18n()
   let disposed = false
   let unlisten: (() => void) | undefined
   let version = 0
@@ -30,7 +32,7 @@ export function useAgentSettings() {
   const options = computed(() =>
     Object.entries(state.drafts).map(([id, item]) => ({
       value: id,
-      label: `${item.name || '未命名配置'}${state.settings.activeId === id ? ' · 使用中' : ''}${!item.id ? ' · 未保存' : ''}`,
+      label: `${item.name || t('未命名配置')}${state.settings.activeId === id ? ' · ' + t('使用中') : ''}${!item.id ? ' · ' + t('未保存') : ''}`,
     }))
   )
   function add(): void {
@@ -112,7 +114,7 @@ export function useAgentSettings() {
       delete state.drafts[selected]
       state.drafts[saved.id] = editProfile(saved)
       state.selectedId = saved.id
-      state.message = `已保存并切换到「${saved.name}」。`
+      state.message = t('ai.saved', { name: saved.name })
       if (test) state.message = await api.testConfig(saved.id)
     } catch (error) {
       state.error = api.errorMessage(error)
@@ -133,7 +135,7 @@ export function useAgentSettings() {
       delete state.drafts[state.selectedId]
       state.selectedId = Object.keys(state.drafts)[0] ?? ''
       if (!state.selectedId) add()
-      state.message = '配置已删除。'
+      state.message = t('配置已删除。')
     } catch (error) {
       state.error = api.errorMessage(error)
     } finally {

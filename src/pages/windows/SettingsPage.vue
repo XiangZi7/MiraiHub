@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import {
   computed,
   defineAsyncComponent,
@@ -19,6 +20,7 @@ import NavigationControls from '@/components/workspace/NavigationControls.vue'
 import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { SETTINGS_PAGES } from '@/constants/settings'
+import { useLocalizedSettings } from '@/composables/useLocalizedSettings'
 import type {
   SettingKey,
   SettingValue,
@@ -33,6 +35,8 @@ import ThemeSkinPanel from '@/components/settings/ThemeSkinPanel.vue'
 import { useSkinPreview } from '@/composables/useSkinPreview'
 import packageInfo from '../../../package.json'
 
+const { t } = useI18n()
+
 const AiSettingsPanel = defineAsyncComponent(
   () => import('@/components/settings/AiSettingsPanel.vue')
 )
@@ -41,6 +45,7 @@ const ConnectionBackupPanel = defineAsyncComponent(
 )
 
 const { settings, save, defaults } = useSettings()
+const pages = useLocalizedSettings()
 const aiPanel = useTemplateRef<InstanceType<typeof AiSettingsPanel>>('aiPanel')
 
 const route = useRoute()
@@ -64,14 +69,13 @@ onBeforeUnmount(() => {
 
 const runtimeValues = reactive<Record<string, string>>({
   version: packageInfo.version,
-  tauriVersion: IS_TAURI ? '读取中…' : '浏览器预览',
+  tauriVersion: IS_TAURI ? t('读取中…') : t('浏览器预览'),
   platform: describePlatform(),
 })
 
 const activePage = computed(
   () =>
-    SETTINGS_PAGES.find(page => page.id === activePageId.value) ??
-    SETTINGS_PAGES[0]
+    pages.value.find(page => page.id === activePageId.value) ?? pages.value[0]
 )
 
 const isDirty = computed(() =>
@@ -95,8 +99,7 @@ const errors = computed<Partial<Record<SettingKey, string>>>(() => {
           value < field.range.min ||
           value > field.range.max
         )
-          result[field.key] =
-            `请输入 ${field.range.min}–${field.range.max} 之间的整数`
+          result[field.key] = t('settings.integerRange', { ...field.range })
       }
     }
   }
@@ -140,7 +143,7 @@ function updateSetting(key: SettingKey, value: SettingValue): void {
 
 function resetToDefaults(): void {
   Object.assign(draft, defaults())
-  toast.info('已恢复默认值，保存后生效')
+  toast.info(t('已恢复默认值，保存后生效'))
 }
 
 function submit(): void {
@@ -154,7 +157,7 @@ function submit(): void {
     const page = pageOf(firstInvalid)
     if (page) activePageId.value = page
     toast.warning({
-      title: '有设置项不合法',
+      title: t('有设置项不合法'),
       description: errors.value[firstInvalid],
     })
     return
@@ -177,15 +180,15 @@ function submit(): void {
     save(normalized)
   } catch (error) {
     toast.error({
-      title: '设置保存失败',
+      title: t('设置保存失败'),
       description:
         error instanceof DOMException && error.name === 'QuotaExceededError'
-          ? '本地存储空间不足，请移除背景图或换用更小的图片后重试'
+          ? t('本地存储空间不足，请移除背景图或换用更小的图片后重试')
           : String(error),
     })
     return
   }
-  toast.success('设置已保存')
+  toast.success(t('设置已保存'))
   closeDialog()
 }
 
@@ -234,7 +237,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         class="text-txt text-[13px] font-semibold tracking-tight"
         data-tauri-drag-region
       >
-        设置
+        {{ t('设置') }}
       </h1>
       <NavigationControls class="ml-3" />
       <div
@@ -244,7 +247,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <IconButton
         icon="lucide:x"
         :size="15"
-        title="关闭 (Esc)"
+        :title="t('关闭 (Esc)')"
         @click="closeDialog"
       />
     </header>
@@ -281,19 +284,19 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             size="sm"
             @click="resetToDefaults"
           >
-            重置为默认
+            {{ t('重置为默认') }}
           </AppButton>
           <span
             v-if="isDirty"
             class="text-txt-4 text-[10.5px]"
-            >有未保存的修改</span
+            >{{ t('有未保存的修改') }}</span
           >
           <div class="flex-1" />
           <AppButton
             size="sm"
             @click="closeDialog"
           >
-            取消
+            {{ t('取消') }}
           </AppButton>
           <AppButton
             size="sm"
@@ -301,7 +304,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             title="Ctrl+S"
             @click="submit"
           >
-            保存设置
+            {{ t('保存设置') }}
           </AppButton>
         </footer>
       </div>

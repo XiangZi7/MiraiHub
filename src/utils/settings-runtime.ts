@@ -56,6 +56,7 @@ export function startSettingsRuntime(
       settings.skinBase,
       settings.skinStyle,
       settings.skinCustomCss,
+      settings.skinCustomColors,
       settings.skinBackground,
       settings.skinBackgroundImage,
       settings.skinBackgroundOpacity,

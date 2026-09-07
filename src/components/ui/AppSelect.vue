@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { CSSProperties } from 'vue'
 import {
   computed,
@@ -10,6 +11,8 @@ import {
 } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import AppIcon from './AppIcon.vue'
+
+const { t } = useI18n()
 
 interface SelectOption {
   value: string
@@ -34,7 +37,7 @@ const props = withDefaults(
     searchable?: boolean
   }>(),
   {
-    placeholder: '请选择',
+    placeholder: '',
     required: false,
     disabled: false,
     hideLabel: false,
@@ -295,7 +298,7 @@ watch(
           selectedOption ? 'text-txt' : 'text-txt-4',
         ]"
       >
-        {{ selectedOption?.label ?? placeholder }}
+        {{ selectedOption?.label ?? (placeholder || t('请选择')) }}
       </span>
       <AppIcon
         name="lucide:chevron-down"
@@ -332,7 +335,7 @@ watch(
               ref="searchInput"
               v-model="search"
               class="text-txt min-w-0 flex-1 bg-transparent text-[11px] outline-none"
-              placeholder="搜索选项"
+              :placeholder="t('搜索选项')"
               @keydown.space.stop
             />
           </label>
@@ -390,7 +393,7 @@ watch(
             v-if="!visibleOptions.length"
             class="text-txt-4 px-2.5 py-5 text-center text-[11px]"
           >
-            没有匹配项
+            {{ t('没有匹配项') }}
           </div>
         </div>
       </Transition>

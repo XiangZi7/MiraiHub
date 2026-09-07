@@ -32,16 +32,32 @@ table{width:100%;border-collapse:collapse;text-align:left;font-size:11px}td,th{f
 .status{display:flex;justify-content:space-between;border-top:1px solid var(--color-line);padding:8px 12px;color:var(--color-txt-3);font-size:10px}
 `
 
-export function skinPreviewDocument(values: SkinSettings): string {
+export function skinPreviewDocument(
+  values: SkinSettings,
+  translate: (text: string) => string = text => text,
+  locale = 'zh-CN'
+): string {
+  const text = (value: string) =>
+    translate(value).replace(
+      /[&<>"']/g,
+      character =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[character]!
+    )
   const settings = resolveSkinSettings(normalizeSkinSettings(values))
   const image = skinBackground(settings)
   const css = `:root {${tokens}}\n${previewCss}\n${skinCss(settings)}\n.wallpaper{background-image:${image ? `url(${JSON.stringify(image)})` : 'none'};opacity:${Number(settings.skinBackgroundOpacity) / 100};filter:blur(${Number(settings.skinBackgroundBlur)}px);inset:-${Number(settings.skinBackgroundBlur) * 2}px;background-size:${settings.skinBackgroundFit};background-position:${settings.skinBackgroundPosition}}`
   // CSS is text, never markup; the sandbox also disallows scripts/navigation.
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="color-scheme" content="dark light"><style>${css.replace(/</g, '\\3c ')}</style></head><body>
+  return `<!doctype html><html lang="${locale === 'zh-CN' ? 'zh-CN' : 'en-US'}"><head><meta charset="UTF-8"><meta name="color-scheme" content="dark light"><style>${css.replace(/</g, '\\3c ')}</style></head><body>
 <section class="win"><div class="wallpaper"></div><header class="win-bar"><span class="brand">M</span><span>MiraiHub</span><span class="spacer"></span><span class="muted">‹　↗　−　□　×</span></header>
-<div class="layout"><aside class="app-sidebar"><div class="tools muted">◫　⊞ <span class="spacer"></span>«</div><div class="label">WORKSPACE</div><div class="nav-item">▤　Servers</div><div class="nav-item nav-item-active">▥　Databases</div><div class="nav-item">♧　SSH Keys</div><div class="nav-item">◷　Recent</div><div class="label">DATABASES</div><div class="nav-item">⌄　Development</div><div class="nav-item nav-item-active"><span class="dot"></span>　Localhost</div></aside>
+<div class="layout"><aside class="app-sidebar"><div class="tools muted">◫　⊞ <span class="spacer"></span>«</div><div class="label">${text('Workspace')}</div><div class="nav-item">▤　${text('Servers')}</div><div class="nav-item nav-item-active">▥　${text('Databases')}</div><div class="nav-item">♧　${text('SSH Keys')}</div><div class="nav-item">◷　${text('Recent')}</div><div class="label">${text('Databases')}</div><div class="nav-item">⌄　Development</div><div class="nav-item nav-item-active"><span class="dot"></span>　Localhost</div></aside>
 <main class="main"><div class="tabs"><div class="tab"><span class="dot"></span>Localhost　×</div><span class="muted">+</span><span class="spacer"></span><span class="muted">♧　⊙　⚙</span></div><div class="content">
-<section class="pane objects"><div class="pane-title">▥　Localhost <span class="spacer"></span>＋　⟳</div><div class="search">⌕　搜索数据库、表、视图</div><div class="nav-item">⌄　▱　miraihub</div><div class="nav-item">　⌄　Tables　<span class="muted">3</span></div><div class="nav-item nav-item-active">　　　▦　connections</div><div class="nav-item">　　　▦　projects</div><div class="nav-item">　　　▦　settings</div></section>
-<section class="pane"><div class="tabs"><div class="tab">Query 1</div><span class="muted">Query 2　＋</span></div><div class="pane-title">▷　运行 <span class="muted">　⟳　◇</span></div><div class="sql"><div><span>1</span><em>SELECT</em> name, host, status</div><div><span>2</span><em>FROM</em> connections</div><div><span>3</span><em>WHERE</em> status = <em>'connected'</em>;</div></div><div class="result-title">结果　<span class="muted">3 rows · 0.012 s</span></div><table><thead><tr><th>name</th><th>host</th><th>status</th></tr></thead><tbody><tr><td>Localhost</td><td>127.0.0.1</td><td>connected</td></tr><tr><td>Development</td><td>192.168.1.10</td><td>connected</td></tr><tr><td>Staging</td><td>192.168.1.20</td><td>connected</td></tr></tbody></table><div class="status"><span><i class="dot"></i>　Connected</span><span>UTF-8</span></div></section>
+<section class="pane objects"><div class="pane-title">▥　Localhost <span class="spacer"></span>＋　⟳</div><div class="search">⌕　${text('搜索数据库、表、视图')}</div><div class="nav-item">⌄　▱　miraihub</div><div class="nav-item">　⌄　${text('Tables')}　<span class="muted">3</span></div><div class="nav-item nav-item-active">　　　▦　connections</div><div class="nav-item">　　　▦　projects</div><div class="nav-item">　　　▦　settings</div></section>
+<section class="pane"><div class="tabs"><div class="tab">${text('Query 1')}</div><span class="muted">${text('Query 2')}　＋</span></div><div class="pane-title">▷　${text('运行')} <span class="muted">　⟳　◇</span></div><div class="sql"><div><span>1</span><em>SELECT</em> name, host, status</div><div><span>2</span><em>FROM</em> connections</div><div><span>3</span><em>WHERE</em> status = <em>'connected'</em>;</div></div><div class="result-title">${text('结果')}　<span class="muted">3 rows · 0.012 s</span></div><table><thead><tr><th>name</th><th>host</th><th>status</th></tr></thead><tbody><tr><td>Localhost</td><td>127.0.0.1</td><td>connected</td></tr><tr><td>Development</td><td>192.168.1.10</td><td>connected</td></tr><tr><td>Staging</td><td>192.168.1.20</td><td>connected</td></tr></tbody></table><div class="status"><span><i class="dot"></i>　${text('Connected')}</span><span>UTF-8</span></div></section>
 </div></main></div></section></body></html>`
 }
