@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <title>MiraiHub screenshot placeholder</title>
+  <desc>Product screenshot coming soon. 产品截图待补充。</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1440" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17172A" />
+      <stop offset="1" stop-color="#0D0E16" />
+    </linearGradient>
+    <linearGradient id="accent" x1="624" y1="298" x2="816" y2="438" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BCA0FF" />
+      <stop offset="1" stop-color="#8055DE" />
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="900" rx="24" fill="url(#background)" />
+  <rect x="40" y="40" width="1360" height="820" rx="16" stroke="#393149" stroke-width="2" stroke-dasharray="10 12" />
+  <g stroke="url(#accent)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="624" y="298" width="192" height="140" rx="16" />
+    <circle cx="766" cy="341" r="13" />
+    <path d="M625 411L677 359L739 421L774 385L815 426" />
+  </g>
+  <g text-anchor="middle" font-family="Segoe UI, Arial, Microsoft YaHei, sans-serif">
+    <text x="720" y="524" fill="#E7DFF8" font-size="32" font-weight="600" letter-spacing="3">SCREENSHOT COMING SOON</text>
+    <text x="720" y="578" fill="#A69BB9" font-size="27">产品截图待补充</text>
+    <text x="720" y="802" fill="#847493" font-size="23" letter-spacing="5">MiraiHub</text>
+  </g>
+</svg>
