@@ -8,6 +8,36 @@ const ssh = (overrides = {}) => ({ id: 'ssh-1', kind: 'ssh', name: 'Server', hos
 const snapshot = (...connections) => ({ connections, groups: [{ id: 'g1', name: 'Production', kind: 'ssh', createdAt: 1 }], tags: [{ name: 'prod', color: 'red', createdAt: 1 }] })
 const defaults = { mode: 'skip', credentials: false, startupCommands: false }
 const archive = (...connections) => createConnectionBackup(snapshot(...connections), true)
+const local = (settings = {}) => ssh({ id: 'local-1', kind: 'local', name: 'Local', host: 'localhost', port: 0, username: '', settings: { shell: 'cmd', workingDirectory: 'D:/project', startupCommand: 'echo ready\nnpm run dev', ...settings } })
+
+test('local startup commands survive backup parsing and require the startup restoration option', () => {
+  const original = snapshot(local())
+  const plain = createConnectionBackup(original, false)
+  assert.equal(plain.connections[0].settings.startupCommand, '')
+  assert.equal(original.connections[0].settings.startupCommand, 'echo ready\nnpm run dev')
+  const backup = parseConnectionBackup(archive(local()))
+  assert.equal(backup.connections[0].settings.startupCommand, 'echo ready\nnpm run dev')
+  for (const startupCommands of [false, true]) {
+    const result = restorePlan(snapshot(), backup, { ...defaults, startupCommands }, () => 'new')
+    assert.equal(result.next.connections[0].settings.startupCommand, startupCommands ? 'echo ready\nnpm run dev' : '')
+  }
+})
+
+test('legacy local backups default to no startup command and validate new command values', () => {
+  const legacy = local()
+  delete legacy.settings.startupCommand
+  assert.equal(parseConnectionBackup(archive(legacy)).connections[0].settings.startupCommand, '')
+  for (const startupCommand of [123, 'bad\0command', 'x'.repeat(8193)])
+    assert.throws(() => parseConnectionBackup(archive(local({ startupCommand }))))
+})
+
+test('restoring local settings preserves existing commands only for the same shell and directory', () => {
+  const original = snapshot(local())
+  const restore = settings => restorePlan(original, parseConnectionBackup(archive(local(settings))), { ...defaults, mode: 'update' }, () => 'new').next.connections[0]
+  assert.equal(restore({ startupCommand: 'echo imported' }).settings.startupCommand, 'echo ready\nnpm run dev')
+  assert.equal(restore({ shell: 'powershell' }).settings.startupCommand, '')
+  assert.equal(restore({ workingDirectory: 'D:/other-project' }).settings.startupCommand, '')
+})
 
 test('plain backup removes SSH, database and key secrets without mutating current configuration', () => {
   const original = snapshot(ssh(), ssh({ id: 'db', kind: 'mysql', settings: { database: 'app', password: 'db-secret', ssl: true } }), ssh({ id: 'key', settings: { auth: { type: 'privateKey', path: 'C:/key', passphrase: 'phrase' }, startupCommand: 'echo key' } }))

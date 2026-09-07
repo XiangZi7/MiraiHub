@@ -196,7 +196,7 @@ function apply(): void {
           v-model="includeCredentials"
           type="checkbox"
           :disabled="busy"
-        />{{ t('包含连接密码、私钥口令和 SSH 启动命令（需要加密）') }}</label
+        />{{ t('包含连接密码、私钥口令和终端启动命令（需要加密）') }}</label
       ><label class="backup-field"
         >{{ t('备份密码')
         }}<input
@@ -272,7 +272,7 @@ function apply(): void {
             type="checkbox"
             @change="reviewed = false"
           />{{
-            t('恢复 SSH 启动命令（下次连接时会自动执行，请先核对备份来源）')
+            t('恢复终端启动命令（下次连接时会自动执行，请先核对备份来源）')
           }}</label
         >
         <details
@@ -280,10 +280,10 @@ function apply(): void {
           class="startup-review"
           open
         >
-          <summary>{{ t('核对备份中的 SSH 启动命令') }}</summary>
+          <summary>{{ t('核对备份中的终端启动命令') }}</summary>
           <div
             v-for="connection in archive.connections.filter(
-              c => c.kind === 'ssh'
+              c => c.kind === 'ssh' || c.kind === 'local'
             )"
             :key="connection.id"
           >

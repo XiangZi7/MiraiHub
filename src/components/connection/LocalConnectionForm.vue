@@ -18,6 +18,7 @@ import type {
 import { isLocalConnection } from '@/types/connection'
 import { IS_TAURI } from '@/utils/window'
 import ConnectionTagEditor from './ConnectionTagEditor.vue'
+import StartupCommandPresetField from './StartupCommandPresetField.vue'
 
 const { settings } = useSettings()
 
@@ -38,6 +39,7 @@ const form = reactive({
   group: '',
   shell: settings.terminalShell as LocalShellKind,
   workingDirectory: '',
+  startupCommand: '',
   tags: '',
   tagColor: 'violet' as ConnectionTagColor,
   description: '',
@@ -65,6 +67,7 @@ onMounted(async () => {
       group: connection.group,
       shell: connection.settings.shell,
       workingDirectory: connection.settings.workingDirectory,
+      startupCommand: connection.settings.startupCommand ?? '',
       tags: connection.tags.join(', '),
       tagColor: connection.tagColor,
       description: connection.description,
@@ -118,6 +121,7 @@ async function save(): Promise<void> {
       settings: {
         shell: form.shell,
         workingDirectory: form.workingDirectory.trim(),
+        startupCommand: form.startupCommand.trim(),
       },
     }
 
@@ -180,6 +184,11 @@ async function save(): Promise<void> {
           action-icon="lucide:folder-open"
           action-title="选择工作目录"
           @action="browseDirectory"
+        />
+        <StartupCommandPresetField
+          v-model="form.startupCommand"
+          placeholder="e.g. npm run dev"
+          description="每次启动或重连本地 Shell 后自动执行。支持多行命令，请使用所选 Shell 的语法；留空不执行，预设保存在本机。"
         />
         <ConnectionTagEditor
           v-model="form.tags"

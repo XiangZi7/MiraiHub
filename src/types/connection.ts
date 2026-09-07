@@ -78,6 +78,8 @@ export interface LocalConnectionSettings {
   shell: LocalShellKind
   /** 空串表示继承当前用户目录 */
   workingDirectory: string
+  /** 新会话启动后自动执行；可选以兼容旧配置，留空不执行。 */
+  startupCommand?: string
 }
 
 /**

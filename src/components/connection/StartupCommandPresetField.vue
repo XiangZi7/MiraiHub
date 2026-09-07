@@ -13,6 +13,17 @@ import IconButton from '@/components/ui/IconButton.vue'
 import { useStartupCommandPresets } from '@/composables/useStartupCommandPresets'
 import { toast } from '@/composables/useToast'
 
+const props = withDefaults(
+  defineProps<{
+    placeholder?: string
+    description?: string
+  }>(),
+  {
+    placeholder: 'e.g. cd /srv/app && tmux attach || tmux',
+    description: 'SSH shell 就绪后自动执行；预设保存在本机。',
+  }
+)
+
 const command = defineModel<string>({ required: true })
 const { presets, save, remove } = useStartupCommandPresets()
 
@@ -96,10 +107,9 @@ async function removePreset(): Promise<void> {
       />
     </div>
 
-    <form
+    <div
       v-if="naming"
       class="mt-2 flex items-center gap-2"
-      @submit.prevent="savePreset"
     >
       <input
         ref="presetName"
@@ -108,12 +118,13 @@ async function removePreset(): Promise<void> {
         placeholder="预设名称，例如：进入项目并启动 tmux"
         aria-label="初始化命令预设名称"
         maxlength="64"
+        @keydown.enter.prevent="savePreset"
         @keydown.esc.prevent="naming = false"
       />
       <AppButton
         size="sm"
         variant="primary"
-        type="submit"
+        @click="savePreset"
       >
         保存预设
       </AppButton>
@@ -123,19 +134,20 @@ async function removePreset(): Promise<void> {
       >
         取消
       </AppButton>
-    </form>
+    </div>
 
     <textarea
       :id="commandId"
       v-model="command"
       class="command-input mt-2"
       rows="3"
-      placeholder="e.g. cd /srv/app && tmux attach || tmux"
+      :placeholder="props.placeholder"
+      aria-label="Initialization Command"
       spellcheck="false"
     />
 
     <p class="text-txt-4 mt-1.5 text-[10.5px]">
-      SSH shell 就绪后自动执行；预设保存在本机。
+      {{ props.description }}
     </p>
   </fieldset>
 </template>

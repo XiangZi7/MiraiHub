@@ -132,6 +132,7 @@ function connection(value: unknown): SavedConnection {
       settings: {
         shell: choice(s.shell, ['powershell', 'cmd', 'git-bash'], '本地终端'),
         workingDirectory: optional(s.workingDirectory, '工作目录'),
+        startupCommand: optional(s.startupCommand, '启动命令', 8192),
       },
     }
   return {
@@ -205,8 +206,9 @@ function sanitized(
       if (c.settings.auth.type === 'password') c.settings.auth.password = ''
       if (c.settings.auth.type === 'privateKey') c.settings.auth.passphrase = ''
     }
-    if (!options.startupCommands) c.settings.startupCommand = ''
   }
+  if ('startupCommand' in c.settings && !options.startupCommands)
+    c.settings.startupCommand = ''
   if ('password' in c.settings && !options.credentials) c.settings.password = ''
   return c
 }
@@ -265,7 +267,12 @@ export function restorePlan(
         existing.kind === c.kind &&
         existing.host === c.host &&
         existing.port === c.port &&
-        existing.username === c.username
+        existing.username === c.username &&
+        (c.kind !== 'local' ||
+          ('shell' in existing.settings &&
+            'shell' in c.settings &&
+            existing.settings.shell === c.settings.shell &&
+            existing.settings.workingDirectory === c.settings.workingDirectory))
       if (!options.credentials && sameEndpoint) {
         if ('password' in existing.settings && 'password' in c.settings)
           c.settings.password = existing.settings.password

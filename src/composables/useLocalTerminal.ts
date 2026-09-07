@@ -98,6 +98,10 @@ export function useLocalTerminal() {
   async function connect(settings: LocalConnectionSettings): Promise<void> {
     const terminal = term.value
     if (!terminal) throw new Error('终端尚未挂载')
+    // PTY 使用回车提交命令；统一多行输入，避免 Windows CRLF 被提交两次。
+    const startupCommand = settings.startupCommand
+      ?.trim()
+      .replace(/\r\n|\n/g, '\r')
 
     await disconnect()
     const currentOperation = ++operation
@@ -116,6 +120,10 @@ export function useLocalTerminal() {
         if (payload.sessionId === state.sessionId)
           terminal.write(localTerminal.decodeBase64(payload.data))
       })
+      if (disposed || operation !== currentOperation) {
+        stopOutput()
+        return
+      }
       unlisteners.push(stopOutput)
 
       const stopStatus = await localTerminal.onStatus(payload => {
@@ -125,10 +133,15 @@ export function useLocalTerminal() {
         }
         if (payload.sessionId === state.sessionId) applyStatus(payload)
       })
+      if (disposed || operation !== currentOperation) {
+        stopStatus()
+        return
+      }
       unlisteners.push(stopStatus)
 
       const id = await localTerminal.create({
-        ...settings,
+        shell: settings.shell,
+        workingDirectory: settings.workingDirectory,
         cols: terminal.cols,
         rows: terminal.rows,
       })
@@ -148,14 +161,19 @@ export function useLocalTerminal() {
       pendingStatus
         .filter(payload => payload.sessionId === id)
         .forEach(applyStatus)
-      terminal.focus()
+      if (state.status === 'connected' && startupCommand)
+        await localTerminal.write(id, `${startupCommand}\r`)
+
+      if (!disposed && operation === currentOperation) terminal.focus()
     } catch (err) {
       if (disposed || operation !== currentOperation) return
 
       state.status = 'disconnected'
       state.error = errorMessage(err)
       terminal.writeln(`\r\n\x1b[31m启动本地终端失败：${state.error}\x1b[0m`)
+      const id = state.sessionId
       await cleanup()
+      if (id) await localTerminal.close(id).catch(() => {})
       throw err
     }
   }

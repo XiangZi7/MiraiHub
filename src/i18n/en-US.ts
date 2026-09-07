@@ -196,8 +196,8 @@ export default {
   '请在桌面程序中选择文件进行备份或恢复。':
     'Use the desktop app to select a backup or restore file.',
   导出备份: 'Export backup',
-  '包含连接密码、私钥口令和 SSH 启动命令（需要加密）':
-    'Include passwords, key passphrases, and SSH startup commands (encryption required)',
+  '包含连接密码、私钥口令和终端启动命令（需要加密）':
+    'Include passwords, key passphrases, and terminal startup commands (encryption required)',
   备份密码: 'Backup password',
   '可选；设置后使用密码加密，恢复时需要此密码':
     'Optional; encrypts the backup with a password required for restoration',
@@ -217,9 +217,9 @@ export default {
   全部作为新连接导入: 'Import all as new connections',
   恢复备份中的连接密码和私钥口令:
     'Restore connection passwords and key passphrases',
-  '恢复 SSH 启动命令（下次连接时会自动执行，请先核对备份来源）':
-    'Restore SSH startup commands (they run on the next connection; verify the backup source first)',
-  '核对备份中的 SSH 启动命令': 'Review SSH startup commands',
+  '恢复终端启动命令（下次连接时会自动执行，请先核对备份来源）':
+    'Restore terminal startup commands (they run on the next connection; verify the backup source first)',
+  '核对备份中的终端启动命令': 'Review terminal startup commands',
   '（无启动命令）': '(No startup command)',
   新增: 'Add',
   更新: 'Update',
