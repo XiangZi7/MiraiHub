@@ -1,76 +1,32 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, toRefs } from 'vue'
-import * as api from '@/api/agent'
+import { ref } from 'vue'
+import { useAgentSettings } from '@/composables/useAgentSettings'
+import { AGENT_PROVIDER_PRESETS } from '@/constants/agent-providers'
 import AppButton from '@/components/ui/AppButton.vue'
-import AppSwitch from '@/components/ui/AppSwitch.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import AiModelField from './AiModelField.vue'
+import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
+import AiProfileForm from './AiProfileForm.vue'
 import { IS_TAURI } from '@/utils/window'
-
-// 密钥仅存在于此输入框，保存后立即清空；不会回填已存储的密钥。
-const state = reactive({
-  enabled: false,
-  baseUrl: 'https://api.openai.com/v1',
-  model: '',
-  apiKey: '',
-  hasApiKey: false,
-  clearKey: false,
-  busy: false,
-  loading: true,
-  error: '',
-  message: '',
-})
 const {
-  enabled,
-  baseUrl,
-  model,
-  apiKey,
-  hasApiKey,
-  clearKey,
-  busy,
+  selectedId,
+  preset,
+  draft,
+  options,
   loading,
+  busy,
   error,
   message,
-} = toRefs(state)
-onMounted(async () => {
-  try {
-    if (IS_TAURI) Object.assign(state, await api.getConfig())
-  } catch (error) {
-    state.error = api.errorMessage(error)
-  } finally {
-    state.loading = false
-  }
-})
-onBeforeUnmount(() => {
-  state.apiKey = ''
-})
-async function save(test = false): Promise<void> {
-  if (state.busy || state.loading) return
-  state.busy = true
-  state.error = ''
-  state.message = ''
-  try {
-    const config = await api.saveConfig(
-      {
-        enabled: state.enabled,
-        baseUrl: state.baseUrl,
-        model: state.model,
-        apiKey: state.apiKey,
-      },
-      state.clearKey
-    )
-    Object.assign(state, config)
-    state.apiKey = ''
-    state.clearKey = false
-    state.message = 'AI 设置已保存，之前的运行与待审批操作已停止。'
-    if (test) state.message = await api.testConfig()
-  } catch (error) {
-    state.error = api.errorMessage(error)
-  } finally {
-    state.busy = false
-  }
-}
+  add,
+  save,
+  remove,
+} = useAgentSettings()
 defineExpose({ save })
+const deleting = ref(false)
+function confirmDelete(): void {
+  deleting.value = false
+  void remove()
+}
 </script>
 
 <template>
@@ -105,80 +61,44 @@ defineExpose({ save })
         </p>
         <fieldset
           :disabled="loading || busy"
-          class="ai-settings-form"
-          aria-label="模型服务配置"
+          class="grid min-w-0 gap-3 border-0 p-0"
+          aria-label="配置管理"
         >
-          <AppSwitch
-            v-model="enabled"
-            label="启用 AI Agent"
-            description="使用你配置的模型服务；发送消息后才会读取目标数据"
+          <AppSelect
+            v-model="selectedId"
+            label="已保存的配置"
+            :options="options"
+            :disabled="loading || busy"
+            searchable
           />
-          <div class="ai-setting-field">
-            <label for="ai-base-url">API 地址</label>
-            <input
-              id="ai-base-url"
-              v-model="baseUrl"
-              type="url"
-              placeholder="https://api.openai.com/v1"
-              autocomplete="off"
-              spellcheck="false"
-              aria-describedby="ai-base-url-help"
-            />
-            <p
-              id="ai-base-url-help"
-              class="ai-field-help"
-            >
-              兼容 OpenAI Chat Completions 与工具调用；填写基础地址，例如以 /v1
-              结尾。
-            </p>
-          </div>
-          <AiModelField
-            v-model="model"
-            :base-url="baseUrl"
-            :api-key="apiKey"
-            :clear-key="clearKey"
-            :disabled="loading || busy || !IS_TAURI"
-          />
-          <div class="ai-setting-field">
-            <div class="ai-key-label">
-              <label for="ai-api-key">API Key</label
-              ><span
-                v-if="hasApiKey"
-                class="text-success"
-                >已安全保存</span
-              >
+          <div class="flex items-end gap-2">
+            <div class="min-w-0 flex-1">
+              <AppSelect
+                v-model="preset"
+                label="添加配置"
+                :options="AGENT_PROVIDER_PRESETS"
+                :disabled="loading || busy"
+              />
             </div>
-            <input
-              id="ai-api-key"
-              v-model="apiKey"
-              type="password"
-              :placeholder="
-                hasApiKey
-                  ? '留空保留已保存密钥'
-                  : '输入密钥；本地免鉴权服务可留空'
-              "
-              autocomplete="new-password"
-              spellcheck="false"
-              maxlength="8192"
-              :disabled="clearKey"
-              aria-describedby="ai-key-help"
-            />
-            <p
-              id="ai-key-help"
-              class="ai-field-help"
+            <AppButton
+              :disabled="loading || busy"
+              @click="add"
+              ><AppIcon
+                name="lucide:plus"
+                :size="13"
+              />添加</AppButton
             >
-              Windows 用户级加密存储，不进入聊天或普通设置备份。
-            </p>
           </div>
-          <label
-            v-if="hasApiKey"
-            class="text-txt-3 flex items-center gap-2 text-[11px]"
-            ><input
-              v-model="clearKey"
-              type="checkbox"
-            />保存时清除旧密钥</label
-          >
+          <p class="ai-field-help">
+            同一服务可添加多份官网或中转站配置，分别保存地址、密钥和模型。
+          </p>
         </fieldset>
+        <AiProfileForm
+          v-if="draft"
+          :key="selectedId"
+          :model-value="draft"
+          :disabled="loading || busy || !IS_TAURI"
+        />
         <div class="security-rules">
           <h3>
             <AppIcon
@@ -219,18 +139,33 @@ defineExpose({ save })
           variant="primary"
           :disabled="busy || loading || !IS_TAURI"
           @click="save(false)"
-          >保存 AI 设置</AppButton
+          >保存并使用</AppButton
         >
         <AppButton
-          :disabled="busy || loading || !IS_TAURI || !enabled"
+          :disabled="busy || loading || !IS_TAURI || !draft?.enabled"
           @click="save(true)"
           >{{ busy ? '处理中…' : '保存并测试连接' }}</AppButton
         >
+        <AppButton
+          :disabled="busy || loading || !draft || !IS_TAURI"
+          variant="ghost"
+          @click="deleting = true"
+          >删除当前配置</AppButton
+        >
       </div>
       <p class="ai-field-help">
-        测试仅发送固定测试消息，不读取服务器或数据库。服务商可能按其标准计费。
+        切换配置会停止并清空旧对话。测试仅发送固定测试消息，不读取服务器或数据库。服务商可能按其标准计费。
       </p>
     </footer>
+    <AppConfirmDialog
+      :open="deleting"
+      title="删除 AI 配置"
+      :description="`删除「${draft?.name ?? ''}」及其保存的密钥？`"
+      confirm-label="删除配置"
+      danger
+      @close="deleting = false"
+      @confirm="confirmDelete"
+    />
   </section>
 </template>
 
@@ -285,51 +220,11 @@ defineExpose({ save })
   background: #6f93da22;
   color: #a1baff;
 }
-.ai-settings-form {
-  display: grid;
-  gap: 20px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-.ai-setting-field {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--color-txt-2);
-}
-.ai-setting-field input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 36px;
-  border: 1px solid var(--color-line);
-  background: var(--color-input, #ffffff04);
-  padding: 9px 10px;
-  border-radius: 6px;
-  outline: none;
-  font-size: 12px;
-  color: var(--color-txt);
-}
-.ai-setting-field input:focus {
-  border-color: var(--color-accent);
-}
 .ai-field-help {
   font-size: 10px;
   color: var(--color-txt-4);
   line-height: 1.6;
   overflow-wrap: anywhere;
-}
-.ai-key-label {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.ai-key-label span {
-  font-size: 10px;
 }
 .security-rules {
   border: 1px solid var(--color-line);

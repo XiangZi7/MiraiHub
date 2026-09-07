@@ -10,6 +10,8 @@ import {
 } from 'vue'
 import type { AgentTarget } from '@/types/agent'
 import { useAiAgent } from '@/composables/useAiAgent'
+import { useAgentProfiles } from '@/composables/useAgentProfiles'
+import AgentProfileSelect from './AgentProfileSelect.vue'
 import { copyText } from '@/utils/clipboard'
 import { openSettingsWindow } from '@/utils/window'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -27,8 +29,19 @@ const props = withDefaults(
   { active: true, split: false }
 )
 const emit = defineEmits<{ split: []; close: [] }>()
+const profiles = useAgentProfiles(() => {
+  void clear()
+})
 const { run, busy, error, awaitingApproval, send, decide, stop, clear } =
-  useAiAgent(toRef(props, 'target'), toRef(props, 'active'))
+  useAiAgent(toRef(props, 'target'), toRef(props, 'active'), profiles.activeId)
+const {
+  activeId,
+  active: activeProfile,
+  options: profileOptions,
+  loading: profilesLoading,
+  switching,
+  error: profileError,
+} = profiles
 // 输入与显示状态；敏感会话不会持久化。
 const state = reactive({ prompt: '', copied: false })
 const { prompt, copied } = toRefs(state)
@@ -55,6 +68,9 @@ const canSend = computed(() =>
   Boolean(
     props.target.sessionId &&
     props.active &&
+    activeProfile.value?.enabled &&
+    !profilesLoading.value &&
+    !switching.value &&
     state.prompt.trim() &&
     !busy.value &&
     !awaitingApproval.value
@@ -171,6 +187,13 @@ watch(
         @click="emit('close')"
       />
     </header>
+    <AgentProfileSelect
+      :active-id="activeId"
+      :options="profileOptions"
+      :disabled="profilesLoading || switching"
+      :error="profileError"
+      @select="profiles.select"
+    />
     <div
       ref="scroll"
       class="agent-scroll"

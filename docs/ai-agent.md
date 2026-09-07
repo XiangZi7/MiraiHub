@@ -1,6 +1,10 @@
 # AI Agent
 
-在设置 → AI Agent 中填写基础 API 地址、模型 ID 与 API Key，启用后保存并测试连接。服务需要支持 Chat Completions 的 function tools；不是 Responses 或原生 Anthropic 协议。默认不启用，不预填收费模型。仅在用户发送消息后调用服务。
+在设置 → AI Agent 中添加配置，填写名称、API 格式、基础地址、模型 ID 与 API Key，然后保存并使用，或保存并测试连接。支持 OpenAI Chat Completions（function tools）和 Claude 原生 Messages（tool_use / tool_result），不包含 OpenAI Responses 或 Gemini 原生 generateContent 协议。模型必须支持工具调用；不会自动选择收费模型，只有发送消息、获取模型或测试连接时才请求服务。
+
+每份配置独立保存，同一服务可以添加多份官网和中转站配置。提供 OpenAI、Claude、DeepSeek、豆包（火山方舟）、Gemini 和自定义地址模板；Claude 默认使用 Messages，Gemini 使用官方 OpenAI 兼容入口，其他模板默认使用 OpenAI 格式。名称、地址和 API 格式都可修改。豆包模型 ID 或接入点 ID 请按自己的方舟服务填写；没有模型列表接口的中转站可以手动输入模型。
+
+SSH 与数据库的 AI 面板均有配置下拉框。切换配置会停止并清空旧对话，新消息使用选中的配置；不会把旧会话自动传给另一服务。设置窗口中的未保存草稿可来回切换编辑，关闭窗口后丢弃。旧版单配置会自动迁移为“原有配置”，保留地址、模型、启用状态和加密密钥。删除正在使用的配置后，需要明确选择另一份配置才会继续使用 AI。
 
 SSH 工作区和数据库工作区都有 AI Agent 标签；分屏按钮在编辑器旁显示 AI。原有第二个 SSH 终端仍可从“新建或关闭第二个 SSH 终端”按钮打开。对话支持多轮追问、停止、清空、复制记录。
 
@@ -35,4 +39,4 @@ API 配置整体使用 Windows DPAPI 按当前操作系统用户加密，保存�
 - HTTP 测试使用本机临时服务，验证真实请求结构、工具响应解析、拒绝跳转、限制响应大小、错误不回显服务端秘密；DPAPI 测试进行真实加解密往返。
 - 未配置真实模型密钥，未在生产 SSH/数据库上执行 AI 操作。
 
-接口参考：[Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Function calling](https://developers.openai.com/api/docs/guides/function-calling)。
+接口参考：[Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Claude Messages](https://platform.claude.com/docs/en/api/messages/create)、[Claude 工具回传](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)、[Gemini OpenAI 兼容入口](https://ai.google.dev/gemini-api/docs/openai)、[DeepSeek](https://api-docs.deepseek.com/)、[火山方舟](https://www.volcengine.com/docs/82379/1795150)。

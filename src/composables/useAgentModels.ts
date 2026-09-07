@@ -21,7 +21,13 @@ export function useAgentModels(input: () => AgentModelListInput) {
   watch(
     () => {
       const draft = input()
-      return [draft.baseUrl, draft.apiKey, draft.clearKey]
+      return [
+        draft.profileId,
+        draft.apiFormat,
+        draft.baseUrl,
+        draft.apiKey,
+        draft.clearKey,
+      ]
     },
     reset,
     { flush: 'sync' }

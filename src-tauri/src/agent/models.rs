@@ -6,6 +6,10 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ModelListInput {
+    #[serde(default)]
+    pub profile_id: Option<String>,
+    #[serde(default)]
+    pub api_format: config::ApiFormat,
     pub base_url: String,
     #[serde(default)]
     pub api_key: String,
@@ -17,6 +21,7 @@ impl ModelListInput {
     pub fn resolve(self, previous: Config) -> AppResult<Config> {
         config::resolve_credentials(
             Config {
+                api_format: self.api_format,
                 base_url: self.base_url,
                 api_key: self.api_key,
                 ..Config::default()
@@ -29,23 +34,44 @@ impl ModelListInput {
 
 pub async fn list(config: &Config) -> AppResult<Vec<String>> {
     config::validate_url(&config.base_url)?;
-    let mut request =
-        config::client()?.get(format!("{}/models", config.base_url.trim_end_matches('/')));
-    if !config.api_key.is_empty() {
-        request = request.bearer_auth(&config.api_key);
+    let mut url = super::protocol::endpoint(config, "models")?;
+    let mut models = Vec::new();
+    // Claude uses cursor pagination. Keep the endpoint fixed so a provider cannot redirect credentials.
+    for _ in 0..20 {
+        let request = super::protocol::authenticate(config, config::client()?.get(url.clone()));
+        let result = config::request_json(request).await?;
+        let data = result
+            .get("data")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                AppError::invalid_input("服务未返回兼容的模型列表，请手动输入模型 ID")
+            })?;
+        models.extend(
+            data.iter()
+                .filter_map(|item| item.get("id").and_then(serde_json::Value::as_str))
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && id.len() <= 200 && !id.chars().any(char::is_control))
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+        );
+        if config.api_format != config::ApiFormat::Anthropic || result["has_more"] != true {
+            break;
+        }
+        let cursor = result["last_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| AppError::invalid_input("模型列表分页无效，请手动输入模型 ID"))?;
+        if url
+            .query_pairs()
+            .any(|(key, value)| key == "after_id" && value == cursor)
+        {
+            return Err(AppError::invalid_input(
+                "模型列表分页未前进，请手动输入模型 ID",
+            ));
+        }
+        url.set_query(None);
+        url.query_pairs_mut().append_pair("after_id", cursor);
     }
-    let result = config::request_json(request).await?;
-    let data = result
-        .get("data")
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| AppError::invalid_input("服务未返回兼容的模型列表，请手动输入模型 ID"))?;
-    let mut models: Vec<String> = data
-        .iter()
-        .filter_map(|item| item.get("id").and_then(serde_json::Value::as_str))
-        .map(str::trim)
-        .filter(|id| !id.is_empty() && id.len() <= 200 && !id.chars().any(char::is_control))
-        .map(str::to_owned)
-        .collect();
     models.sort();
     models.dedup();
     Ok(models)
@@ -61,6 +87,8 @@ mod tests {
 
     fn draft(url: &str, key: &str, clear_key: bool) -> ModelListInput {
         ModelListInput {
+            profile_id: None,
+            api_format: config::ApiFormat::Openai,
             base_url: url.into(),
             api_key: key.into(),
             clear_key,
@@ -153,6 +181,21 @@ mod tests {
             .to_ascii_lowercase()
             .contains("authorization: bearer draft-test-key\r\n"));
         assert!(request.ends_with("\r\n\r\n"));
+    }
+    #[tokio::test]
+    async fn claude_models_use_native_authentication() {
+        let (mut config, server) = mock(
+            "200 OK",
+            r#"{"data":[{"id":"claude-test"}],"has_more":false}"#,
+            "",
+        )
+        .await;
+        config.api_format = config::ApiFormat::Anthropic;
+        assert_eq!(list(&config).await.unwrap(), vec!["claude-test"]);
+        let request = server.await.unwrap().to_ascii_lowercase();
+        assert!(request.contains("x-api-key: draft-test-key"));
+        assert!(request.contains("anthropic-version: 2023-06-01"));
+        assert!(!request.contains("authorization:"));
     }
 
     #[tokio::test]

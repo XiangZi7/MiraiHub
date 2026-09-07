@@ -2,6 +2,7 @@
 mod config;
 mod models;
 mod policy;
+mod protocol;
 use crate::{
     db,
     error::{AppError, AppResult},
@@ -18,7 +19,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tokio::sync::Mutex;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -309,7 +310,7 @@ pub async fn ai_get_config(
     window: WebviewWindow,
     app: AppHandle,
     state: State<'_, AgentManager>,
-) -> AppResult<config::PublicConfig> {
+) -> AppResult<config::PublicSettings> {
     guard(&window, true)?;
     let _lock = state.config_lock.lock().await;
     Ok(config::read(&app)?.public())
@@ -324,7 +325,12 @@ pub async fn ai_list_models(
     guard(&window, true)?;
     let config = {
         let _lock = state.config_lock.lock().await;
-        input.resolve(config::read(&app)?)?
+        let settings = config::read(&app)?;
+        let previous = match input.profile_id.as_deref() {
+            Some(id) => settings.profile(id)?.config.clone(),
+            None => config::Config::default(),
+        };
+        input.resolve(previous)?
     };
     models::list(&config).await
 }
@@ -333,15 +339,57 @@ pub async fn ai_save_config(
     window: WebviewWindow,
     app: AppHandle,
     state: State<'_, AgentManager>,
-    config: config::Config,
+    input: config::ProfileInput,
     clear_key: bool,
-) -> AppResult<config::PublicConfig> {
+) -> AppResult<config::PublicSettings> {
     guard(&window, true)?;
     let _lock = state.config_lock.lock().await;
-    let result = config::save(&app, config, clear_key)?;
+    let mut settings = config::read(&app)?;
+    settings.upsert(input, clear_key)?;
+    let result = config::save(&app, &settings)?;
     for cell in state.runs.lock().await.values() {
         cell.cancelled.store(true, Ordering::SeqCst);
     }
+    let _ = app.emit("ai-config-changed", ());
+    Ok(result)
+}
+#[tauri::command]
+pub async fn ai_activate_config(
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AgentManager>,
+    profile_id: String,
+) -> AppResult<config::PublicSettings> {
+    guard(&window, true)?;
+    let _lock = state.config_lock.lock().await;
+    let mut settings = config::read(&app)?;
+    if settings.active_id == profile_id {
+        return Ok(settings.public());
+    }
+    settings.activate(&profile_id)?;
+    let result = config::save(&app, &settings)?;
+    for cell in state.runs.lock().await.values() {
+        cell.cancelled.store(true, Ordering::SeqCst);
+    }
+    let _ = app.emit("ai-config-changed", ());
+    Ok(result)
+}
+#[tauri::command]
+pub async fn ai_delete_config(
+    window: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AgentManager>,
+    profile_id: String,
+) -> AppResult<config::PublicSettings> {
+    guard(&window, true)?;
+    let _lock = state.config_lock.lock().await;
+    let mut settings = config::read(&app)?;
+    settings.remove(&profile_id)?;
+    let result = config::save(&app, &settings)?;
+    for cell in state.runs.lock().await.values() {
+        cell.cancelled.store(true, Ordering::SeqCst);
+    }
+    let _ = app.emit("ai-config-changed", ());
     Ok(result)
 }
 #[tauri::command]
@@ -349,11 +397,12 @@ pub async fn ai_test_config(
     window: WebviewWindow,
     app: AppHandle,
     state: State<'_, AgentManager>,
+    profile_id: String,
 ) -> AppResult<String> {
     guard(&window, true)?;
     let config = {
         let _lock = state.config_lock.lock().await;
-        config::read(&app)?
+        config::read(&app)?.profile(&profile_id)?.config.clone()
     };
     let result = config::completion(
         &config,
@@ -363,11 +412,10 @@ pub async fn ai_test_config(
     .await?;
     if result["choices"][0]["message"]["content"]
         .as_str()
+        .filter(|content| !content.trim().is_empty())
         .is_none()
     {
-        return Err(AppError::invalid_input(
-            "服务返回格式不兼容 Chat Completions",
-        ));
+        return Err(AppError::invalid_input("服务未返回兼容的文本响应"));
     }
     Ok("模型连接成功（未发送服务器或数据库数据）".into())
 }
@@ -378,12 +426,19 @@ pub async fn ai_start(
     state: State<'_, AgentManager>,
     target: Target,
     prompt: String,
+    profile_id: String,
 ) -> AppResult<Snapshot> {
     guard(&window, false)?;
     validate_prompt(&prompt)?;
     // Serialize insertion with settings changes so a disabled config cannot race a new run.
     let _config_lock = state.config_lock.lock().await;
-    let config = config::read(&app)?;
+    let settings = config::read(&app)?;
+    if settings.active_id != profile_id {
+        return Err(AppError::invalid_input(
+            "AI 配置已变化，请重新选择配置后发送",
+        ));
+    }
+    let config = settings.active()?;
     config.ready()?;
     let (target_label, revision) = bind(&app, &target).await?;
     let dialect = if target.kind == "database" {
@@ -535,7 +590,7 @@ async fn step(app: &AppHandle, run: &mut Run, cell: &Cell) -> AppResult<()> {
         if !content.is_empty() {
             run.entry("assistant", content.clone(), None);
         }
-        run.messages.push(json!({"role":"assistant","content":content,"tool_calls":[{"id":call_id,"type":"function","function":{"name":name,"arguments":args}}]}));
+        run.messages.push(protocol::history_message(message));
         if let Some((command, reason)) = action.approval() {
             let view = Approval {
                 id: id(),
@@ -562,8 +617,7 @@ async fn step(app: &AppHandle, run: &mut Run, cell: &Cell) -> AppResult<()> {
             return Err(AppError::invalid_input("模型没有返回文本或有效工具调用"));
         }
         let content = clip(content, 16000);
-        run.messages
-            .push(json!({"role":"assistant","content":content}));
+        run.messages.push(protocol::history_message(message));
         run.entry("assistant", content, None);
         run.status = "completed".into();
     }

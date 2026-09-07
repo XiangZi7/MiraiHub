@@ -4,20 +4,42 @@ export interface AgentTarget {
   database: string
 }
 export interface AgentConfig {
+  id: string
+  name: string
+  apiFormat: AgentApiFormat
   enabled: boolean
   baseUrl: string
   model: string
   hasApiKey: boolean
 }
 export interface AgentConfigInput {
+  apiFormat: AgentApiFormat
   enabled: boolean
   baseUrl: string
   model: string
   apiKey: string
 }
 export interface AgentModelListInput {
+  profileId?: string
+  apiFormat: AgentApiFormat
   baseUrl: string
   apiKey: string
+  clearKey: boolean
+}
+export type AgentApiFormat = 'openai' | 'anthropic'
+export interface AgentSettings {
+  activeId: string
+  profiles: AgentConfig[]
+}
+export interface AgentProfileInput {
+  id?: string
+  name: string
+  config: AgentConfigInput
+}
+export interface AgentProfileDraft extends AgentConfigInput {
+  id?: string
+  name: string
+  hasApiKey: boolean
   clearKey: boolean
 }
 export interface AgentEntry {

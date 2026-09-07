@@ -35,6 +35,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         agent::ai_get_config,
         agent::ai_list_models,
         agent::ai_save_config,
+        agent::ai_activate_config,
+        agent::ai_delete_config,
         agent::ai_test_config,
         agent::ai_start,
         agent::ai_send,

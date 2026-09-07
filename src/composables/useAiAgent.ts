@@ -10,7 +10,11 @@ import * as api from '@/api/agent'
 import type { AgentRun, AgentTarget } from '@/types/agent'
 
 /** Only backend-returned snapshots drive tool execution/approval UI. */
-export function useAiAgent(target: Ref<AgentTarget>, active: Ref<boolean>) {
+export function useAiAgent(
+  target: Ref<AgentTarget>,
+  active: Ref<boolean>,
+  profileId: Ref<string>
+) {
   // 会话状态只保存在内存，不写入 localStorage。
   const state = reactive({
     run: null as AgentRun | null,
@@ -66,6 +70,7 @@ export function useAiAgent(target: Ref<AgentTarget>, active: Ref<boolean>) {
       !prompt.trim() ||
       !target.value.sessionId ||
       !active.value ||
+      !profileId.value ||
       state.busy ||
       awaitingApproval.value
     )
@@ -77,7 +82,7 @@ export function useAiAgent(target: Ref<AgentTarget>, active: Ref<boolean>) {
       const next =
         state.run?.status === 'completed'
           ? await api.send(state.run.id, prompt.trim())
-          : await api.start({ ...target.value }, prompt.trim())
+          : await api.start({ ...target.value }, prompt.trim(), profileId.value)
       if (!accept(next, token)) return false
       await advance(token)
       return true

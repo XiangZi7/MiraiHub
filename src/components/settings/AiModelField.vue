@@ -2,8 +2,11 @@
 import { computed, nextTick, reactive, useId, useTemplateRef, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import { useAgentModels } from '@/composables/useAgentModels'
+import type { AgentApiFormat } from '@/types/agent'
 
 const props = defineProps<{
+  profileId?: string
+  apiFormat: AgentApiFormat
   baseUrl: string
   apiKey: string
   clearKey: boolean
@@ -12,6 +15,8 @@ const props = defineProps<{
 const model = defineModel<string>({ required: true })
 const { models, fetching, error, message, fetchModels } = useAgentModels(
   () => ({
+    profileId: props.profileId,
+    apiFormat: props.apiFormat,
     baseUrl: props.baseUrl,
     apiKey: props.apiKey,
     clearKey: props.clearKey,

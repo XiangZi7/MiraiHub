@@ -6,6 +6,8 @@ use tauri::{AppHandle, Manager};
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub api_format: ApiFormat,
     pub enabled: bool,
     pub base_url: String,
     pub model: String,
@@ -15,6 +17,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            api_format: ApiFormat::Openai,
             enabled: false,
             base_url: "https://api.openai.com/v1".into(),
             model: String::new(),
@@ -25,14 +28,20 @@ impl Default for Config {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicConfig {
+    pub id: String,
+    pub name: String,
+    pub api_format: ApiFormat,
     pub enabled: bool,
     pub base_url: String,
     pub model: String,
     pub has_api_key: bool,
 }
 impl Config {
-    pub fn public(&self) -> PublicConfig {
+    pub fn public(&self, id: &str, name: &str) -> PublicConfig {
         PublicConfig {
+            id: id.into(),
+            name: name.into(),
+            api_format: self.api_format,
             enabled: self.enabled,
             base_url: self.base_url.clone(),
             model: self.model.clone(),
@@ -65,16 +74,136 @@ pub fn validate_url(raw: &str) -> AppResult<reqwest::Url> {
     }
     Ok(url)
 }
-pub fn read(app: &AppHandle) -> AppResult<Config> {
+#[derive(Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiFormat {
+    #[default]
+    Openai,
+    Anthropic,
+}
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Profile {
+    pub id: String,
+    pub name: String,
+    pub config: Config,
+}
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Settings {
+    pub active_id: String,
+    pub profiles: Vec<Profile>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicSettings {
+    pub active_id: String,
+    pub profiles: Vec<PublicConfig>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProfileInput {
+    pub id: Option<String>,
+    pub name: String,
+    pub config: Config,
+}
+impl Settings {
+    pub fn public(&self) -> PublicSettings {
+        PublicSettings {
+            active_id: self.active_id.clone(),
+            profiles: self
+                .profiles
+                .iter()
+                .map(|p| p.config.public(&p.id, &p.name))
+                .collect(),
+        }
+    }
+    pub fn profile(&self, id: &str) -> AppResult<&Profile> {
+        self.profiles
+            .iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| AppError::invalid_input("AI 配置不存在，请重新选择或添加配置"))
+    }
+    pub fn active(&self) -> AppResult<Config> {
+        Ok(self.profile(&self.active_id)?.config.clone())
+    }
+    pub fn upsert(&mut self, input: ProfileInput, clear_key: bool) -> AppResult<()> {
+        let name = input.name.trim();
+        if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
+            return Err(AppError::invalid_input("请填写配置名称（最多 80 字）"));
+        }
+        let previous = match input.id.as_deref() {
+            Some(id) => self.profile(id)?.config.clone(),
+            None => Config::default(),
+        };
+        let config = resolve_credentials(input.config, previous, clear_key)?;
+        if config.enabled {
+            config.ready()?;
+        }
+        if let Some(id) = input.id {
+            let profile = self.profiles.iter_mut().find(|p| p.id == id).unwrap();
+            profile.name = name.into();
+            profile.config = config;
+            self.active_id = id;
+        } else {
+            if self.profiles.len() >= 100 {
+                return Err(AppError::invalid_input("最多保存 100 个 AI 配置"));
+            }
+            let id = super::id();
+            self.profiles.push(Profile {
+                id: id.clone(),
+                name: name.into(),
+                config,
+            });
+            self.active_id = id;
+        }
+        Ok(())
+    }
+    pub fn activate(&mut self, id: &str) -> AppResult<()> {
+        self.profile(id)?.config.ready()?;
+        self.active_id = id.into();
+        Ok(())
+    }
+    pub fn remove(&mut self, id: &str) -> AppResult<()> {
+        self.profile(id)?;
+        self.profiles.retain(|p| p.id != id);
+        if self.active_id == id {
+            // Deletion must not silently route the next prompt to another provider.
+            self.active_id.clear();
+        }
+        Ok(())
+    }
+}
+fn decode(bytes: &[u8]) -> AppResult<Settings> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Stored {
+        Current(Settings),
+        Legacy(Config),
+    }
+    let result = serde_json::from_slice::<Stored>(bytes)
+        .map_err(|_| AppError::internal("AI 设置损坏，无法读取"))?;
+    Ok(match result {
+        Stored::Current(settings) => settings,
+        Stored::Legacy(config) => Settings {
+            active_id: "legacy-default".into(),
+            profiles: vec![Profile {
+                id: "legacy-default".into(),
+                name: "原有配置".into(),
+                config,
+            }],
+        },
+    })
+}
+pub fn read(app: &AppHandle) -> AppResult<Settings> {
     let path = app
         .path()
         .app_data_dir()
         .map_err(|_| AppError::internal("无法定位设置目录"))?
         .join("ai-settings.bin");
     match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&protect(&bytes, false)?)
-            .map_err(|_| AppError::internal("AI 设置损坏，无法解密")),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
+        Ok(bytes) => decode(&protect(&bytes, false)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Settings::default()),
         Err(error) => Err(error.into()),
     }
 }
@@ -103,11 +232,7 @@ pub(super) fn resolve_credentials(
     }
     Ok(next)
 }
-pub fn save(app: &AppHandle, next: Config, clear_key: bool) -> AppResult<PublicConfig> {
-    let next = resolve_credentials(next, read(app)?, clear_key)?;
-    if next.enabled {
-        next.ready()?;
-    }
+pub fn save(app: &AppHandle, next: &Settings) -> AppResult<PublicSettings> {
     let dir = app
         .path()
         .app_data_dir()
@@ -115,7 +240,14 @@ pub fn save(app: &AppHandle, next: Config, clear_key: bool) -> AppResult<PublicC
     std::fs::create_dir_all(&dir)?;
     let bytes = serde_json::to_vec(&next).map_err(|_| AppError::internal("保存 AI 设置失败"))?;
     // Entire file is encrypted for the current OS user; never write a plaintext temp file.
-    std::fs::write(dir.join("ai-settings.bin"), protect(&bytes, true)?)?;
+    let temporary = dir.join("ai-settings.bin.tmp");
+    let encrypted = protect(&bytes, true)?;
+    use std::io::Write;
+    let mut file = std::fs::File::create(&temporary)?;
+    file.write_all(&encrypted)?;
+    file.sync_all()?;
+    drop(file);
+    std::fs::rename(&temporary, dir.join("ai-settings.bin"))?;
     Ok(next.public())
 }
 #[cfg(windows)]
@@ -180,22 +312,7 @@ pub async fn completion(
     messages: &[serde_json::Value],
     tools: Option<serde_json::Value>,
 ) -> AppResult<serde_json::Value> {
-    config.ready()?;
-    let mut body = serde_json::json!({"model":config.model,"messages":messages,"stream":false,"max_completion_tokens":4096});
-    if let Some(tools) = tools {
-        body["tools"] = tools;
-        body["parallel_tool_calls"] = false.into();
-    }
-    let mut request = client()?
-        .post(format!(
-            "{}/chat/completions",
-            config.base_url.trim_end_matches('/')
-        ))
-        .json(&body);
-    if !config.api_key.is_empty() {
-        request = request.bearer_auth(&config.api_key);
-    }
-    request_json(request).await
+    super::protocol::completion(config, messages, tools).await
 }
 pub(super) async fn request_json(request: reqwest::RequestBuilder) -> AppResult<serde_json::Value> {
     let mut response = request.send().await.map_err(|_| {
@@ -223,6 +340,95 @@ pub(super) async fn request_json(request: reqwest::RequestBuilder) -> AppResult<
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn input(id: Option<&str>, name: &str, url: &str, key: &str) -> ProfileInput {
+        ProfileInput {
+            id: id.map(str::to_owned),
+            name: name.into(),
+            config: Config {
+                enabled: true,
+                base_url: url.into(),
+                model: "test-model".into(),
+                api_key: key.into(),
+                ..Config::default()
+            },
+        }
+    }
+    #[test]
+    fn migrates_old_encrypted_payload_without_losing_key_or_enablement() {
+        let settings = decode(br#"{"enabled":true,"baseUrl":"https://old.example/v1","model":"old-model","apiKey":"old-test-key"}"#).unwrap();
+        assert_eq!(settings.active_id, "legacy-default");
+        let active = settings.active().unwrap();
+        assert_eq!(active.api_key, "old-test-key");
+        assert_eq!(active.api_format, ApiFormat::Openai);
+        let serialized = serde_json::to_vec(&settings).unwrap();
+        assert_eq!(
+            decode(&serialized).unwrap().active().unwrap().model,
+            "old-model"
+        );
+        let public = serde_json::to_string(&settings.public()).unwrap();
+        assert!(!public.contains("old-test-key"));
+        assert!(public.contains("hasApiKey"));
+        assert!(decode(br#"{"unexpected":true}"#).is_err());
+    }
+    #[test]
+    fn multiple_profiles_isolate_keys_and_reject_stale_updates() {
+        let mut settings = Settings::default();
+        settings
+            .upsert(
+                input(None, "Official", "https://same.example/v1", "key-a"),
+                false,
+            )
+            .unwrap();
+        let first = settings.active_id.clone();
+        settings
+            .upsert(
+                input(None, "Relay", "https://same.example/v1", "key-b"),
+                false,
+            )
+            .unwrap();
+        let second = settings.active_id.clone();
+        settings
+            .upsert(
+                input(Some(&first), "Renamed", "https://same.example/v1", ""),
+                false,
+            )
+            .unwrap();
+        assert_eq!(settings.active().unwrap().api_key, "key-a");
+        assert_eq!(settings.profile(&second).unwrap().config.api_key, "key-b");
+        assert!(settings
+            .upsert(
+                input(Some(&first), "Official", "https://other.example/v1", ""),
+                false
+            )
+            .is_err());
+        settings
+            .upsert(input(None, "No key", "https://same.example/v1", ""), false)
+            .unwrap();
+        assert!(settings.active().unwrap().api_key.is_empty());
+        settings.activate(&second).unwrap();
+        assert_eq!(settings.active().unwrap().api_key, "key-b");
+        settings.remove(&second).unwrap();
+        assert!(settings.active_id.is_empty());
+        assert!(settings.activate(&second).is_err());
+        assert!(settings
+            .upsert(
+                input(Some(&second), "Stale", "https://same.example/v1", ""),
+                false
+            )
+            .is_err());
+        settings
+            .upsert(
+                input(
+                    Some(&first),
+                    "Official",
+                    "https://same.example/v1",
+                    "ignored",
+                ),
+                true,
+            )
+            .unwrap();
+        assert!(settings.active().unwrap().api_key.is_empty());
+    }
     #[test]
     fn endpoint_policy() {
         for url in [
@@ -299,11 +505,70 @@ mod http_tests {
     }
     fn config(url: String) -> Config {
         Config {
+            api_format: ApiFormat::Openai,
             enabled: true,
             base_url: url,
             model: "mock-tool-model".into(),
             api_key: "test-placeholder-only".into(),
         }
+    }
+    #[tokio::test]
+    async fn claude_tool_round_trip_uses_native_messages_and_headers() {
+        let response = r#"{"role":"assistant","stop_reason":"tool_use","content":[{"type":"text","text":"Checking"},{"type":"tool_use","id":"toolu_1","name":"server_status","input":{"probe":"disk"}}]}"#;
+        let (url, server) = mock("200 OK", response, "").await;
+        let mut claude = config(url);
+        claude.api_format = ApiFormat::Anthropic;
+        let initial = vec![
+            serde_json::json!({"role":"system","content":"system rule"}),
+            serde_json::json!({"role":"user","content":"check disk"}),
+        ];
+        let result = completion(
+            &claude,
+            &initial,
+            Some(super::super::policy::definitions("ssh")),
+        )
+        .await
+        .unwrap();
+        let request = String::from_utf8(server.await.unwrap()).unwrap();
+        assert!(request.starts_with("POST /v1/messages HTTP/1.1"));
+        assert!(request.contains("x-api-key: test-placeholder-only"));
+        assert!(request.contains("anthropic-version: 2023-06-01"));
+        assert!(!request.contains("authorization:"));
+        let body: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(body["system"][0]["text"], "system rule");
+        assert_eq!(body["tools"][0]["name"], "server_status");
+        assert!(body["tools"][0]["input_schema"].is_object());
+        assert_eq!(body["tool_choice"]["disable_parallel_tool_use"], true);
+        assert_eq!(body["max_tokens"], 4096);
+        assert_eq!(body["messages"].as_array().unwrap().len(), 1);
+        let call = &result["choices"][0]["message"]["tool_calls"][0];
+        assert_eq!(call["id"], "toolu_1");
+        assert_eq!(call["function"]["arguments"], "{\"probe\":\"disk\"}");
+        let (url, server) = mock(
+            "200 OK",
+            r#"{"content":[{"type":"text","text":"Done"}],"stop_reason":"end_turn"}"#,
+            "",
+        )
+        .await;
+        claude.base_url = url;
+        let mut history = initial;
+        history.push(super::super::protocol::history_message(
+            &result["choices"][0]["message"],
+        ));
+        history.push(
+            serde_json::json!({"role":"tool","tool_call_id":"toolu_1","content":"disk output"}),
+        );
+        let followup = completion(&claude, &history, None).await.unwrap();
+        assert_eq!(followup["choices"][0]["message"]["content"], "Done");
+        let request = String::from_utf8(server.await.unwrap()).unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(body["messages"][1]["content"][1]["type"], "tool_use");
+        assert_eq!(body["messages"][2]["role"], "user");
+        assert_eq!(body["messages"][2]["content"][0]["tool_use_id"], "toolu_1");
+        assert_eq!(body["messages"][2]["content"][0]["content"], "disk output");
+        assert!(!request.contains("_anthropic_content"));
     }
     #[tokio::test]
     async fn sends_compatible_tool_request_and_parses_response() {
@@ -326,7 +591,7 @@ mod http_tests {
         let json: serde_json::Value =
             serde_json::from_str(text.split_once("\r\n\r\n").unwrap().1).unwrap();
         assert_eq!(json["parallel_tool_calls"], false);
-        assert_eq!(json["max_completion_tokens"], 4096);
+        assert_eq!(json["max_tokens"], 4096);
         assert_eq!(json["tools"][0]["function"]["name"], "server_status");
         assert_eq!(json["messages"].as_array().unwrap().len(), 1);
     }

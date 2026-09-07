@@ -16,6 +16,8 @@ function fixture() {
   calls.length = 0
   const scope = effectScope()
   const draft = reactive({
+    profileId: 'profile-a',
+    apiFormat: 'openai',
     baseUrl: 'https://models.example/v1',
     apiKey: 'test-key',
     clearKey: false,
@@ -32,6 +34,8 @@ test('model discovery uses the unsaved draft, ignores duplicate clicks and expos
     assert.equal(await models.fetchModels(), false)
     assert.equal(calls.length, 1)
     assert.deepEqual(calls[0].input, {
+      profileId: 'profile-a',
+      apiFormat: 'openai',
       baseUrl: 'https://models.example/v1',
       apiKey: 'test-key',
       clearKey: false,
@@ -102,5 +106,27 @@ test('closing the settings scope discards in-flight results and errors', async (
     assert.deepEqual(models.models.value, [])
     assert.equal(models.error.value, '')
     assert.equal(models.fetching.value, false)
+  }
+})
+
+test('changing a profile or API format invalidates model results even at the same address', async () => {
+  for (const [field, value] of [
+    ['profileId', 'profile-b'],
+    ['apiFormat', 'anthropic'],
+  ]) {
+    const { models, draft, scope } = fixture()
+    try {
+      const pending = models.fetchModels()
+      draft[field] = value
+      calls[0].resolve(['wrong-profile-model'])
+      assert.equal(await pending, false)
+      assert.deepEqual(models.models.value, [])
+      const fresh = models.fetchModels()
+      assert.equal(calls[1].input[field], value)
+      calls[1].resolve(['right-profile-model'])
+      assert.equal(await fresh, true)
+    } finally {
+      scope.stop()
+    }
   }
 })
