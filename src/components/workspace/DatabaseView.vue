@@ -29,6 +29,7 @@ import {
   useDatabaseSession,
 } from '@/composables/useDatabaseSession'
 import { useDatabaseTabActions } from '@/composables/useDatabaseTabActions'
+import { useDatabaseSidebarWidth } from '@/composables/useDatabaseSidebarWidth'
 import { activeAfterTabClose } from '@/utils/tab-actions'
 import { useSavedDatabaseQueries } from '@/composables/useSavedDatabaseQueries'
 import { toast } from '@/composables/useToast'
@@ -55,6 +56,7 @@ import DatabaseQueryResults from './database/DatabaseQueryResults.vue'
 import DatabaseQueryResizeHandle from './database/DatabaseQueryResizeHandle.vue'
 import DatabaseRoutineView from './database/DatabaseRoutineView.vue'
 import DatabaseTableDesigner from './database/DatabaseTableDesigner.vue'
+import DatabaseTableOverview from './database/DatabaseTableOverview.vue'
 import DatabaseTableView from './database/DatabaseTableView.vue'
 import DatabaseTransferDialog, {
   type DatabaseTransferMode,
@@ -104,6 +106,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string]
 }>()
+
+const databaseContainer = useTemplateRef<HTMLElement>('databaseContainer')
+const {
+  width: sidebarWidth,
+  min: sidebarMin,
+  max: sidebarMax,
+  style: sidebarStyle,
+} = useDatabaseSidebarWidth(databaseContainer)
 
 // AI 布局与查询编辑器独立，审批始终绑定后端会话及活动库。
 const agentState = reactive({ agentOpen: false, agentSplit: false })
@@ -177,25 +187,11 @@ const restoredQueryTabs = restoredWorkspace.tabs.map((tab): QueryTab => {
     savedQueryId: saved?.id ?? null,
   }
 })
-const initialQueryTabs = restoredQueryTabs.length
-  ? restoredQueryTabs
-  : [
-      {
-        id: 'query-1',
-        label: 'Query 1',
-        icon: 'lucide:square-terminal',
-        closable: true,
-        kind: 'query' as const,
-        sql: 'SELECT 1;',
-        database: configuredDatabase,
-        savedQueryId: null,
-      },
-    ]
 const queryState = reactive({
-  tabs: [...initialQueryTabs] as WorkspaceTab[],
-  activeId: initialQueryTabs.some(tab => tab.id === restoredWorkspace.activeId)
+  tabs: [...restoredQueryTabs] as WorkspaceTab[],
+  activeId: restoredQueryTabs.some(tab => tab.id === restoredWorkspace.activeId)
     ? restoredWorkspace.activeId
-    : (initialQueryTabs[0]?.id ?? 'query-1'),
+    : (restoredQueryTabs[0]?.id ?? ''),
 })
 const historyEntries = shallowRef<DatabaseHistoryEntry[]>([])
 const historyMenu = reactive({ open: false, x: 0, y: 0 })
@@ -364,6 +360,7 @@ const persistQueryWorkspaceSoon = useDebounceFn(persistQueryWorkspace, 220, {
 
 watch(activeQuery, tab => {
   if (tab) lastActiveQueryId.value = tab.id
+  else if (!persistedQueryTabs.value.length) lastActiveQueryId.value = ''
 })
 watch(
   [persistedQueryTabs, lastActiveQueryId],
@@ -528,7 +525,6 @@ function closeQueryTabs(ids: string[]): void {
   const next = activeAfterTabClose(queryState.tabs, queryState.activeId, ids)
   queryState.tabs = queryState.tabs.filter(tab => !closing.has(tab.id))
   queryState.activeId = next
-  if (!queryState.tabs.length) addQueryTab()
 }
 const queryTabActions = useDatabaseTabActions({
   tabs: () => queryState.tabs,
@@ -1103,10 +1099,12 @@ watch(
 
   <div
     v-else
+    ref="databaseContainer"
     class="pane flex-1 flex-row"
   >
     <DatabaseObjectTree
       v-show="!agentOpen || agentSplit"
+      :style="sidebarStyle"
       :database-name="databaseName"
       :database-kind="databaseKind"
       :active-database="session?.database ?? ''"
@@ -1149,6 +1147,15 @@ watch(
       @remove-database="requestDeleteDatabase"
       @rename-object="showNameDialog('rename-object', $event)"
       @remove-object="requestDeleteObject"
+    />
+    <AppResizeHandle
+      v-show="!agentOpen || agentSplit"
+      v-model="sidebarWidth"
+      pane-side="left"
+      :min="sidebarMin"
+      :max="sidebarMax"
+      label="调整数据库侧栏宽度"
+      overlay
     />
 
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1334,6 +1341,14 @@ watch(
             @connect="connect"
           />
           <template v-else>
+            <DatabaseTableOverview
+              v-if="!activeTab"
+              :objects="objects"
+              :loading="objectsLoading"
+              :error="objectsError"
+              @open="openObject"
+              @refresh="refreshObjects"
+            />
             <div
               v-show="Boolean(activeQuery)"
               class="query-workspace"

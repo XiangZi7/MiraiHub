@@ -18,6 +18,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentApprovalCard from './AgentApprovalCard.vue'
+import AgentMarkdown from './AgentMarkdown.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -198,7 +199,10 @@ watch(
       ref="scroll"
       class="agent-scroll"
     >
-      <div class="agent-intro">
+      <div
+        v-if="!run"
+        class="agent-intro"
+      >
         <div class="bot-avatar">
           <AppIcon
             name="lucide:bot"
@@ -264,12 +268,29 @@ watch(
           :key="`${run.id}-${index}`"
           class="message"
           :class="entry.role"
+          :aria-label="entry.role === 'user' ? '你的消息' : undefined"
         >
           <template v-if="entry.role === 'user' || entry.role === 'assistant'"
-            ><span class="message-role">{{
-              entry.role === 'user' ? '你' : 'AI Agent'
-            }}</span>
-            <p>{{ entry.text }}</p></template
+            ><div
+              v-if="entry.role === 'assistant'"
+              class="message-author"
+            >
+              <span
+                class="message-avatar"
+                aria-hidden="true"
+              >
+                <AppIcon
+                  name="lucide:bot"
+                  :size="14"
+                />
+              </span>
+              <span>AI Agent</span>
+            </div>
+            <AgentMarkdown
+              v-if="entry.role === 'assistant'"
+              :content="entry.text"
+            />
+            <p v-else>{{ entry.text }}</p></template
           >
           <details
             v-else
@@ -546,21 +567,45 @@ watch(
 .message {
   min-width: 0;
 }
-.message-role {
-  font-size: 10px;
+.message-author {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-txt-2);
+}
+.message-avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
   color: var(--agent-color);
+  background: color-mix(in srgb, var(--agent-color) 18%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--agent-color) 24%, transparent);
 }
 .message p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.8;
-  margin-top: 5px;
+  margin: 0;
+}
+.message.assistant {
+  margin-block: 6px;
 }
 .message.user {
-  margin-left: 20px;
-  padding: 10px 12px;
-  background: #ffffff05;
-  border-radius: 8px;
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 8px 12px;
+  background: var(--color-card);
+  border-radius: 12px;
+}
+.message.user p {
+  line-height: 1.65;
 }
 .message summary {
   display: flex;

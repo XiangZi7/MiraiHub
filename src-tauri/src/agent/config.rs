@@ -251,7 +251,7 @@ pub fn save(app: &AppHandle, next: &Settings) -> AppResult<PublicSettings> {
     Ok(next.public())
 }
 #[cfg(windows)]
-fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
+pub(super) fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
     use windows::Win32::{
         Foundation::{LocalFree, HLOCAL},
         Security::Cryptography::{
@@ -292,7 +292,7 @@ fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
     }
 }
 #[cfg(not(windows))]
-fn protect(_bytes: &[u8], _encrypt: bool) -> AppResult<Vec<u8>> {
+pub(super) fn protect(_bytes: &[u8], _encrypt: bool) -> AppResult<Vec<u8>> {
     Err(AppError::invalid_input(
         "此平台尚未接入系统密钥存储，AI 配置暂不可保存",
     ))

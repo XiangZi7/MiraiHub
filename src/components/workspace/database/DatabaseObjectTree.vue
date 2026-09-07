@@ -507,7 +507,7 @@ function handleContextAction(id: string): void {
 
 <template>
   <nav
-    class="border-line-soft bg-panel flex w-[248px] shrink-0 flex-col border-r"
+    class="border-line-soft bg-panel flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-r"
     aria-label="数据库对象"
     @contextmenu.prevent="showContext($event, 'root')"
   >

@@ -103,12 +103,12 @@ watch(
           )
         "
         :title="`${object.schema}.${object.name}${object.identity ? `(${object.identity})` : ''}（双击打开）`"
-        @click="selectObject(object)"
         @dblclick="emit('open', object)"
         @contextmenu.prevent.stop="emit('context', $event, object)"
       >
         <AppIcon
           v-if="hasColumns()"
+          @click="selectObject(object)"
           name="lucide:chevron-right"
           :size="11"
           :class="

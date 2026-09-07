@@ -673,13 +673,13 @@ watch(
                           setCellValue(rowIndex, columnIndex, $event)
                         "
                       />
-                      <AppButton
+                      <!-- <AppButton
                         variant="bare"
                         class="bg-raised text-txt-4 hover:text-violet absolute top-1/2 right-1 hidden -translate-y-1/2 rounded px-1 text-[9px] group-focus-within/cell:block"
                         title="设为 NULL"
                         @click="setCellValue(rowIndex, columnIndex, null)"
                         >NULL</AppButton
-                      >
+                      > -->
                     </template>
                     <span
                       v-else-if="row[columnIndex] === null"
