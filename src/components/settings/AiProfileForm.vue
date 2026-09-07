@@ -4,6 +4,7 @@ import type { AgentProfileDraft } from '@/types/agent'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AiModelField from './AiModelField.vue'
+import AiCapacityFields from './AiCapacityFields.vue'
 
 const { t } = useI18n()
 defineProps<{ disabled: boolean }>()
@@ -110,6 +111,10 @@ const formats = [
         type="checkbox"
       />{{ t('保存时清除旧密钥') }}</label
     >
+    <AiCapacityFields
+      v-model="draft.limits"
+      :disabled="disabled"
+    />
   </fieldset>
 </template>
 <style scoped>

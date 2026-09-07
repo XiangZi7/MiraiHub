@@ -1,4 +1,5 @@
 //! AI credentials never enter generic frontend settings or logs.
+use super::limits::Limits;
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -6,6 +7,8 @@ use tauri::{AppHandle, Manager};
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub limits: Limits,
     #[serde(default)]
     pub api_format: ApiFormat,
     pub enabled: bool,
@@ -17,6 +20,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            limits: Limits::default(),
             api_format: ApiFormat::Openai,
             enabled: false,
             base_url: "https://api.openai.com/v1".into(),
@@ -28,6 +32,7 @@ impl Default for Config {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicConfig {
+    pub limits: Limits,
     pub id: String,
     pub name: String,
     pub api_format: ApiFormat,
@@ -39,6 +44,7 @@ pub struct PublicConfig {
 impl Config {
     pub fn public(&self, id: &str, name: &str) -> PublicConfig {
         PublicConfig {
+            limits: self.limits,
             id: id.into(),
             name: name.into(),
             api_format: self.api_format,
@@ -49,6 +55,7 @@ impl Config {
         }
     }
     pub fn ready(&self) -> AppResult<()> {
+        self.limits.validate()?;
         validate_url(&self.base_url)?;
         if !self.enabled || self.model.trim().is_empty() {
             return Err(AppError::invalid_input(
@@ -213,6 +220,7 @@ pub(super) fn resolve_credentials(
     previous: Config,
     clear_key: bool,
 ) -> AppResult<Config> {
+    next.limits.validate()?;
     next.base_url = next.base_url.trim().trim_end_matches('/').into();
     next.model = next.model.trim().into();
     next.api_key = next.api_key.trim().into();
@@ -360,6 +368,7 @@ mod tests {
         let active = settings.active().unwrap();
         assert_eq!(active.api_key, "old-test-key");
         assert_eq!(active.api_format, ApiFormat::Openai);
+        assert_eq!(active.limits, Limits::default());
         let serialized = serde_json::to_vec(&settings).unwrap();
         assert_eq!(
             decode(&serialized).unwrap().active().unwrap().model,
@@ -369,6 +378,32 @@ mod tests {
         assert!(!public.contains("old-test-key"));
         assert!(public.contains("hasApiKey"));
         assert!(decode(br#"{"unexpected":true}"#).is_err());
+    }
+    #[test]
+    fn capacity_is_migrated_and_persisted_per_profile() {
+        let mut settings = decode(br#"{"activeId":"old","profiles":[{"id":"old","name":"Existing","config":{"enabled":true,"baseUrl":"https://same.example/v1","model":"test-model"}}]}"#).unwrap();
+        assert_eq!(settings.active().unwrap().limits, Limits::default());
+        let mut expanded = input(None, "Expanded", "https://same.example/v1", "test-key");
+        let limits = Limits {
+            max_steps: 32,
+            max_context_kb: 1000,
+            max_messages: 256,
+        };
+        expanded.config.limits = limits;
+        settings.upsert(expanded, false).unwrap();
+        let saved = decode(&serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert_eq!(saved.active().unwrap().limits, limits);
+        assert_eq!(
+            saved.profile("old").unwrap().config.limits,
+            Limits::default()
+        );
+        assert_eq!(saved.public().profiles[1].limits, limits);
+        assert!(saved.active().unwrap().limits.check_request(8, &[]).is_ok());
+        let mut invalid = input(Some("old"), "Invalid", "https://same.example/v1", "");
+        invalid.config.enabled = false;
+        invalid.config.limits.max_steps = 0;
+        assert!(settings.upsert(invalid, false).is_err());
+        assert_eq!(settings.profile("old").unwrap().name, "Existing");
     }
     #[test]
     fn multiple_profiles_isolate_keys_and_reject_stale_updates() {
@@ -505,6 +540,7 @@ mod http_tests {
     }
     fn config(url: String) -> Config {
         Config {
+            limits: Limits::default(),
             api_format: ApiFormat::Openai,
             enabled: true,
             base_url: url,

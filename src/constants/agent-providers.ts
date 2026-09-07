@@ -1,4 +1,5 @@
 import type { AgentApiFormat, AgentProfileDraft } from '@/types/agent'
+import { DEFAULT_AGENT_LIMITS } from './agent-limits'
 
 export const AGENT_PROVIDER_PRESETS = [
   {
@@ -56,5 +57,6 @@ export function newAgentProfile(presetId = 'openai'): AgentProfileDraft {
     hasApiKey: false,
     clearKey: false,
     enabled: true,
+    limits: { ...DEFAULT_AGENT_LIMITS },
   }
 }

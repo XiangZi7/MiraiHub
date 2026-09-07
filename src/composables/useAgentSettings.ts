@@ -6,11 +6,20 @@ import type {
   AgentSettings,
 } from '@/types/agent'
 import { newAgentProfile } from '@/constants/agent-providers'
+import {
+  DEFAULT_AGENT_LIMITS,
+  validAgentLimits,
+} from '@/constants/agent-limits'
 import { IS_TAURI } from '@/utils/window'
 import { useI18n } from 'vue-i18n'
 
 function editProfile(profile: AgentConfig): AgentProfileDraft {
-  return { ...profile, apiKey: '', clearKey: false }
+  return {
+    ...profile,
+    limits: { ...(profile.limits ?? DEFAULT_AGENT_LIMITS) },
+    apiKey: '',
+    clearKey: false,
+  }
 }
 export function useAgentSettings() {
   const { t } = useI18n()
@@ -92,6 +101,10 @@ export function useAgentSettings() {
     state.message = ''
     const selected = state.selectedId
     try {
+      if (!validAgentLimits(current.limits)) {
+        state.error = t('ai.capacityInvalid')
+        return
+      }
       state.settings = await api.saveConfig(
         {
           id: current.id,
@@ -102,6 +115,7 @@ export function useAgentSettings() {
             baseUrl: current.baseUrl,
             model: current.model,
             apiKey: current.apiKey,
+            limits: { ...current.limits },
           },
         },
         current.clearKey

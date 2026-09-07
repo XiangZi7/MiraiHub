@@ -521,6 +521,29 @@ export default {
   'skin.newName': 'Custom skin {number}',
   'common.reset': 'Reset',
   'settings.integerRange': 'Enter an integer between {min} and {max}',
+  标准: 'Standard',
+  增强: 'Enhanced',
+  深度: 'Deep',
+  任务容量: 'Task capacity',
+  容量预设: 'Capacity preset',
+  每轮模型请求次数: 'Model requests per turn',
+  '上下文容量（KB）': 'Context size (KB)',
+  '历史消息数（含工具结果）': 'Messages (including tool results)',
+  '分别调整请求次数、上下文容量和历史消息数':
+    'Adjust request count, context size, and message count',
+  '每份 AI 配置独立保存，SSH 与数据库共用。复杂任务可选择增强或深度。':
+    'Saved per AI profile, shared by SSH and databases. Choose Enhanced or Deep for complex tasks.',
+  '上下文按本地消息大小计算，非 Token 数；实际仍受模型服务限制。调大容量可能增加耗时和用量。':
+    'Context is measured in local message bytes, not tokens; model service limits still apply. Higher limits may increase time and usage.',
+  '保存后生效；可从聊天记录继续原会话。':
+    'Applies after saving. Resume the original conversation from chat history.',
+  '聊天记录在本机加密保存，可从聊天记录菜单管理。':
+    'Chat history is encrypted on this device and can be managed from the history menu.',
+  '保存或切换配置会停止当前任务并新建对话，聊天记录保留。测试仅发送固定测试消息，不读取服务器或数据库。服务商可能按其标准计费。':
+    'Saving or switching profiles stops the current task and starts a new chat; history is kept. Testing only sends a fixed message without reading servers or databases. Provider charges may apply.',
+  'ai.capacitySummary': '{steps} requests · {kb} KB · {messages} messages',
+  'ai.capacityInvalid':
+    'Enter whole numbers: 1–128 model requests, 64–4000 KB of context, and 16–2048 messages.',
   'settings.shortcutLabel':
     '{label}: currently {shortcut}. Press a new shortcut to change it.',
 } satisfies Record<string, string>

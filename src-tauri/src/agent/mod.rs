@@ -1,6 +1,7 @@
 //! Server-owned conversations and immutable, expiring, single-use approvals.
 mod config;
 pub mod history;
+mod limits;
 mod models;
 mod policy;
 mod protocol;
@@ -508,11 +509,12 @@ pub async fn ai_start(
         run.entries = previous.entries;
         run.messages
             .extend(history::resume_messages(previous.messages));
-        if run.messages.len() > 64 {
-            return Err(AppError::invalid_input("对话已达到长度上限，请开始新对话"));
-        }
     }
-    run.messages.push(json!({"role":"user","content":prompt}));
+    let message = json!({"role":"user","content":prompt});
+    run.config
+        .limits
+        .check_context(&run.messages, Some(&message))?;
+    run.messages.push(message);
     run.entry("user", prompt, None);
     let cell = Arc::new(Cell {
         cancelled: AtomicBool::new(false),
@@ -569,10 +571,11 @@ pub async fn ai_send(
     if run.status != "completed" {
         return Err(AppError::invalid_input("请等待当前任务结束或开始新对话"));
     }
-    if run.messages.len() > 64 {
-        return Err(AppError::invalid_input("对话已达到长度上限，请开始新对话"));
-    }
-    run.messages.push(json!({"role":"user","content":prompt}));
+    let message = json!({"role":"user","content":prompt});
+    run.config
+        .limits
+        .check_context(&run.messages, Some(&message))?;
+    run.messages.push(message);
     run.entry("user", prompt, None);
     run.steps = 0;
     run.status = "running".into();
@@ -600,11 +603,7 @@ pub async fn ai_step(
 async fn step(app: &AppHandle, run: &mut Run, cell: &Cell) -> AppResult<()> {
     run.check(cell)?;
     validate_target(app, run).await?;
-    if run.steps >= 8 || serde_json::to_vec(&run.messages).unwrap_or_default().len() > 180000 {
-        return Err(AppError::invalid_input(
-            "已达到本轮工具/上下文上限，请开始新对话并缩小任务范围",
-        ));
-    }
+    run.config.limits.check_request(run.steps, &run.messages)?;
     run.steps += 1;
     let response = config::completion(
         &run.config,

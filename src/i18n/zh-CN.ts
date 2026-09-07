@@ -42,6 +42,9 @@ export default {
   'ai.modelsFound': '已获取 {count} 个模型，请选择支持工具调用的模型。',
   'ai.deleteDescription': '删除「{name}」及其保存的密钥？',
   'ai.saved': '已保存并切换到「{name}」。',
+  'ai.capacitySummary': '{steps} 次请求 · {kb} KB · {messages} 条消息',
+  'ai.capacityInvalid':
+    '请填写整数：每轮模型请求 1–128 次，上下文容量 64–4000 KB，历史消息 16–2048 条。',
   'backup.saved': '备份已保存：{path}',
   'backup.restored':
     '恢复完成：新增 {add}，更新 {update}，跳过 {skip}。未自动连接任何服务器。',

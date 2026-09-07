@@ -11,6 +11,12 @@ export interface AgentConfig {
   baseUrl: string
   model: string
   hasApiKey: boolean
+  limits: AgentLimits
+}
+export interface AgentLimits {
+  maxSteps: number
+  maxContextKb: number
+  maxMessages: number
 }
 export interface AgentConfigInput {
   apiFormat: AgentApiFormat
@@ -18,6 +24,7 @@ export interface AgentConfigInput {
   baseUrl: string
   model: string
   apiKey: string
+  limits: AgentLimits
 }
 export interface AgentModelListInput {
   profileId?: string

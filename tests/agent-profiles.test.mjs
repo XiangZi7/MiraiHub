@@ -29,6 +29,8 @@ const load = sourceLoader({
 const { useAgentSettings } = await load('src/composables/useAgentSettings.ts')
 const { useAgentProfiles } = await load('src/composables/useAgentProfiles.ts')
 const { i18n } = await load('src/i18n/index.ts')
+const { DEFAULT_AGENT_LIMITS, AGENT_CAPACITY_PRESETS, validAgentLimits } =
+  await load('src/constants/agent-limits.ts')
 i18n.global.locale.value = 'zh-CN'
 const flush = () => new Promise(resolve => setImmediate(resolve))
 function fixture(composable) {
@@ -98,6 +100,91 @@ test('profile drafts survive selection changes and saving clears only the saved 
   assert.equal(state.drafts.value.a.apiKey, '')
   assert.equal(api.handlers.size, 0)
 })
+test('capacity settings migrate old profiles and remain independent through save and reload', async () => {
+  const { app, state } = fixture(useAgentSettings)
+  try {
+    await flush()
+    assert.deepEqual({ ...state.draft.value.limits }, DEFAULT_AGENT_LIMITS)
+    state.draft.value.limits = { ...AGENT_CAPACITY_PRESETS[1].limits }
+    state.selectedId.value = 'b'
+    assert.deepEqual({ ...state.draft.value.limits }, DEFAULT_AGENT_LIMITS)
+    state.draft.value.limits.maxSteps = 48
+    state.selectedId.value = 'a'
+    await state.save()
+    assert.deepEqual(
+      api.saved.input.config.limits,
+      AGENT_CAPACITY_PRESETS[1].limits
+    )
+    assert.equal(state.drafts.value.b.limits.maxSteps, 48)
+    assert.equal(
+      state.settings.value.profiles.find(p => p.id === 'a').limits.maxSteps,
+      32
+    )
+    // Re-opening the editor uses the saved values and fresh draft objects.
+    const stored = structuredClone(api.settings)
+    app.unmount()
+    const reopened = fixture(useAgentSettings)
+    api.settings = stored
+    try {
+      await flush()
+      assert.deepEqual(
+        { ...reopened.state.draft.value.limits },
+        AGENT_CAPACITY_PRESETS[1].limits
+      )
+      reopened.state.draft.value.limits.maxSteps = 96
+      assert.equal(
+        reopened.state.settings.value.profiles.find(p => p.id === 'a').limits
+          .maxSteps,
+        32
+      )
+      reopened.state.add()
+      assert.deepEqual(
+        { ...reopened.state.draft.value.limits },
+        DEFAULT_AGENT_LIMITS
+      )
+      reopened.state.draft.value.limits.maxSteps = 100
+      reopened.state.add()
+      assert.equal(reopened.state.draft.value.limits.maxSteps, 8)
+    } finally {
+      reopened.app.unmount()
+    }
+  } finally {
+    app.unmount()
+  }
+})
+
+test('invalid custom capacity blocks saving and all presets stay within backend ranges', async () => {
+  const { app, state } = fixture(useAgentSettings)
+  try {
+    await flush()
+    for (const preset of AGENT_CAPACITY_PRESETS)
+      assert.ok(validAgentLimits(preset.limits))
+    for (const [key, values] of Object.entries({
+      maxSteps: [0, 129, 1.5, '', NaN],
+      maxContextKb: [63, 4001, Infinity],
+      maxMessages: [15, 2049],
+    })) {
+      for (const value of values) {
+        state.draft.value.limits = { ...DEFAULT_AGENT_LIMITS, [key]: value }
+        await state.save()
+        assert.equal(api.saved, null)
+        assert.match(state.error.value, /请填写整数/)
+        assert.equal(state.busy.value, false)
+      }
+    }
+    state.draft.value.limits = {
+      maxSteps: 128,
+      maxContextKb: 4000,
+      maxMessages: 2048,
+    }
+    await state.save()
+    assert.equal(state.error.value, '')
+    assert.equal(api.saved.input.config.limits.maxSteps, 128)
+  } finally {
+    app.unmount()
+  }
+})
+
 test('external activation updates settings markers without overwriting unsaved fields', async () => {
   const { app, state } = fixture(useAgentSettings)
   try {
