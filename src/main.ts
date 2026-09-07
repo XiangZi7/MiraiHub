@@ -20,6 +20,7 @@ import { resolveWindowEntry } from '@/router/window-entry'
 import { loadSettings } from '@/api/settings'
 import { i18n, translateLabel } from '@/i18n'
 import { startLanguageRuntime } from '@/i18n/runtime'
+import { startMainToastReceiver } from '@/composables/useToast'
 
 // 构建时自动收集实际使用的图标，保留离线能力而不加载整套图标集。
 addCollection(lucideIcons as IconifyJSON)
@@ -56,7 +57,11 @@ watchEffect(() => {
 router.onError(error => {
   console.error('页面加载失败：', error)
 })
-Promise.all([router.isReady(), startLanguageRuntime()])
+Promise.all([
+  router.isReady(),
+  startLanguageRuntime(),
+  startMainToastReceiver(),
+])
   .then(async () => {
     app.mount('#app')
     if (IS_TAURI && entry.surface === 'settings') {

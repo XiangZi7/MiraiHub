@@ -146,12 +146,7 @@ function resetToDefaults(): void {
   toast.info(t('已恢复默认值，保存后生效'))
 }
 
-function submit(): void {
-  if (activePageId.value === 'backup') return
-  if (activePageId.value === 'ai') {
-    void aiPanel.value?.save()
-    return
-  }
+function persistDraft(): boolean {
   const firstInvalid = (Object.keys(errors.value) as SettingKey[])[0]
   if (firstInvalid) {
     const page = pageOf(firstInvalid)
@@ -160,7 +155,7 @@ function submit(): void {
       title: t('有设置项不合法'),
       description: errors.value[firstInvalid],
     })
-    return
+    return false
   }
 
   // 数值型文本框统一按整数存，避免 "30 " 这类带空白的值流到消费方
@@ -186,10 +181,28 @@ function submit(): void {
           ? t('本地存储空间不足，请移除背景图或换用更小的图片后重试')
           : String(error),
     })
+    return false
+  }
+
+  // 应用后窗口继续存在，草稿必须跟随已归一化的持久值，避免误报未保存。
+  Object.assign(draft, settings)
+  return true
+}
+
+function applySettings(): void {
+  if (!persistDraft()) return
+  toast.success(t('设置已应用'))
+}
+
+function submit(): void {
+  if (activePageId.value === 'backup') return
+  if (activePageId.value === 'ai') {
+    void aiPanel.value?.save()
     return
   }
+  if (!persistDraft()) return
   toast.success(t('设置已保存'))
-  closeDialog()
+  void closeDialog()
 }
 
 onMounted(async () => {
@@ -297,6 +310,13 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             @click="closeDialog"
           >
             {{ t('取消') }}
+          </AppButton>
+          <AppButton
+            size="sm"
+            :disabled="!isDirty"
+            @click="applySettings"
+          >
+            {{ t('应用') }}
           </AppButton>
           <AppButton
             size="sm"

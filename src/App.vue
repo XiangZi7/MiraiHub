@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { RouterView, useRoute } from 'vue-router'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import ToastHost from '@/components/ui/ToastHost.vue'
+import { IS_TAURI } from '@/utils/window'
 const route = useRoute()
 const settingsVisit = ref(0)
 const settingsHidden = ref(false)
+const shouldHostToasts = computed(
+  () =>
+    route.meta.surface === 'workspace' ||
+    (!IS_TAURI && route.meta.surface !== 'splash')
+)
 useEventListener(window, 'miraihub:settings-hidden', () => {
   settingsHidden.value = true
 })
@@ -29,5 +35,5 @@ useEventListener(window, 'miraihub:settings-reopen', () => {
       "
     />
   </RouterView>
-  <ToastHost v-if="route.meta.surface !== 'splash'" />
+  <ToastHost v-if="shouldHostToasts" />
 </template>

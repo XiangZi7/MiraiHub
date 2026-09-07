@@ -16,10 +16,10 @@ import {
   type ConnectionSort,
 } from '@/utils/connection-list'
 
-defineProps<{ label: string; expanded: boolean }>()
+defineProps<{ label: string; expanded: boolean; transferable?: boolean }>()
 const keyword = defineModel<string>('keyword', { required: true })
 const sort = defineModel<ConnectionSort>('sort', { required: true })
-const emit = defineEmits<{ createGroup: []; toggleAll: [] }>()
+const emit = defineEmits<{ createGroup: []; toggleAll: []; transfer: [] }>()
 const searchInput = useTemplateRef<HTMLInputElement>('searchInput')
 const searchId = useId()
 // 响应式状态
@@ -84,6 +84,13 @@ function selectSort(id: string): void {
         :size="13"
         title="排序连接"
         @click="showSort"
+      />
+      <IconButton
+        v-if="transferable"
+        icon="lucide:arrow-left-right"
+        :size="13"
+        title="导入 / 导出 SSH 配置"
+        @click="emit('transfer')"
       />
       <IconButton
         :icon="expanded ? 'lucide:chevrons-up' : 'lucide:chevrons-down'"

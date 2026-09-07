@@ -14,6 +14,8 @@ defineProps<{
   title: string
   /** 标题下的说明文字 */
   description?: string
+  /** 需要展示批量清单时使用更宽的对话框。 */
+  wide?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -36,7 +38,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     @click.self="emit('close')"
   >
     <section
-      class="glass pane shadow-pop max-h-full w-full max-w-100"
+      :class="[
+        'glass pane shadow-pop max-h-full w-full',
+        wide ? 'max-w-[620px]' : 'max-w-100',
+      ]"
       role="dialog"
       aria-modal="true"
       :aria-labelledby="titleId"

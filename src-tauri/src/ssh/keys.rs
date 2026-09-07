@@ -292,11 +292,58 @@ fn write_private_key(path: &Path, contents: &[u8]) -> SshResult<()> {
     Ok(())
 }
 
+/// 把配置备份中携带的私钥导入到 `~/.ssh`。
+///
+/// 文件名完全由本机随机生成，既不会信任备份里的路径，也不会覆盖已有密钥。
+/// 同时写出公钥，确保它能立刻出现在 SSH Keys 页面里。
+pub(crate) fn import_private_key(contents: &str) -> SshResult<PathBuf> {
+    if contents.is_empty() || contents.len() > 1024 * 1024 || contents.contains('\0') {
+        return Err(SshError::InvalidInput("备份中的私钥无效或过大".into()));
+    }
+
+    let private_key = PrivateKey::from_openssh(contents).map_err(SshError::KeyFormat)?;
+    let public_openssh = private_key.public_key().to_openssh()?;
+    let directory = ensure_ssh_dir()?;
+
+    for _ in 0..10 {
+        let label = format!(
+            "miraihub-import-{}",
+            &crate::ssh::tunnels::random_id()[..16]
+        );
+        let private_path = directory.join(&label);
+        let public_path = directory.join(format!("{label}.pub"));
+
+        match write_private_key(&private_path, contents.as_bytes()) {
+            Ok(()) => {
+                if let Err(error) = fs::write(&public_path, format!("{public_openssh}\n")) {
+                    let _ = fs::remove_file(&private_path);
+                    return Err(SshError::Io(error));
+                }
+                return Ok(private_path);
+            }
+            Err(SshError::Io(error)) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(SshError::InvalidInput(
+        "无法为导入的私钥生成唯一文件名".into(),
+    ))
+}
+
 /// Windows 上的 NTFS ACL 与 Unix 权限位模型不同。
 /// 文件建在当前用户的 ~/.ssh 下并继承该目录 ACL；不能用 Unix mode 位表达额外限制。
 #[cfg(not(unix))]
 fn write_private_key(path: &Path, contents: &[u8]) -> SshResult<()> {
-    fs::write(path, contents)?;
+    use std::io::Write;
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(contents)?;
     Ok(())
 }
 

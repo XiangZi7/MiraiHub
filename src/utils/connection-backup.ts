@@ -204,7 +204,10 @@ function sanitized(
   if ('auth' in c.settings) {
     if (!options.credentials) {
       if (c.settings.auth.type === 'password') c.settings.auth.password = ''
-      if (c.settings.auth.type === 'privateKey') c.settings.auth.passphrase = ''
+      if (c.settings.auth.type === 'privateKey') {
+        c.settings.auth.path = ''
+        c.settings.auth.passphrase = ''
+      }
     }
   }
   if ('startupCommand' in c.settings && !options.startupCommands)

@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
+import type { SshConfigTransferPreview } from '@/types/ssh-config-transfer'
 import { IS_TAURI } from '@/utils/window'
 export { errorMessage } from './ssh'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -70,6 +71,37 @@ export const writeBackup = (path: string, payload: unknown, password: string) =>
   call<void>('connection_backup_write', { path, payload, password })
 export const readBackup = (path: string, password: string) =>
   call<unknown>('connection_backup_read', { path, password })
+export const previewSshConfigBackup = (path: string, password: string) =>
+  call<SshConfigTransferPreview>('ssh_config_backup_preview', {
+    path,
+    password,
+  })
+export const importSshConfigBackup = (
+  path: string,
+  password: string,
+  selectedIds: string[],
+  credentials: boolean,
+  startupCommands: boolean
+) =>
+  call<unknown>('ssh_config_backup_import', {
+    path,
+    password,
+    selectedIds,
+    credentials,
+    startupCommands,
+  })
+export const writeSshConfigBackup = (
+  path: string,
+  payload: unknown,
+  password: string,
+  includeCredentials: boolean
+) =>
+  call<void>('ssh_config_backup_write', {
+    path,
+    payload,
+    password,
+    includeCredentials,
+  })
 
 export const openRemoteEditorWindow = (request: RemoteEditRequest) =>
   call<void>('open_remote_editor_window', { request })

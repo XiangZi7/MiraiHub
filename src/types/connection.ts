@@ -30,6 +30,7 @@ export type LocalShellKind = 'powershell' | 'cmd' | 'git-bash'
 
 /** 侧边栏分组按 SSH / 数据库两棵树隔离。 */
 export type ConnectionGroupKind = 'ssh' | 'database'
+export type ConnectionGroupDropPosition = 'before' | 'after'
 
 /** 用户显式创建的分组；即使暂时没有连接也会保留。 */
 export interface ConnectionGroup {

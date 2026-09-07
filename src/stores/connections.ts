@@ -4,6 +4,7 @@ import * as store from '@/api/connections'
 import { settingsSnapshot } from '@/composables/useSettings'
 import type {
   ConnectionGroup,
+  ConnectionGroupDropPosition,
   ConnectionGroupKind,
   ConnectionGroupView,
   ConnectionKind,
@@ -118,12 +119,12 @@ export const useConnectionsStore = defineStore('connections', () => {
       }
     }
 
-    // 名称排序，但 Ungrouped 永远垫底 —— 它是兜底桶，不该抢占视线
-    return [...groups.values()].sort((a, b) => {
-      if (a.name === 'Ungrouped') return 1
-      if (b.name === 'Ungrouped') return -1
-      return a.name.localeCompare(b.name)
-    })
+    // 实体分组保留存储顺序；Ungrouped 是运行时兜底桶，固定垫底。
+    const views = [...groups.values()]
+    return [
+      ...views.filter(group => group.name !== 'Ungrouped'),
+      ...views.filter(group => group.name === 'Ungrouped'),
+    ]
   }
 
   return {
@@ -174,6 +175,15 @@ export const useConnectionsStore = defineStore('connections', () => {
 
     async renameGroup(id: string, name: string): Promise<void> {
       await store.renameGroup(id, name)
+      await refresh()
+    },
+
+    async reorderGroup(
+      id: string,
+      targetId: string,
+      position: ConnectionGroupDropPosition
+    ): Promise<void> {
+      await store.reorderGroup(id, targetId, position)
       await refresh()
     },
 

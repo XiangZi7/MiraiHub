@@ -27,7 +27,7 @@ export function connectionList(
     }
     return compareText(a.name, b.name) * (sort === 'name-desc' ? -1 : 1)
   }
-  return groups
+  const visibleGroups = groups
     .map(group => ({
       ...group,
       items: group.items
@@ -53,10 +53,13 @@ export function connectionList(
         group.items.length ||
         terms.every(term => group.name.toLocaleLowerCase().includes(term))
     )
-    .sort((a, b) => {
-      const aUngrouped = a.virtual && a.name === 'Ungrouped'
-      const bUngrouped = b.virtual && b.name === 'Ungrouped'
-      if (aUngrouped !== bUngrouped) return aUngrouped ? 1 : -1
-      return compareText(a.name, b.name) * (sort === 'name-desc' ? -1 : 1)
-    })
+
+  return [
+    ...visibleGroups.filter(
+      group => !(group.virtual && group.name === 'Ungrouped')
+    ),
+    ...visibleGroups.filter(
+      group => group.virtual && group.name === 'Ungrouped'
+    ),
+  ]
 }

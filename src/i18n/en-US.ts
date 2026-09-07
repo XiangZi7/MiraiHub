@@ -67,6 +67,7 @@ export default {
   复制连接失败: 'Could not duplicate connection',
   创建分组失败: 'Could not create group',
   重命名分组失败: 'Could not rename group',
+  调整分组顺序失败: 'Could not reorder groups',
   删除失败: 'Could not delete',
   主侧边栏: 'Main sidebar',
   侧边栏: 'Sidebar',
@@ -426,6 +427,7 @@ export default {
   重置为默认: 'Reset to defaults',
   有未保存的修改: 'Unsaved changes',
   取消: 'Cancel',
+  应用: 'Apply',
   保存设置: 'Save settings',
   '已恢复默认值，保存后生效': 'Defaults restored. Save to apply.',
   有设置项不合法: 'Some settings are invalid',
@@ -433,6 +435,7 @@ export default {
   '本地存储空间不足，请移除背景图或换用更小的图片后重试':
     'Local storage is full. Remove a background or use a smaller image.',
   设置已保存: 'Settings saved',
+  设置已应用: 'Settings applied',
   '读取中…': 'Loading…',
   浏览器预览: 'Browser preview',
   清除: 'Clear',

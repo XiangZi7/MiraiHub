@@ -11,7 +11,11 @@ import { useConnections } from '@/composables/useConnections'
 import { toast } from '@/composables/useToast'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { NAV_ITEMS } from '@/constants/workspace'
-import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
+import type {
+  ConnectionGroupDropPosition,
+  ConnectionGroupView,
+  SavedConnection,
+} from '@/types/connection'
 import type { ContextMenuItem } from '@/types/context-menu'
 import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
@@ -20,6 +24,7 @@ import { translateLabel } from '@/i18n'
 import DatabaseTransferDialog from './database/DatabaseTransferDialog.vue'
 import type { DatabaseTransferMode } from './database/DatabaseTransferDialog.vue'
 import SidebarProjects from './SidebarProjects.vue'
+import SshConfigTransferDialog from '@/components/connection/SshConfigTransferDialog.vue'
 
 const { t } = useI18n()
 
@@ -47,6 +52,7 @@ const {
   remove: removeConnection,
   createGroup,
   renameGroup,
+  reorderGroup,
   removeGroup,
 } = useConnections()
 const { tabs, activeId } = useWorkspaceTabs()
@@ -60,6 +66,7 @@ const state = reactive({
   addMenuY: 0,
   transferConnection: null as SavedConnection | null,
   transferMode: 'export' as DatabaseTransferMode,
+  sshTransferOpen: false,
 })
 
 const addMenuItems = computed<ContextMenuItem[]>(() => [
@@ -197,6 +204,21 @@ async function handleRenameGroup(groupId: string, name: string): Promise<void> {
   } catch (error) {
     toast.error({
       title: t('重命名分组失败'),
+      description: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+async function handleReorderGroup(
+  groupId: string,
+  targetGroupId: string,
+  position: ConnectionGroupDropPosition
+): Promise<void> {
+  try {
+    await reorderGroup(groupId, targetGroupId, position)
+  } catch (error) {
+    toast.error({
+      title: t('调整分组顺序失败'),
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -342,6 +364,7 @@ async function confirmRemoval(): Promise<void> {
           @add-connection="addConnection"
           @create-group="handleCreateGroup"
           @rename-group="handleRenameGroup"
+          @reorder-group="handleReorderGroup"
           @remove-group="requestRemoveGroup"
           @move="moveConnection"
           @edit="editConnection"
@@ -349,6 +372,7 @@ async function confirmRemoval(): Promise<void> {
           @new-database-query="emit('newDatabaseQuery', $event)"
           @export-database="openDatabaseTransfer($event, 'export')"
           @import-database="openDatabaseTransfer($event, 'import')"
+          @transfer-ssh="state.sshTransferOpen = true"
           @remove="requestRemoveConnection"
         />
       </AppCollapse>
@@ -418,6 +442,11 @@ async function confirmRemoval(): Promise<void> {
     :session-id="transferSessionId"
     @close="closeDatabaseTransfer"
     @finished="handleDatabaseTransferFinished"
+  />
+
+  <SshConfigTransferDialog
+    :open="state.sshTransferOpen"
+    @close="state.sshTransferOpen = false"
   />
 </template>
 

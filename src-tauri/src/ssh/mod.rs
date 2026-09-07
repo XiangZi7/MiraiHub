@@ -16,6 +16,7 @@
 
 pub mod commands;
 pub mod completion;
+pub mod config_transfer;
 pub mod error;
 pub mod events;
 pub mod files;

@@ -71,3 +71,12 @@ test('sorts naturally within groups without changing the stored tree or dropping
   }
   assert.equal(JSON.stringify(groups), before)
 })
+
+test('connection sorting preserves the manually arranged group order', () => {
+  const reordered = [groups[1], groups[0], groups[2]]
+  for (const sort of ['name-asc', 'name-desc', 'host', 'recent'])
+    assert.deepEqual(
+      connectionList(reordered, '', sort).map(group => group.id),
+      ['empty', 'production', 'ungrouped']
+    )
+})

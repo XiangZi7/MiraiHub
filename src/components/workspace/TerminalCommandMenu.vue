@@ -142,8 +142,8 @@ useEventListener(window, 'resize', () => {
   >
     <AppIcon
       name="lucide:square-terminal"
-      :size="13"
-    />常用指令
+      :size="14"
+    />
   </button>
   <Teleport to="body">
     <section

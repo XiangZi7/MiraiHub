@@ -12,6 +12,7 @@
 
 import type {
   ConnectionGroup,
+  ConnectionGroupDropPosition,
   ConnectionGroupKind,
   ConnectionTagDefinition,
   NewConnection,
@@ -240,7 +241,7 @@ export async function listGroups(): Promise<ConnectionGroup[]> {
 
   if (changed) localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(groups))
 
-  return groups.sort((a, b) => a.createdAt - b.createdAt)
+  return groups
 }
 
 export async function listTags(): Promise<ConnectionTagDefinition[]> {
@@ -333,6 +334,28 @@ export async function renameGroup(id: string, name: string): Promise<void> {
   )
 }
 
+/** 按用户拖拽结果调整同类分组，数组顺序即持久化顺序。 */
+export async function reorderGroup(
+  id: string,
+  targetId: string,
+  position: ConnectionGroupDropPosition
+): Promise<void> {
+  if (id === targetId) return
+
+  const groups = readGroups()
+  const source = groups.find(group => group.id === id)
+  const target = groups.find(group => group.id === targetId)
+  if (!source || !target || source.kind !== target.kind) return
+
+  const reordered = groups.filter(group => group.id !== id)
+  const targetIndex = reordered.findIndex(group => group.id === targetId)
+  if (targetIndex === -1) return
+
+  reordered.splice(targetIndex + (position === 'after' ? 1 : 0), 0, source)
+  if (reordered.every((group, index) => group.id === groups[index]?.id)) return
+  writeGroups(reordered)
+}
+
 /** 删除分组时保留连接，并统一移回 Ungrouped。 */
 export async function removeGroup(id: string): Promise<void> {
   const groups = readGroups()
@@ -399,7 +422,7 @@ export function applyBackupSnapshot(
 ): void {
   const current = {
     connections: readAll(),
-    groups: readGroups().sort((a, b) => a.createdAt - b.createdAt),
+    groups: readGroups(),
     tags: readTags(),
   }
   if (JSON.stringify(current) !== JSON.stringify(expected))

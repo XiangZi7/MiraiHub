@@ -20,6 +20,9 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         crate::backup::connection_backup_write,
         crate::backup::connection_backup_read,
+        ssh::config_transfer::ssh_config_backup_preview,
+        ssh::config_transfer::ssh_config_backup_import,
+        ssh::config_transfer::ssh_config_backup_write,
         ssh::editor::ssh_text_open,
         ssh::editor::ssh_text_save,
         ssh::editor::ssh_text_close,

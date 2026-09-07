@@ -14,6 +14,7 @@ export function useConnections() {
     remove,
     createGroup,
     renameGroup,
+    reorderGroup,
     removeGroup,
     touch,
   } = store
@@ -32,6 +33,7 @@ export function useConnections() {
     remove,
     createGroup,
     renameGroup,
+    reorderGroup,
     removeGroup,
     touch,
   }

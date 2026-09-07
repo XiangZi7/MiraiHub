@@ -41,6 +41,10 @@ fn key(password: &str, salt: &[u8]) -> AppResult<[u8; 32]> {
 fn redact(value: &mut Value) {
     match value {
         Value::Object(object) => {
+            if object.get("type").and_then(Value::as_str) == Some("privateKey") {
+                object.insert("path".into(), Value::String(String::new()));
+                object.remove("privateKeyContents");
+            }
             for (key, value) in object.iter_mut() {
                 if matches!(
                     key.as_str(),
@@ -60,7 +64,7 @@ fn redact(value: &mut Value) {
         _ => {}
     }
 }
-fn valid_payload(payload: &Value) -> AppResult<()> {
+pub(crate) fn valid_payload(payload: &Value) -> AppResult<()> {
     if payload["format"] != "miraihub-connections"
         || payload["version"] != 1
         || !payload["connections"].is_array()
@@ -71,7 +75,7 @@ fn valid_payload(payload: &Value) -> AppResult<()> {
     }
     Ok(())
 }
-fn pack(mut payload: Value, password: &str) -> AppResult<Vec<u8>> {
+pub(crate) fn pack(mut payload: Value, password: &str) -> AppResult<Vec<u8>> {
     valid_payload(&payload)?;
     if password.is_empty() {
         redact(&mut payload);
@@ -113,7 +117,7 @@ fn pack(mut payload: Value, password: &str) -> AppResult<Vec<u8>> {
     })
     .map_err(|_| AppError::internal("无法编码加密备份"))
 }
-fn unpack(bytes: &[u8], password: &str) -> AppResult<Value> {
+fn decode(bytes: &[u8], password: &str) -> AppResult<Value> {
     if bytes.len() > MAX * 2 {
         return Err(AppError::invalid_input("备份文件过大"));
     }
@@ -148,10 +152,17 @@ fn unpack(bytes: &[u8], password: &str) -> AppResult<Value> {
             .map_err(|_| invalid())?;
         payload = serde_json::from_slice(&plain).map_err(|_| invalid())?;
     }
+    Ok(payload)
+}
+
+#[cfg(test)]
+fn unpack(bytes: &[u8], password: &str) -> AppResult<Value> {
+    let payload = decode(bytes, password)?;
     valid_payload(&payload)?;
     Ok(payload)
 }
-fn write_archive(target: &std::path::Path, bytes: &[u8]) -> AppResult<()> {
+
+pub(crate) fn write_archive(target: &std::path::Path, bytes: &[u8]) -> AppResult<()> {
     use std::io::Write;
     if !target.is_absolute() || target.file_name().is_none() {
         return Err(AppError::invalid_input("请选择备份保存位置"));
@@ -183,6 +194,18 @@ fn write_archive(target: &std::path::Path, bytes: &[u8]) -> AppResult<()> {
     }
     result.map_err(AppError::from)
 }
+
+pub(crate) fn read_archive(path: &std::path::Path, password: &str) -> AppResult<Value> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path)?;
+    if file.metadata()?.len() > (MAX * 2) as u64 {
+        return Err(AppError::invalid_input("备份文件过大"));
+    }
+    let mut bytes = Vec::new();
+    file.take((MAX * 2 + 1) as u64).read_to_end(&mut bytes)?;
+    decode(&bytes, password)
+}
 #[tauri::command]
 pub async fn connection_backup_write(
     window: WebviewWindow,
@@ -206,14 +229,14 @@ pub async fn connection_backup_read(
 ) -> AppResult<Value> {
     window_guard(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
-        use std::io::Read;
-        let file = std::fs::File::open(path)?;
-        if file.metadata()?.len() > (MAX * 2) as u64 {
-            return Err(AppError::invalid_input("备份文件过大"));
+        let payload = read_archive(std::path::Path::new(&path), &password)?;
+        valid_payload(&payload)?;
+        if payload.get("scope").and_then(Value::as_str) == Some("ssh") {
+            return Err(AppError::invalid_input(
+                "这是 SSH 专用备份，请从 SSH 列表的“导入 / 导出”入口恢复",
+            ));
         }
-        let mut bytes = Vec::new();
-        file.take((MAX * 2 + 1) as u64).read_to_end(&mut bytes)?;
-        unpack(&bytes, &password)
+        Ok(payload)
     })
     .await
     .map_err(|_| AppError::internal("读取备份失败"))?
@@ -222,7 +245,7 @@ pub async fn connection_backup_read(
 mod tests {
     use super::*;
     fn payload() -> Value {
-        serde_json::json!({"format":"miraihub-connections","version":1,"connections":[{"settings":{"password":"private-test","auth":{"passphrase":"private-key-test"},"startupCommand":"echo private"}}],"groups":[],"tags":[],"includesCredentials":true})
+        serde_json::json!({"format":"miraihub-connections","version":1,"connections":[{"settings":{"password":"private-test","auth":{"type":"privateKey","path":"C:/secret-key","passphrase":"private-key-test","privateKeyContents":"embedded-private-key"},"startupCommand":"echo private"}}],"groups":[],"tags":[],"includesCredentials":true})
     }
     #[test]
     fn plain_archives_never_include_credentials() {
@@ -230,6 +253,8 @@ mod tests {
         let text = String::from_utf8(bytes.clone()).unwrap();
         assert!(!text.contains("private-test"));
         assert!(!text.contains("private-key-test"));
+        assert!(!text.contains("C:/secret-key"));
+        assert!(!text.contains("embedded-private-key"));
         assert!(!text.contains("echo private"));
         assert_eq!(unpack(&bytes, "").unwrap()["includesCredentials"], false);
     }

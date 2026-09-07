@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { computed, reactive, toRefs, watch } from 'vue'
+import { computed, reactive, toRefs, useTemplateRef, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
 import ConnectionTagBadge from '@/components/connection/ConnectionTagBadge.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppCollapse from '@/components/ui/AppCollapse.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
-import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
+import type {
+  ConnectionGroupDropPosition,
+  ConnectionGroupView,
+  SavedConnection,
+} from '@/types/connection'
 import type { ContextMenuItem } from '@/types/context-menu'
 import { endpointOf, isDatabaseConnection } from '@/types/connection'
 import { connectionTagColorCss } from '@/constants/connection'
 import { useConnectionGroupDrag } from '@/composables/useConnectionGroupDrag'
+import { useConnectionGroupReorder } from '@/composables/useConnectionGroupReorder'
 import { cn } from '@/utils/cn'
 import SidebarGroupEditor from './SidebarGroupEditor.vue'
 import ConnectionListTools from './ConnectionListTools.vue'
@@ -35,6 +40,11 @@ const emit = defineEmits<{
   addConnection: []
   createGroup: [name: string]
   renameGroup: [groupId: string, name: string]
+  reorderGroup: [
+    groupId: string,
+    targetGroupId: string,
+    position: ConnectionGroupDropPosition,
+  ]
   removeGroup: [group: ConnectionGroupView]
   move: [connectionId: string, groupName: string]
   edit: [connection: SavedConnection]
@@ -42,6 +52,7 @@ const emit = defineEmits<{
   newDatabaseQuery: [connection: SavedConnection]
   exportDatabase: [connection: SavedConnection]
   importDatabase: [connection: SavedConnection]
+  transferSsh: []
   remove: [connection: SavedConnection]
 }>()
 
@@ -84,7 +95,7 @@ const visibleGroups = computed(() =>
 const allExpanded = computed(
   () =>
     props.groups.length > 0 &&
-    props.groups.every(group => !state.collapsed[group.id])
+    props.groups.every(group => state.collapsed[group.id] === false)
 )
 watch(listKind, () => {
   state.keyword = ''
@@ -202,11 +213,12 @@ const contextItems = computed<ContextMenuItem[]>(() => {
 })
 
 function isExpanded(groupId: string): boolean {
-  return !state.collapsed[groupId]
+  return state.collapsed[groupId] === false
 }
 
 function toggleGroup(groupId: string): void {
-  state.collapsed[groupId] = !state.collapsed[groupId]
+  if (groupReorder.consumeSuppressedClick(groupId)) return
+  state.collapsed[groupId] = isExpanded(groupId)
 }
 
 function toneOf(connection: SavedConnection): 'success' | 'amber' | 'txt-3' {
@@ -229,6 +241,13 @@ const groupDrag = useConnectionGroupDrag({
   onDrop(connectionId, group) {
     state.collapsed[group.id] = false
     emit('move', connectionId, group.name === 'Ungrouped' ? '' : group.name)
+  },
+})
+const groupList = useTemplateRef<HTMLElement>('groupList')
+const groupReorder = useConnectionGroupReorder({
+  container: () => groupList.value,
+  onReorder(groupId, targetGroupId, position) {
+    emit('reorderGroup', groupId, targetGroupId, position)
   },
 })
 
@@ -339,8 +358,10 @@ function runContextAction(action: string): void {
       v-model:sort="sort"
       :label="label"
       :expanded="allExpanded"
+      :transferable="listKind === 'ssh'"
       @create-group="state.creatingGroup = true"
       @toggle-all="setAllExpanded(!allExpanded)"
+      @transfer="emit('transferSsh')"
     />
 
     <SidebarGroupEditor
@@ -350,7 +371,10 @@ function runContextAction(action: string): void {
       @cancel="state.creatingGroup = false"
     />
 
-    <div class="space-y-0.5">
+    <div
+      ref="groupList"
+      class="space-y-0.5"
+    >
       <div
         v-for="group in visibleGroups"
         :key="group.id"
@@ -358,6 +382,10 @@ function runContextAction(action: string): void {
         :class="[
           'sidebar-group',
           groupDrag.targetGroupId.value === group.id && 'sidebar-group-drop',
+          groupReorder.draggedGroupId.value === group.id &&
+            'sidebar-group-dragging',
+          groupReorder.targetGroupId.value === group.id &&
+            `sidebar-group-drop-${groupReorder.targetPosition.value}`,
         ]"
       >
         <SidebarGroupEditor
@@ -370,13 +398,21 @@ function runContextAction(action: string): void {
         <button
           v-else
           type="button"
-          class="nav-item w-full"
+          :class="[
+            'nav-item w-full',
+            !group.virtual && 'sidebar-group-draggable',
+          ]"
+          :data-reorderable-connection-group-id="
+            group.virtual ? undefined : group.id
+          "
+          :data-connection-group-kind="group.kind"
           :aria-expanded="isExpanded(group.id)"
           aria-haspopup="menu"
           aria-keyshortcuts="Shift+F10"
           @click="toggleGroup(group.id)"
           @contextmenu.prevent.stop="openGroupMenu($event, group)"
           @keydown="handleGroupKeydown($event, group)"
+          @pointerdown="groupReorder.start($event, group)"
         >
           <AppIcon
             name="lucide:chevron-right"
@@ -504,16 +540,58 @@ function runContextAction(action: string): void {
         />
         <span>{{ groupDrag.draggedLabel.value }}</span>
       </div>
+      <div
+        v-if="groupReorder.dragging.value"
+        class="connection-drag-ghost"
+        :style="groupReorder.dragStyle.value"
+      >
+        <AppIcon
+          name="lucide:folder"
+          :size="13"
+        />
+        <span>{{ groupReorder.draggedLabel.value }}</span>
+      </div>
     </Teleport>
   </section>
 </template>
 
 <style scoped>
 .sidebar-group {
+  position: relative;
   border-radius: 6px;
   transition:
     background-color 120ms ease,
     box-shadow 120ms ease;
+}
+
+.sidebar-group-draggable {
+  touch-action: pan-y;
+}
+
+.sidebar-group-dragging {
+  background: var(--color-hover);
+  opacity: 0.45;
+}
+
+.sidebar-group-drop-before::before,
+.sidebar-group-drop-after::after {
+  position: absolute;
+  z-index: 2;
+  right: 8px;
+  left: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-violet);
+  box-shadow: 0 0 8px color-mix(in oklch, var(--color-violet) 60%, transparent);
+  content: '';
+}
+
+.sidebar-group-drop-before::before {
+  top: -2px;
+}
+
+.sidebar-group-drop-after::after {
+  bottom: -2px;
 }
 
 .sidebar-group-drop {

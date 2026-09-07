@@ -47,6 +47,7 @@ test('plain backup removes SSH, database and key secrets without mutating curren
   assert.equal(result.connections[0].settings.startupCommand, '')
   assert.equal(result.connections[1].settings.password, '')
   assert.equal(result.connections[2].settings.auth.passphrase, '')
+  assert.equal(result.connections[2].settings.auth.path, '')
   assert.equal(original.connections[0].settings.auth.password, 'secret')
 })
 test('default restore skips collisions and strips credentials/startup commands from new connections', () => {
