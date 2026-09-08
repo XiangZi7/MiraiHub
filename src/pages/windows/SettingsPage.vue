@@ -242,7 +242,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
 <template>
   <WindowFrame
-    class="settings-window h-screen w-screen"
+    class="dialog-window settings-window h-screen w-screen"
     role="dialog"
     aria-modal="true"
     aria-labelledby="settings-title"

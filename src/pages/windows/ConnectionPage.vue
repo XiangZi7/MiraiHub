@@ -42,7 +42,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </script>
 
 <template>
-  <WindowFrame class="h-screen w-screen">
+  <WindowFrame class="dialog-window h-screen w-screen">
     <header
       class="connection-titlebar relative z-10"
       data-tauri-drag-region

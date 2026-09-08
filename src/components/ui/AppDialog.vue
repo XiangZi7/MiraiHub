@@ -39,7 +39,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   >
     <section
       :class="[
-        'glass pane shadow-pop max-h-full w-full',
+        'overlay-surface relative flex max-h-full min-h-0 w-full min-w-0 flex-col overflow-hidden',
         wide ? 'max-w-[620px]' : 'max-w-100',
       ]"
       role="dialog"

@@ -245,7 +245,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <section
           v-if="open"
           ref="panelRoot"
-          class="transfer-center"
+          class="overlay-surface transfer-center"
           role="dialog"
           aria-label="File Transfer"
         >
@@ -343,14 +343,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   height: min(598px, calc(100vh - 50px));
   overflow: hidden;
   flex-direction: column;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--color-panel) 85%, transparent);
-  box-shadow:
-    0 24px 70px rgb(0 0 0 / 30%),
-    inset 0 1px rgb(255 255 255 / 5%);
-  backdrop-filter: blur(28px) saturate(150%);
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
 }
 
 .transfer-content {

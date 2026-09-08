@@ -75,7 +75,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       >
         <section
           ref="dialog"
-          class="app-confirm-dialog"
+          class="overlay-surface app-confirm-dialog"
           role="alertdialog"
           aria-modal="true"
           :aria-labelledby="titleId"
@@ -138,12 +138,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   width: min(360px, 100%);
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--color-panel) 92%, transparent);
-  box-shadow: var(--shadow-pop);
   padding: 15px;
-  backdrop-filter: blur(28px) saturate(170%);
 }
 
 .app-confirm-icon {

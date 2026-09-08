@@ -372,12 +372,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </div>
 
     <RemoteEditorHost />
+  </WindowFrame>
 
-    <!-- 命令面板浮层 -->
+  <!-- 脱离窗口壳的滤镜层，让模糊直接采样工作区内容。 -->
+  <Teleport to="body">
     <Transition name="palette">
       <div
         v-if="paletteOpen"
-        class="absolute inset-0 z-50 flex justify-center bg-black/45 pt-[13vh]"
+        class="palette-backdrop fixed inset-0 z-100 flex justify-center bg-black/45 px-4 pt-[13vh] pb-4"
         @click.self="paletteOpen = false"
       >
         <CommandPalette
@@ -386,30 +388,27 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         />
       </div>
     </Transition>
-  </WindowFrame>
+  </Teleport>
 </template>
 
 <style scoped>
 .palette-enter-active,
 .palette-leave-active {
-  transition: opacity 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 
 .palette-enter-active :deep(> *),
 .palette-leave-active :deep(> *) {
-  transition:
-    transform 0.15s ease,
-    opacity 0.15s ease;
+  transition: transform 0.15s ease;
 }
 
 .palette-enter-from,
 .palette-leave-to {
-  opacity: 0;
+  background-color: transparent;
 }
 
 .palette-enter-from :deep(> *),
 .palette-leave-to :deep(> *) {
   transform: translateY(-8px) scale(0.98);
-  opacity: 0;
 }
 </style>

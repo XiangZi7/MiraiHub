@@ -69,7 +69,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <section
         ref="dialog"
         class="operation-dialog"
-        :class="wide && 'wide'"
+        :class="[wide && 'wide', !standalone && 'overlay-surface']"
         :role="standalone ? 'region' : 'dialog'"
         :aria-modal="standalone ? undefined : true"
         :aria-labelledby="standalone ? undefined : titleId"
@@ -111,10 +111,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   min-height: min(250px, calc(100dvh - var(--operation-inset) * 2));
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 12px;
-  background: var(--color-panel);
-  box-shadow: 0 20px 80px #0008;
   color: var(--color-txt);
   outline: none;
 }

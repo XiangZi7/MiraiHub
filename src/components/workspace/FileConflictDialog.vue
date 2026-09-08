@@ -33,7 +33,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         class="file-conflict-backdrop"
       >
         <section
-          class="file-conflict-dialog"
+          class="overlay-surface file-conflict-dialog"
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="file-conflict-title"
@@ -108,10 +108,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   width: min(410px, 100%);
   grid-template-columns: auto minmax(0, 1fr);
   gap: 11px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 11px;
-  background: color-mix(in oklch, var(--color-panel) 94%, transparent);
-  box-shadow: var(--shadow-pop);
   padding: 16px;
 }
 

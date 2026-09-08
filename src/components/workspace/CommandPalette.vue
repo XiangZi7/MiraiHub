@@ -106,12 +106,13 @@ function indexOf(item: CommandItem): number {
 
 <template>
   <div
-    class="glass rounded-win border-line-strong bg-window h-fit w-[440px] overflow-hidden border"
-    :style="{ boxShadow: 'var(--shadow-pop)' }"
+    class="overlay-surface flex h-fit max-h-full w-[440px] max-w-full flex-col overflow-hidden"
     @keydown="onKeydown"
   >
     <!-- 搜索框 -->
-    <label class="border-line flex h-12 items-center gap-2.5 border-b px-4">
+    <label
+      class="border-line flex h-12 shrink-0 items-center gap-2.5 border-b px-4"
+    >
       <AppIcon
         name="lucide:search"
         :size="15"
@@ -138,7 +139,7 @@ function indexOf(item: CommandItem): number {
     </label>
 
     <!-- 命令列表 -->
-    <div class="scroll-thin max-h-[360px] overflow-y-auto p-1.5">
+    <div class="scroll-thin max-h-[360px] min-h-0 overflow-y-auto p-1.5">
       <div
         v-for="group in filteredGroups"
         :key="group.id"
@@ -180,7 +181,7 @@ function indexOf(item: CommandItem): number {
 
     <!-- 底部提示 -->
     <footer
-      class="border-line text-txt-4 flex items-center gap-3 border-t px-4 py-2 text-[10.5px]"
+      class="border-line text-txt-4 flex shrink-0 items-center gap-3 border-t px-4 py-2 text-[10.5px]"
     >
       <span class="flex items-center gap-1">
         <AppIcon
