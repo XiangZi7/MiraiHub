@@ -64,7 +64,7 @@ MiraiHub 是基于 **Tauri 2、Rust、Vue 3 和 TypeScript** 构建的桌面工�
     <td width="50%" align="center">
       <strong>数据库工作台</strong><br /><br />
       <!-- 替换 src 为 docs/images/database-workspace.png -->
-      <img src="docs/images/screenshot-placeholder.svg" width="100%" alt="数据库工作台截图待补充" /><br />
+      <img src="docs/images/Snipaste_2026-09-08_13-51-06.png" width="100%" alt="数据库工作台截图待补充" /><br />
       <sub>对象管理、数据编辑与 SQL 查询</sub>
     </td>
   </tr>
@@ -72,13 +72,13 @@ MiraiHub 是基于 **Tauri 2、Rust、Vue 3 和 TypeScript** 构建的桌面工�
     <td width="50%" align="center">
       <strong>服务器监控</strong><br /><br />
       <!-- 替换 src 为 docs/images/server-monitoring.png -->
-      <img src="docs/images/screenshot-placeholder.svg" width="100%" alt="服务器监控截图待补充" /><br />
+      <img src="docs/images/Snipaste_2026-09-08_13-54-00.png" width="100%" alt="服务器监控截图待补充" /><br />
       <sub>CPU、内存、磁盘与网络状态</sub>
     </td>
     <td width="50%" align="center">
       <strong>AI Agent</strong><br /><br />
       <!-- 替换 src 为 docs/images/ai-agent.png -->
-      <img src="docs/images/screenshot-placeholder.svg" width="100%" alt="AI Agent 截图待补充" /><br />
+      <img src="docs/images/Snipaste_2026-09-08_13-55-05.png" width="100%" alt="AI Agent 截图待补充" /><br />
       <sub>连接内对话、操作确认与历史记录</sub>
     </td>
   </tr>
