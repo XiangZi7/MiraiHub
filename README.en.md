@@ -46,7 +46,7 @@ Connect to servers, inspect their status, edit remote files, and run SQL in a ta
 | **Remote file management** | Browse, upload, and download files over SFTP; track transfers in one place. Edit remote text files with save previews and conflict detection. |
 | **Database workspace** | MySQL / PostgreSQL support with an object tree, table browsing and editing, a table designer, a SQL editor, query history, and SQL import/export. |
 | **Server monitoring** | Collect CPU, memory, disk, network throughput, and uptime metrics from Linux servers over SSH, without installing a monitoring agent. |
-| **AI Agent** | Chat within SSH and database workspaces, with multiple model profiles, tool calling, and conversation history. Custom Shell / SQL execution requires confirmation. |
+| **AI Agent** | Chat within SSH and database workspaces, with model profiles, text attachments, tool calling, and history. Choose per-action approval, automatic read-only tools, or full access in the composer. |
 | **Server operations** | SSH local port forwarding, batch commands, SSH key management, connection groups and tags, and connection backup/restore. |
 | **Personalization** | Simplified Chinese / English, system language detection, theme skins, custom colors and backgrounds, UI scaling, and resizable split views. |
 

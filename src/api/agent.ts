@@ -7,6 +7,8 @@ import type {
   AgentRun,
   AgentTarget,
   AgentConversation,
+  AgentAttachment,
+  AgentApprovalMode,
 } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -31,8 +33,18 @@ export const start = (
   target: AgentTarget,
   prompt: string,
   profileId: string,
-  conversationId?: string
-) => call<AgentRun>('ai_start', { target, prompt, profileId, conversationId })
+  conversationId?: string,
+  attachments: AgentAttachment[] = [],
+  approvalMode: AgentApprovalMode = 'auto'
+) =>
+  call<AgentRun>('ai_start', {
+    target,
+    prompt,
+    profileId,
+    conversationId,
+    attachments,
+    approvalMode,
+  })
 export const listConversations = (target: AgentTarget) =>
   call<AgentConversation[]>('ai_list_conversations', { target })
 export const openConversation = (target: AgentTarget, conversationId: string) =>
@@ -51,8 +63,12 @@ export const deleteConversation = (
   target: AgentTarget,
   conversationId: string
 ) => call<void>('ai_delete_conversation', { target, conversationId })
-export const send = (runId: string, prompt: string) =>
-  call<AgentRun>('ai_send', { runId, prompt })
+export const send = (
+  runId: string,
+  prompt: string,
+  attachments: AgentAttachment[] = [],
+  approvalMode: AgentApprovalMode = 'auto'
+) => call<AgentRun>('ai_send', { runId, prompt, attachments, approvalMode })
 export const step = (runId: string) => call<AgentRun>('ai_step', { runId })
 export const respond = (runId: string, approvalId: string, approve: boolean) =>
   call<AgentRun>('ai_respond', { runId, approvalId, approve })

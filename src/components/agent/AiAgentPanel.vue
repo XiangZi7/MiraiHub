@@ -8,15 +8,14 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
-import type { AgentTarget } from '@/types/agent'
+import type { AgentApprovalMode, AgentTarget } from '@/types/agent'
 import { useAiAgent } from '@/composables/useAiAgent'
 import { useAgentProfiles } from '@/composables/useAgentProfiles'
-import AgentProfileSelect from './AgentProfileSelect.vue'
+import { useAgentDraft } from '@/composables/useAgentDraft'
+import AgentComposer from './AgentComposer.vue'
 import { copyText } from '@/utils/clipboard'
-import { openSettingsWindow } from '@/utils/window'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
-import AppButton from '@/components/ui/AppButton.vue'
 import AgentApprovalCard from './AgentApprovalCard.vue'
 import AgentMarkdown from './AgentMarkdown.vue'
 import AgentConversationMenu from './AgentConversationMenu.vue'
@@ -65,10 +64,18 @@ const {
   switching,
   error: profileError,
 } = profiles
-// 输入草稿与显示状态；聊天记录由后端加密保存。
-const state = reactive({ prompt: '', copied: false })
-let draftVersion = 0
-const { prompt, copied } = toRefs(state)
+// 响应式状态
+const state = reactive({
+  // 对话复制状态
+  copied: false,
+  // 当前会话的审批选择，不从历史记录自动恢复完全访问权限
+  approvalMode: 'auto' as AgentApprovalMode,
+})
+const { copied, approvalMode } = toRefs(state)
+const draft = useAgentDraft((text, attachments) =>
+  send(text, attachments, state.approvalMode)
+)
+const { prompt, attachments, reading, attachmentError } = draft
 const scroll = useTemplateRef<HTMLElement>('scroll')
 const isDatabase = computed(() => props.target.kind === 'database')
 const suggestions = computed(() =>
@@ -98,7 +105,8 @@ const canSend = computed(() =>
     !historyLoading.value &&
     !historyMutating.value &&
     !switchingConversation.value &&
-    state.prompt.trim() &&
+    (prompt.value.trim() || attachments.value.length) &&
+    !reading.value &&
     !busy.value &&
     !awaitingApproval.value
   )
@@ -115,40 +123,29 @@ const statusLabel = computed(
 )
 async function submit(): Promise<void> {
   if (!canSend.value) return
-  const version = ++draftVersion
-  const text = state.prompt
-  state.prompt = ''
-  if (!(await send(text)) && version === draftVersion && !state.prompt)
-    state.prompt = text
+  await draft.submit()
 }
 function newConversation(): void {
-  draftVersion++
-  state.prompt = ''
+  draft.reset()
+  state.approvalMode = 'auto'
   void clear()
 }
 function switchConversation(id: string): void {
   if (run.value?.conversationId === id) return
-  draftVersion++
-  state.prompt = ''
+  draft.reset()
+  state.approvalMode = 'auto'
   void selectConversation(id)
 }
 function suggest(text: string): void {
-  state.prompt = text
+  draft.prompt.value = text
 }
 watch(
   () => JSON.stringify(props.target),
   () => {
-    draftVersion++
-    state.prompt = ''
+    draft.reset()
+    state.approvalMode = 'auto'
   }
 )
-function keydown(event: KeyboardEvent): void {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-    event.preventDefault()
-    event.stopPropagation()
-    void submit()
-  }
-}
 async function copyConversation(): Promise<void> {
   if (!run.value) return
   try {
@@ -157,7 +154,7 @@ async function copyConversation(): Promise<void> {
         `目标：${run.value.target}`,
         ...run.value.entries.map(
           entry =>
-            `${entry.role}: ${entry.text}${entry.detail ? `\n${entry.detail}` : ''}`
+            `${entry.role}: ${entry.text}${entry.attachments?.length ? `\n附件：${entry.attachments.map(file => file.name).join('、')}` : ''}${entry.detail ? `\n${entry.detail}` : ''}`
         ),
       ].join('\n\n')
     )
@@ -221,9 +218,10 @@ watch(
         @click="copyConversation"
       />
       <IconButton
-        icon="lucide:plus"
+        icon="lucide:square-pen"
         :size="14"
-        title="新建聊天"
+        title="开始新对话"
+        aria-label="开始新对话"
         :disabled="
           switchingConversation ||
           historyLoading ||
@@ -252,13 +250,6 @@ watch(
         @click="emit('close')"
       />
     </header>
-    <AgentProfileSelect
-      :active-id="activeId"
-      :options="profileOptions"
-      :disabled="profilesLoading || switching"
-      :error="profileError"
-      @select="profiles.select"
-    />
     <div
       ref="scroll"
       class="agent-scroll"
@@ -305,7 +296,7 @@ watch(
                     '检查系统、磁盘和网络状态',
                     '分析命令输出与运行问题',
                     '制定修复步骤',
-                    '执行经你批准的命令',
+                    '执行服务器维护命令',
                   ]"
               :key="item"
             >
@@ -315,7 +306,6 @@ watch(
               />{{ item }}
             </li>
           </ul>
-          <p>内置只读工具自动运行，其他操作逐次审批。</p>
         </div>
         <div class="suggestions">
           <button
@@ -333,7 +323,6 @@ watch(
         class="messages"
         aria-live="polite"
       >
-        <div class="provider">{{ run.model }} · {{ run.provider }}</div>
         <article
           v-for="(entry, index) in run.entries"
           :key="`${run.id}-${index}`"
@@ -361,7 +350,27 @@ watch(
               v-if="entry.role === 'assistant'"
               :content="entry.text"
             />
-            <p v-else>{{ entry.text }}</p></template
+            <template v-else>
+              <div
+                v-if="entry.attachments?.length"
+                class="message-attachments"
+              >
+                <span
+                  v-for="(file, fileIndex) in entry.attachments"
+                  :key="fileIndex"
+                  class="message-attachment"
+                  :title="file.name"
+                >
+                  <AppIcon
+                    name="lucide:file-text"
+                    :size="13"
+                  />
+                  <span>{{ file.name }}</span>
+                  <small>{{ (file.size / 1000).toFixed(1) }} KB</small>
+                </span>
+              </div>
+              <p>{{ entry.text }}</p>
+            </template></template
           >
           <details
             v-else
@@ -425,76 +434,37 @@ watch(
         请先连接{{ isDatabase ? '数据库' : 'SSH 服务器' }}。
       </div>
     </div>
-    <footer class="agent-footer">
-      <p class="data-notice">
-        <AppIcon
-          name="lucide:shield-check"
-          :size="12"
-        />消息与工具结果会发送到你配置的模型服务；请勿输入密码或密钥。<button
-          type="button"
-          @click="openSettingsWindow"
-        >
-          AI 设置
-        </button>
-      </p>
-      <form
-        class="composer"
-        @submit.prevent="submit"
-      >
-        <textarea
-          v-model="prompt"
-          :placeholder="
-            awaitingApproval
-              ? '请先审批或拒绝上方操作…'
-              : isDatabase
-                ? '询问数据库，或描述要完成的操作…'
-                : '描述问题，或让我帮你执行任务…'
-          "
-          rows="2"
-          maxlength="8000"
-          aria-label="发送给 AI 的消息"
-          :disabled="
-            !target.sessionId ||
-            awaitingApproval ||
-            switchingConversation ||
-            historyLoading
-          "
-          @keydown="keydown"
-        /><IconButton
-          v-if="busy"
-          icon="lucide:square"
-          :size="16"
-          title="停止后续操作"
-          @click="stop"
-        /><button
-          v-else
-          type="submit"
-          aria-label="发送消息"
-          title="发送 (Enter)，换行 (Shift+Enter)"
-          :disabled="!canSend"
-          class="send-button"
-        >
-          <AppIcon
-            name="lucide:send"
-            :size="17"
-          />
-        </button>
-      </form>
-      <p class="footer-hint">
-        <AppIcon
-          name="lucide:lock-keyhole"
-          :size="11"
-        />增删改及自定义命令必须审批 · 不提供全部放行
-      </p>
-      <AppButton
-        v-if="run?.status === 'failed' || run?.status === 'cancelled'"
-        variant="ghost"
-        size="sm"
-        class="mt-1"
-        @click="newConversation"
-        >开始新对话</AppButton
-      >
-    </footer>
+    <AgentComposer
+      v-model="prompt"
+      v-model:approval-mode="approvalMode"
+      :disabled="
+        !target.sessionId ||
+        !active ||
+        awaitingApproval ||
+        switchingConversation ||
+        historyLoading ||
+        historyMutating ||
+        switching
+      "
+      :busy="busy"
+      :can-send="canSend"
+      :awaiting-approval="awaitingApproval"
+      :is-database="isDatabase"
+      :attachments="attachments"
+      :reading="reading"
+      :attachment-error="attachmentError"
+      :active-id="activeId"
+      :profile-options="profileOptions"
+      :profile-disabled="
+        profilesLoading || switching || switchingConversation || historyMutating
+      "
+      :profile-error="profileError"
+      @submit="submit"
+      @stop="stop"
+      @select-profile="profiles.select"
+      @attach="draft.addFiles"
+      @remove-attachment="draft.removeFile"
+    />
   </section>
 </template>
 
@@ -641,11 +611,6 @@ watch(
   flex-direction: column;
   gap: 13px;
 }
-.provider {
-  font-size: 10px;
-  color: var(--color-txt-4);
-  overflow-wrap: anywhere;
-}
 .message {
   min-width: 0;
 }
@@ -718,78 +683,32 @@ watch(
 .message.error summary {
   color: var(--color-danger);
 }
-.agent-footer {
-  flex-shrink: 0;
-  padding: 12px 16px;
-  border-top: 1px solid var(--color-line-soft);
-}
-.data-notice {
-  font-size: 10px;
-  color: var(--color-txt-4);
-  line-height: 1.6;
-  margin-bottom: 9px;
-}
-.data-notice svg {
-  display: inline;
-  vertical-align: middle;
-  margin-right: 4px;
-}
-.data-notice button {
-  color: var(--agent-color);
-  margin-left: 5px;
-  cursor: pointer;
-}
-.composer {
+.message-attachments {
   display: flex;
-  align-items: center;
-  border: 1px solid var(--color-line);
-  background: #ffffff04;
-  border-radius: 7px;
-  padding: 8px 10px;
-  gap: 8px;
-}
-.composer:focus-within {
-  border-color: var(--agent-color);
-}
-.composer textarea {
-  resize: vertical;
-  min-height: 36px;
-  max-height: 130px;
-  flex: 1;
-  min-width: 0;
-  outline: none;
-  font-size: 12px;
-  line-height: 1.6;
-  background: transparent;
-  color: var(--color-txt);
-}
-.composer textarea::placeholder {
-  color: var(--color-txt-4);
-}
-.send-button {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 6px;
-  color: var(--agent-color);
-  cursor: pointer;
-}
-.send-button:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-.send-button:not(:disabled):hover {
-  background: #ffffff0b;
-}
-.footer-hint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  font-size: 9.5px;
-  color: var(--color-txt-4);
-  margin-top: 9px;
   flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.message-attachment {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--color-line);
+  border-radius: 7px;
+  color: var(--color-txt-2);
+  font-size: 10px;
+}
+.message-attachment > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-attachment svg,
+.message-attachment small {
+  flex-shrink: 0;
 }
 </style>

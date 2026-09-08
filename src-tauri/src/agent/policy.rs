@@ -1,6 +1,31 @@
 use crate::error::{AppError, AppResult};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
+#[derive(Clone, Copy, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ApprovalMode {
+    Ask,
+    #[default]
+    Auto,
+    Full,
+}
+impl ApprovalMode {
+    pub fn requires_approval(self, action: &Action) -> bool {
+        match self {
+            Self::Ask => true,
+            Self::Auto => action.approval().is_some(),
+            Self::Full => false,
+        }
+    }
+    pub fn instruction(self) -> &'static str {
+        match self {
+            Self::Ask => "The user selected Ask: every tool call, including fixed read-only probes and metadata, requires single-use human approval.",
+            Self::Auto => "The user selected Auto: fixed read-only probes and metadata run automatically; all custom shell and SQL require single-use human approval.",
+            Self::Full => "The user selected Full access for this turn on the current connection: the provided tools, including custom shell and SQL, run without a separate approval. Stay within the user's requested task and the bound target. Do not ask the user to approve tools or claim success without a tool result.",
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum Action {
@@ -10,6 +35,20 @@ pub enum Action {
     Sql { sql: String, reason: String },
 }
 impl Action {
+    pub fn approval_details(&self) -> (String, String) {
+        match self {
+            Self::Probe(probe) => (
+                probe_command(probe).unwrap_or("").into(),
+                "读取服务器的固定状态信息".into(),
+            ),
+            Self::Schema { schema, table } => (
+                json!({"schema":schema,"table":table}).to_string(),
+                "读取当前数据库的对象和字段结构".into(),
+            ),
+            Self::Shell { command, reason } => (command.clone(), reason.clone()),
+            Self::Sql { sql, reason } => (sql.clone(), reason.clone()),
+        }
+    }
     pub fn approval(&self) -> Option<(&str, &str)> {
         match self {
             Self::Shell { command, reason } => Some((command, reason)),
@@ -113,19 +152,46 @@ pub fn definitions(kind: &str) -> Value {
     let tool = |name: &str, description: &str, properties: Value, required: Value| json!({"type":"function","function":{"name":name,"description":description,"parameters":{"type":"object","properties":properties,"required":required,"additionalProperties":false}}});
     if kind == "ssh" {
         json!([
-        tool("server_status","Automatically run a fixed Linux read-only probe. No file contents, secrets or environment variables.",json!({"probe":{"type":"string","enum":["system","disk","processes","network"]}}),json!(["probe"])),
-        tool("propose_shell","Propose an EXACT shell command. Backend ALWAYS requires single-use human approval, including reads. Explain effects and risks. Never claim it ran before tool result.",json!({"command":{"type":"string"},"reason":{"type":"string"}}),json!(["command","reason"]))
+        tool("server_status","Run a fixed Linux read-only probe under the user's approval mode. No file contents, secrets or environment variables.",json!({"probe":{"type":"string","enum":["system","disk","processes","network"]}}),json!(["probe"])),
+        tool("propose_shell","Provide an EXACT shell command. The backend applies the user's approval mode. Explain effects and risks. Never claim it ran before a tool result.",json!({"command":{"type":"string"},"reason":{"type":"string"}}),json!(["command","reason"]))
     ])
     } else {
         json!([
         tool("database_schema","Read metadata only. Empty schema and table lists objects; supply both for column structure. No row data.",json!({"schema":{"type":"string"},"table":{"type":"string"}}),json!(["schema","table"])),
-        tool("propose_sql","Propose exact SQL for the selected database. ALWAYS requires human approval, including SELECT or EXPLAIN because SQL can have side effects. Explain effects and returned data. Use LIMIT for reads.",json!({"sql":{"type":"string"},"reason":{"type":"string"}}),json!(["sql","reason"]))
+        tool("propose_sql","Provide exact SQL for the selected database. The backend applies the user's approval mode, including for SELECT or EXPLAIN because SQL can have side effects. Explain effects and returned data. Use LIMIT for reads.",json!({"sql":{"type":"string"},"reason":{"type":"string"}}),json!(["sql","reason"]))
     ])
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn approval_modes_cover_every_action_and_unknown_modes_fail_closed() {
+        let actions = [
+            Action::Probe("disk".into()),
+            Action::Schema {
+                schema: "public".into(),
+                table: "users".into(),
+            },
+            Action::Shell {
+                command: "touch /tmp/test".into(),
+                reason: "test".into(),
+            },
+            Action::Sql {
+                sql: "DELETE FROM test".into(),
+                reason: "test".into(),
+            },
+        ];
+        assert_eq!(ApprovalMode::default(), ApprovalMode::Auto);
+        assert!(serde_json::from_str::<ApprovalMode>("\"unknown\"").is_err());
+        for (index, action) in actions.iter().enumerate() {
+            assert!(ApprovalMode::Ask.requires_approval(action));
+            assert_eq!(ApprovalMode::Auto.requires_approval(action), index >= 2);
+            assert!(!ApprovalMode::Full.requires_approval(action));
+            let (command, reason) = action.approval_details();
+            assert!(!command.is_empty() && !reason.is_empty());
+        }
+    }
     #[test]
     fn arbitrary_code_always_needs_approval() {
         for command in [

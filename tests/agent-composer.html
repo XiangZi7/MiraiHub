@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>AI Agent 输入区验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      import { createApp, h, reactive } from 'vue'
+      import { i18n } from '/src/i18n/index.ts'
+      import '/src/assets/styles/main.css'
+      const settings = {
+        activeId: 'deepseek',
+        profiles: [
+          {
+            id: 'deepseek',
+            name: 'DeepSeek',
+            model: 'deepseek-v4-pro',
+            enabled: true,
+            baseUrl: 'https://example.invalid/v1',
+          },
+          {
+            id: 'claude',
+            name: 'Claude',
+            model: 'claude-sonnet',
+            enabled: true,
+            baseUrl: 'https://example.invalid/v1',
+          },
+        ],
+      }
+      let serial = 0
+      const runs = new Map()
+      const records = new Map()
+      const state = reactive({ width: 530, kind: 'database', sent: null })
+      mockWindows('main')
+      mockIPC(
+        (cmd, args) => {
+          if (cmd === 'ai_get_config') return structuredClone(settings)
+          if (cmd === 'ai_activate_config') {
+            settings.activeId = args.profileId
+            return structuredClone(settings)
+          }
+          if (cmd === 'ai_list_conversations')
+            return [...records.values()]
+              .reverse()
+              .map(run => ({
+                id: run.conversationId,
+                title: run.entries[0].text,
+                model: run.model,
+                provider: run.provider,
+                createdAt: 1,
+                updatedAt: 2,
+              }))
+          if (cmd === 'ai_open_conversation')
+            return {
+              ...structuredClone(records.get(args.conversationId)),
+              id: '',
+              approval: null,
+            }
+          if (cmd === 'ai_start' || cmd === 'ai_send') {
+            state.sent = {
+              command: cmd,
+              mode: args.approvalMode,
+              files: (args.attachments ?? []).map(file => file.name),
+            }
+            const previous =
+              cmd === 'ai_send'
+                ? runs.get(args.runId)
+                : records.get(args.conversationId)
+            const id = `run-${++serial}`
+            const run = {
+              id,
+              conversationId: previous?.conversationId ?? `chat-${serial}`,
+              target: 'localhost',
+              provider: 'https://example.invalid/v1',
+              model: settings.profiles.find(p => p.id === settings.activeId)
+                .model,
+              status: 'running',
+              approval: null,
+              entries: [
+                ...(previous?.entries ?? []),
+                {
+                  role: 'user',
+                  text: args.prompt || '请分析上传的文件。',
+                  attachments: (args.attachments ?? []).map(file => ({
+                    name: file.name,
+                    size: new TextEncoder().encode(file.content).length,
+                  })),
+                },
+              ],
+            }
+            runs.set(id, run)
+            records.set(run.conversationId, run)
+            return structuredClone(run)
+          }
+          if (cmd === 'ai_step') {
+            const run = runs.get(args.runId)
+            run.status = 'completed'
+            run.entries.push({
+              role: 'assistant',
+              text: '已收到你的消息。\n\n可以继续描述要完成的任务，或上传日志和 SQL 文件。',
+            })
+            return structuredClone(run)
+          }
+          if (cmd === 'ai_forget' || cmd === 'ai_cancel') return
+          throw new Error(`Unexpected fixture command: ${cmd}`)
+        },
+        { shouldMockEvents: true }
+      )
+      const { default: Panel } =
+        await import('/src/components/agent/AiAgentPanel.vue')
+      i18n.global.locale.value = 'zh-CN'
+      createApp({
+        render: () =>
+          h('main', { style: 'padding:24px;height:100vh;overflow:auto' }, [
+            h(
+              'div',
+              {
+                style:
+                  'display:flex;gap:12px;margin-bottom:16px;font-size:12px',
+              },
+              [
+                h(
+                  'button',
+                  { onClick: () => (state.width = 320) },
+                  '窄分屏 320px'
+                ),
+                h(
+                  'button',
+                  { onClick: () => (state.width = 530) },
+                  '标准 530px'
+                ),
+                h(
+                  'button',
+                  { onClick: () => (state.width = 900) },
+                  '宽面板 900px'
+                ),
+                h(
+                  'button',
+                  {
+                    onClick: () =>
+                      (state.kind = state.kind === 'ssh' ? 'database' : 'ssh'),
+                  },
+                  '切换连接'
+                ),
+                h(
+                  'button',
+                  {
+                    onClick: () =>
+                      (i18n.global.locale.value =
+                        i18n.global.locale.value === 'zh-CN'
+                          ? 'en-US'
+                          : 'zh-CN'),
+                  },
+                  '中 / EN'
+                ),
+              ]
+            ),
+            h(
+              'div',
+              {
+                style: `display:flex;width:${state.width}px;max-width:100%;height:640px`,
+              },
+              [
+                h(Panel, {
+                  target: {
+                    kind: state.kind,
+                    sessionId: 'fixture',
+                    database: 'public',
+                  },
+                  title: 'localhost',
+                }),
+              ]
+            ),
+            h(
+              'pre',
+              {
+                id: 'last-request',
+                style: 'font-size:11px;margin-top:16px;white-space:pre-wrap',
+              },
+              JSON.stringify(state.sent)
+            ),
+          ]),
+      })
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

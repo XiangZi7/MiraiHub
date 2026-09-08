@@ -55,7 +55,7 @@ function confirmDelete(): void {
           <span class="beta">BETA</span>
         </header>
         <p class="subtitle">
-          {{ t('在 SSH 终端与数据库旁协作，所有增删改操作逐次审批。') }}
+          {{ t('在 SSH 终端与数据库旁协作，可在输入框中选择操作审批方式。') }}
         </p>
         <p
           v-if="!IS_TAURI"

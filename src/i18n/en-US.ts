@@ -1,4 +1,24 @@
 export default {
+  请求批准: 'Ask to approve',
+  帮我批准: 'Auto approve',
+  完全访问权限: 'Full access',
+  '每次工具操作前询问，包括只读操作':
+    'Ask before every tool operation, including reads',
+  '内置只读工具自动执行，其他操作询问':
+    'Run built-in read-only tools automatically; ask for other operations',
+  '当前连接的命令与 SQL 自动执行，可修改或删除数据':
+    'Run commands and SQL on this connection automatically, including changes and deletions',
+  'AI 操作审批方式': 'AI approval mode',
+  待发送附件: 'Pending attachments',
+  移除附件: 'Remove attachment',
+  上传文件: 'Upload files',
+  '上传文件：文本、日志、代码，每个最多 64 KB':
+    'Upload text, logs or code, up to 64 KB per file',
+  '正在读取附件…': 'Reading attachments…',
+  '附件内容将在发送时交给所选模型，并保存到此聊天。':
+    'Attachments are sent to the selected model when you send and saved in this chat.',
+  '在 SSH 终端与数据库旁协作，可在输入框中选择操作审批方式。':
+    'Work alongside SSH and databases; choose the approval mode in the composer.',
   'notification.unread': 'Notifications ({count} unread)',
   成功: 'Success',
   错误: 'Error',

@@ -19,14 +19,14 @@ const mockUrl = dataModule(`
     if(run.scope !== key(target)) throw new Error('错误目标')
     return {...run,id:'',approval:null,status:run.status === 'completed' ? 'completed' : 'cancelled'}
   }
-  export const start = async (target,prompt,profileId,conversationId) => {
-    mock.starts.push({target:clone(target),prompt,profileId,conversationId})
+  export const start = async (target,prompt,profileId,conversationId,attachments,approvalMode) => {
+    mock.starts.push({target:clone(target),prompt,profileId,conversationId,attachments,approvalMode})
     const id = 'run-' + ++mock.serial
     const previous = conversationId ? await openConversation(target,conversationId) : null
     const run = {id,conversationId:conversationId || 'chat-' + mock.serial,scope:key(target),target:'test',model:'mock',provider:'https://example.com',status:'running',approval:null,entries:[...(previous?.entries || []),{role:'user',text:prompt}]}
     mock.runs.set(id,run);save(run);return clone(run)
   }
-  export const send = async (id,prompt) => { const run = mock.runs.get(id); run.status='running';run.entries.push({role:'user',text:prompt});save(run);return clone(run) }
+  export const send = async (id,prompt,attachments,approvalMode) => { mock.lastSend={id,prompt,attachments,approvalMode}; const run = mock.runs.get(id); run.status='running';run.entries.push({role:'user',text:prompt});save(run);return clone(run) }
   export const step = async id => {
     if(mock.stepGate) return await mock.stepGate
     const run = mock.runs.get(id);run.status='completed';run.entries.push({role:'assistant',text:'**回复**'});save(run);return clone(run)
@@ -48,6 +48,20 @@ const { useAiAgent } = await sourceLoader({ '@/api/agent': mockUrl })(
   'src/composables/useAiAgent.ts'
 )
 const flush = () => new Promise(resolve => setImmediate(resolve))
+
+test('attachments and explicit approval modes reach both new and continued runs', async () => {
+  const { app, state } = fixture()
+  await flush()
+  const files = [{ name: 'query.sql', content: 'SELECT 1' }]
+  assert.equal(await state.send('', files, 'full'), true)
+  assert.deepEqual(mock.starts.at(-1).attachments, files)
+  assert.equal(mock.starts.at(-1).approvalMode, 'full')
+  await state.send('继续', [], 'ask')
+  assert.equal(mock.lastSend.approvalMode, 'ask')
+  await state.send('默认')
+  assert.equal(mock.lastSend.approvalMode, 'auto')
+  app.unmount()
+})
 function fixture(reset = true) {
   if (reset) {
     mock.records.clear()

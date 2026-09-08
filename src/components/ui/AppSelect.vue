@@ -35,6 +35,10 @@ const props = withDefaults(
     compact?: boolean
     /** 显示搜索框；选项超过 7 个时也会自动开启。 */
     searchable?: boolean
+    /** 需要完整展示说明时使用更宽的菜单。 */
+    menuMinWidth?: number
+    /** 长说明换行，避免重要选项说明被截断。 */
+    wrapDescriptions?: boolean
   }>(),
   {
     placeholder: '',
@@ -43,6 +47,8 @@ const props = withDefaults(
     hideLabel: false,
     compact: false,
     searchable: false,
+    menuMinWidth: 196,
+    wrapDescriptions: false,
   }
 )
 
@@ -109,7 +115,8 @@ function updatePosition(): void {
   const gap = 6
   const desiredHeight = Math.min(
     280,
-    visibleOptions.value.length * 38 + (showSearch.value ? 48 : 8)
+    visibleOptions.value.length * (props.wrapDescriptions ? 70 : 38) +
+      (showSearch.value ? 48 : 8)
   )
   const roomBelow = window.innerHeight - rect.bottom - viewportPadding - gap
   const roomAbove = rect.top - viewportPadding - gap
@@ -117,7 +124,7 @@ function updatePosition(): void {
     roomBelow < Math.min(120, desiredHeight) && roomAbove > roomBelow
   const availableHeight = Math.max(72, placeAbove ? roomAbove : roomBelow)
   const width = Math.min(
-    Math.max(rect.width, 196),
+    Math.max(rect.width, props.menuMinWidth),
     window.innerWidth - viewportPadding * 2
   )
   const left = Math.min(
@@ -377,7 +384,12 @@ watch(
                 }}</span>
                 <span
                   v-if="option.description"
-                  class="text-txt-3 mt-0.5 block truncate text-[10px]"
+                  class="text-txt-3 mt-0.5 block text-[10px]"
+                  :class="
+                    wrapDescriptions
+                      ? 'leading-relaxed break-words whitespace-normal'
+                      : 'truncate'
+                  "
                   >{{ option.description }}</span
                 >
               </span>

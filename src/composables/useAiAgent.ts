@@ -7,7 +7,13 @@ import {
   type Ref,
 } from 'vue'
 import * as api from '@/api/agent'
-import type { AgentConversation, AgentRun, AgentTarget } from '@/types/agent'
+import type {
+  AgentApprovalMode,
+  AgentAttachment,
+  AgentConversation,
+  AgentRun,
+  AgentTarget,
+} from '@/types/agent'
 
 /** Execution uses live backend snapshots; restored transcripts have no live run or approval. */
 export function useAiAgent(
@@ -221,9 +227,13 @@ export function useAiAgent(
       if (!accept(await api.step(state.run.id), token)) return
     }
   }
-  async function send(prompt: string): Promise<boolean> {
+  async function send(
+    prompt: string,
+    attachments: AgentAttachment[] = [],
+    approvalMode: AgentApprovalMode = 'auto'
+  ): Promise<boolean> {
     if (
-      !prompt.trim() ||
+      (!prompt.trim() && !attachments.length) ||
       !target.value.sessionId ||
       !active.value ||
       !profileId.value ||
@@ -242,7 +252,12 @@ export function useAiAgent(
       const previous = state.run
       let next: AgentRun
       if (previous?.id && previous.status === 'completed')
-        next = await api.send(previous.id, prompt.trim())
+        next = await api.send(
+          previous.id,
+          prompt.trim(),
+          attachments,
+          approvalMode
+        )
       else {
         if (previous?.id) await api.forget(previous.id)
         if (token !== generation) return false
@@ -250,7 +265,9 @@ export function useAiAgent(
           { ...target.value },
           prompt.trim(),
           profileId.value,
-          previous?.conversationId
+          previous?.conversationId,
+          attachments,
+          approvalMode
         )
       }
       if (!accept(next, token)) return false

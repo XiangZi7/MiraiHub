@@ -3,6 +3,7 @@ export interface AgentTarget {
   sessionId: string
   database: string
 }
+export type AgentApprovalMode = 'ask' | 'auto' | 'full'
 export interface AgentConfig {
   id: string
   name: string
@@ -53,6 +54,19 @@ export interface AgentEntry {
   role: 'user' | 'assistant' | 'tool' | 'audit' | 'error'
   text: string
   detail?: string
+  attachments?: AgentAttachmentInfo[]
+}
+export interface AgentAttachment {
+  name: string
+  content: string
+}
+export interface AgentAttachmentInfo {
+  name: string
+  size: number
+}
+export interface AgentDraftAttachment
+  extends AgentAttachment, AgentAttachmentInfo {
+  id: string
 }
 export interface AgentApproval {
   id: string
