@@ -203,7 +203,7 @@
   /* 弹窗统一沿用命令搜索框的细描边，不额外混入品牌色或加亮顶边。 */
   .overlay-surface,
   .dialog-window::after {
-    border: 1px solid var(--color-line-strong);
+    border: 1px solid var(--color-line);
   }
 
   /* 浮层单独取主题表面色的亮度，不再把已有的半透明色继续稀释。
