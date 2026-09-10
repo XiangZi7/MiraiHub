@@ -64,7 +64,9 @@ async function positionMenu(): Promise<void> {
     '--menu-origin-x': left < props.x ? '100%' : '0%',
     '--menu-origin-y': top < props.y ? '100%' : '0%',
   }
-  rootEnabledItems()[0]?.focus()
+  // 等待 visibility 生效后再聚焦，否则浏览器会忽略对隐藏菜单项的 focus。
+  await nextTick()
+  if (props.open && menu.value === element) rootEnabledItems()[0]?.focus()
 }
 
 function selectItem(item: ContextMenuItem): void {
