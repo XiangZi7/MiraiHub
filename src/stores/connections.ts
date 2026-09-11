@@ -11,6 +11,7 @@ import type {
   ConnectionTagDefinition,
   NewConnection,
   SavedConnection,
+  UngroupedPositions,
 } from '@/types/connection'
 
 export const useConnectionsStore = defineStore('connections', () => {
@@ -18,6 +19,8 @@ export const useConnectionsStore = defineStore('connections', () => {
     // 全部已保存的连接
     items: [] as SavedConnection[],
     groups: [] as ConnectionGroup[],
+    // SSH 与数据库各自的未分组位置
+    ungroupedPositions: {} as UngroupedPositions,
     tags: [] as ConnectionTagDefinition[],
     // 首次加载是否完成，避免加载途中把空列表当成"一条都没有"
     loaded: false,
@@ -33,14 +36,16 @@ export const useConnectionsStore = defineStore('connections', () => {
     return (pending ??= (async () => {
       do {
         refreshRequested = false
-        const [items, groups, tags] = await Promise.all([
+        const [items, groups, tags, ungroupedPositions] = await Promise.all([
           store.list(),
           store.listGroups(),
           store.listTags(),
+          store.listUngroupedPositions(),
         ])
         if (disposed) return
         state.items.splice(0, state.items.length, ...items)
         state.groups.splice(0, state.groups.length, ...groups)
+        state.ungroupedPositions = ungroupedPositions
         state.tags.splice(0, state.tags.length, ...tags)
         state.loaded = true
         state.error = ''
@@ -99,17 +104,16 @@ export const useConnectionsStore = defineStore('connections', () => {
     }
 
     for (const item of connections) {
-      const name = item.group.trim() || 'Ungrouped'
-      const key = name.toLocaleLowerCase()
+      const groupName = item.group.trim()
+      const name = groupName || 'Ungrouped'
+      // 空分组与用户命名为 Ungrouped 的实体分组使用不同的键。
+      const key = groupName.toLocaleLowerCase()
       const bucket = groups.get(key)
 
       if (bucket) bucket.items.push(item)
       else {
         groups.set(key, {
-          id:
-            name === 'Ungrouped'
-              ? `ungrouped-${kind}`
-              : `implicit-${kind}-${key}`,
+          id: !groupName ? `ungrouped-${kind}` : `implicit-${kind}-${key}`,
           name,
           kind,
           createdAt: item.createdAt,
@@ -119,12 +123,20 @@ export const useConnectionsStore = defineStore('connections', () => {
       }
     }
 
-    // 实体分组保留存储顺序；Ungrouped 是运行时兜底桶，固定垫底。
+    // 实体分组沿用存储顺序，未分组按单独保存的位置插入。
     const views = [...groups.values()]
-    return [
-      ...views.filter(group => group.name !== 'Ungrouped'),
-      ...views.filter(group => group.name === 'Ungrouped'),
-    ]
+    const ungroupedIndex = views.findIndex(
+      group => group.id === `ungrouped-${kind}`
+    )
+    if (ungroupedIndex >= 0) {
+      const [ungrouped] = views.splice(ungroupedIndex, 1)
+      views.splice(
+        Math.min(state.ungroupedPositions[kind] ?? views.length, views.length),
+        0,
+        ungrouped!
+      )
+    }
+    return views
   }
 
   return {

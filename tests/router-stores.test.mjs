@@ -41,6 +41,7 @@ let items = ${JSON.stringify(saved)}
 export const listeners = new Set()
 export const list = async () => items.map(item => ({...item}))
 export const listGroups = async () => []
+export const listUngroupedPositions = async () => ({})
 export const listTags = async () => []
 export const subscribe = fn => { listeners.add(fn); return () => listeners.delete(fn) }
 export const replace = next => { items = next; for(const fn of listeners) fn() }

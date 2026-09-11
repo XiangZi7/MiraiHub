@@ -32,6 +32,9 @@ export type LocalShellKind = 'powershell' | 'cmd' | 'git-bash'
 export type ConnectionGroupKind = 'ssh' | 'database'
 export type ConnectionGroupDropPosition = 'before' | 'after'
 
+/** 未分组在同类实体分组中的插入位置；未设置时位于末尾。 */
+export type UngroupedPositions = Partial<Record<ConnectionGroupKind, number>>
+
 /** 用户显式创建的分组；即使暂时没有连接也会保留。 */
 export interface ConnectionGroup {
   id: string
@@ -43,7 +46,7 @@ export interface ConnectionGroup {
 /** 侧边栏消费的分组视图，包含聚合后的连接。 */
 export interface ConnectionGroupView extends ConnectionGroup {
   items: SavedConnection[]
-  /** 未分组是运行时虚拟分组，不写入存储。 */
+  /** 未分组是运行时虚拟分组，仅排序位置单独持久化。 */
   virtual?: boolean
 }
 

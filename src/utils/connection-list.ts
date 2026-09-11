@@ -54,12 +54,5 @@ export function connectionList(
         terms.every(term => group.name.toLocaleLowerCase().includes(term))
     )
 
-  return [
-    ...visibleGroups.filter(
-      group => !(group.virtual && group.name === 'Ungrouped')
-    ),
-    ...visibleGroups.filter(
-      group => group.virtual && group.name === 'Ungrouped'
-    ),
-  ]
+  return visibleGroups
 }

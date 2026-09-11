@@ -73,10 +73,20 @@ test('sorts naturally within groups without changing the stored tree or dropping
 })
 
 test('connection sorting preserves the manually arranged group order', () => {
-  const reordered = [groups[1], groups[0], groups[2]]
-  for (const sort of ['name-asc', 'name-desc', 'host', 'recent'])
-    assert.deepEqual(
-      connectionList(reordered, '', sort).map(group => group.id),
-      ['empty', 'production', 'ungrouped']
-    )
+  for (const reordered of [
+    [groups[2], groups[1], groups[0]],
+    [groups[1], groups[2], groups[0]],
+    [groups[1], groups[0], groups[2]],
+  ]) {
+    for (const sort of ['name-asc', 'name-desc', 'host', 'recent']) {
+      assert.deepEqual(
+        connectionList(reordered, '', sort).map(group => group.id),
+        reordered.map(group => group.id)
+      )
+      assert.deepEqual(
+        connectionList(reordered, 'linux', sort).map(group => group.id),
+        reordered.filter(group => group.items.length).map(group => group.id)
+      )
+    }
+  }
 })

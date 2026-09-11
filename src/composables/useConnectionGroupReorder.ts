@@ -102,7 +102,7 @@ export function useConnectionGroupReorder(
   }
 
   function start(event: PointerEvent, group: ConnectionGroupView): void {
-    if (event.button !== 0 || !event.isPrimary || group.virtual) return
+    if (event.button !== 0 || !event.isPrimary) return
 
     activePointerId = event.pointerId
     startX = event.clientX

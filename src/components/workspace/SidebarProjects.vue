@@ -241,7 +241,11 @@ const groupDrag = useConnectionGroupDrag({
   groups: () => props.groups,
   onDrop(connectionId, group) {
     state.collapsed[group.id] = false
-    emit('move', connectionId, group.name === 'Ungrouped' ? '' : group.name)
+    emit(
+      'move',
+      connectionId,
+      group.id === `ungrouped-${group.kind}` ? '' : group.name
+    )
   },
 })
 const groupList = useTemplateRef<HTMLElement>('groupList')
@@ -401,13 +405,8 @@ function runContextAction(action: string): void {
         <button
           v-else
           type="button"
-          :class="[
-            'nav-item w-full',
-            !group.virtual && 'sidebar-group-draggable',
-          ]"
-          :data-reorderable-connection-group-id="
-            group.virtual ? undefined : group.id
-          "
+          class="nav-item sidebar-group-draggable w-full"
+          :data-reorderable-connection-group-id="group.id"
           :data-connection-group-kind="group.kind"
           :aria-expanded="isExpanded(group.id)"
           aria-haspopup="menu"

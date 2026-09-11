@@ -17,12 +17,14 @@ import type {
   ConnectionTagDefinition,
   NewConnection,
   SavedConnection,
+  UngroupedPositions,
 } from '@/types/connection'
 import type { ConnectionTagColor } from '@/types/connection'
 import { groupKindOf } from '@/types/connection'
 
 const STORAGE_KEY = 'miraihub.connections.v1'
 const GROUP_STORAGE_KEY = 'miraihub.connection-groups.v1'
+const UNGROUPED_POSITION_STORAGE_KEY = 'miraihub.ungrouped-positions.v1'
 const TAG_STORAGE_KEY = 'miraihub.connection-tags.v1'
 
 /** 通知同一页面内的其他订阅者数据变了 */
@@ -101,8 +103,54 @@ function readGroups(): ConnectionGroup[] {
   }
 }
 
-function writeGroups(groups: ConnectionGroup[]): void {
-  localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(groups))
+function readUngroupedPositions(): UngroupedPositions {
+  try {
+    const raw = localStorage.getItem(UNGROUPED_POSITION_STORAGE_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : null
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      return {}
+
+    const positions: UngroupedPositions = {}
+    for (const kind of ['ssh', 'database'] as const) {
+      const position = (parsed as Record<string, unknown>)[kind]
+      if (
+        typeof position === 'number' &&
+        Number.isSafeInteger(position) &&
+        position >= 0
+      )
+        positions[kind] = position
+    }
+    return positions
+  } catch (error) {
+    console.warn('读取未分组位置失败，按默认顺序处理：', error)
+    return {}
+  }
+}
+
+function writeGroups(
+  groups: ConnectionGroup[],
+  ungroupedPositions?: UngroupedPositions
+): void {
+  const previousPositions = ungroupedPositions
+    ? localStorage.getItem(UNGROUPED_POSITION_STORAGE_KEY)
+    : null
+  if (ungroupedPositions)
+    localStorage.setItem(
+      UNGROUPED_POSITION_STORAGE_KEY,
+      JSON.stringify(ungroupedPositions)
+    )
+  try {
+    localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(groups))
+  } catch (error) {
+    // 两项排序信息一同生效，写入失败时不能只留下新的未分组位置。
+    if (ungroupedPositions) {
+      if (previousPositions === null)
+        localStorage.removeItem(UNGROUPED_POSITION_STORAGE_KEY)
+      else
+        localStorage.setItem(UNGROUPED_POSITION_STORAGE_KEY, previousPositions)
+    }
+    throw error
+  }
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT))
 }
 
@@ -244,6 +292,10 @@ export async function listGroups(): Promise<ConnectionGroup[]> {
   return groups
 }
 
+export async function listUngroupedPositions(): Promise<UngroupedPositions> {
+  return readUngroupedPositions()
+}
+
 export async function listTags(): Promise<ConnectionTagDefinition[]> {
   return readTags().sort((a, b) => a.createdAt - b.createdAt)
 }
@@ -334,7 +386,7 @@ export async function renameGroup(id: string, name: string): Promise<void> {
   )
 }
 
-/** 按用户拖拽结果调整同类分组，数组顺序即持久化顺序。 */
+/** 同类分组一起排序；未分组只保存位置，不创建可编辑的实体分组。 */
 export async function reorderGroup(
   id: string,
   targetId: string,
@@ -343,17 +395,46 @@ export async function reorderGroup(
   if (id === targetId) return
 
   const groups = readGroups()
-  const source = groups.find(group => group.id === id)
-  const target = groups.find(group => group.id === targetId)
+  const kind =
+    groups.find(group => group.id === id)?.kind ??
+    (['ssh', 'database'] as const).find(kind => id === `ungrouped-${kind}`)
+  if (!kind) return
+
+  const positions = readUngroupedPositions()
+  const siblings = groups.filter(group => group.kind === kind)
+  const nextGroup = siblings[positions[kind] ?? siblings.length]
+  const lastGroup = siblings.at(-1)
+  const ungroupedId = `ungrouped-${kind}`
+  const sortable = [...groups]
+  sortable.splice(
+    nextGroup
+      ? groups.indexOf(nextGroup)
+      : lastGroup
+        ? groups.indexOf(lastGroup) + 1
+        : groups.length,
+    0,
+    { id: ungroupedId, name: 'Ungrouped', kind, createdAt: 0 }
+  )
+
+  const source = sortable.find(group => group.id === id)
+  const target = sortable.find(group => group.id === targetId)
   if (!source || !target || source.kind !== target.kind) return
 
-  const reordered = groups.filter(group => group.id !== id)
+  const reordered = sortable.filter(group => group.id !== id)
   const targetIndex = reordered.findIndex(group => group.id === targetId)
   if (targetIndex === -1) return
 
   reordered.splice(targetIndex + (position === 'after' ? 1 : 0), 0, source)
-  if (reordered.every((group, index) => group.id === groups[index]?.id)) return
-  writeGroups(reordered)
+  if (reordered.every((group, index) => group.id === sortable[index]?.id))
+    return
+
+  positions[kind] = reordered
+    .filter(group => group.kind === kind)
+    .findIndex(group => group.id === ungroupedId)
+  writeGroups(
+    reordered.filter(group => group.id !== ungroupedId),
+    positions
+  )
 }
 
 /** 删除分组时保留连接，并统一移回 Ungrouped。 */
@@ -361,6 +442,15 @@ export async function removeGroup(id: string): Promise<void> {
   const groups = readGroups()
   const target = groups.find(group => group.id === id)
   if (!target) return
+
+  const positions = readUngroupedPositions()
+  const position = positions[target.kind]
+  if (position !== undefined) {
+    const siblings = groups.filter(group => group.kind === target.kind)
+    const index = Math.min(position, siblings.length)
+    // 删除前面的实体分组时，未分组继续留在原来的相邻分组之间。
+    positions[target.kind] = index - (siblings.indexOf(target) < index ? 1 : 0)
+  }
 
   writeAll(
     readAll().map(connection =>
@@ -370,7 +460,10 @@ export async function removeGroup(id: string): Promise<void> {
         : connection
     )
   )
-  writeGroups(groups.filter(group => group.id !== id))
+  writeGroups(
+    groups.filter(group => group.id !== id),
+    positions
+  )
 }
 
 /**
@@ -387,6 +480,7 @@ export function subscribe(handler: () => void): () => void {
     if (
       event.key === STORAGE_KEY ||
       event.key === GROUP_STORAGE_KEY ||
+      event.key === UNGROUPED_POSITION_STORAGE_KEY ||
       event.key === TAG_STORAGE_KEY ||
       event.key === null
     )

@@ -152,9 +152,11 @@ async function openMenu(): Promise<void> {
   search.value = ''
   setInitialActiveIndex()
   open.value = true
-  await nextTick()
+  // 定位只依赖触发按钮，先写入位置再显示，避免首帧出现在旧位置。
   updatePosition()
-  if (showSearch.value) searchInput.value?.focus()
+  await nextTick()
+  if (open.value && showSearch.value)
+    searchInput.value?.focus({ preventScroll: true })
 }
 
 function closeMenu(): void {
@@ -324,7 +326,7 @@ watch(
     <Teleport to="body">
       <Transition name="app-select-pop">
         <div
-          v-if="open"
+          v-show="open"
           ref="menuRoot"
           :style="menuStyle"
           class="app-select-menu fixed z-100"
@@ -515,17 +517,14 @@ watch(
   color: var(--color-txt);
 }
 
-.app-select-pop-enter-active,
-.app-select-pop-leave-active {
-  transition:
-    opacity 140ms ease,
-    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+.app-select-pop-enter-active {
+  /* 与右键菜单一致：玻璃层随 v-show 复用，只做位移。
+     整层 opacity 动画会限制背景采样，让透明 WebView 闪白。 */
+  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.app-select-pop-enter-from,
-.app-select-pop-leave-to {
-  opacity: 0;
-  transform: translateY(-3px) scale(0.985);
+.app-select-pop-enter-from {
+  transform: translateY(3px);
 }
 
 @media (prefers-reduced-motion: reduce) {
