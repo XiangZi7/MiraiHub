@@ -99,6 +99,28 @@ test("兼容 Rust 子窗口 query，原生 label 的窗口身份优先且不泄�
   );
 });
 
+test("新建连接可携带预选分组，编辑已有连接时忽略分组参数", () => {
+  assert.deepEqual(
+    resolveWindowEntry(
+      "?window=connection&type=ssh&group=%E7%94%9F%E4%BA%A7%20a%26b",
+      "",
+      "connection",
+    ),
+    {
+      surface: "connection",
+      path: "/connection/ssh?group=%E7%94%9F%E4%BA%A7+a%26b",
+    },
+  );
+  assert.deepEqual(
+    resolveWindowEntry(
+      "?window=connection&type=ssh&connectionId=c-1&group=prod",
+      "",
+      "connection",
+    ),
+    { surface: "connection", path: "/connection/ssh?connectionId=c-1" },
+  );
+});
+
 test("连接深链接、具名导航、前进后退与活动标签保持一致", async () => {
   const { router, workspace, dispose } = fixture();
   try {

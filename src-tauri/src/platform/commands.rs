@@ -37,9 +37,15 @@ pub async fn open_connection_window(
     preferences: tauri::State<'_, WindowPreferences>,
     kind: Option<String>,
     connection_id: Option<String>,
+    group: Option<String>,
 ) -> AppResult<()> {
     let _opening = preferences.opening.lock().await;
-    window::open_connection_window(&app, kind.as_deref(), connection_id.as_deref())
+    window::open_connection_window(
+        &app,
+        kind.as_deref(),
+        connection_id.as_deref(),
+        group.as_deref(),
+    )
 }
 
 /// 打开原生设置子窗口。

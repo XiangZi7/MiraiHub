@@ -11,6 +11,7 @@ import {
 } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import AppIcon from './AppIcon.vue'
+import AppMenuSurface from './AppMenuSurface.vue'
 
 const { t } = useI18n()
 
@@ -54,6 +55,9 @@ const props = withDefaults(
 
 const model = defineModel<string>({ required: true })
 const trigger = useTemplateRef<HTMLButtonElement>('trigger')
+// 浮层分两层：menuRoot 承载定位与玻璃底，menu 只负责滚动选项。
+// 背景滤镜若放在滚动容器里，会跟着选项一起卷上去。
+const menuRoot = useTemplateRef<HTMLElement>('menuRoot')
 const menu = useTemplateRef<HTMLElement>('menu')
 const searchInput = useTemplateRef<HTMLInputElement>('searchInput')
 const open = shallowRef(false)
@@ -222,7 +226,7 @@ useEventListener(document, 'pointerdown', (event: PointerEvent) => {
   if (
     !target ||
     trigger.value?.contains(target) ||
-    menu.value?.contains(target)
+    menuRoot.value?.contains(target)
   )
     return
 
@@ -321,91 +325,97 @@ watch(
       <Transition name="app-select-pop">
         <div
           v-if="open"
-          :id="listboxId"
-          ref="menu"
-          role="listbox"
-          :aria-labelledby="labelId"
+          ref="menuRoot"
           :style="menuStyle"
-          class="app-select-menu scroll-thin fixed z-100 overflow-y-auto p-1.5"
+          class="app-select-menu fixed z-100"
           @keydown="handleKeydown"
         >
-          <label
-            v-if="showSearch"
-            class="app-select-search border-line-soft bg-card sticky top-0 z-10 mb-1 flex h-8 items-center gap-2 rounded-md border px-2"
-          >
-            <AppIcon
-              name="lucide:search"
-              :size="12"
-              class="text-txt-4"
-            />
-            <input
-              ref="searchInput"
-              v-model="search"
-              class="text-txt min-w-0 flex-1 bg-transparent text-[11px] outline-none"
-              :placeholder="t('搜索选项')"
-              @keydown.space.stop
-            />
-          </label>
-          <template
-            v-for="(option, index) in visibleOptions"
-            :key="option.value"
-          >
-            <div
-              v-if="
-                option.group &&
-                option.group !== visibleOptions[index - 1]?.group
-              "
-              class="app-select-group"
-            >
-              {{ option.group }}
-            </div>
-            <div
-              :id="`${listboxId}-option-${index}`"
-              role="option"
-              :aria-selected="model === option.value"
-              :aria-disabled="option.disabled || undefined"
-              :class="[
-                'app-select-option flex min-h-9 items-center gap-2 px-2.5 py-1.5 text-left',
-                index === activeIndex && 'app-select-option-active',
-                model === option.value && 'app-select-option-selected',
-                option.disabled && 'pointer-events-none opacity-40',
-              ]"
-              @pointerenter="!option.disabled && (activeIndex = index)"
-              @pointerdown.prevent
-              @click="selectOption(option)"
-            >
-              <span
-                class="app-select-indicator"
-                aria-hidden="true"
-              />
-              <span class="min-w-0 flex-1">
-                <span class="text-txt block truncate text-xs">{{
-                  option.label
-                }}</span>
-                <span
-                  v-if="option.description"
-                  class="text-txt-3 mt-0.5 block text-[10px]"
-                  :class="
-                    wrapDescriptions
-                      ? 'leading-relaxed break-words whitespace-normal'
-                      : 'truncate'
-                  "
-                  >{{ option.description }}</span
-                >
-              </span>
-              <AppIcon
-                v-if="model === option.value"
-                name="lucide:check"
-                :size="13"
-                class="text-violet shrink-0"
-              />
-            </div>
-          </template>
+          <AppMenuSurface />
           <div
-            v-if="!visibleOptions.length"
-            class="text-txt-4 px-2.5 py-5 text-center text-[11px]"
+            :id="listboxId"
+            ref="menu"
+            role="listbox"
+            :aria-labelledby="labelId"
+            class="app-select-list scroll-thin p-1.5"
           >
-            {{ t('没有匹配项') }}
+            <label
+              v-if="showSearch"
+              class="app-select-search border-line-soft bg-card sticky top-0 z-10 mb-1 flex h-8 items-center gap-2 rounded-md border px-2"
+            >
+              <AppIcon
+                name="lucide:search"
+                :size="12"
+                class="text-txt-4"
+              />
+              <input
+                ref="searchInput"
+                v-model="search"
+                class="text-txt min-w-0 flex-1 bg-transparent text-[11px] outline-none"
+                :placeholder="t('搜索选项')"
+                @keydown.space.stop
+              />
+            </label>
+            <template
+              v-for="(option, index) in visibleOptions"
+              :key="option.value"
+            >
+              <div
+                v-if="
+                  option.group &&
+                  option.group !== visibleOptions[index - 1]?.group
+                "
+                class="app-select-group"
+              >
+                {{ option.group }}
+              </div>
+              <div
+                :id="`${listboxId}-option-${index}`"
+                role="option"
+                :aria-selected="model === option.value"
+                :aria-disabled="option.disabled || undefined"
+                :class="[
+                  'app-select-option flex min-h-9 items-center gap-2 px-2.5 py-1.5 text-left',
+                  index === activeIndex && 'app-select-option-active',
+                  model === option.value && 'app-select-option-selected',
+                  option.disabled && 'pointer-events-none opacity-40',
+                ]"
+                @pointerenter="!option.disabled && (activeIndex = index)"
+                @pointerdown.prevent
+                @click="selectOption(option)"
+              >
+                <span
+                  class="app-select-indicator"
+                  aria-hidden="true"
+                />
+                <span class="min-w-0 flex-1">
+                  <span class="text-txt block truncate text-xs">{{
+                    option.label
+                  }}</span>
+                  <span
+                    v-if="option.description"
+                    class="text-txt-3 mt-0.5 block text-[10px]"
+                    :class="
+                      wrapDescriptions
+                        ? 'leading-relaxed break-words whitespace-normal'
+                        : 'truncate'
+                    "
+                    >{{ option.description }}</span
+                  >
+                </span>
+                <AppIcon
+                  v-if="model === option.value"
+                  name="lucide:check"
+                  :size="13"
+                  class="text-violet shrink-0"
+                />
+              </div>
+            </template>
+            <div
+              v-if="!visibleOptions.length"
+              class="text-txt-4 px-2.5 py-5 text-center text-[11px]"
+            >
+              {{ t('没有匹配项') }}
+            </div>
           </div>
         </div>
       </Transition>
@@ -434,22 +444,27 @@ watch(
   font-size: 10.5px;
 }
 
+/* 背景与模糊交给 AppMenuSurface：Windows 的透明 WebView 里
+   直接写 backdrop-filter 采不到窗口内容，只能退化成一块不透明底色。 */
 .app-select-menu {
+  display: flex;
+  flex-direction: column;
   border: 1px solid color-mix(in oklch, var(--color-line-strong) 88%, white 5%);
   border-radius: 11px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklch, white 3%, transparent),
-      transparent 32%
-    ),
-    color-mix(in oklch, var(--color-panel) 94%, transparent);
   box-shadow:
     0 18px 48px rgb(0 0 0 / 34%),
     0 3px 12px rgb(0 0 0 / 22%),
     inset 0 1px rgb(255 255 255 / 4%);
-  backdrop-filter: blur(28px) saturate(175%);
-  -webkit-backdrop-filter: blur(28px) saturate(175%);
+}
+
+/* 选项单独滚动，玻璃底留在外层不跟着卷动。
+   relative 让选项的 offsetTop 相对这一层计算，滚动定位才对得上。 */
+.app-select-list {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .app-select-option {

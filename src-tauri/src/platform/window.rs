@@ -143,10 +143,12 @@ pub fn enable_window_shadow(_window: &WebviewWindow) {}
 /// 同一时间只保留一个实例，重复触发把已有窗口带到前台。
 ///
 /// `kind` 决定打开 SSH 配置还是数据库配置，作为 query 参数传给前端。
+/// `group` 是新建时预选的分组名，从分组右键菜单进来时带上。
 pub fn open_connection_window(
     app: &AppHandle,
     kind: Option<&str>,
     connection_id: Option<&str>,
+    group: Option<&str>,
 ) -> AppResult<()> {
     if let Some(dialog) = app.get_webview_window(CONNECTION_WINDOW) {
         if dialog.is_visible().map_err(to_app_error)? {
@@ -171,7 +173,18 @@ pub fn open_connection_window(
     });
     let url = match safe_connection_id {
         Some(id) => format!("index.html?window=connection&type={kind}&connectionId={id}"),
-        None => format!("index.html?window=connection&type={kind}"),
+        None => {
+            // 编辑已有连接时不预选分组：归属以存档为准。
+            let group = group
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(percent_encode_component)
+                .unwrap_or_default();
+            match group.is_empty() {
+                true => format!("index.html?window=connection&type={kind}"),
+                false => format!("index.html?window=connection&type={kind}&group={group}"),
+            }
+        }
     };
 
     let mut builder =
@@ -312,6 +325,44 @@ pub fn show_child_window(window: &WebviewWindow) -> AppResult<()> {
 
 fn to_app_error(err: tauri::Error) -> AppError {
     AppError::internal(err.to_string())
+}
+
+/// 按 RFC 3986 的 unreserved 集合做百分号编码。
+///
+/// 分组名是用户自己起的：中文、空格、`&`、`#` 都可能出现，
+/// 原样拼进 query 轻则把名字截断，重则多塞出一个参数。
+/// 只保留 `A-Z a-z 0-9 - _ . ~`，其余一律按 UTF-8 字节转义 ——
+/// 与前端 `encodeURIComponent` 的行为一致。
+fn percent_encode_component(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod encode_tests {
+    use super::percent_encode_component;
+
+    #[test]
+    fn keeps_unreserved_characters() {
+        assert_eq!(percent_encode_component("prod-db_1.a~b"), "prod-db_1.a~b");
+    }
+
+    #[test]
+    fn escapes_separators_and_non_ascii() {
+        assert_eq!(percent_encode_component("a&b=c#d"), "a%26b%3Dc%23d");
+        assert_eq!(percent_encode_component("a b"), "a%20b");
+        assert_eq!(percent_encode_component("玄武"), "%E7%8E%84%E6%AD%A6");
+    }
 }
 
 #[cfg(all(test, windows))]

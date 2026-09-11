@@ -26,9 +26,12 @@ type SectionId = 'general' | 'advanced' | 'ssh-key' | 'proxy'
 const props = withDefaults(
   defineProps<{
     connectionId?: string
+    /** 新建时预选的分组名，来自分组右键菜单；编辑已有连接时忽略。 */
+    defaultGroup?: string
   }>(),
   {
     connectionId: '',
+    defaultGroup: '',
   }
 )
 
@@ -81,7 +84,7 @@ const loadingConnection = shallowRef(Boolean(props.connectionId))
 const savePassword = shallowRef<boolean>(settings.rememberPasswords)
 const form = reactive({
   name: '',
-  group: '',
+  group: props.defaultGroup,
   host: '',
   port: '22',
   username: 'root',

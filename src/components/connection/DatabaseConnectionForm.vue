@@ -28,9 +28,12 @@ type SectionId = 'general' | 'ssl'
 const props = withDefaults(
   defineProps<{
     connectionId?: string
+    /** 新建时预选的分组名，来自分组右键菜单；编辑已有连接时忽略。 */
+    defaultGroup?: string
   }>(),
   {
     connectionId: '',
+    defaultGroup: '',
   }
 )
 
@@ -71,7 +74,7 @@ const databaseLabel = computed(() =>
 
 const form = reactive({
   name: '',
-  group: '',
+  group: props.defaultGroup,
   host: '',
   port: defaultPort.value,
   database: '',

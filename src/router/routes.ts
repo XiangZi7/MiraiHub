@@ -59,6 +59,7 @@ export const routes: RouteRecordRaw[] = [
         typeof route.query.connectionId === 'string'
           ? route.query.connectionId
           : '',
+      group: typeof route.query.group === 'string' ? route.query.group : '',
     }),
     meta: { surface: 'connection', title: '连接配置' },
   },

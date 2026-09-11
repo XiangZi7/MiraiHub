@@ -45,6 +45,7 @@ const emit = defineEmits<{
 }>()
 
 const {
+  connections,
   groupsFor,
   loaded,
   create: createConnection,
@@ -117,9 +118,13 @@ const transferSessionId = computed(() => {
   )
 })
 
-/** 新建连接时带上当前视图对应的类型，省一次手动切换 */
-function addConnection(): void {
-  openConnectionWindow(active.value === 'databases' ? 'database' : 'ssh')
+/** 新建连接时带上当前视图对应的类型，省一次手动切换；从分组菜单进来还预选该分组 */
+function addConnection(group?: string): void {
+  openConnectionWindow(
+    active.value === 'databases' ? 'database' : 'ssh',
+    undefined,
+    group
+  )
 }
 
 function openAddMenu(event: MouseEvent): void {
@@ -162,10 +167,16 @@ async function moveConnection(
   }
 }
 
+/**
+ * 克隆一条连接。
+ *
+ * 认证方式、启动命令这些都在 settings 里，深拷贝一份，
+ * 之后改副本不会反过来动到原连接。
+ */
 async function duplicateConnection(connection: SavedConnection): Promise<void> {
   try {
-    await createConnection({
-      name: `${connection.name} Copy`,
+    const created = await createConnection({
+      name: cloneNameFor(connection.name),
       kind: connection.kind,
       host: connection.host,
       port: connection.port,
@@ -176,13 +187,30 @@ async function duplicateConnection(connection: SavedConnection): Promise<void> {
       tagColor: connection.tagColor,
       settings: structuredClone(toRaw(connection.settings)),
     })
-    toast.success(`连接“${connection.name}”已复制`)
+    toast.success(`已克隆为“${created.name}”`)
   } catch (error) {
     toast.error({
-      title: t('复制连接失败'),
+      title: t('克隆连接失败'),
       description: error instanceof Error ? error.message : String(error),
     })
   }
+}
+
+/**
+ * 「生产库」→「生产库 副本」→「生产库 副本 2」……
+ *
+ * 连克隆两次得给出两个不同的名字，否则侧栏里会并排躺着两条看不出区别的记录；
+ * 先剥掉已有的副本后缀，避免出现「副本 副本 副本」。
+ */
+function cloneNameFor(name: string): string {
+  const base = name.replace(/\s*副本(\s*\d+)?$/, '').trim() || name
+  const taken = new Set(connections.map(item => item.name))
+  let candidate = `${base} 副本`
+
+  for (let index = 2; taken.has(candidate); index += 1)
+    candidate = `${base} 副本 ${index}`
+
+  return candidate
 }
 
 async function handleCreateGroup(name: string): Promise<void> {

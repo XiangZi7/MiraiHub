@@ -85,6 +85,7 @@ export default {
   '连接已移到 Ungrouped': 'Connection moved to Ungrouped',
   移动连接失败: 'Could not move connection',
   复制连接失败: 'Could not duplicate connection',
+  克隆连接失败: 'Could not clone connection',
   创建分组失败: 'Could not create group',
   重命名分组失败: 'Could not rename group',
   调整分组顺序失败: 'Could not reorder groups',

@@ -65,16 +65,22 @@ export function hideWindow(): void {
  * `kind` 决定打开 SSH、本地终端还是数据库配置窗口。
  * MySQL / PostgreSQL 属于数据库窗口内部的协议选择，不与 SSH 放在同一级。
  *
+ * `group` 是新建时预选的分组：从某个分组的右键菜单进来，
+ * 表单就该已经归好位，而不是让用户再翻一次下拉框。编辑已有连接时忽略。
+ *
  * 浏览器开发态用 popup 降级，方便不启动 Tauri 也能检查表单 UI。
  */
 export function openConnectionWindow(
   kind: 'ssh' | 'local' | 'database',
-  connectionId?: string
+  connectionId?: string,
+  group?: string
 ): void {
   const editQuery = connectionId
     ? `&connectionId=${encodeURIComponent(connectionId)}`
     : ''
-  const query = `&type=${kind}${editQuery}`
+  const groupQuery =
+    !connectionId && group ? `&group=${encodeURIComponent(group)}` : ''
+  const query = `&type=${kind}${editQuery}${groupQuery}`
 
   if (!IS_TAURI) {
     window
@@ -87,7 +93,7 @@ export function openConnectionWindow(
     return
   }
 
-  void invoke('open_connection_window', { kind, connectionId }).catch(
+  void invoke('open_connection_window', { kind, connectionId, group }).catch(
     (error: unknown) => {
       console.error('Failed to open connection window:', error)
     }

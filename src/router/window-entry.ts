@@ -36,9 +36,15 @@ export function resolveWindowEntry(
       ? query.get('type')!
       : 'ssh'
     const connectionId = query.get('connectionId')
+    // 新建时可以带上预选分组；编辑已有连接时归属以存档为准，忽略它。
+    const group = connectionId ? null : query.get('group')
+    const params = new URLSearchParams()
+    if (connectionId) params.set('connectionId', connectionId)
+    if (group) params.set('group', group)
+    const search = params.toString()
     return {
       surface,
-      path: `/connection/${kind}${connectionId ? `?connectionId=${encodeURIComponent(connectionId)}` : ''}`,
+      path: `/connection/${kind}${search ? `?${search}` : ''}`,
     }
   }
   return {

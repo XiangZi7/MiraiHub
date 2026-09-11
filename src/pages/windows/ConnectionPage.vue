@@ -9,7 +9,10 @@ import DatabaseConnectionForm from '@/components/connection/DatabaseConnectionFo
 import LocalConnectionForm from '@/components/connection/LocalConnectionForm.vue'
 import SshConnectionForm from '@/components/connection/SshConnectionForm.vue'
 
-const props = defineProps<{ kind: string; connectionId: string }>()
+const props = withDefaults(
+  defineProps<{ kind: string; connectionId: string; group?: string }>(),
+  { group: '' }
+)
 const isDatabase = computed(() => props.kind === 'database')
 const isLocal = computed(() => props.kind === 'local')
 const databaseKind = shallowRef<'mysql' | 'postgresql'>('mysql')
@@ -70,17 +73,20 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <LocalConnectionForm
         v-if="isLocal"
         :connection-id="connectionId"
+        :default-group="group"
         @close="closeDialog"
       />
       <SshConnectionForm
         v-else-if="!isDatabase"
         :connection-id="connectionId"
+        :default-group="group"
         @close="closeDialog"
       />
       <DatabaseConnectionForm
         v-else
         v-model:kind="databaseKind"
         :connection-id="connectionId"
+        :default-group="group"
         @close="closeDialog"
       />
     </main>

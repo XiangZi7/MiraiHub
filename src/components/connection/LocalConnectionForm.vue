@@ -25,8 +25,10 @@ const { settings } = useSettings()
 const props = withDefaults(
   defineProps<{
     connectionId?: string
+    /** 新建时预选的分组名，来自分组右键菜单；编辑已有连接时忽略。 */
+    defaultGroup?: string
   }>(),
-  { connectionId: '' }
+  { connectionId: '', defaultGroup: '' }
 )
 
 const emit = defineEmits<{ close: [] }>()
@@ -36,7 +38,7 @@ const loading = shallowRef(Boolean(props.connectionId))
 
 const form = reactive({
   name: '',
-  group: '',
+  group: props.defaultGroup,
   shell: settings.terminalShell as LocalShellKind,
   workingDirectory: '',
   startupCommand: '',

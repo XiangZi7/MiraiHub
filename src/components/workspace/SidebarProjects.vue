@@ -37,7 +37,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   open: [connection: SavedConnection]
-  addConnection: []
+  addConnection: [group?: string]
   createGroup: [name: string]
   renameGroup: [groupId: string, name: string]
   reorderGroup: [
@@ -141,7 +141,8 @@ const contextItems = computed<ContextMenuItem[]>(() => {
           ]
         : []),
       { id: 'edit', label: '编辑连接', icon: 'lucide:pencil' },
-      { id: 'duplicate', label: '复制连接', icon: 'lucide:copy' },
+      // 克隆整条配置（含认证方式与启动命令），不是把连接信息拷到剪贴板。
+      { id: 'duplicate', label: '克隆连接', icon: 'lucide:copy-plus' },
       ...(database
         ? [
             {
@@ -340,7 +341,9 @@ function runContextAction(action: string): void {
   const group = props.groups.find(group => group.id === state.menuGroup?.id)
   if (!group) return
 
-  if (action === 'add-connection') emit('addConnection')
+  // Ungrouped 是运行时兜底桶，不是真实分组名，新建时不预选。
+  if (action === 'add-connection')
+    emit('addConnection', group.virtual ? undefined : group.name)
   else if (action === 'create-group') state.creatingGroup = true
   else if (action === 'toggle-group') toggleGroup(group.id)
   else if (action === 'rename-group' && !group.virtual)
