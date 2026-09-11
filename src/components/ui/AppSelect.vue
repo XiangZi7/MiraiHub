@@ -256,9 +256,14 @@ watch(activeIndex, async index => {
     list.scrollTop = bottom - list.clientHeight
 })
 
-watch(search, () => {
-  activeIndex.value = enabledIndexFrom(-1, 1)
-})
+watch(
+  search,
+  () => {
+    activeIndex.value = enabledIndexFrom(-1, 1)
+  },
+  // 清空搜索时先重置，再由 openMenu 恢复已选项，避免异步回调覆盖它。
+  { flush: 'sync' }
+)
 
 watch(
   () => props.disabled,
