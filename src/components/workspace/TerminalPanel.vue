@@ -160,7 +160,8 @@ const connectingText = computed(() => {
  */
 watch(
   [
-    containerRef,
+    // 通过 getter 比较容器身份；直接传模板 shallowRef 会在生产模式强制触发整个监听器。
+    () => containerRef.value,
     () =>
       JSON.stringify([props.config, props.terminalType, props.startupCommand]),
   ],

@@ -58,7 +58,8 @@ watch(error, message => {
 })
 
 watch(
-  [containerRef, () => JSON.stringify(props.settings)],
+  // getter 避免模板 shallowRef 在生产模式下让同值配置也触发重启。
+  [() => containerRef.value, () => JSON.stringify(props.settings)],
   async ([container]) => {
     if (!container) return
     if (!mounted) {
