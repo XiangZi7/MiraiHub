@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { AgentProfileDraft } from '@/types/agent'
+import type { AgentApiFormat, AgentProfileDraft } from '@/types/agent'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AiModelField from './AiModelField.vue'
@@ -11,8 +11,14 @@ defineProps<{ disabled: boolean }>()
 const draft = defineModel<AgentProfileDraft>({ required: true })
 const formats = [
   { value: 'openai', label: 'OpenAI · Chat Completions' },
+  { value: 'responses', label: 'OpenAI · Responses' },
   { value: 'anthropic', label: 'Claude · Messages' },
 ]
+const formatHelp: Record<AgentApiFormat, string> = {
+  openai: 'OpenAI Chat Completions 格式；可连接官网或兼容的中转站。',
+  responses: 'OpenAI Responses 格式；适用于使用 /responses 接口的模型或中转站。',
+  anthropic: 'Claude Messages 格式；例如 https://api.anthropic.com/v1。',
+}
 </script>
 <template>
   <fieldset
@@ -55,11 +61,7 @@ const formats = [
         id="ai-base-url-help"
         class="ai-field-help"
       >
-        {{
-          draft.apiFormat === 'anthropic'
-            ? t('Claude Messages 格式；例如 https://api.anthropic.com/v1。')
-            : t('OpenAI Chat Completions 格式；可连接官网或兼容的中转站。')
-        }}
+        {{ t(formatHelp[draft.apiFormat]) }}
         {{ t('基础地址可按服务商要求修改。') }}
       </p>
     </div>

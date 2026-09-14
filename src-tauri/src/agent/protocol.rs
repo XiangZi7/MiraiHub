@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 pub(super) fn endpoint(config: &Config, resource: &str) -> AppResult<reqwest::Url> {
     let mut url = config::validate_url(&config.base_url)?;
     let mut path = url.path().trim_end_matches('/').to_owned();
-    for suffix in ["/chat/completions", "/messages", "/models"] {
+    for suffix in ["/chat/completions", "/responses", "/messages", "/models"] {
         if path.ends_with(suffix) {
             path.truncate(path.len() - suffix.len());
             break;
@@ -23,7 +23,9 @@ pub(super) fn authenticate(
     request: reqwest::RequestBuilder,
 ) -> reqwest::RequestBuilder {
     match config.api_format {
-        ApiFormat::Openai if !config.api_key.is_empty() => request.bearer_auth(&config.api_key),
+        ApiFormat::Openai | ApiFormat::Responses if !config.api_key.is_empty() => {
+            request.bearer_auth(&config.api_key)
+        }
         ApiFormat::Anthropic => {
             let request = request.header("anthropic-version", "2023-06-01");
             if config.api_key.is_empty() {
@@ -146,6 +148,7 @@ pub(super) async fn completion(
     let result = config::request_json(request).await?;
     match config.api_format {
         ApiFormat::Openai => Ok(result),
+        ApiFormat::Responses => super::responses::normalize(result),
         ApiFormat::Anthropic => normalize_anthropic(result),
     }
 }
@@ -169,7 +172,7 @@ pub(super) async fn streaming_completion(
             .header("accept", "text/event-stream")
             .json(&body),
     );
-    super::streaming::completion(request, on_progress).await
+    super::streaming::completion(request, config.api_format, on_progress).await
 }
 
 fn completion_body(
@@ -180,7 +183,22 @@ fn completion_body(
     config.ready()?;
     let (resource, body) = match config.api_format {
         ApiFormat::Anthropic => ("messages", anthropic_body(config, messages, tools)?),
+        ApiFormat::Responses => (
+            "responses",
+            super::responses::body(config, messages, tools)?,
+        ),
         ApiFormat::Openai => {
+            let messages: Vec<_> = messages
+                .iter()
+                .cloned()
+                .map(|mut message| {
+                    if let Some(fields) = message.as_object_mut() {
+                        fields.remove("_responses_output");
+                        fields.remove("_anthropic_content");
+                    }
+                    message
+                })
+                .collect();
             let mut body = json!({"model":config.model, "messages":messages, "stream":false});
             // New OpenAI reasoning models require this field; compatible endpoints commonly use max_tokens.
             let model = config.model.to_ascii_lowercase();
@@ -208,7 +226,12 @@ fn completion_body(
 pub(super) fn history_message(message: &Value) -> Value {
     let mut result =
         json!({"role":"assistant", "content":message["content"].as_str().unwrap_or("")});
-    for key in ["tool_calls", "reasoning_content", "_anthropic_content"] {
+    for key in [
+        "tool_calls",
+        "reasoning_content",
+        "_anthropic_content",
+        "_responses_output",
+    ] {
         if let Some(value) = message.get(key) {
             result[key] = value.clone();
         }
@@ -222,6 +245,18 @@ mod tests {
     #[test]
     fn builds_native_and_relay_endpoints_without_duplicate_suffixes() {
         for (format, base, resource, expected) in [
+            (
+                ApiFormat::Responses,
+                "https://relay.example/v1/responses/",
+                "responses",
+                "https://relay.example/v1/responses",
+            ),
+            (
+                ApiFormat::Responses,
+                "https://relay.example/v1/responses",
+                "models",
+                "https://relay.example/v1/models",
+            ),
             (
                 ApiFormat::Openai,
                 "https://api.openai.com",
@@ -279,6 +314,24 @@ mod tests {
         let history = history_message(&message);
         assert_eq!(history["reasoning_content"], "reasoning");
         assert_eq!(history["tool_calls"], message["tool_calls"]);
+    }
+    #[test]
+    fn responses_history_metadata_is_not_sent_to_chat_completions() {
+        let config = Config {
+            enabled: true,
+            model: "test".into(),
+            ..Config::default()
+        };
+        let (_, body) = completion_body(
+            &config,
+            &[json!({"role":"assistant", "content":"ok", "_responses_output":[]})],
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            body["messages"],
+            json!([{"role":"assistant", "content":"ok"}])
+        );
     }
     #[test]
     fn rejects_invalid_and_truncated_claude_responses() {

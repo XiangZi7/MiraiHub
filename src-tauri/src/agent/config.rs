@@ -86,6 +86,7 @@ pub fn validate_url(raw: &str) -> AppResult<reqwest::Url> {
 pub enum ApiFormat {
     #[default]
     Openai,
+    Responses,
     Anthropic,
 }
 #[derive(Clone, Deserialize, Serialize)]

@@ -1,6 +1,6 @@
 //! Bounded SSE decoding for OpenAI-compatible providers, including DeepSeek.
 //! Only a complete, successful response may become executable tool calls.
-use super::config;
+use super::config::{self, ApiFormat};
 use crate::error::{AppError, AppResult};
 use serde_json::{json, Value};
 
@@ -11,6 +11,9 @@ const MAX_WIRE_BYTES: usize = 16 * MAX_RESPONSE_BYTES;
 struct Decoder {
     line: Vec<u8>,
     data: Vec<u8>,
+    event_name: Vec<u8>,
+    first_line: bool,
+    format: ApiFormat,
     after_cr: bool,
     wire_bytes: usize,
     payload_bytes: usize,
@@ -22,6 +25,7 @@ impl Decoder {
     fn new() -> Self {
         Self {
             message: json!({"role":"assistant", "content":""}),
+            first_line: true,
             ..Self::default()
         }
     }
@@ -47,7 +51,7 @@ impl Decoder {
                 self.end_line(on_progress)?;
             } else {
                 self.line.push(byte);
-                if self.line.len() + self.data.len() > MAX_RESPONSE_BYTES {
+                if self.line.len() + self.data.len() + self.event_name.len() > MAX_RESPONSE_BYTES {
                     return Err(AppError::invalid_input("模型响应超过 1 MB 限制"));
                 }
             }
@@ -56,38 +60,73 @@ impl Decoder {
     }
     fn end_line(&mut self, on_progress: &mut (dyn FnMut(&str, &str) + Send)) -> AppResult<()> {
         let line = std::mem::take(&mut self.line);
+        let line = if std::mem::take(&mut self.first_line) {
+            line.strip_prefix(b"\xef\xbb\xbf").unwrap_or(&line)
+        } else {
+            &line
+        };
         if line.is_empty() {
-            if !self.data.is_empty() {
-                let data = std::mem::take(&mut self.data);
-                self.event(&data, on_progress)?;
-            }
+            self.dispatch(on_progress)?;
         } else if let Some(data) = line.strip_prefix(b"data:") {
             let data = data.strip_prefix(b" ").unwrap_or(data);
             self.data.extend_from_slice(data);
             self.data.push(b'\n');
+        } else if let Some(name) = line.strip_prefix(b"event:") {
+            self.event_name = name.trim_ascii().to_vec();
         }
-        // Comments (DeepSeek keepalives), event names and unknown SSE fields are ignored.
+        // Comments (DeepSeek keepalives) and unknown SSE fields are ignored.
         Ok(())
+    }
+    fn dispatch(&mut self, on_progress: &mut (dyn FnMut(&str, &str) + Send)) -> AppResult<()> {
+        let data = std::mem::take(&mut self.data);
+        let name = std::mem::take(&mut self.event_name);
+        if data.trim_ascii().is_empty() {
+            return Ok(());
+        }
+        self.event(&data, &name, on_progress)
     }
     fn event(
         &mut self,
         data: &[u8],
+        name: &[u8],
         on_progress: &mut (dyn FnMut(&str, &str) + Send),
     ) -> AppResult<()> {
         if data.trim_ascii() == b"[DONE]" {
             self.done = true;
             return Ok(());
         }
-        let event: Value = serde_json::from_slice(data)
-            .map_err(|_| AppError::invalid_input("模型流式响应不是有效 JSON"))?;
-        if !event["error"].is_null() {
+        if name == b"error" {
             return Err(AppError::internal(
                 "模型服务在生成过程中返回错误，请检查模型与中转站状态",
             ));
         }
-        let choices = event["choices"]
-            .as_array()
-            .ok_or_else(|| AppError::invalid_input("服务未返回兼容的流式响应"))?;
+        let event: Value = serde_json::from_slice(data)
+            .map_err(|_| AppError::invalid_input("模型流式响应不是有效 JSON"))?;
+        if !event["error"].is_null() || event["type"] == "error" {
+            return Err(AppError::internal(
+                "模型服务在生成过程中返回错误，请检查模型与中转站状态",
+            ));
+        }
+        let kind = event["type"]
+            .as_str()
+            .unwrap_or_else(|| std::str::from_utf8(name).unwrap_or(""));
+        if auxiliary_event(&event, kind) {
+            return Ok(());
+        }
+        if self.format == ApiFormat::Responses {
+            return self.responses_event(&event, kind, on_progress);
+        }
+        if kind.starts_with("response.") {
+            return Err(AppError::invalid_input(
+                "服务返回了 Responses 流，请在 AI Agent 设置中将 API 格式改为 OpenAI · Responses",
+            ));
+        }
+        if kind.starts_with("message_") || kind.starts_with("content_block_") {
+            return Err(AppError::invalid_input("服务返回了 Claude Messages 流，请在 AI Agent 设置中将 API 格式改为 Claude · Messages"));
+        }
+        let choices = event["choices"].as_array().ok_or_else(|| {
+            AppError::invalid_input("流式分片缺少 choices，请检查 API 格式与中转站协议转换")
+        })?;
         // A final usage-only chunk has no choices.
         if choices.is_empty() {
             return Ok(());
@@ -97,8 +136,25 @@ impl Decoder {
         }
         let choice = &choices[0];
         let delta = &choice["delta"];
-        if self.finish_reason.is_some() {
-            return Err(AppError::invalid_input("服务未返回兼容的流式响应"));
+        if let Some(reason) = &self.finish_reason {
+            // A relay may repeat its terminal chunk or send usage with an empty
+            // delta. Never accept new content/calls or a changed finish reason.
+            let empty = delta.is_null()
+                || delta.as_object().is_some_and(|fields| {
+                    fields
+                        .values()
+                        .all(|v| v.is_null() || v == "" || v.as_array().is_some_and(Vec::is_empty))
+                });
+            if empty
+                && (choice["finish_reason"].is_null()
+                    || choice["finish_reason"] == ""
+                    || choice["finish_reason"] == *reason)
+            {
+                return Ok(());
+            }
+            return Err(AppError::invalid_input(
+                "模型结束标记后仍返回内容或冲突状态，未执行本次工具调用",
+            ));
         }
         self.payload_bytes += serde_json::to_vec(delta).unwrap_or_default().len();
         if self.payload_bytes > MAX_RESPONSE_BYTES {
@@ -132,21 +188,35 @@ impl Decoder {
             let part = &calls[0];
             let call = &mut self.message["tool_calls"][0];
             for key in ["id", "type"] {
-                if let Some(value) = part.get(key).filter(|value| !value.is_null()) {
+                // Relays can serialize omitted metadata as empty strings on
+                // argument-only chunks. Keep the established identity/type.
+                if let Some(value) = part
+                    .get(key)
+                    .filter(|value| !value.is_null() && *value != "")
+                {
                     if !value.is_string() {
-                        return Err(AppError::invalid_input("模型工具调用分片无效"));
+                        return Err(AppError::invalid_input(
+                            "模型工具调用的 id/type 不是字符串，未执行本次操作",
+                        ));
                     }
                     if key == "type" && value != "function" {
                         return Err(AppError::invalid_input("不支持的工具类型"));
                     }
                     if key == "id" && call[key] != "" && call[key] != *value {
-                        return Err(AppError::invalid_input("模型工具调用分片无效"));
+                        return Err(AppError::invalid_input(
+                            "模型工具调用的 ID 在分片间发生冲突，未执行本次操作",
+                        ));
                     }
                     call[key] = value.clone();
                 }
             }
             for key in ["name", "arguments"] {
-                if let Some(text) = part["function"][key].as_str() {
+                if let Some(value) = part["function"].get(key).filter(|value| !value.is_null()) {
+                    let text = value.as_str().ok_or_else(|| {
+                        AppError::invalid_input(
+                            "模型工具调用的函数名或参数不是字符串，未执行本次操作",
+                        )
+                    })?;
                     append(&mut call["function"][key], text)?;
                 }
             }
@@ -163,8 +233,72 @@ impl Decoder {
         if !phase.is_empty() {
             on_progress(self.message["content"].as_str().unwrap_or(""), phase);
         }
-        if let Some(reason) = choice["finish_reason"].as_str() {
+        if let Some(reason) = choice["finish_reason"]
+            .as_str()
+            .filter(|reason| !reason.is_empty())
+        {
             self.finish_reason = Some(reason.into());
+        }
+        Ok(())
+    }
+    fn responses_event(
+        &mut self,
+        event: &Value,
+        kind: &str,
+        on_progress: &mut (dyn FnMut(&str, &str) + Send),
+    ) -> AppResult<()> {
+        if !kind.starts_with("response.") {
+            return Err(AppError::invalid_input(
+                "服务未返回兼容 OpenAI Responses 的响应",
+            ));
+        }
+        self.payload_bytes += serde_json::to_vec(event).unwrap_or_default().len();
+        if self.payload_bytes > MAX_RESPONSE_BYTES {
+            return Err(AppError::invalid_input("模型响应超过 1 MB 限制"));
+        }
+        match kind {
+            "response.output_text.delta" | "response.refusal.delta" => {
+                let delta = event["delta"].as_str().ok_or_else(|| {
+                    AppError::invalid_input("服务未返回兼容 OpenAI Responses 的响应")
+                })?;
+                append(&mut self.message["content"], delta)?;
+                on_progress(self.message["content"].as_str().unwrap_or(""), "answering");
+            }
+            "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
+                on_progress(self.message["content"].as_str().unwrap_or(""), "thinking");
+            }
+            "response.function_call_arguments.delta" | "response.function_call_arguments.done" => {
+                on_progress(self.message["content"].as_str().unwrap_or(""), "tool");
+            }
+            "response.output_item.added" if event["item"]["type"] == "function_call" => {
+                on_progress(self.message["content"].as_str().unwrap_or(""), "tool");
+            }
+            "response.completed" => {
+                // The completed event contains authoritative full output. Arguments
+                // done/item done/EOF alone must never authorize a tool invocation.
+                let response = super::responses::normalize(event["response"].clone())?;
+                self.message = response["choices"][0]["message"].clone();
+                self.finish_reason = response["choices"][0]["finish_reason"]
+                    .as_str()
+                    .map(str::to_owned);
+                self.done = true;
+            }
+            "response.failed" | "response.cancelled" => {
+                return Err(AppError::internal(
+                    "模型服务在生成过程中返回错误，请检查模型与中转站状态",
+                ));
+            }
+            "response.incomplete" => {
+                if event["response"]["incomplete_details"]["reason"] == "max_output_tokens" {
+                    return Err(AppError::invalid_input(
+                        "模型输出达到长度上限，请缩小任务范围后重试",
+                    ));
+                }
+                return Err(AppError::invalid_input(
+                    "模型流式响应未完整结束，未执行本次工具调用，请重试",
+                ));
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -174,10 +308,7 @@ impl Decoder {
             if !self.line.is_empty() {
                 self.end_line(on_progress)?;
             }
-            if !self.data.is_empty() {
-                let data = std::mem::take(&mut self.data);
-                self.event(&data, on_progress)?;
-            }
+            self.dispatch(on_progress)?;
         }
         let calls = self.message["tool_calls"].as_array();
         let has_calls = calls.is_some_and(|calls| !calls.is_empty());
@@ -207,18 +338,83 @@ impl Decoder {
                 ));
             }
             let call = &calls[0];
-            if call["id"].as_str().unwrap_or("").is_empty()
-                || call["function"]["name"].as_str().unwrap_or("").is_empty()
-                || !serde_json::from_str::<Value>(
-                    call["function"]["arguments"].as_str().unwrap_or(""),
-                )
-                .is_ok_and(|value| value.is_object())
+            if call["id"].as_str().unwrap_or("").trim().is_empty() {
+                return Err(AppError::invalid_input("缺少有效工具调用 ID"));
+            }
+            if call["function"]["name"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .is_empty()
             {
-                return Err(AppError::invalid_input("模型工具调用分片无效"));
+                return Err(AppError::invalid_input(
+                    "模型工具调用缺少函数名，未执行本次操作",
+                ));
+            }
+            let args = call["function"]["arguments"].as_str().ok_or_else(|| {
+                AppError::invalid_input("模型工具调用的函数名或参数不是字符串，未执行本次操作")
+            })?;
+            if args.trim().is_empty() {
+                return Err(AppError::invalid_input(
+                    "模型工具调用缺少参数，未执行本次操作",
+                ));
+            }
+            // Do not repair, concatenate snapshots, or substitute {}: these are
+            // executable arguments. Report the failure without exposing them.
+            match serde_json::from_str::<Value>(args) {
+                Ok(value) if value.is_object() => {}
+                Ok(_) => {
+                    return Err(AppError::invalid_input(
+                        "模型工具调用参数必须是 JSON 对象，未执行本次操作",
+                    ))
+                }
+                Err(error) if error.is_eof() => {
+                    return Err(AppError::invalid_input(
+                        "模型工具调用参数不完整，未执行本次操作",
+                    ))
+                }
+                Err(_) => {
+                    return Err(AppError::invalid_input(
+                        "模型工具调用参数不是有效 JSON，未执行本次操作",
+                    ))
+                }
             }
         }
         Ok(json!({"choices":[{"message":self.message, "finish_reason":self.finish_reason}]}))
     }
+}
+// Known metadata only. Unlike ignoring every event without choices, this cannot
+// hide a protocol mismatch or silently discard an unfamiliar content/tool event.
+fn auxiliary_event(event: &Value, kind: &str) -> bool {
+    let Some(fields) = event.as_object() else {
+        return false;
+    };
+    let no_choices =
+        event["choices"].is_null() || event["choices"].as_array().is_some_and(Vec::is_empty);
+    no_choices
+        && (matches!(kind, "ping" | "heartbeat") || (kind.is_empty() && event["usage"].is_object()))
+        && fields.keys().all(|key| {
+            matches!(
+                key.as_str(),
+                "type"
+                    | "choices"
+                    | "usage"
+                    | "id"
+                    | "object"
+                    | "created"
+                    | "model"
+                    | "system_fingerprint"
+                    | "service_tier"
+                    | "timestamp"
+            )
+        })
+}
+
+pub(super) fn completed_message(message: Value, reason: &str) -> AppResult<Value> {
+    let mut decoder = Decoder::new();
+    decoder.message = message;
+    decoder.finish_reason = Some(reason.into());
+    decoder.finish(&mut |_, _| {})
 }
 fn append(value: &mut Value, text: &str) -> AppResult<()> {
     if value.is_null() {
@@ -234,6 +430,7 @@ fn append(value: &mut Value, text: &str) -> AppResult<()> {
 
 pub(super) async fn completion(
     request: reqwest::RequestBuilder,
+    format: ApiFormat,
     on_progress: &mut (dyn FnMut(&str, &str) + Send),
 ) -> AppResult<Value> {
     let mut response = request.send().await.map_err(config::request_error)?;
@@ -254,6 +451,9 @@ pub(super) async fn completion(
         });
     if json_response {
         let response = config::response_json(response).await?;
+        if format == ApiFormat::Responses {
+            return super::responses::normalize(response);
+        }
         if !response["error"].is_null() {
             return Err(AppError::internal(
                 "模型服务在生成过程中返回错误，请检查模型与中转站状态",
@@ -271,6 +471,7 @@ pub(super) async fn completion(
         return Ok(response);
     }
     let mut decoder = Decoder::new();
+    decoder.format = format;
     while let Some(bytes) = response.chunk().await.map_err(config::request_error)? {
         decoder.push(&bytes, on_progress)?;
         if decoder.done {
@@ -301,12 +502,117 @@ mod tests {
         )
     }
     fn parse(wire: &str) -> AppResult<Value> {
+        parse_format(wire, ApiFormat::Openai)
+    }
+    fn parse_format(wire: &str, format: ApiFormat) -> AppResult<Value> {
         let mut decoder = Decoder::new();
+        decoder.format = format;
         // Exercise split UTF-8, split CRLF and JSON boundaries on every byte.
         for byte in wire.as_bytes() {
             decoder.push(&[*byte], &mut |_, _| {})?;
         }
         decoder.finish(&mut |_, _| {})
+    }
+    fn event(value: Value) -> String {
+        format!("data: {value}\n\n")
+    }
+    fn response(output: Value) -> Value {
+        json!({"id":"resp_1", "object":"response", "status":"completed", "output":output})
+    }
+    fn output_text(text: &str) -> Value {
+        json!({"type":"message", "id":"msg_1", "role":"assistant", "status":"completed",
+            "content":[{"type":"output_text", "text":text, "annotations":[]}]})
+    }
+    #[test]
+    fn empty_finish_reason_is_not_a_completion_marker() {
+        let wire = chunk(json!({"role":"assistant", "content":""}), json!(""))
+            + &chunk(json!({"content":"你好"}), json!(""))
+            + &chunk(json!({"content":"世界"}), json!("stop"))
+            + "data: [DONE]\n\n";
+        assert_eq!(
+            parse(&wire).unwrap()["choices"][0]["message"]["content"],
+            "你好世界"
+        );
+        assert!(parse(&chunk(json!({"content":"partial"}), json!(""))).is_err());
+    }
+    #[test]
+    fn accepts_known_metadata_and_empty_terminal_chunks() {
+        let wire = "\u{feff}event: ping\ndata: {}\n\ndata:   \n\n".to_owned()
+            + &event(json!({"type":"ping"}))
+            + &chunk(json!({"content":"ok"}), json!("stop"))
+            + &event(json!({"usage":{"total_tokens":7}}))
+            + &chunk(json!({}), json!("stop"))
+            + &chunk(json!({"content":null}), Value::Null)
+            + "data: [DONE]\n\n";
+        assert_eq!(
+            parse(&wire).unwrap()["choices"][0]["message"]["content"],
+            "ok"
+        );
+        for tail in [
+            chunk(json!({"content":"late"}), Value::Null),
+            chunk(json!({}), json!("length")),
+            event(json!({"type":"ping", "error":{"message":"secret-value"}})),
+            event(json!({"usage":{}, "content":"must not be ignored"})),
+            "event: error\ndata: {\"message\":\"secret-value\"}\n\n".into(),
+        ] {
+            let error =
+                parse(&(chunk(json!({"content":"ok"}), json!("stop")) + &tail)).unwrap_err();
+            assert!(!error.message.contains("secret-value"));
+        }
+    }
+    #[test]
+    fn explains_wrong_protocol_instead_of_generic_incompatibility() {
+        for (value, expected) in [
+            (
+                json!({"type":"response.created", "response":{}}),
+                "OpenAI · Responses",
+            ),
+            (
+                json!({"type":"message_start", "message":{}}),
+                "Claude · Messages",
+            ),
+            (json!({"unexpected":"secret-value"}), "缺少 choices"),
+        ] {
+            let error = parse(&event(value)).unwrap_err();
+            assert!(error.message.contains(expected));
+            assert!(!error.message.contains("secret-value"));
+        }
+    }
+    #[test]
+    fn responses_require_completed_event_with_valid_full_output() {
+        let tool = json!({"type":"function_call", "id":"fc_1", "call_id":"call_1", "name":"server_status",
+            "arguments":"{\"probe\":\"disk\"}", "status":"completed"});
+        let prefix = event(json!({"type":"response.created", "response":{"status":"in_progress"}}))
+            + &event(
+                json!({"type":"response.function_call_arguments.done", "arguments":"{\"probe\":\"disk\"}"}),
+            );
+        let valid = prefix.clone()
+            + &event(json!({"type":"response.completed", "response":response(json!([tool]))}));
+        let parsed = parse_format(&valid, ApiFormat::Responses).unwrap();
+        assert_eq!(
+            parsed["choices"][0]["message"]["tool_calls"][0]["id"],
+            "call_1"
+        );
+        for tail in [
+            String::new(),
+            "data: [DONE]\n\n".into(),
+            event(
+                json!({"type":"response.failed", "response":{"error":{"message":"secret-value"}}}),
+            ),
+            event(
+                json!({"type":"response.incomplete", "response":{"incomplete_details":{"reason":"max_output_tokens"}}}),
+            ),
+            event(
+                json!({"type":"response.completed", "response":{"status":"in_progress", "output":[tool]}}),
+            ),
+            event(json!({"type":"response.completed", "response":response(json!([tool,tool]))})),
+            event(
+                json!({"type":"response.completed", "response":response(json!([{"type":"function_call", "call_id":"call_1", "name":"server_status", "arguments":"{"}]))}),
+            ),
+        ] {
+            let error = parse_format(&(prefix.clone() + &tail), ApiFormat::Responses).unwrap_err();
+            assert!(!error.message.contains("secret-value"));
+        }
     }
     #[test]
     fn decodes_utf8_reasoning_heartbeats_usage_and_multiline_data() {
@@ -374,6 +680,118 @@ mod tests {
             let error = parse(&wire).unwrap_err();
             assert!(!error.message.contains("secret-value"));
         }
+    }
+    #[test]
+    fn preserves_tool_identity_when_continuations_contain_empty_placeholders() {
+        for placeholder in [json!(""), Value::Null] {
+            let wire = chunk(
+                json!({"tool_calls":[{"index":0,"id":"call_pm2","type":"function",
+                    "function":{"name":"propose_shell","arguments":"{\"command\":\""}}]}),
+                Value::Null,
+            ) + &chunk(
+                json!({"tool_calls":[{"index":0,"id":placeholder,"type":placeholder,
+                    "function":{"name":"","arguments":"command -v pm2 && pm2 --version\",\"reason\":\"检查 pm2\"}"}}]}),
+                Value::Null,
+            ) + &chunk(json!({}), json!("tool_calls"))
+                + "data: [DONE]\n\n";
+            let result = parse(&wire).unwrap();
+            let call = &result["choices"][0]["message"]["tool_calls"][0];
+            assert_eq!(call["id"], "call_pm2");
+            assert_eq!(call["type"], "function");
+            let action = super::super::policy::classify(
+                "ssh",
+                call["function"]["name"].as_str().unwrap(),
+                call["function"]["arguments"].as_str().unwrap(),
+            )
+            .unwrap();
+            assert!(matches!(action, super::super::policy::Action::Shell { .. }));
+        }
+    }
+    #[test]
+    fn rejects_conflicting_ids_and_invalid_field_types_without_echoing_arguments() {
+        let first = chunk(
+            json!({"tool_calls":[{"index":0,"id":"call_1","type":"function",
+            "function":{"name":"propose_shell","arguments":"{\"command\":\"secret-value\""}}]}),
+            Value::Null,
+        );
+        for (part, expected) in [
+            (
+                json!({"index":0,"id":"different-call"}),
+                "ID 在分片间发生冲突",
+            ),
+            (json!({"index":0,"id":123}), "id/type 不是字符串"),
+            (json!({"index":0,"type":{}}), "id/type 不是字符串"),
+            (
+                json!({"index":0,"function":{"name":false}}),
+                "函数名或参数不是字符串",
+            ),
+            (
+                json!({"index":0,"function":{"arguments":{"command":"secret-value"}}}),
+                "函数名或参数不是字符串",
+            ),
+        ] {
+            let error = parse(&(first.clone() + &chunk(json!({"tool_calls":[part]}), Value::Null)))
+                .unwrap_err();
+            assert!(error.message.contains(expected), "{}", error.message);
+            assert!(!error.message.contains("secret-value"));
+        }
+    }
+    #[test]
+    fn reports_missing_metadata_and_malformed_arguments_separately() {
+        for (id, name, arguments, expected) in [
+            ("", "propose_shell", "{}", "缺少有效工具调用 ID"),
+            ("call_1", "", "{}", "缺少函数名"),
+            ("call_1", "propose_shell", "", "缺少参数"),
+            (
+                "call_1",
+                "propose_shell",
+                "{\"command\":\"secret-value\"",
+                "参数不完整",
+            ),
+            (
+                "call_1",
+                "propose_shell",
+                "{secret-value}",
+                "参数不是有效 JSON",
+            ),
+            (
+                "call_1",
+                "propose_shell",
+                "[\"secret-value\"]",
+                "参数必须是 JSON 对象",
+            ),
+        ] {
+            let error = completed_message(json!({"role":"assistant", "content":"检查环境",
+                "tool_calls":[{"id":id,"type":"function","function":{"name":name,"arguments":arguments}}]}),
+                "tool_calls").unwrap_err();
+            assert!(error.message.contains(expected), "{}", error.message);
+            assert!(!error.message.contains("secret-value"));
+        }
+    }
+    #[test]
+    fn repeated_metadata_does_not_deduplicate_argument_text() {
+        let first = chunk(
+            json!({"tool_calls":[{"index":0,"id":"call_1","type":"function",
+            "function":{"name":"propose_shell","arguments":"{\"command\":\"printf "}}]}),
+            Value::Null,
+        );
+        let repeated = chunk(
+            json!({"tool_calls":[{"index":0,"id":"call_1","type":"function",
+            "function":{"name":null,"arguments":"a"}}]}),
+            Value::Null,
+        );
+        let last = chunk(
+            json!({"tool_calls":[{"index":0,"id":"","type":"",
+            "function":{"name":"","arguments":"\",\"reason\":\"test\"}"}}]}),
+            json!("tool_calls"),
+        );
+        let result = parse(&(first + &repeated + &repeated + &last + "data: [DONE]\n\n")).unwrap();
+        let call = &result["choices"][0]["message"]["tool_calls"][0];
+        assert_eq!(
+            call["function"]["arguments"],
+            "{\"command\":\"printf aa\",\"reason\":\"test\"}"
+        );
+        assert_eq!(call["id"], "call_1");
     }
     #[test]
     fn rejects_incomplete_arguments_and_accepts_eof_after_finish_reason() {
@@ -513,6 +931,81 @@ mod tests {
         server.await.unwrap();
     }
     #[tokio::test]
+    async fn responses_deliver_live_text_and_use_the_responses_endpoint() {
+        let (send, gate) = oneshot::channel();
+        let (mut config, server) = mock_stream(
+            event(json!({"type":"response.output_text.delta", "delta":"你好🌍"})),
+            event(json!({"type":"response.completed", "response":response(json!([output_text("你好🌍")]))})),
+            gate, "text/event-stream",
+        ).await;
+        config.api_format = ApiFormat::Responses;
+        config.api_key = "test-responses-key".into();
+        let mut send = Some(send);
+        let mut previews = Vec::new();
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            protocol::streaming_completion(
+                &config,
+                &[
+                    json!({"role":"system", "content":"system rule"}),
+                    json!({"role":"user", "content":"hello"}),
+                ],
+                Some(super::super::policy::definitions("ssh")),
+                &mut |text, phase| {
+                    previews.push((text.to_owned(), phase.to_owned()));
+                    if let Some(send) = send.take() {
+                        send.send(()).unwrap();
+                    }
+                },
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(previews[0], ("你好🌍".into(), "answering".into()));
+        assert_eq!(result["choices"][0]["message"]["content"], "你好🌍");
+        let request = server.await.unwrap();
+        assert!(request.starts_with("POST /v1/responses HTTP/1.1"));
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer test-responses-key"));
+        let body: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["store"], false);
+        assert_eq!(body["instructions"], "system rule");
+        assert_eq!(body["input"], json!([{"role":"user", "content":"hello"}]));
+        assert!(body["messages"].is_null());
+        assert_eq!(body["parallel_tool_calls"], false);
+        assert_eq!(body["tools"][0]["type"], "function");
+        assert!(body["tools"][0]["name"].is_string());
+    }
+    #[tokio::test]
+    async fn responses_support_json_fallback_and_connection_test() {
+        for streaming in [true, false] {
+            let (send, gate) = oneshot::channel();
+            send.send(()).unwrap();
+            let (mut config, server) = mock_stream(
+                response(json!([output_text("ok")])).to_string(),
+                String::new(),
+                gate,
+                "application/json",
+            )
+            .await;
+            config.api_format = ApiFormat::Responses;
+            let result = if streaming {
+                protocol::streaming_completion(&config, &[], None, &mut |_, _| {}).await
+            } else {
+                protocol::completion(&config, &[], None).await
+            }
+            .unwrap();
+            assert_eq!(result["choices"][0]["message"]["content"], "ok");
+            let request = server.await.unwrap();
+            let body: Value =
+                serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+            assert_eq!(body["stream"], streaming);
+        }
+    }
+    #[tokio::test]
     async fn timeout_is_distinguished_from_connection_failure() {
         let (_send, gate) = oneshot::channel();
         let (config, server) = mock_stream(
@@ -528,6 +1021,7 @@ mod tests {
                 .post(&config.base_url)
                 .json(&json!({}))
                 .timeout(Duration::from_millis(40)),
+            ApiFormat::Openai,
             &mut |_, _| {},
         )
         .await
@@ -541,6 +1035,7 @@ mod tests {
             config::streaming_client()
                 .unwrap()
                 .post(format!("http://{address}")),
+            ApiFormat::Openai,
             &mut |_, _| {},
         )
         .await

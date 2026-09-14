@@ -34,7 +34,7 @@ export interface AgentModelListInput {
   apiKey: string
   clearKey: boolean
 }
-export type AgentApiFormat = 'openai' | 'anthropic'
+export type AgentApiFormat = 'openai' | 'responses' | 'anthropic'
 export interface AgentSettings {
   activeId: string
   profiles: AgentConfig[]

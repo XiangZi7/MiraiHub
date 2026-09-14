@@ -1,10 +1,16 @@
 # AI Agent
 
-OpenAI 兼容格式（包括 DeepSeek）的对话请求使用流式响应，回复会逐步显示，并区分思考、生成回复和准备工具调用。连接最多等待 10 秒；连续 300 秒未收到任何数据或单次请求达到 30 分钟时超时。思考分片与心跳也计为连接活动。停止或切换会话会取消正在等待的模型请求。中转站若忽略流式参数并返回 JSON，仍可读取完整回复，但不能逐步显示。Claude 原生 Messages 暂沿用非流式请求。
+OpenAI Chat Completions 兼容格式（包括 DeepSeek）和 OpenAI Responses 的对话请求使用流式响应，回复会逐步显示，并区分思考、生成回复和准备工具调用。连接最多等待 10 秒；连续 300 秒未收到任何数据或单次请求达到 30 分钟时超时。思考分片与心跳也计为连接活动。停止或切换会话会取消正在等待的模型请求。中转站若忽略流式参数并返回 JSON，仍可读取完整回复，但不能逐步显示。Claude 原生 Messages 暂沿用非流式请求。
 
 工具参数在流式响应完整结束并校验后才进入原有执行与审批流程；中途断开、输出长度超限或参数不完整时不执行本次工具调用。已显示的部分回复保留在聊天记录中，但不作为完整回复加入模型上下文。流式响应仍保留 DeepSeek 的 reasoning_content 供后续工具对话使用，界面仅显示思考状态。非流式模型响应最多 1 MB；流式传输最多 16 MB，其中累计增量数据最多 1 MB。
 
-在设置 → AI Agent 中添加配置，填写名称、API 格式、基础地址、模型 ID 与 API Key，然后保存并使用，或保存并测试连接。支持 OpenAI Chat Completions（function tools）和 Claude 原生 Messages（tool_use / tool_result），不包含 OpenAI Responses 或 Gemini 原生 generateContent 协议。模型必须支持工具调用；不会自动选择收费模型，只有发送消息、获取模型或测试连接时才请求服务。
+Chat Completions 工具分片中的 `id`、`type` 可能只在首片返回，后续分片的空字符串或 null 占位不会覆盖已有信息。不同的非空 ID 仍视为冲突；函数名和参数按原始增量拼接，不猜测或修补命令。工具调用校验失败时，会分别提示 ID 缺失或冲突、字段类型错误、函数名缺失、参数缺失或 JSON 不完整；错误不回显原始参数，本次工具不会执行。
+
+在设置 → AI Agent 中添加配置，填写名称、API 格式、基础地址、模型 ID 与 API Key，然后保存并使用，或保存并测试连接。支持 OpenAI Chat Completions（function tools）、OpenAI Responses（function_call / function_call_output）和 Claude 原生 Messages（tool_use / tool_result），不包含 Gemini 原生 generateContent 协议。模型必须支持工具调用；不会自动选择收费模型，只有发送消息、获取模型或测试连接时才请求服务。
+
+如果同一中转站在其他客户端使用 `/responses`，请选择「OpenAI · Responses」，基础地址通常填 `https://服务地址/v1`；也可填完整 `/v1/responses`，程序会规范化接口路径。Responses 使用 `store: false`，后续请求携带本地会话上下文与返回的加密推理项。只有收到 `response.completed` 且完整输出校验通过后，工具调用才进入审批；仅收到参数结束事件或连接关闭不会执行工具。
+
+遇到「服务未返回兼容的流式响应」且后台显示 `client_gone / context canceled`，先核对 API 格式及原始 SSE 分片。解析失败会使客户端关闭请求，后台的取消记录本身不能区分协议不匹配、主动停止或网络断开。Chat Completions 允许中转站用空字符串表示尚未结束的 `finish_reason`，兼容已知心跳、独立用量分片及不含新内容的重复结束分片；未知数据、结束后的新正文或冲突结束状态仍会报错。协议不匹配时会提示选择 Responses 或 Claude Messages，不自动重试或切换协议。
 
 每份配置独立保存，同一服务可以添加多份官网和中转站配置。提供 OpenAI、Claude、DeepSeek、豆包（火山方舟）、Gemini 和自定义地址模板；Claude 默认使用 Messages，Gemini 使用官方 OpenAI 兼容入口，其他模板默认使用 OpenAI 格式。名称、地址和 API 格式都可修改。豆包模型 ID 或接入点 ID 请按自己的方舟服务填写；没有模型列表接口的中转站可以手动输入模型。
 

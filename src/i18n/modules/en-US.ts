@@ -204,6 +204,8 @@ export default {
     'Claude Messages format; for example, https://api.anthropic.com/v1.',
   'OpenAI Chat Completions 格式；可连接官网或兼容的中转站。':
     'OpenAI Chat Completions format; supports official or compatible endpoints.',
+  'OpenAI Responses 格式；适用于使用 /responses 接口的模型或中转站。':
+    'OpenAI Responses format; for models or relays using the /responses endpoint.',
   '基础地址可按服务商要求修改。':
     'Set the base URL according to your provider.',
   已安全保存: 'Stored securely',

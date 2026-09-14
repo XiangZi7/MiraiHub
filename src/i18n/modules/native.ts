@@ -15,7 +15,33 @@ export const en = {
     'The model service returned an error during generation. Check the model and relay status.',
   服务未返回兼容的流式响应:
     'The service did not return a compatible streaming response',
+  '服务返回了 Responses 流，请在 AI Agent 设置中将 API 格式改为 OpenAI · Responses':
+    'The service returned a Responses stream. Set the API format to OpenAI · Responses in AI Agent settings.',
+  '服务返回了 Claude Messages 流，请在 AI Agent 设置中将 API 格式改为 Claude · Messages':
+    'The service returned a Claude Messages stream. Set the API format to Claude · Messages in AI Agent settings.',
+  '流式分片缺少 choices，请检查 API 格式与中转站协议转换':
+    'A stream chunk is missing choices. Check the API format and relay protocol conversion.',
+  '模型结束标记后仍返回内容或冲突状态，未执行本次工具调用':
+    'The model sent content or a conflicting status after completion. This tool call was not executed.',
+  '服务未返回兼容 OpenAI Responses 的响应':
+    'The service did not return a compatible OpenAI Responses response',
   模型工具调用分片无效: 'The model returned invalid tool call fragments',
+  '模型工具调用的 id/type 不是字符串，未执行本次操作':
+    'The tool call id/type is not a string. This operation was not executed.',
+  '模型工具调用的 ID 在分片间发生冲突，未执行本次操作':
+    'The tool call ID conflicts across fragments. This operation was not executed.',
+  '模型工具调用的函数名或参数不是字符串，未执行本次操作':
+    'The tool function name or arguments are not strings. This operation was not executed.',
+  '模型工具调用缺少函数名，未执行本次操作':
+    'The tool call is missing a function name. This operation was not executed.',
+  '模型工具调用缺少参数，未执行本次操作':
+    'The tool call is missing arguments. This operation was not executed.',
+  '模型工具调用参数必须是 JSON 对象，未执行本次操作':
+    'Tool call arguments must be a JSON object. This operation was not executed.',
+  '模型工具调用参数不完整，未执行本次操作':
+    'Tool call arguments are incomplete. This operation was not executed.',
+  '模型工具调用参数不是有效 JSON，未执行本次操作':
+    'Tool call arguments are not valid JSON. This operation was not executed.',
   '模型服务未能完成此回复，请调整请求后重试':
     'The model service could not complete this response. Adjust the request and try again.',
   '模型流式响应未完整结束，未执行本次工具调用，请重试':

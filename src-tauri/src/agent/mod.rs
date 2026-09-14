@@ -7,6 +7,7 @@ mod models;
 mod policy;
 mod protocol;
 mod read_only;
+mod responses;
 mod streaming;
 use crate::{
     db,
