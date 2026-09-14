@@ -152,7 +152,7 @@ watch(
           @select="emit('selectProfile', $event)"
         />
         <button
-          v-if="busy"
+          v-if="busy || awaitingApproval"
           type="button"
           class="composer-send"
           :title="t('停止后续操作')"

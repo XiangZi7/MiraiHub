@@ -86,6 +86,11 @@ export interface AgentRun {
   approval: AgentApproval | null
   saveError?: string
 }
+export interface AgentProgress {
+  runId: string
+  text: string
+  phase: 'thinking' | 'answering' | 'tool'
+}
 export interface AgentConversation {
   id: string
   title: string

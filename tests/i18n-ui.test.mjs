@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createRenderer, h, markRaw, nextTick } from 'vue'
-import { sourceLoader } from './helpers/source-module.mjs'
+import { createRenderer, h, markRaw, nextTick, reactive } from 'vue'
+import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -169,6 +169,85 @@ test('mounted transfer and AI components update immediately in both languages', 
     } finally {
       app.unmount()
     }
+  }
+})
+
+test('copy buttons preserve exact text, update feedback and expose clipboard errors', async () => {
+  const clipboardModule = dataModule(
+    `export const clipboard={values:[],fail:false}; export async function copyText(text){if(clipboard.fail)throw new Error('denied');clipboard.values.push(text)}`
+  )
+  const { clipboard } = await import(clipboardModule)
+  const file = 'src/components/agent/AgentCopyButton.vue'
+  const { default: CopyButton } = await sourceLoader(
+    { '@/utils/clipboard': clipboardModule },
+    [file]
+  )(file)
+  const props = reactive({
+    text: 'command -v pm2 && pm2 --version\n中文说明',
+    label: '复制命令',
+  })
+  const root = node('root')
+  const app = renderer.createApp({ render: () => h(CopyButton, props) })
+  app.use(i18n)
+  app.mount(root)
+  const findButton = el =>
+    el.type === 'button' ? el : el.children.map(findButton).find(Boolean)
+  try {
+    const button = findButton(root)
+    await button.props.onClick({ stopPropagation() {} })
+    await nextTick()
+    assert.equal(clipboard.values[0], props.text)
+    assert.match(visible(root), /已复制/)
+    props.text = '更新后的文字'
+    await nextTick()
+    assert.doesNotMatch(visible(root), /已复制/)
+    clipboard.fail = true
+    await button.props.onClick({ stopPropagation() {} })
+    await nextTick()
+    assert.match(visible(root), /Ctrl\+C/)
+  } finally {
+    app.unmount()
+  }
+})
+
+test('approval waiting keeps an actionable stop button in the composer', async () => {
+  const { default: Composer } = await load(components[3])
+  const root = node('root')
+  let stopped = 0
+  const app = renderer.createApp({
+    render: () =>
+      h(Composer, {
+        modelValue: '',
+        approvalMode: 'auto',
+        disabled: true,
+        busy: false,
+        canSend: false,
+        awaitingApproval: true,
+        isDatabase: false,
+        attachments: [],
+        reading: false,
+        attachmentError: '',
+        activeId: '',
+        profileOptions: [],
+        profileDisabled: false,
+        profileError: '',
+        onStop: () => stopped++,
+      }),
+  })
+  app.use(i18n)
+  app.mount(root)
+  const findStop = el =>
+    el.type === 'button' && el.props['aria-label'] === '停止后续操作'
+      ? el
+      : el.children.map(findStop).find(Boolean)
+  try {
+    const button = findStop(root)
+    assert.ok(button)
+    assert.ok(!button.props.disabled)
+    button.props.onClick()
+    assert.equal(stopped, 1)
+  } finally {
+    app.unmount()
   }
 })
 

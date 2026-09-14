@@ -47,16 +47,14 @@
             return structuredClone(settings)
           }
           if (cmd === 'ai_list_conversations')
-            return [...records.values()]
-              .reverse()
-              .map(run => ({
-                id: run.conversationId,
-                title: run.entries[0].text,
-                model: run.model,
-                provider: run.provider,
-                createdAt: 1,
-                updatedAt: 2,
-              }))
+            return [...records.values()].reverse().map(run => ({
+              id: run.conversationId,
+              title: run.entries[0].text,
+              model: run.model,
+              provider: run.provider,
+              createdAt: 1,
+              updatedAt: 2,
+            }))
           if (cmd === 'ai_open_conversation')
             return {
               ...structuredClone(records.get(args.conversationId)),
@@ -101,6 +99,18 @@
           }
           if (cmd === 'ai_step') {
             const run = runs.get(args.runId)
+            if (run.entries.at(-1)?.text === '演示审批') {
+              run.status = 'approval'
+              run.approval = {
+                id: `approval-${run.id}`,
+                command: 'command -v pm2 && pm2 --version',
+                reason:
+                  '只读确认 pm2 命令路径和版本。此页面仅模拟审批，不执行任何命令。',
+                label: '执行 Shell 命令',
+                expiresAt: Date.now() + 15000,
+              }
+              return structuredClone(run)
+            }
             run.status = 'completed'
             run.entries.push({
               role: 'assistant',
@@ -108,7 +118,26 @@
             })
             return structuredClone(run)
           }
-          if (cmd === 'ai_forget' || cmd === 'ai_cancel') return
+          if (cmd === 'ai_respond') {
+            const run = runs.get(args.runId)
+            if (args.approve) throw new Error('验证页面不执行任何命令')
+            run.status = 'cancelled'
+            run.entries.push({
+              role: 'audit',
+              text: '审批已过期，未执行该操作；可以继续发送消息',
+              detail: run.approval.command,
+            })
+            run.approval = null
+            return structuredClone(run)
+          }
+          if (cmd === 'ai_forget' || cmd === 'ai_cancel') {
+            const run = runs.get(args.runId)
+            if (run) {
+              run.status = 'cancelled'
+              run.approval = null
+            }
+            return
+          }
           throw new Error(`Unexpected fixture command: ${cmd}`)
         },
         { shouldMockEvents: true }

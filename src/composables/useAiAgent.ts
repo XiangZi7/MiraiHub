@@ -14,6 +14,7 @@ import type {
   AgentConversation,
   AgentRun,
   AgentTarget,
+  AgentProgress,
 } from '@/types/agent'
 
 /** Execution uses live backend snapshots; restored transcripts have no live run or approval. */
@@ -40,13 +41,75 @@ export function useAiAgent(
     switchingConversation: false,
     // 会话名称或记录正在保存修改
     historyMutating: false,
+    // 当前模型请求的流式预览；最终快照到达后清除
+    progress: null as AgentProgress | null,
   })
   let generation = 0
   let historyVersion = 0
   let mutationVersion = 0
+  let approvalTimer: ReturnType<typeof setTimeout> | undefined
   const targetKey = computed(() => JSON.stringify(target.value))
   const awaitingApproval = computed(() =>
-    Boolean(state.run?.id && state.run.status === 'approval')
+    Boolean(
+      state.run?.id && state.run.approval && state.run.status === 'approval'
+    )
+  )
+
+  async function expireApproval(
+    runId: string,
+    approvalId: string
+  ): Promise<void> {
+    const run = state.run
+    if (
+      state.busy ||
+      run?.id !== runId ||
+      run.approval?.id !== approvalId ||
+      run.status !== 'approval'
+    )
+      return
+    const token = ++generation
+    const command = run.approval.command
+    // Unlock immediately, even if the native acknowledgment is delayed. A new
+    // message starts a fresh backend run, and generation guards discard late IPC.
+    run.approval = null
+    run.status = 'cancelled'
+    run.entries.push({
+      role: 'audit',
+      text: '审批已过期，未执行该操作；可以继续发送消息',
+      detail: command,
+    })
+    try {
+      const next = await api.respond(runId, approvalId, false)
+      if (token === generation) state.run = next
+    } catch (error) {
+      if (token === generation) state.error = api.errorMessage(error)
+      // Revocation remains possible without an active SSH/database connection.
+      await api.cancel(runId).catch(() => {})
+    } finally {
+      if (token === generation) await refreshHistory(token)
+    }
+  }
+  watch(
+    () => [
+      state.run?.id,
+      state.run?.approval?.id,
+      state.run?.approval?.expiresAt,
+      state.run?.status,
+      state.busy,
+    ],
+    () => {
+      clearTimeout(approvalTimer)
+      const run = state.run
+      if (!run?.id || !run.approval || run.status !== 'approval' || state.busy)
+        return
+      const { id } = run
+      const approvalId = run.approval.id
+      approvalTimer = setTimeout(
+        () => void expireApproval(id, approvalId),
+        Math.max(0, run.approval.expiresAt - Date.now())
+      )
+    },
+    { flush: 'sync' }
   )
 
   async function refreshHistory(
@@ -81,6 +144,7 @@ export function useAiAgent(
     mutationVersion++
     const id = state.run?.id
     state.run = null
+    state.progress = null
     state.busy = false
     state.error = ''
     state.historyLoading = false
@@ -202,9 +266,12 @@ export function useAiAgent(
     const id = state.run?.id
     state.busy = false
     if (state.run) {
+      if (state.progress?.text)
+        state.run.entries.push({ role: 'assistant', text: state.progress.text })
       state.run.status = 'cancelled'
       state.run.approval = null
     }
+    state.progress = null
     if (id) {
       try {
         await api.cancel(id)
@@ -228,7 +295,27 @@ export function useAiAgent(
   }
   async function advance(token: number): Promise<void> {
     while (token === generation && state.run?.status === 'running') {
-      if (!accept(await api.step(state.run.id), token)) return
+      const id = state.run.id
+      // Each callback belongs to one step and one UI generation. IPC deliveries
+      // may arrive after the invoke result, cancellation or a conversation switch.
+      let receiving = true
+      state.progress = null
+      try {
+        const next = await api.step(id, progress => {
+          if (
+            receiving &&
+            token === generation &&
+            state.run?.id === id &&
+            state.run.status === 'running' &&
+            progress.runId === id
+          )
+            state.progress = progress
+        })
+        if (!accept(next, token)) return
+      } finally {
+        receiving = false
+        if (token === generation) state.progress = null
+      }
     }
   }
   async function send(
@@ -337,6 +424,7 @@ export function useAiAgent(
     { flush: 'sync' }
   )
   onBeforeUnmount(() => {
+    clearTimeout(approvalTimer)
     const { id } = detach()
     if (id) void api.forget(id).catch(() => {})
   })

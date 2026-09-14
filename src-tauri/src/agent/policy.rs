@@ -14,14 +14,18 @@ impl ApprovalMode {
     pub fn requires_approval(self, action: &Action) -> bool {
         match self {
             Self::Ask => true,
-            Self::Auto => action.approval().is_some(),
+            Self::Auto => match action {
+                Action::Shell { command, .. } => !super::read_only::shell(command),
+                Action::Sql { sql, .. } => !super::read_only::sql(sql),
+                _ => false,
+            },
             Self::Full => false,
         }
     }
     pub fn instruction(self) -> &'static str {
         match self {
             Self::Ask => "The user selected Ask: every tool call, including fixed read-only probes and metadata, requires single-use human approval.",
-            Self::Auto => "The user selected Auto: fixed read-only probes and metadata run automatically; all custom shell and SQL require single-use human approval.",
+            Self::Auto => "The user selected Auto: fixed probes, common read-only diagnostics and simple SQL metadata checks run automatically. Prefer simple bounded commands, for example command -v pm2 && pm2 --version, ls -lah, ps aux, df -h, systemctl status NAME --no-pager, journalctl -u NAME -n 100 --no-pager, and tail -n 100 /var/log/FILE. Mutations, unknown commands/flags, arbitrary SQL, sensitive file reads, redirects and shell substitutions require single-use human approval. Do not split or disguise an operation to bypass approval; the backend classifies the exact command, not your explanation.",
             Self::Full => "The user selected Full access for this turn on the current connection: the provided tools, including custom shell and SQL, run without a separate approval. Stay within the user's requested task and the bound target. Do not ask the user to approve tools or claim success without a tool result.",
         }
     }
@@ -224,6 +228,28 @@ mod tests {
             .unwrap()
             .approval()
             .is_some());
+        }
+    }
+    #[test]
+    fn auto_mode_uses_exact_commands_and_never_the_models_risk_description() {
+        for (command, expected) in [
+            ("command -v pm2 && pm2 --version", false),
+            ("ls -lah /srv/app", false),
+            ("pm2 restart app", true),
+            ("ls && rm file", true),
+        ] {
+            let action = classify(
+                "ssh",
+                "propose_shell",
+                &json!({"command":command,"reason":"This is completely read-only"}).to_string(),
+            )
+            .unwrap();
+            assert_eq!(
+                ApprovalMode::Auto.requires_approval(&action),
+                expected,
+                "{command}"
+            );
+            assert!(ApprovalMode::Ask.requires_approval(&action));
         }
     }
     #[test]

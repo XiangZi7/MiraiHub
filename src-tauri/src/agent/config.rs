@@ -307,11 +307,28 @@ pub(super) fn protect(_bytes: &[u8], _encrypt: bool) -> AppResult<Vec<u8>> {
 }
 
 pub(super) fn client() -> AppResult<reqwest::Client> {
+    build_client(false)
+}
+pub(super) fn streaming_client() -> AppResult<reqwest::Client> {
+    build_client(true)
+}
+fn build_client(streaming: bool) -> AppResult<reqwest::Client> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(60))
+        // Streaming heartbeats/reasoning count as activity. A long answer must not
+        // be cut off after 60 seconds while the provider is still sending data.
+        .read_timeout(std::time::Duration::from_secs(if streaming {
+            300
+        } else {
+            60
+        }))
+        .timeout(std::time::Duration::from_secs(if streaming {
+            1800
+        } else {
+            60
+        }))
         .build()
         .map_err(|_| AppError::internal("无法创建模型客户端"))
 }
@@ -323,21 +340,34 @@ pub async fn completion(
     super::protocol::completion(config, messages, tools).await
 }
 pub(super) async fn request_json(request: reqwest::RequestBuilder) -> AppResult<serde_json::Value> {
-    let mut response = request.send().await.map_err(|_| {
-        AppError::internal("模型请求失败，请检查网络、证书及 API 地址（60 秒超时）")
-    })?;
+    let response = request.send().await.map_err(request_error)?;
+    check_status(&response)?;
+    response_json(response).await
+}
+pub(super) fn request_error(error: reqwest::Error) -> AppError {
+    // Do not expose URLs, headers or provider response bodies (may contain secrets).
+    if error.is_timeout() {
+        AppError::internal(
+            "模型连接或响应超时，请稍后重试；长上下文、模型思考或中转站拥堵可能增加等待时间",
+        )
+    } else if error.is_connect() {
+        AppError::internal("无法连接模型服务，请检查网络、证书及 API 地址")
+    } else {
+        AppError::internal("模型连接中断或请求失败，请检查网络与中转站状态")
+    }
+}
+pub(super) fn check_status(response: &reqwest::Response) -> AppResult<()> {
     if !response.status().is_success() {
         return Err(AppError::internal(format!(
             "模型服务返回 HTTP {}，请检查地址、模型、密钥与额度",
             response.status().as_u16()
         )));
     }
+    Ok(())
+}
+pub(super) async fn response_json(mut response: reqwest::Response) -> AppResult<serde_json::Value> {
     let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| AppError::internal("读取模型响应失败"))?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
         if bytes.len() + chunk.len() > 1_048_576 {
             return Err(AppError::invalid_input("模型响应超过 1 MB 限制"));
         }

@@ -1,5 +1,16 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  '常见只读检查自动执行，修改和未识别操作询问':
+    'Run common read-only checks automatically; ask for changes and unrecognized operations',
+  复制目标: 'Copy target',
+  复制命令: 'Copy command',
+  复制说明: 'Copy explanation',
+  复制内容: 'Copy content',
+  '复制失败，请选中文字后按 Ctrl+C':
+    'Copy failed. Select the text and press Ctrl+C.',
+  模型正在思考: 'The model is thinking',
+  正在生成回复: 'Generating a response',
+  正在准备工具调用: 'Preparing a tool call',
   '请在 MiraiHub 桌面程序中使用 AI Agent':
     'Use AI Agent in the MiraiHub desktop app',
   数据库功能需要在桌面应用中运行: 'Database features require the desktop app',

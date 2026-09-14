@@ -27,7 +27,8 @@ const mockUrl = dataModule(`
     mock.runs.set(id,run);save(run);return clone(run)
   }
   export const send = async (id,prompt,attachments,approvalMode) => { mock.lastSend={id,prompt,attachments,approvalMode}; const run = mock.runs.get(id); run.status='running';run.entries.push({role:'user',text:prompt});save(run);return clone(run) }
-  export const step = async id => {
+  export const step = async (id,onProgress) => {
+    mock.progress = onProgress
     if(mock.stepGate) return await mock.stepGate
     const run = mock.runs.get(id);run.status='completed';run.entries.push({role:'assistant',text:'**回复**'});save(run);return clone(run)
   }
@@ -40,7 +41,14 @@ const mockUrl = dataModule(`
     const run=mock.records.get(id);run.title=title.trim()
     return {id,title:run.title,model:run.model,provider:run.provider,createdAt:1,updatedAt:2}
   }
-  export const respond = async () => {throw new Error('历史审批不得执行')}
+  export const respond = async (id,approvalId,approve) => {
+    mock.responses.push({id,approvalId,approve})
+    if(mock.respondGate) await mock.respondGate
+    const run = mock.runs.get(id)
+    if(!run || !run.approval || run.approval.id !== approvalId) throw new Error('无效审批')
+    if(approve) throw new Error('测试不得执行远端命令')
+    run.approval=null;run.status='cancelled';run.entries.push({role:'audit',text:'审批已过期，未执行该操作；可以继续发送消息'});save(run);return clone(run)
+  }
   export const errorMessage = error => error.message
 `)
 const { mock } = await import(mockUrl)
@@ -48,6 +56,81 @@ const { useAiAgent } = await sourceLoader({ '@/api/agent': mockUrl })(
   'src/composables/useAiAgent.ts'
 )
 const flush = () => new Promise(resolve => setImmediate(resolve))
+
+function pendingApproval(state, expiresAt) {
+  const approval = {
+    id: 'approval-one',
+    command: 'pm2 restart app',
+    reason: 'test',
+    label: 'Shell',
+    expiresAt,
+  }
+  const backend = mock.runs.get(state.run.value.id)
+  backend.status = 'approval'
+  backend.approval = approval
+  state.run.value.status = 'approval'
+  state.run.value.approval = structuredClone(approval)
+  return backend.id
+}
+
+test('approval expiry unlocks input before acknowledgment and late dismissal cannot replace a new turn', async context => {
+  context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
+  const { app, state } = fixture()
+  await flush()
+  await state.send('原任务')
+  let acknowledge
+  mock.respondGate = new Promise(resolve => {
+    acknowledge = resolve
+  })
+  const id = pendingApproval(state, Date.now() + 1000)
+  assert.equal(state.awaitingApproval.value, true)
+  context.mock.timers.tick(1000)
+  assert.equal(state.awaitingApproval.value, false)
+  assert.equal(state.busy.value, false)
+  assert.equal(state.run.value.approval, null)
+  assert.match(state.run.value.entries.at(-1).text, /审批已过期/)
+  assert.deepEqual(mock.responses, [
+    { id, approvalId: 'approval-one', approve: false },
+  ])
+  await state.send('新的指令')
+  const newId = state.run.value.id
+  assert.notEqual(newId, id)
+  acknowledge()
+  await flush()
+  assert.equal(state.run.value.id, newId)
+  assert.equal(state.run.value.status, 'completed')
+  app.unmount()
+})
+
+test('approval timers are removed when switching conversations or unmounting', async context => {
+  context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
+  const { app, state } = fixture()
+  await flush()
+  await state.send('检查')
+  pendingApproval(state, Date.now() + 1000)
+  await state.clear()
+  context.mock.timers.tick(1000)
+  assert.equal(mock.responses.length, 0)
+  await state.send('检查第二次')
+  pendingApproval(state, Date.now() + 1000)
+  app.unmount()
+  context.mock.timers.tick(1000)
+  assert.equal(mock.responses.length, 0)
+})
+
+test('an approval already expired when received is dismissed without approving any operation', async context => {
+  context.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
+  const { app, state } = fixture()
+  await flush()
+  await state.send('检查')
+  pendingApproval(state, Date.now() - 1)
+  context.mock.timers.tick(1)
+  await flush()
+  assert.equal(state.awaitingApproval.value, false)
+  assert.equal(state.run.value.status, 'cancelled')
+  assert.ok(mock.responses.every(response => response.approve === false))
+  app.unmount()
+})
 
 test('attachments and explicit approval modes reach both new and continued runs', async () => {
   const { app, state } = fixture()
@@ -62,6 +145,83 @@ test('attachments and explicit approval modes reach both new and continued runs'
   assert.equal(mock.lastSend.approvalMode, 'auto')
   app.unmount()
 })
+
+test('streaming previews arrive before completion and are replaced by one final answer', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const pending = state.send('长回复')
+  await flush()
+  const id = state.run.value.id
+  mock.progress({ runId: id, text: '', phase: 'thinking' })
+  assert.equal(state.progress.value.phase, 'thinking')
+  mock.progress({ runId: id, text: '第一段', phase: 'answering' })
+  assert.equal(state.progress.value.text, '第一段')
+  assert.equal(state.busy.value, true)
+  const late = mock.progress
+  const run = structuredClone(mock.runs.get(id))
+  run.status = 'completed'
+  run.entries.push({ role: 'assistant', text: '完整回复' })
+  finish(run)
+  await pending
+  assert.equal(state.progress.value, null)
+  assert.equal(
+    state.run.value.entries.filter(entry => entry.role === 'assistant').length,
+    1
+  )
+  assert.equal(state.run.value.entries.at(-1).text, '完整回复')
+  late({ runId: id, text: '迟到的旧分片', phase: 'answering' })
+  assert.equal(state.progress.value, null)
+  app.unmount()
+})
+
+test('stopping preserves the visible partial answer and ignores late stream chunks', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const pending = state.send('等待')
+  await flush()
+  const id = state.run.value.id
+  const late = mock.progress
+  late({ runId: id, text: '已生成部分', phase: 'answering' })
+  await state.stop()
+  assert.equal(state.run.value.status, 'cancelled')
+  assert.equal(state.run.value.entries.at(-1).text, '已生成部分')
+  late({ runId: id, text: '不应该显示', phase: 'answering' })
+  assert.equal(state.progress.value, null)
+  finish(structuredClone(mock.runs.get(id)))
+  await pending
+  assert.equal(state.run.value.entries.at(-1).text, '已生成部分')
+  app.unmount()
+})
+
+test('switching conversations rejects progress from the previous model request', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const pending = state.send('旧会话')
+  await flush()
+  const id = state.run.value.id
+  const late = mock.progress
+  late({ runId: id, text: '旧回复', phase: 'answering' })
+  await state.clear()
+  late({ runId: id, text: '迟到分片', phase: 'answering' })
+  assert.equal(state.run.value, null)
+  assert.equal(state.progress.value, null)
+  finish(structuredClone(mock.runs.get(id)))
+  await pending
+  assert.equal(state.run.value, null)
+  app.unmount()
+})
 function fixture(reset = true) {
   if (reset) {
     mock.records.clear()
@@ -72,6 +232,8 @@ function fixture(reset = true) {
     mock.stepGate = null
     mock.listGate = null
     mock.openError = false
+    mock.responses = []
+    mock.respondGate = null
   }
   const target = shallowRef({
     kind: 'ssh',

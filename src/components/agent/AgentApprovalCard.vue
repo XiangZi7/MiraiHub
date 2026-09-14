@@ -6,6 +6,7 @@ import { useIntervalFn } from '@vueuse/core'
 import type { AgentApproval } from '@/types/agent'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AgentCopyButton from './AgentCopyButton.vue'
 
 const { t } = useI18n()
 
@@ -50,16 +51,36 @@ const expired = computed(() => seconds.value === 0)
         }}</span
       >
     </div>
-    <p class="text-txt-3 mt-3 text-[11px]">{{ t('执行目标（已锁定）') }}</p>
+    <div
+      class="text-txt-3 mt-3 flex items-center justify-between gap-2 text-[11px]"
+    >
+      <span>{{ t('执行目标（已锁定）') }}</span>
+      <AgentCopyButton
+        :text="target"
+        :label="t('复制目标')"
+      />
+    </div>
     <p class="text-txt mt-1 font-mono text-[12px] break-all">{{ target }}</p>
-    <p class="text-txt-3 mt-3 text-[11px]">
-      {{ t(approval.label) }} · {{ t('完整内容') }}
-    </p>
+    <div
+      class="text-txt-3 mt-3 flex items-center justify-between gap-2 text-[11px]"
+    >
+      <span>{{ t(approval.label) }} · {{ t('完整内容') }}</span>
+      <AgentCopyButton
+        :text="approval.command"
+        :label="t('复制命令')"
+      />
+    </div>
     <pre
       class="command"
       dir="ltr"
       >{{ approval.command }}</pre>
-    <p class="text-txt-3 text-[11px]">{{ t('AI 提议的原因') }}</p>
+    <div class="text-txt-3 flex items-center justify-between gap-2 text-[11px]">
+      <span>{{ t('AI 提议的原因') }}</span>
+      <AgentCopyButton
+        :text="approval.reason"
+        :label="t('复制说明')"
+      />
+    </div>
     <p
       class="text-txt-2 mt-1 text-[12px] leading-relaxed break-words whitespace-pre-wrap"
     >
@@ -102,6 +123,7 @@ const expired = computed(() => seconds.value === 0)
 </template>
 <style scoped>
 .approval {
+  user-select: text;
   border: 1px solid #e9b45466;
   background: #e9b4540a;
   border-radius: 10px;

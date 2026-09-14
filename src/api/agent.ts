@@ -1,5 +1,5 @@
 import { i18n } from '@/i18n'
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type {
   AgentSettings,
@@ -10,6 +10,7 @@ import type {
   AgentConversation,
   AgentAttachment,
   AgentApprovalMode,
+  AgentProgress,
 } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -72,7 +73,19 @@ export const send = (
   attachments: AgentAttachment[] = [],
   approvalMode: AgentApprovalMode = 'auto'
 ) => call<AgentRun>('ai_send', { runId, prompt, attachments, approvalMode })
-export const step = (runId: string) => call<AgentRun>('ai_step', { runId })
+export async function step(
+  runId: string,
+  onProgress: (progress: AgentProgress) => void = () => {}
+): Promise<AgentRun> {
+  if (!IS_TAURI) return call<AgentRun>('ai_step', { runId })
+  const channel = new Channel<AgentProgress>()
+  channel.onmessage = onProgress
+  try {
+    return await call<AgentRun>('ai_step', { runId, onProgress: channel })
+  } finally {
+    channel.onmessage = () => {}
+  }
+}
 export const respond = (runId: string, approvalId: string, approve: boolean) =>
   call<AgentRun>('ai_respond', { runId, approvalId, approve })
 export const cancel = (runId: string) => call<void>('ai_cancel', { runId })

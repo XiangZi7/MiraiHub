@@ -192,7 +192,7 @@ impl Store {
                 ));
             }
             self.save(app, &run, &owner)?;
-            owner.cancelled.store(true, Ordering::SeqCst);
+            owner.cancel();
             return read(&dir, conversation_id, scope);
         }
         Ok(record)
@@ -337,7 +337,7 @@ pub async fn ai_delete_conversation(
         .remove(&conversation_id)
         .and_then(|owner| owner.upgrade())
     {
-        owner.cancelled.store(true, Ordering::SeqCst);
+        owner.cancel();
     }
     Ok(())
 }
@@ -357,6 +357,7 @@ mod tests {
         run.entry("user", "检查服务器", None);
         Arc::new(Cell {
             cancelled: AtomicBool::new(false),
+            cancel_notify: tokio::sync::Notify::new(),
             run: Mutex::new(run),
         })
     }

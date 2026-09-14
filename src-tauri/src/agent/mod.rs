@@ -6,6 +6,8 @@ mod limits;
 mod models;
 mod policy;
 mod protocol;
+mod read_only;
+mod streaming;
 use crate::{
     db,
     error::{AppError, AppResult},
@@ -23,7 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -88,7 +90,26 @@ struct Run {
 }
 struct Cell {
     cancelled: AtomicBool,
+    cancel_notify: Notify,
     run: Mutex<Run>,
+}
+impl Cell {
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        self.cancel_notify.notify_one();
+    }
+    async fn cancellation(&self) {
+        if !self.cancelled.load(Ordering::SeqCst) {
+            self.cancel_notify.notified().await;
+        }
+    }
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    run_id: String,
+    text: String,
+    phase: String,
 }
 #[derive(Default)]
 pub struct AgentManager {
@@ -178,6 +199,31 @@ impl Run {
         }
         self.status = "running".into();
         Ok(self.pending.take().unwrap())
+    }
+    fn dismiss_approval(&mut self, approval_id: &str, now: Instant) -> AppResult<()> {
+        let pending = self
+            .pending
+            .as_ref()
+            .ok_or_else(|| AppError::invalid_input("审批已使用或不存在"))?;
+        if self.status != "approval" || pending.view.id != approval_id {
+            return Err(AppError::invalid_input("审批与本次操作不匹配"));
+        }
+        // Dismissal never requires an unexpired approval or a connected target.
+        let expired = now >= pending.deadline;
+        let pending = self.pending.take().unwrap();
+        self.entry(
+            "audit",
+            if expired {
+                "审批已过期，未执行该操作；可以继续发送消息"
+            } else {
+                "已拒绝；任务停止，未执行该操作"
+            },
+            Some(pending.view.command),
+        );
+        self.messages.push(json!({"role":"tool", "tool_call_id":pending.call_id,
+            "content":"Approval was expired or declined. This operation was NOT executed. Do not retry it without a new user request."}));
+        self.status = "cancelled".into();
+        Ok(())
     }
 }
 impl AgentManager {
@@ -369,7 +415,7 @@ pub async fn ai_save_config(
     settings.upsert(input, clear_key)?;
     let result = config::save(&app, &settings)?;
     for cell in state.runs.lock().await.values() {
-        cell.cancelled.store(true, Ordering::SeqCst);
+        cell.cancel();
     }
     let _ = app.emit("ai-config-changed", ());
     Ok(result)
@@ -390,7 +436,7 @@ pub async fn ai_activate_config(
     settings.activate(&profile_id)?;
     let result = config::save(&app, &settings)?;
     for cell in state.runs.lock().await.values() {
-        cell.cancelled.store(true, Ordering::SeqCst);
+        cell.cancel();
     }
     let _ = app.emit("ai-config-changed", ());
     Ok(result)
@@ -408,7 +454,7 @@ pub async fn ai_delete_config(
     settings.remove(&profile_id)?;
     let result = config::save(&app, &settings)?;
     for cell in state.runs.lock().await.values() {
-        cell.cancelled.store(true, Ordering::SeqCst);
+        cell.cancel();
     }
     let _ = app.emit("ai-config-changed", ());
     Ok(result)
@@ -526,6 +572,7 @@ pub async fn ai_start(
     run.entries.push(entry);
     let cell = Arc::new(Cell {
         cancelled: AtomicBool::new(false),
+        cancel_notify: Notify::new(),
         run: Mutex::new(run),
     });
     let mut runs = state.runs.lock().await;
@@ -590,6 +637,7 @@ pub async fn ai_step(
     app: AppHandle,
     state: State<'_, AgentManager>,
     run_id: String,
+    on_progress: tauri::ipc::Channel<Progress>,
 ) -> AppResult<Snapshot> {
     guard(&window, false)?;
     let cell = state.get(&run_id).await?;
@@ -597,13 +645,24 @@ pub async fn ai_step(
     if cell.cancelled.load(Ordering::SeqCst) || run.status != "running" {
         return Ok(state.snapshot(&app, &run, &cell).await);
     }
-    let result = step(&app, &mut run, &cell).await;
+    let result = step(&app, &mut run, &cell, Some(&on_progress)).await;
     if let Err(error) = result {
-        run.fail(error);
+        if cell.cancelled.load(Ordering::SeqCst) {
+            run.pending = None;
+            run.status = "cancelled".into();
+            run.entry("audit", "已停止后续操作；正在执行的操作可能已生效", None);
+        } else {
+            run.fail(error);
+        }
     }
     Ok(state.snapshot(&app, &run, &cell).await)
 }
-async fn step(app: &AppHandle, run: &mut Run, cell: &Cell) -> AppResult<()> {
+async fn step(
+    app: &AppHandle,
+    run: &mut Run,
+    cell: &Cell,
+    channel: Option<&tauri::ipc::Channel<Progress>>,
+) -> AppResult<()> {
     run.check(cell)?;
     validate_target(app, run).await?;
     let mut messages = run.messages.clone();
@@ -613,12 +672,36 @@ async fn step(app: &AppHandle, run: &mut Run, cell: &Cell) -> AppResult<()> {
     );
     run.config.limits.check_request(run.steps, &messages)?;
     run.steps += 1;
-    let response = config::completion(
-        &run.config,
-        &messages,
-        Some(policy::definitions(&run.target.kind)),
-    )
-    .await?;
+    let mut partial_text = String::new();
+    let mut last_update = Instant::now();
+    let mut last_phase = String::new();
+    let run_id = run.id.clone();
+    let mut on_progress = |text: &str, phase: &str| {
+        partial_text = clip(text, 16000);
+        if phase != last_phase || last_update.elapsed() >= Duration::from_millis(50) {
+            if let Some(channel) = channel {
+                let _ = channel.send(Progress {
+                    run_id: run_id.clone(),
+                    text: partial_text.clone(),
+                    phase: phase.into(),
+                });
+            }
+            last_update = Instant::now();
+            last_phase = phase.into();
+        }
+    };
+    let result = tokio::select! {
+        biased;
+        _ = cell.cancellation() => Err(AppError::invalid_input("任务已取消")),
+        result = protocol::streaming_completion(
+            &run.config, &messages, Some(policy::definitions(&run.target.kind)), &mut on_progress,
+        ) => result,
+    };
+    if result.is_err() && !partial_text.is_empty() {
+        // Preserve a partial answer for viewing, never in the model/tool history.
+        run.entry("assistant", partial_text, None);
+    }
+    let response = result?;
     run.check(cell)?;
     validate_target(app, run).await?;
     let message = &response["choices"][0]["message"];
@@ -665,6 +748,13 @@ async fn step(app: &AppHandle, run: &mut Run, cell: &Cell) -> AppResult<()> {
             run.status = "approval".into();
         } else {
             run.check(cell)?;
+            if run.approval_mode == policy::ApprovalMode::Auto && action.approval().is_some() {
+                run.entry(
+                    "audit",
+                    "只读检查：自动执行",
+                    Some(action.approval_details().0),
+                );
+            }
             if run.approval_mode == policy::ApprovalMode::Full && action.approval().is_some() {
                 run.entry(
                     "audit",
@@ -700,19 +790,14 @@ pub async fn ai_respond(
     let mut run = cell.run.lock().await;
     run.check(&cell)?;
     let result = async {
+        if !approve {
+            run.dismiss_approval(&approval_id, Instant::now())?;
+            cell.cancel();
+            return Ok(());
+        }
         validate_target(&app, &run).await?;
         // Consume atomically BEFORE starting any network execution. Retries never rerun it.
         let pending = run.take_approval(&approval_id, Instant::now())?;
-        if !approve {
-            run.entry(
-                "audit",
-                "已拒绝；任务停止，未执行该操作",
-                Some(pending.view.command),
-            );
-            run.status = "cancelled".into();
-            cell.cancelled.store(true, Ordering::SeqCst);
-            return Ok(());
-        }
         run.entry("audit", "用户批准本次执行", Some(pending.view.command));
         run.check(&cell)?;
         let result = execute(&app, &run, &cell, &pending.action).await;
@@ -734,7 +819,7 @@ pub async fn ai_cancel(
 ) -> AppResult<()> {
     guard(&window, false)?;
     let cell = state.get(&run_id).await?;
-    cell.cancelled.store(true, Ordering::SeqCst);
+    cell.cancel();
     if let Ok(mut run) = cell.run.try_lock() {
         run.pending = None;
         run.status = "cancelled".into();
@@ -755,14 +840,14 @@ pub async fn ai_forget(
     if let Some(cell) = cell {
         if let Ok(mut run) = cell.run.try_lock() {
             if matches!(run.status.as_str(), "running" | "approval") {
-                cell.cancelled.store(true, Ordering::SeqCst);
+                cell.cancel();
                 run.status = "cancelled".into();
                 run.pending = None;
             }
             state.history.lock().await.save(&app, &run, &cell)?;
         } else {
             // The in-flight handler persists its final snapshot after observing cancellation.
-            cell.cancelled.store(true, Ordering::SeqCst);
+            cell.cancel();
         }
     }
     Ok(())
@@ -834,11 +919,63 @@ mod tests {
         let run = pending_run();
         let cell = Cell {
             cancelled: AtomicBool::new(true),
+            cancel_notify: Notify::new(),
             run: Mutex::new(pending_run()),
         };
         assert!(run.check(&cell).is_err());
         assert!(run.snapshot(&cell).approval.is_none());
         assert_eq!(run.snapshot(&cell).status, "cancelled");
+    }
+    #[test]
+    fn expired_approvals_can_be_dismissed_and_cannot_be_reused() {
+        let mut run = pending_run();
+        run.dismiss_approval("approval", Instant::now() + Duration::from_secs(301))
+            .unwrap();
+        assert!(run.pending.is_none());
+        assert_eq!(run.status, "cancelled");
+        assert!(run.entries.last().unwrap().text.contains("审批已过期"));
+        assert_eq!(run.messages.last().unwrap()["tool_call_id"], "call");
+        assert!(run.messages.last().unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("NOT executed"));
+        assert!(run.take_approval("approval", Instant::now()).is_err());
+        assert!(run.dismiss_approval("approval", Instant::now()).is_err());
+    }
+    #[test]
+    fn dismissal_checks_the_approval_id_and_rejection_remains_available_before_expiry() {
+        let mut run = pending_run();
+        assert!(run.dismiss_approval("another", Instant::now()).is_err());
+        assert!(run.pending.is_some());
+        run.dismiss_approval("approval", Instant::now()).unwrap();
+        assert!(run.entries.last().unwrap().text.contains("已拒绝"));
+    }
+    #[tokio::test]
+    async fn cancellation_wakes_a_pending_model_wait_without_locking_the_run() {
+        let cell = Cell {
+            cancelled: AtomicBool::new(false),
+            cancel_notify: Notify::new(),
+            run: Mutex::new(pending_run()),
+        };
+        let _run = cell.run.lock().await;
+        let wait = async {
+            tokio::select! {
+                _ = cell.cancellation() => true,
+                _ = std::future::pending::<()>() => false,
+            }
+        };
+        let cancel = async {
+            tokio::task::yield_now().await;
+            cell.cancel();
+        };
+        let (cancelled, _) =
+            tokio::time::timeout(Duration::from_secs(1), async { tokio::join!(wait, cancel) })
+                .await
+                .unwrap();
+        assert!(cancelled);
+        tokio::time::timeout(Duration::from_millis(100), cell.cancellation())
+            .await
+            .unwrap();
     }
     #[test]
     fn utf8_clipping_does_not_panic() {

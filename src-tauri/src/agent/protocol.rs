@@ -136,6 +136,47 @@ pub(super) async fn completion(
     messages: &[Value],
     tools: Option<Value>,
 ) -> AppResult<Value> {
+    let (resource, body) = completion_body(config, messages, tools)?;
+    let request = authenticate(
+        config,
+        config::client()?
+            .post(endpoint(config, resource)?)
+            .json(&body),
+    );
+    let result = config::request_json(request).await?;
+    match config.api_format {
+        ApiFormat::Openai => Ok(result),
+        ApiFormat::Anthropic => normalize_anthropic(result),
+    }
+}
+
+pub(super) async fn streaming_completion(
+    config: &Config,
+    messages: &[Value],
+    tools: Option<Value>,
+    on_progress: &mut (dyn FnMut(&str, &str) + Send),
+) -> AppResult<Value> {
+    // Claude's native Messages format retains its existing transport.
+    if config.api_format == ApiFormat::Anthropic {
+        return completion(config, messages, tools).await;
+    }
+    let (resource, mut body) = completion_body(config, messages, tools)?;
+    body["stream"] = true.into();
+    let request = authenticate(
+        config,
+        config::streaming_client()?
+            .post(endpoint(config, resource)?)
+            .header("accept", "text/event-stream")
+            .json(&body),
+    );
+    super::streaming::completion(request, on_progress).await
+}
+
+fn completion_body(
+    config: &Config,
+    messages: &[Value],
+    tools: Option<Value>,
+) -> AppResult<(&'static str, Value)> {
     config.ready()?;
     let (resource, body) = match config.api_format {
         ApiFormat::Anthropic => ("messages", anthropic_body(config, messages, tools)?),
@@ -160,17 +201,7 @@ pub(super) async fn completion(
             ("chat/completions", body)
         }
     };
-    let request = authenticate(
-        config,
-        config::client()?
-            .post(endpoint(config, resource)?)
-            .json(&body),
-    );
-    let result = config::request_json(request).await?;
-    match config.api_format {
-        ApiFormat::Openai => Ok(result),
-        ApiFormat::Anthropic => normalize_anthropic(result),
-    }
+    Ok((resource, body))
 }
 
 /// Retain provider tool signatures/reasoning needed by Gemini and DeepSeek on the next turn.

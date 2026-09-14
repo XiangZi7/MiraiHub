@@ -17,7 +17,7 @@ const options = computed(() => [
   {
     value: 'auto',
     label: t('帮我批准'),
-    description: t('内置只读工具自动执行，其他操作询问'),
+    description: t('常见只读检查自动执行，修改和未识别操作询问'),
   },
   {
     value: 'full',

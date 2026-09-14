@@ -22,6 +22,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 import AgentApprovalCard from './AgentApprovalCard.vue'
 import AgentMarkdown from './AgentMarkdown.vue'
 import AgentConversationMenu from './AgentConversationMenu.vue'
+import AgentCopyButton from './AgentCopyButton.vue'
 
 const { t } = useI18n()
 
@@ -41,6 +42,7 @@ const profiles = useAgentProfiles(() => {
 const {
   run,
   busy,
+  progress,
   error,
   awaitingApproval,
   conversations,
@@ -118,13 +120,20 @@ const canSend = computed(() =>
 )
 const statusLabel = computed(
   () =>
-    ({
+    (busy.value && progress.value
+      ? {
+          thinking: t('模型正在思考'),
+          answering: t('正在生成回复'),
+          tool: t('正在准备工具调用'),
+        }[progress.value.phase]
+      : undefined) ??
+    {
       running: t('正在处理'),
       approval: t('等待审批'),
       completed: t('本轮完成'),
       cancelled: t('已停止'),
       failed: t('任务未完成'),
-    })[run.value?.status ?? 'completed']
+    }[run.value?.status ?? 'completed']
 )
 async function submit(): Promise<void> {
   if (!canSend.value) return
@@ -169,9 +178,26 @@ async function copyConversation(): Promise<void> {
   }
 }
 watch(
-  () => [run.value?.conversationId, run.value?.entries.length],
-  async () => {
+  () => [
+    run.value?.conversationId,
+    run.value?.entries.length,
+    progress.value?.text,
+  ],
+  async (current, previous) => {
     state.copied = false
+    const element = scroll.value
+    const follow =
+      current[0] !== previous[0] ||
+      current[1] !== previous[1] ||
+      !element ||
+      element.scrollHeight - element.scrollTop - element.clientHeight < 80
+    // Streaming must not pull the user away from text they are selecting/copying.
+    if (
+      !follow ||
+      (element?.contains(window.getSelection()?.anchorNode ?? null) &&
+        window.getSelection()?.toString())
+    )
+      return
     await nextTick()
     scroll.value?.scrollTo({
       top: scroll.value.scrollHeight,
@@ -401,6 +427,39 @@ watch(
                 : entry.detail
             }}</pre>
           </details>
+          <div class="mt-2 flex justify-end">
+            <AgentCopyButton
+              :text="
+                entry.detail ? `${entry.text}\n\n${entry.detail}` : entry.text
+              "
+              :label="t('复制内容')"
+            />
+          </div>
+        </article>
+        <article
+          v-if="progress?.text"
+          class="message assistant"
+          aria-busy="true"
+        >
+          <div class="message-author">
+            <span
+              class="message-avatar"
+              aria-hidden="true"
+            >
+              <AppIcon
+                name="lucide:bot"
+                :size="14"
+              />
+            </span>
+            <span>AI Agent</span>
+          </div>
+          <AgentMarkdown :content="progress.text" />
+          <div class="mt-2 flex justify-end">
+            <AgentCopyButton
+              :text="progress.text"
+              :label="t('复制内容')"
+            />
+          </div>
         </article>
         <AgentApprovalCard
           v-if="run.id && run.approval"
@@ -537,6 +596,7 @@ watch(
   padding: 1px 3px;
 }
 .agent-scroll {
+  user-select: text;
   flex: 1;
   min-height: 0;
   overflow: auto;

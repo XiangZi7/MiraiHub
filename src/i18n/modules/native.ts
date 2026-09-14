@@ -1,5 +1,25 @@
 /** Application-owned native messages. Service responses, SQL, and shell output stay verbatim. */
 export const en = {
+  '只读检查：自动执行': 'Read-only check: automatic execution',
+  '审批已过期，未执行该操作；可以继续发送消息':
+    'Approval expired. The operation was not executed. You can continue chatting.',
+  '模型连接或响应超时，请稍后重试；长上下文、模型思考或中转站拥堵可能增加等待时间':
+    'The model connection or response timed out. Try again later; long context, model reasoning or a busy relay may increase the wait.',
+  '无法连接模型服务，请检查网络、证书及 API 地址':
+    'Cannot connect to the model service. Check the network, certificate and API URL.',
+  '模型连接中断或请求失败，请检查网络与中转站状态':
+    'The model connection was interrupted or the request failed. Check the network and relay status.',
+  模型流式响应超过传输容量限制: 'The model stream exceeded the transfer limit',
+  '模型流式响应不是有效 JSON': 'The model stream contains invalid JSON',
+  '模型服务在生成过程中返回错误，请检查模型与中转站状态':
+    'The model service returned an error during generation. Check the model and relay status.',
+  服务未返回兼容的流式响应:
+    'The service did not return a compatible streaming response',
+  模型工具调用分片无效: 'The model returned invalid tool call fragments',
+  '模型服务未能完成此回复，请调整请求后重试':
+    'The model service could not complete this response. Adjust the request and try again.',
+  '模型流式响应未完整结束，未执行本次工具调用，请重试':
+    'The model stream did not finish. This tool call was not executed. Try again.',
   '此窗口无权调用 AI 功能': 'This window cannot access AI features',
   任务已取消: 'Task cancelled',
   审批已使用或不存在: 'Approval has already been used or does not exist',

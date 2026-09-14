@@ -73,6 +73,7 @@ onBeforeUnmount(() => clearTimeout(feedbackTimer))
 
 <style scoped>
 .agent-markdown {
+  user-select: text;
   position: relative;
   min-width: 0;
 }
