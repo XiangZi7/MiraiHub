@@ -49,26 +49,32 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "publisher": "XiangZi",
+    "homepage": "https://github.com/XiangZi7/MiraiHub",
     "copyright": "Copyright © 2026 XiangZi. All rights reserved.",
     "category": "DeveloperTool",
     "shortDescription": "一站式服务器与开发基础设施工作台",
     "longDescription": "MiraiHub 是基于 Tauri 2、Rust 与 Vue 3 构建的桌面工作台，将 SSH 终端、远端文件传输、数据库管理、服务器监控与 AI Agent 集中到同一个应用中。",
     "windows": {
+      "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
       "nsis": {
         "displayLanguageSelector": true,
         "languages": [
           "SimpChinese",
           "English"
         ],
-        "installMode": "currentUser"
-      },
-      "wix": {
-        "language": [
-          "zh-CN",
-          "en-US"
-        ]
+        "installMode": "currentUser",
+        "installerHooks": "windows/installer-hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "startMenuFolder": "MiraiHub"
       }
     },
     "icon": [

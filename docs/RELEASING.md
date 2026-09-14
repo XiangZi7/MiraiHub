@@ -113,6 +113,10 @@ Get-FileHash .\MiraiHub_0.2.0_windows_x64_setup.exe -Algorithm SHA256
 
 ## 本地打包
 
+Windows 安装信息位于 `src-tauri/tauri.conf.json` 的 `bundle` 配置中：默认仅构建 NSIS 安装包，发布者为 `XiangZi`，使用 MiraiHub 的主页、描述与现有应用图标。安装器和卸载器均使用 `src-tauri/icons/icon.ico`，开始菜单快捷方式位于 `MiraiHub` 文件夹。
+
+安装面向当前用户，提供简体中文 / English 语言选择，禁止覆盖安装到更低版本。缺少 WebView2 Runtime 时会联网下载引导程序并静默安装。`src-tauri/windows/installer-hooks.nsh` 补充 Windows 卸载项中的应用描述、Issues 反馈链接和最新版本下载链接。
+
 ```powershell
 pnpm version:check
 pnpm release:build
