@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import type {
   FileTransferDirection,
   FileTransferTask,
@@ -21,35 +22,37 @@ const emit = defineEmits<{
 const completedCount = computed(
   () => props.tasks.filter(task => task.status === 'completed').length
 )
-const progress = computed(() => {
-  const total = props.tasks.reduce((sum, task) => sum + task.totalBytes, 0)
-  if (!total)
-    return props.tasks.length && completedCount.value === props.tasks.length
-      ? 100
-      : 0
-  const transferred = props.tasks.reduce(
-    (sum, task) => sum + Math.min(task.transferredBytes, task.totalBytes),
-    0
-  )
-  return Math.min(100, Math.round((transferred / total) * 100))
-})
 
-const headingPrefix = computed(() =>
-  props.direction === 'upload' ? 'Uploading to' : 'Downloading from'
+const directionIcon = computed(() =>
+  props.direction === 'upload' ? 'lucide:cloud-upload' : 'lucide:cloud-download'
+)
+const directionLabel = computed(() =>
+  props.direction === 'upload' ? '上传到' : '下载自'
 )
 </script>
 
 <template>
   <section class="transfer-group">
     <div class="transfer-group-heading">
+      <AppIcon
+        :name="directionIcon"
+        :size="12"
+        class="transfer-group-icon"
+      />
       <h3 class="transfer-group-title">
-        <span>{{ headingPrefix }}</span>
+        <span>{{ directionLabel }}</span>
         {{ connectionName || 'Remote server' }}
       </h3>
-      <div class="transfer-group-meta">
-        <span>{{ completedCount }} of {{ tasks.length }} completed</span>
-        <span>{{ progress }}%</span>
-      </div>
+      <span
+        class="transfer-group-meta"
+        title="已完成 / 总数"
+      >
+        <AppIcon
+          name="lucide:list-checks"
+          :size="10"
+        />
+        {{ completedCount }}/{{ tasks.length }}
+      </span>
     </div>
 
     <div class="transfer-group-files">
@@ -67,38 +70,51 @@ const headingPrefix = computed(() =>
 
 <style scoped>
 .transfer-group + .transfer-group {
-  margin-top: 18px;
+  margin-top: 12px;
 }
 
 .transfer-group-heading {
-  padding: 7px 8px 12px;
+  display: flex;
+  height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.transfer-group-icon {
+  flex: 0 0 auto;
+  color: var(--color-blue);
 }
 
 .transfer-group-title {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   color: var(--color-txt);
   font-size: 10.5px;
   font-weight: 500;
-  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .transfer-group-title span {
-  color: var(--color-blue);
+  margin-right: 3px;
+  color: var(--color-txt-3);
+  font-weight: 400;
 }
 
 .transfer-group-meta {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 2px;
-  color: var(--color-txt-2);
-  font-size: 9.5px;
-  line-height: 16px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  color: var(--color-txt-3);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 .transfer-group-files {
   display: grid;
-  gap: 5px;
+  gap: 4px;
 }
 </style>

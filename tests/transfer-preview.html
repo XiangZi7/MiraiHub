@@ -108,6 +108,10 @@
             'Failed',
           '失败任务不显示完成状态'
         )
+        assert(
+          document.querySelector('[aria-label="全部取消"]').disabled,
+          '没有进行中的任务时一键取消不可用'
+        )
         const css = getComputedStyle(document.querySelector('.transfer-center'))
         assert(
           css.backdropFilter.includes('blur') && css.backgroundImage === 'none',

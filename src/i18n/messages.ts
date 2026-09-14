@@ -1,4 +1,4 @@
-import en from './en-US'
-import zh from './zh-CN'
+import en from './modules/en-US'
+import zh from './modules/zh-CN'
 
 export const messages = { 'en-US': en, 'zh-CN': zh }

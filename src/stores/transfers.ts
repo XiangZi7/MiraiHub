@@ -397,6 +397,13 @@ export const useTransfersStore = defineStore('transfers', () => {
     await Promise.all(pausedIds.map(resume))
   }
 
+  async function cancelAll(): Promise<void> {
+    const activeIds = state.items
+      .filter(task => ['queued', 'running', 'paused'].includes(task.status))
+      .map(task => task.id)
+    await Promise.all(activeIds.map(cancel))
+  }
+
   function clearSettled(): void {
     const active = state.items.filter(task =>
       ['queued', 'running', 'paused'].includes(task.status)
@@ -443,6 +450,7 @@ export const useTransfersStore = defineStore('transfers', () => {
     cancel,
     pauseAll,
     resumeAll,
+    cancelAll,
     clearSettled,
   }
 })

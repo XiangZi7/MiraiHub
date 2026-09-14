@@ -23,6 +23,7 @@ export function useFileTransfers() {
     cancel,
     pauseAll,
     resumeAll,
+    cancelAll,
     clearSettled,
     markAllSeen,
     recordUploadError,
@@ -43,6 +44,7 @@ export function useFileTransfers() {
     cancel,
     pauseAll,
     resumeAll,
+    cancelAll,
     clearSettled,
   }
 }

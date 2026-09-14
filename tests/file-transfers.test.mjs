@@ -13,6 +13,7 @@ const api = {
   uploadFile: async () => '',
   downloadFile: async () => '',
   pathExists: async () => false,
+  cancelTransfer: async () => {},
 }
 let onTransfer
 let toastCount = 0
@@ -35,6 +36,7 @@ const load = sourceLoader({
     export const uploadFile = options => fixture.api.uploadFile(options)
     export const downloadFile = options => fixture.api.downloadFile(options)
     export const pathExists = (session, path) => fixture.api.pathExists(session, path)
+    export const cancelTransfer = taskId => fixture.api.cancelTransfer(taskId)
     export const errorMessage = error => error instanceof Error ? error.message : String(error)
   `),
   '@/utils/window': dataModule('export const IS_TAURI = true'),
@@ -257,10 +259,12 @@ test('关闭完成提醒只影响导航栏标记，仍保留完成记录', async
 
 function deferred() {
   let resolve
-  const promise = new Promise(done => {
+  let reject
+  const promise = new Promise((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 test('多文件上传填满并发队列，修改上限启动排队任务，单个失败不阻塞余下文件', async t => {
@@ -353,4 +357,33 @@ test('并发设为 1 时保留排队与取消能力', async t => {
     f.store.tasks.filter(task => task.status === 'cancelled').length,
     1
   )
+})
+
+test('一键取消会终止排队、运行与暂停中的全部任务', async t => {
+  const f = fixture(t)
+  settings.maxFileTransfers = 1
+  const cancelled = []
+  const gates = []
+  api.cancelTransfer = async taskId => {
+    cancelled.push(taskId)
+    gates.forEach(gate => gate.reject(new Error('cancelled')))
+  }
+  api.uploadFile = async () => {
+    const gate = deferred()
+    gates.push(gate)
+    await gate.promise
+  }
+  const batch = f.uploads.uploadPaths(['C:/one', 'C:/two', 'C:/three'])
+  await tick()
+  await tick()
+  assert.equal(f.store.activeTasks.length, 3)
+  await f.store.cancelAll()
+  await tick()
+  assert.equal(f.store.activeTasks.length, 0)
+  assert.equal(
+    f.store.tasks.filter(task => task.status === 'cancelled').length,
+    3
+  )
+  assert.equal(cancelled.length, 1)
+  await batch
 })

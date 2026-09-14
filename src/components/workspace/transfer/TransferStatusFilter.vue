@@ -19,7 +19,7 @@ const filters: Array<{
   icon: string
   tone: string
 }> = [
-  { id: 'all', label: '全部', icon: 'lucide:list', tone: 'text-txt-3' },
+  { id: 'all', label: '全部', icon: 'lucide:layers', tone: 'text-txt-3' },
   {
     id: 'active',
     label: '进行中',
@@ -34,7 +34,7 @@ const filters: Array<{
   },
   {
     id: 'failed',
-    label: '错误',
+    label: '失败',
     icon: 'lucide:circle-alert',
     tone: 'text-danger',
   },
@@ -65,61 +65,58 @@ const filters: Array<{
         :class="filter.tone"
       />
       <span>{{ filter.label }}</span>
-      <span class="transfer-filter-count">{{ counts[filter.id] }}</span>
+      <span
+        v-if="counts[filter.id]"
+        class="transfer-filter-count"
+        >{{ counts[filter.id] }}</span
+      >
     </button>
   </nav>
 </template>
 
 <style scoped>
 .transfer-filters {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  border-bottom: 1px solid rgb(255 255 255 / 6%);
-  background: transparent;
-  padding: 7px 9px;
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--color-line-soft);
+  padding: 6px 10px;
 }
 
 .transfer-filter {
   display: flex;
-  min-width: 0;
-  height: 27px;
+  height: 24px;
   cursor: pointer;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  gap: 4px;
+  border-radius: 5px;
+  padding: 0 8px;
   color: var(--color-txt-3);
-  font-size: 9px;
+  font-size: 9.5px;
   outline: none;
   transition:
-    border-color 150ms ease,
     background-color 150ms ease,
     color 150ms ease;
 }
 
 .transfer-filter:hover,
 .transfer-filter:focus-visible {
-  border-color: rgb(255 255 255 / 9%);
   background: color-mix(in oklch, var(--color-txt) 5%, transparent);
   color: var(--color-txt);
 }
 
 .transfer-filter-active {
-  border-color: color-mix(in oklch, var(--color-blue) 38%, transparent);
   background: color-mix(in oklch, var(--color-blue) 12%, transparent);
   color: var(--color-txt);
-  box-shadow: inset 0 1px rgb(255 255 255 / 4%);
 }
 
 .transfer-filter-count {
   min-width: 14px;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--color-txt) 6%, transparent);
-  padding: 1px 3px;
-  color: var(--color-txt-4);
+  background: color-mix(in oklch, var(--color-txt) 7%, transparent);
+  padding: 1px 4px;
+  color: var(--color-txt-3);
   font-size: 8px;
+  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 

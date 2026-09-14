@@ -14,6 +14,47 @@ const emit = defineEmits<{
   cancel: [taskId: string]
 }>()
 
+const ICONS: Array<[string, string[]]> = [
+  [
+    'lucide:file-archive',
+    ['zip', 'tar', 'gz', 'tgz', '7z', 'rar', 'xz', 'bz2'],
+  ],
+  [
+    'lucide:file-image',
+    ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'],
+  ],
+  ['lucide:file-video', ['mp4', 'mkv', 'mov', 'avi', 'webm']],
+  ['lucide:file-audio', ['mp3', 'wav', 'flac', 'ogg', 'aac']],
+  [
+    'lucide:file-code',
+    [
+      'js',
+      'ts',
+      'jsx',
+      'tsx',
+      'vue',
+      'rs',
+      'py',
+      'go',
+      'java',
+      'c',
+      'cpp',
+      'h',
+      'sh',
+      'sql',
+      'html',
+      'css',
+      'json',
+      'yaml',
+      'yml',
+      'toml',
+      'xml',
+    ],
+  ],
+  ['lucide:file-spreadsheet', ['xls', 'xlsx', 'csv']],
+  ['lucide:file-text', ['txt', 'md', 'log', 'pdf', 'doc', 'docx', 'conf']],
+]
+
 const progress = computed(() => {
   if (!props.task.totalBytes) return props.task.status === 'completed' ? 100 : 0
   return Math.min(
@@ -21,6 +62,10 @@ const progress = computed(() => {
     Math.round((props.task.transferredBytes / props.task.totalBytes) * 100)
   )
 })
+
+const settled = computed(() =>
+  ['completed', 'error', 'cancelled'].includes(props.task.status)
+)
 
 const displayPath = computed(() => {
   const path =
@@ -32,10 +77,10 @@ const displayPath = computed(() => {
 })
 
 const fileIcon = computed(() => {
-  const extension = props.task.fileName.split('.').at(-1)?.toLowerCase()
-  return extension && ['zip', 'tar', 'gz', '7z', 'rar'].includes(extension)
-    ? 'lucide:file-archive'
-    : 'lucide:file-text'
+  const extension = props.task.fileName.split('.').at(-1)?.toLowerCase() ?? ''
+  return (
+    ICONS.find(([, list]) => list.includes(extension))?.[0] ?? 'lucide:file'
+  )
 })
 
 const progressTone = computed(() => {
@@ -47,43 +92,69 @@ const progressTone = computed(() => {
 
 const sizeLabel = computed(() => {
   const current = formatBytes(props.task.transferredBytes)
-  return props.task.totalBytes
-    ? `${current} / ${formatBytes(props.task.totalBytes)}`
-    : ['completed', 'error', 'cancelled'].includes(props.task.status)
-      ? current
-      : `${current} / Calculating`
+  if (props.task.totalBytes)
+    return `${current} / ${formatBytes(props.task.totalBytes)}`
+  return settled.value ? current : `${current} / --`
+})
+
+const statusIcon = computed(() => {
+  switch (props.task.status) {
+    case 'queued':
+      return 'lucide:clock'
+    case 'paused':
+      return 'lucide:pause'
+    case 'running':
+      return props.task.direction === 'upload'
+        ? 'lucide:arrow-up'
+        : 'lucide:arrow-down'
+    default:
+      return ''
+  }
 })
 </script>
 
 <template>
-  <article class="transfer-file">
+  <article
+    :class="['transfer-file', settled && 'transfer-file-settled']"
+    :data-status="task.status"
+  >
     <div
       class="transfer-file-icon"
       aria-hidden="true"
     >
       <AppIcon
         :name="fileIcon"
-        :size="17"
+        :size="16"
       />
     </div>
 
     <div class="transfer-file-main">
-      <p
-        class="transfer-file-name"
-        :title="task.fileName"
-      >
-        {{ task.fileName }}
-      </p>
+      <div class="transfer-file-row">
+        <p
+          class="transfer-file-name"
+          :title="task.fileName"
+        >
+          {{ task.fileName }}
+        </p>
+        <span class="transfer-file-meta">
+          <AppIcon
+            v-if="statusIcon"
+            :name="statusIcon"
+            :size="10"
+          />
+          {{ sizeLabel }}
+        </span>
+      </div>
       <p
         :class="['transfer-file-path', task.error && 'transfer-file-error']"
         :title="task.error || displayPath"
       >
-        {{ task.error || displayPath }}
+        <AppIcon
+          :name="task.error ? 'lucide:triangle-alert' : 'lucide:folder'"
+          :size="10"
+        />
+        <span>{{ task.error || displayPath }}</span>
       </p>
-      <div class="transfer-file-meta">
-        <span>{{ sizeLabel }}</span>
-        <span>{{ progress }}%</span>
-      </div>
       <div
         class="transfer-file-track"
         role="progressbar"
@@ -103,32 +174,32 @@ const sizeLabel = computed(() => {
         v-if="task.status === 'running'"
         type="button"
         class="transfer-action"
-        title="Pause"
+        title="暂停"
         aria-label="Pause transfer"
         @click="emit('pause', task.id)"
       >
         <AppIcon
           name="lucide:pause"
-          :size="13"
+          :size="12"
         />
       </button>
       <button
         v-else-if="task.status === 'paused'"
         type="button"
         class="transfer-action"
-        title="Resume"
+        title="继续"
         aria-label="Resume transfer"
         @click="emit('resume', task.id)"
       >
         <AppIcon
           name="lucide:play"
-          :size="13"
+          :size="12"
         />
       </button>
       <span
         v-else-if="task.status === 'completed'"
         class="transfer-result transfer-result-success"
-        title="Completed"
+        title="已完成"
       >
         <AppIcon
           name="lucide:circle-check"
@@ -138,7 +209,7 @@ const sizeLabel = computed(() => {
       <span
         v-else-if="task.status === 'error'"
         class="transfer-result transfer-result-error"
-        title="Failed"
+        title="失败"
       >
         <AppIcon
           name="lucide:circle-alert"
@@ -148,7 +219,7 @@ const sizeLabel = computed(() => {
       <span
         v-else-if="task.status === 'cancelled'"
         class="transfer-result transfer-result-cancelled"
-        title="Cancelled"
+        title="已取消"
       >
         <AppIcon
           name="lucide:circle-x"
@@ -157,16 +228,16 @@ const sizeLabel = computed(() => {
       </span>
 
       <button
-        v-if="['queued', 'running', 'paused'].includes(task.status)"
+        v-if="!settled"
         type="button"
         class="transfer-action transfer-action-cancel"
-        title="Cancel"
+        title="取消"
         aria-label="Cancel transfer"
         @click="emit('cancel', task.id)"
       >
         <AppIcon
           name="lucide:x"
-          :size="14"
+          :size="13"
         />
       </button>
     </div>
@@ -175,76 +246,92 @@ const sizeLabel = computed(() => {
 
 <style scoped>
 .transfer-file {
-  position: relative;
   display: grid;
-  min-height: 64px;
-  grid-template-columns: 31px minmax(0, 1fr) auto;
-  column-gap: 9px;
-  border: 1px solid var(--color-line-soft);
-  border-radius: 7px;
-  background: color-mix(in oklch, var(--color-txt) 3%, transparent);
-  box-shadow: 0 3px 12px rgb(0 0 0 / 12%);
-  padding: 8px 9px 7px 14px;
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  border-radius: 6px;
+  padding: 6px 6px 6px 8px;
+  transition: background-color 150ms ease;
 }
 
 .transfer-file:hover {
-  border-color: var(--color-line-strong);
   background-color: color-mix(in oklch, var(--color-txt) 4%, transparent);
+}
+
+.transfer-file-settled {
+  opacity: 0.82;
 }
 
 .transfer-file-icon {
   display: grid;
-  width: 22px;
-  height: 27px;
-  margin-top: 8px;
+  width: 26px;
+  height: 26px;
   place-items: center;
-  border: 1px solid rgb(255 255 255 / 38%);
-  border-radius: 3px;
-  background: linear-gradient(145deg, #eef2f4, #c9cfd3);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 35%);
-  color: #86919a;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-blue) 12%, transparent);
+  color: var(--color-blue);
+}
+
+.transfer-file-settled .transfer-file-icon {
+  background: color-mix(in oklch, var(--color-txt) 6%, transparent);
+  color: var(--color-txt-3);
 }
 
 .transfer-file-main {
   min-width: 0;
 }
 
+.transfer-file-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .transfer-file-name,
-.transfer-file-path,
-.transfer-file-error {
+.transfer-file-path > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .transfer-file-name {
+  min-width: 0;
+  flex: 1 1 auto;
   color: var(--color-txt);
   font-size: 10.5px;
   font-weight: 500;
   line-height: 14px;
 }
 
+.transfer-file-meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  color: var(--color-txt-3);
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+}
+
 .transfer-file-path {
+  display: flex;
+  align-items: center;
+  gap: 3px;
   color: var(--color-txt-3);
   font-size: 9px;
   line-height: 12px;
 }
 
-.transfer-file-meta {
-  display: flex;
-  justify-content: space-between;
-  color: var(--color-txt-3);
-  font-size: 8.5px;
-  line-height: 12px;
+.transfer-file-error {
+  color: var(--color-danger);
 }
 
 .transfer-file-track {
-  height: 3px;
+  height: 2px;
   overflow: hidden;
-  margin-top: 1px;
+  margin-top: 4px;
   border-radius: 999px;
   background: var(--color-line-soft);
 }
@@ -260,28 +347,19 @@ const sizeLabel = computed(() => {
 }
 
 .transfer-progress-complete {
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklch, var(--color-success) 82%, black),
-    var(--color-success)
-  );
+  background: var(--color-success);
 }
 
 .transfer-progress-error {
   background: var(--color-danger);
 }
 
-.transfer-file-error {
-  color: var(--color-danger);
-}
-
 .transfer-file-actions {
   display: flex;
-  min-width: 39px;
+  min-width: 22px;
   align-items: center;
   justify-content: flex-end;
-  gap: 2px;
-  padding-top: 21px;
+  gap: 1px;
 }
 
 .transfer-action,
@@ -295,7 +373,7 @@ const sizeLabel = computed(() => {
 
 .transfer-action {
   cursor: pointer;
-  color: var(--color-txt-2);
+  color: var(--color-txt-3);
   outline: none;
   transition:
     color 150ms ease,
@@ -304,12 +382,14 @@ const sizeLabel = computed(() => {
 
 .transfer-action:hover,
 .transfer-action:focus-visible {
-  background: color-mix(in oklch, var(--color-txt) 6%, transparent);
+  background: color-mix(in oklch, var(--color-txt) 7%, transparent);
   color: var(--color-txt);
 }
 
-.transfer-action-cancel {
-  color: var(--color-txt-2);
+.transfer-action-cancel:hover,
+.transfer-action-cancel:focus-visible {
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
 }
 
 .transfer-result-success {
