@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, shallowRef, toRef, watch } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
@@ -10,6 +12,8 @@ import { QUICK_ACTIONS } from '@/constants/workspace'
 import type { SavedConnection } from '@/types/connection'
 import { scheduleClipboardClear } from '@/utils/clipboard'
 import { formatRate, formatUptime, percent, splitKb } from '@/utils/format'
+
+const { t } = useI18n()
 
 /**
  * 服务器概览。
@@ -33,7 +37,7 @@ const lastNotifiedError = shallowRef('')
 watch(error, message => {
   if (!message || message === lastNotifiedError.value) return
   lastNotifiedError.value = message
-  toast.error({ title: '采集系统信息失败', description: message })
+  toast.error({ title: t('采集系统信息失败'), description: message })
 })
 
 watch(
@@ -67,13 +71,16 @@ const cards = computed(() => {
       id: 'cpu',
       label: 'CPU',
       value: `${cpu.usage.toFixed(0)}%`,
-      caption: `${cpu.cores} 核 · 负载 ${cpu.load[0].toFixed(2)}`,
+      caption: t('{value0} 核 · 负载 {value1}', {
+        value0: cpu.cores,
+        value1: cpu.load[0].toFixed(2),
+      }),
       color: 'var(--color-blue)',
       trend: history.value.cpu,
     },
     {
       id: 'memory',
-      label: 'Memory',
+      label: t('Memory'),
       value: mem.value,
       suffix: `${mem.unit} / ${memTotal.value} ${memTotal.unit}`,
       caption: percent(memory.usedKb, memory.totalKb),
@@ -82,7 +89,7 @@ const cards = computed(() => {
     },
     {
       id: 'disk',
-      label: 'Disk',
+      label: t('Disk'),
       value: diskUsed.value,
       suffix: `${diskUsed.unit} / ${diskTotal.value} ${diskTotal.unit}`,
       caption: percent(disk.usedKb, disk.totalKb),
@@ -91,7 +98,7 @@ const cards = computed(() => {
     },
     {
       id: 'network',
-      label: 'Network',
+      label: t('Network'),
       down: formatRate(network.rxBytesPerSec),
       up: formatRate(network.txBytesPerSec),
       color: 'var(--color-cyan)',
@@ -107,7 +114,7 @@ const subtitle = computed(() => {
     stats.value?.os ?? '',
   ].filter(Boolean)
 
-  return parts.join(' · ') || '未连接'
+  return parts.join(' · ') || t('未连接')
 })
 
 /** 系统信息列表，连上后才有 */
@@ -116,12 +123,12 @@ const facts = computed(() => {
   if (!snapshot) return []
 
   return [
-    { label: 'Hostname', value: snapshot.hostname || '—' },
-    { label: 'Kernel', value: snapshot.kernel || '—' },
-    { label: 'Architecture', value: snapshot.arch || '—' },
-    { label: 'Uptime', value: formatUptime(snapshot.uptimeSecs) },
+    { label: t('Hostname'), value: snapshot.hostname || '—' },
+    { label: t('Kernel'), value: snapshot.kernel || '—' },
+    { label: t('Architecture'), value: snapshot.arch || '—' },
+    { label: t('Uptime'), value: formatUptime(snapshot.uptimeSecs) },
     { label: 'CPU', value: snapshot.cpu.model || '—' },
-    { label: 'Online users', value: String(snapshot.onlineUsers) },
+    { label: t('Online users'), value: String(snapshot.onlineUsers) },
   ]
 })
 async function runAction(id: string): Promise<void> {
@@ -140,9 +147,12 @@ async function runAction(id: string): Promise<void> {
         .join('\n')
       await navigator.clipboard.writeText(text)
       scheduleClipboardClear(text)
-      toast.success('服务器信息已复制')
+      toast.success(t('服务器信息已复制'))
     } catch (error) {
-      toast.error({ title: '复制服务器信息失败', description: String(error) })
+      toast.error({
+        title: t('复制服务器信息失败'),
+        description: String(error),
+      })
     }
     return
   }
@@ -170,7 +180,7 @@ async function runAction(id: string): Promise<void> {
         <h1
           class="text-txt truncate text-[19px] leading-tight font-semibold tracking-tight"
         >
-          {{ connection?.name ?? '未选择服务器' }}
+          {{ connection?.name ?? t('未选择服务器') }}
         </h1>
         <p
           class="mt-1.5 flex items-center gap-1.5 text-xs"
@@ -193,7 +203,7 @@ async function runAction(id: string): Promise<void> {
 
       <IconButton
         icon="lucide:rotate-cw"
-        title="刷新系统信息"
+        :title="t('刷新系统信息')"
         :disabled="!connected || loading"
         @click="refresh"
       />
@@ -286,13 +296,15 @@ async function runAction(id: string): Promise<void> {
       class="border-line mb-6 rounded-xl border border-dashed px-4 py-8 text-center"
     >
       <p class="text-txt-3 text-xs">
-        连上服务器后，这里会显示实时的 CPU、内存、磁盘与网络
+        {{ t('连上服务器后，这里会显示实时的 CPU、内存、磁盘与网络') }}
       </p>
     </div>
 
     <!-- 快捷操作 -->
     <section class="mb-6">
-      <h2 class="text-txt-2 mb-2.5 text-[13px] font-medium">Quick Actions</h2>
+      <h2 class="text-txt-2 mb-2.5 text-[13px] font-medium">
+        {{ t('Quick Actions') }}
+      </h2>
       <div class="grid grid-cols-3 gap-2.5">
         <button
           v-for="action in QUICK_ACTIONS"
@@ -310,7 +322,7 @@ async function runAction(id: string): Promise<void> {
             :class="action.tone"
           />
           <span class="text-txt-2 max-w-full truncate text-[11px]">{{
-            action.label
+            t(action.label)
           }}</span>
         </button>
       </div>
@@ -318,7 +330,9 @@ async function runAction(id: string): Promise<void> {
 
     <!-- 系统信息 -->
     <section v-if="facts.length">
-      <h2 class="text-txt-2 mb-2.5 text-[13px] font-medium">System</h2>
+      <h2 class="text-txt-2 mb-2.5 text-[13px] font-medium">
+        {{ t('System') }}
+      </h2>
       <div class="card divide-line-soft divide-y overflow-hidden">
         <div
           v-for="fact in facts"

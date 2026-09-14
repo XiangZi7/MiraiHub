@@ -1,8 +1,29 @@
+import { zh as features } from './features'
+import { zh as parameterized } from './parameterized'
+import { zh as native } from './native'
 import en from './en-US'
 
 // Existing Chinese source labels double as stable message IDs during migration.
 export default {
   ...Object.fromEntries(Object.keys(en).map(key => [key, key])),
+  ...features,
+  ...parameterized,
+  ...native,
+  'Cancel transfer': '取消传输',
+  Cancelled: '已取消',
+  'Close file transfer': '关闭文件传输',
+  Complete: '已完成',
+  Downloading: '下载中',
+  Failed: '失败',
+  Idle: '空闲',
+  'Overall transfer progress': '总传输进度',
+  'Pause transfer': '暂停传输',
+  Paused: '已暂停',
+  Queued: '排队中',
+  'Resume transfer': '继续传输',
+  Transferring: '传输中',
+  Uploading: '上传中',
+  'Remote server': '远端服务器',
   'notification.unread': '通知 ({count} 条未读)',
   'notification.dismiss': '关闭{tone}通知',
   Tables: '表',

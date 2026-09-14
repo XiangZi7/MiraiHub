@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -11,6 +13,8 @@ import type {
   TableDesignerIndex,
 } from '@/types/database-designer'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   modelValue: TableDesignerIndex[]
   columns: readonly TableDesignerColumn[]
@@ -22,10 +26,10 @@ const emit = defineEmits<{
 }>()
 
 const kindOptions = computed(() => [
-  { value: 'index', label: '普通索引' },
-  { value: 'unique', label: '唯一索引' },
+  { value: 'index', label: t('普通索引') },
+  { value: 'unique', label: t('唯一索引') },
   ...(props.databaseKind === 'mysql'
-    ? [{ value: 'fulltext', label: '全文索引' }]
+    ? [{ value: 'fulltext', label: t('全文索引') }]
     : []),
 ])
 const methodOptions = [
@@ -79,8 +83,8 @@ function removeIndex(id: string): void {
   <section class="designer-section">
     <div class="designer-section-heading">
       <div>
-        <h3>索引配置</h3>
-        <p>支持普通、唯一和 MySQL 全文索引，可组合多个字段。</p>
+        <h3>{{ t('索引配置') }}</h3>
+        <p>{{ t('支持普通、唯一和 MySQL 全文索引，可组合多个字段。') }}</p>
       </div>
       <AppButton
         size="sm"
@@ -88,8 +92,9 @@ function removeIndex(id: string): void {
         ><AppIcon
           name="lucide:plus"
           :size="11"
-        />添加索引</AppButton
-      >
+        />
+        {{ t('添加索引') }}
+      </AppButton>
     </div>
 
     <div class="index-list scroll-thin">
@@ -104,17 +109,18 @@ function removeIndex(id: string): void {
               name="lucide:list-tree"
               :size="14"
           /></span>
-          <label class="field-label"
-            >索引名<AppInput
+          <label class="field-label">
+            {{ t('索引名') }}
+            <AppInput
               :model-value="index.name"
               monospace
               @update:model-value="updateIndex(index.id, { name: $event })"
           /></label>
           <div class="field-label">
-            <span>类型</span
+            <span> {{ t('类型') }} </span
             ><AppSelect
               :model-value="index.kind"
-              label="索引类型"
+              :label="t('索引类型')"
               :options="kindOptions"
               hide-label
               compact
@@ -126,10 +132,10 @@ function removeIndex(id: string): void {
             />
           </div>
           <div class="field-label">
-            <span>方法</span
+            <span> {{ t('方法') }} </span
             ><AppSelect
               :model-value="index.method"
-              label="索引方法"
+              :label="t('索引方法')"
               :options="methodOptions"
               hide-label
               compact
@@ -145,13 +151,13 @@ function removeIndex(id: string): void {
             icon="lucide:trash-2"
             :size="12"
             class="text-danger hover:text-danger size-7"
-            title="删除索引"
+            :title="t('删除索引')"
             @click="removeIndex(index.id)"
           />
         </div>
         <div class="mt-3">
           <p class="field-label mb-1.5">
-            索引字段（点击选择，选择顺序即索引顺序）
+            {{ t('索引字段（点击选择，选择顺序即索引顺序）') }}
           </p>
           <div class="column-picker">
             <AppButton
@@ -171,7 +177,7 @@ function removeIndex(id: string): void {
                     : 'lucide:plus'
                 "
                 :size="10"
-              />{{ column.name || '未命名字段' }}
+              />{{ column.name || t('未命名字段') }}
               <span
                 v-if="index.columns.includes(column.name)"
                 class="order-badge"
@@ -181,8 +187,9 @@ function removeIndex(id: string): void {
             <span
               v-if="!columns.length"
               class="text-txt-4 text-[10px]"
-              >请先添加字段</span
             >
+              {{ t('请先添加字段') }}
+            </span>
           </div>
         </div>
       </article>
@@ -194,8 +201,8 @@ function removeIndex(id: string): void {
           name="lucide:list-tree"
           :size="24"
         />
-        <p>尚未配置额外索引</p>
-        <span>主键和字段级唯一约束可直接在“字段”页配置。</span>
+        <p>{{ t('尚未配置额外索引') }}</p>
+        <span> {{ t('主键和字段级唯一约束可直接在“字段”页配置。') }} </span>
       </div>
     </div>
   </section>

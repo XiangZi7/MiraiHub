@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, onBeforeUnmount, reactive, toRefs } from 'vue'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { copyText } from '@/utils/clipboard'
 import { IS_TAURI } from '@/utils/window'
 import { isAgentWebLink, renderAgentMarkdown } from '@/utils/agent-markdown'
+
+const { t } = useI18n()
 
 const props = defineProps<{ content: string }>()
 const html = computed(() => renderAgentMarkdown(props.content))
@@ -26,9 +30,9 @@ async function activate(event: MouseEvent): Promise<void> {
     if (!code) return
     try {
       await copyText(code.textContent ?? '')
-      notify('代码已复制')
+      notify(t('代码已复制'))
     } catch {
-      notify('复制失败，请选择代码后手动复制', true)
+      notify(t('复制失败，请选择代码后手动复制'), true)
     }
     return
   }
@@ -42,7 +46,7 @@ async function activate(event: MouseEvent): Promise<void> {
     if (IS_TAURI) await openUrl(url)
     else window.open(url, '_blank', 'noopener,noreferrer')
   } catch {
-    notify('无法打开链接，请复制地址后在浏览器打开', true)
+    notify(t('无法打开链接，请复制地址后在浏览器打开'), true)
   }
 }
 onBeforeUnmount(() => clearTimeout(feedbackTimer))

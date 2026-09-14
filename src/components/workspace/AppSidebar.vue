@@ -157,7 +157,9 @@ async function moveConnection(
   try {
     await updateConnection(connectionId, { group: groupName })
     toast.success(
-      groupName ? `连接已移动到“${groupName}”` : t('连接已移到 Ungrouped')
+      groupName
+        ? t('连接已移动到“{value0}”', { value0: groupName })
+        : t('连接已移到 Ungrouped')
     )
   } catch (error) {
     toast.error({
@@ -187,7 +189,7 @@ async function duplicateConnection(connection: SavedConnection): Promise<void> {
       tagColor: connection.tagColor,
       settings: structuredClone(toRaw(connection.settings)),
     })
-    toast.success(`已克隆为“${created.name}”`)
+    toast.success(t('已克隆为“{value0}”', { value0: created.name }))
   } catch (error) {
     toast.error({
       title: t('克隆连接失败'),
@@ -205,10 +207,10 @@ async function duplicateConnection(connection: SavedConnection): Promise<void> {
 function cloneNameFor(name: string): string {
   const base = name.replace(/\s*副本(\s*\d+)?$/, '').trim() || name
   const taken = new Set(connections.map(item => item.name))
-  let candidate = `${base} 副本`
+  let candidate = t('{value0} 副本', { value0: base })
 
   for (let index = 2; taken.has(candidate); index += 1)
-    candidate = `${base} 副本 ${index}`
+    candidate = t('{value0} 副本 {value1}', { value0: base, value1: index })
 
   return candidate
 }
@@ -216,7 +218,7 @@ function cloneNameFor(name: string): string {
 async function handleCreateGroup(name: string): Promise<void> {
   try {
     await createGroup(currentGroupKind.value, name)
-    toast.success(`分组“${name}”已创建`)
+    toast.success(t('分组“{value0}”已创建', { value0: name }))
   } catch (error) {
     toast.error({
       title: t('创建分组失败'),
@@ -228,7 +230,7 @@ async function handleCreateGroup(name: string): Promise<void> {
 async function handleRenameGroup(groupId: string, name: string): Promise<void> {
   try {
     await renameGroup(groupId, name)
-    toast.success(`分组已重命名为“${name}”`)
+    toast.success(t('分组已重命名为“{value0}”', { value0: name }))
   } catch (error) {
     toast.error({
       title: t('重命名分组失败'),

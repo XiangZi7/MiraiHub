@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { DEFAULT_SETTINGS, type SettingsValues } from '@/types/settings'
 import { readSkinColors } from './skin-colors'
 
@@ -98,7 +99,7 @@ export function resolveSkinSettings(settings: SkinSettings): SkinSettings {
 export function createCustomSkin(
   settings: SkinSettings,
   patch: Partial<SkinAppearance> = {},
-  name = '我的皮肤'
+  name = i18n.global.t('我的皮肤')
 ): CustomSkin {
   const current = resolveSkinSettings(settings)
   const values = skinPreset(current.skinBase)
@@ -165,7 +166,7 @@ export function normalizeSkinSettings<T extends SkinSettings>(settings: T): T {
   const normalized = normalizeAppearance(settings)
   const library = readSkinLibrary(normalized.skinLibrary).map(item => ({
     ...item,
-    name: item.name.trim() || '自定义皮肤',
+    name: item.name.trim() || i18n.global.t('自定义皮肤'),
   }))
   normalized.skinLibrary = JSON.stringify(library)
   if (
@@ -186,15 +187,16 @@ export function usesMiraiStyle(settings: SkinSettings): boolean {
 /** Re-encode once on upload; keep settings comfortably below localStorage quota. */
 export async function readBackgroundImage(file: File): Promise<string> {
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type))
-    throw new Error('请选择 PNG、JPG 或 WebP 图片')
-  if (file.size > 10 * 1024 * 1024) throw new Error('图片不能超过 10 MB')
+    throw new Error(i18n.global.t('请选择 PNG、JPG 或 WebP 图片'))
+  if (file.size > 10 * 1024 * 1024)
+    throw new Error(i18n.global.t('图片不能超过 10 MB'))
   const url = URL.createObjectURL(file)
   try {
     const image = new Image()
     image.src = url
     await image.decode()
     if (!image.naturalWidth || !image.naturalHeight)
-      throw new Error('图片内容无法读取')
+      throw new Error(i18n.global.t('图片内容无法读取'))
     const scale = Math.min(
       1,
       2560 / Math.max(image.naturalWidth, image.naturalHeight)
@@ -203,13 +205,13 @@ export async function readBackgroundImage(file: File): Promise<string> {
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
     const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('无法处理图片，请重试')
+    if (!ctx) throw new Error(i18n.global.t('无法处理图片，请重试'))
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
     for (const quality of [0.9, 0.78, 0.6]) {
       const result = canvas.toDataURL('image/webp', quality)
       if (isBackgroundImage(result)) return result
     }
-    throw new Error('图片压缩后仍然过大，请选择尺寸更小的图片')
+    throw new Error(i18n.global.t('图片压缩后仍然过大，请选择尺寸更小的图片'))
   } finally {
     URL.revokeObjectURL(url)
   }

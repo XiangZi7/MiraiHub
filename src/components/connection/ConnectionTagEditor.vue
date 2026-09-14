@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, shallowRef, useId } from 'vue'
 import { CONNECTION_TAG_COLORS } from '@/constants/connection'
 import type {
@@ -6,6 +8,8 @@ import type {
   ConnectionTagDefinition,
 } from '@/types/connection'
 import ConnectionTagBadge from './ConnectionTagBadge.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -91,8 +95,9 @@ function handleInputKeydown(event: KeyboardEvent): void {
       <label
         :for="inputId"
         class="text-txt-2 block text-[11px] font-medium"
-        >Tags</label
       >
+        {{ t('Tags') }}
+      </label>
       <div class="tag-input-shell">
         <ConnectionTagBadge
           v-for="tag in selectedTags"
@@ -106,7 +111,7 @@ function handleInputKeydown(event: KeyboardEvent): void {
           :id="inputId"
           v-model="draft"
           class="tag-input"
-          placeholder="输入后按 Enter 创建"
+          :placeholder="t('输入后按 Enter 创建')"
           autocomplete="off"
           @keydown="handleInputKeydown"
           @blur="addTag()"
@@ -118,7 +123,7 @@ function handleInputKeydown(event: KeyboardEvent): void {
       v-if="suggestions.length"
       class="space-y-1.5"
     >
-      <p class="text-txt-4 text-[10px]">共享标签 · 点击即可使用</p>
+      <p class="text-txt-4 text-[10px]">{{ t('共享标签 · 点击即可使用') }}</p>
       <div class="flex flex-wrap gap-1.5">
         <ConnectionTagBadge
           v-for="tag in suggestions"
@@ -134,12 +139,12 @@ function handleInputKeydown(event: KeyboardEvent): void {
 
     <fieldset class="space-y-1.5">
       <legend class="text-txt-2 block text-[11px] font-medium">
-        Tag Color
+        {{ t('Tag Color') }}
       </legend>
       <div
         class="flex min-h-7 items-center gap-2"
         role="radiogroup"
-        aria-label="标签颜色"
+        :aria-label="t('标签颜色')"
       >
         <button
           v-for="option in CONNECTION_TAG_COLORS"
@@ -147,8 +152,8 @@ function handleInputKeydown(event: KeyboardEvent): void {
           type="button"
           role="radio"
           :aria-checked="color === option.id"
-          :aria-label="option.label"
-          :title="option.label"
+          :aria-label="t(option.label)"
+          :title="t(option.label)"
           :class="[
             'tag-color-option',
             color === option.id && 'tag-color-option-active',

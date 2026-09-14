@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { onScopeDispose, reactive, toRefs } from 'vue'
 import * as ssh from '@/api/ssh'
 import { useFileTransfers } from '@/composables/useFileTransfers'
@@ -84,7 +85,7 @@ export function useRemoteUploads(options: {
       )
         return candidate
     }
-    throw new Error('无法为上传项目生成可用名称')
+    throw new Error(i18n.global.t('无法为上传项目生成可用名称'))
   }
 
   async function runBatch(

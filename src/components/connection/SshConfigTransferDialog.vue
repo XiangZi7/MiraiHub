@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, shallowRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
@@ -6,6 +8,8 @@ import AppDialog from '@/components/ui/AppDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useSshConfigTransfer } from '@/composables/useSshConfigTransfer'
 import SshConfigChecklist from './SshConfigChecklist.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{
@@ -25,7 +29,7 @@ const {
 } = useSshConfigTransfer(() => props.open)
 
 const title = computed(() =>
-  mode.value === 'export' ? '导出 SSH 配置' : '导入 SSH 配置'
+  mode.value === 'export' ? t('导出 SSH 配置') : t('导入 SSH 配置')
 )
 
 async function finishExport(): Promise<void> {
@@ -45,14 +49,16 @@ async function finishImport(): Promise<void> {
       <AppDialog
         v-if="open"
         :title="title"
-        description="批量选择 SSH 连接；导入和导出文件均由 Rust 在本机处理。"
+        :description="
+          t('批量选择 SSH 连接；导入和导出文件均由 Rust 在本机处理。')
+        "
         wide
         @close="emit('close')"
       >
         <div
           class="ssh-config-transfer-tabs"
           role="tablist"
-          aria-label="SSH 配置导入导出"
+          :aria-label="t('SSH 配置导入导出')"
         >
           <button
             type="button"
@@ -68,7 +74,7 @@ async function finishImport(): Promise<void> {
               name="lucide:file-output"
               :size="14"
             />
-            导出
+            {{ t('导出') }}
           </button>
           <button
             type="button"
@@ -84,7 +90,7 @@ async function finishImport(): Promise<void> {
               name="lucide:file-input"
               :size="14"
             />
-            导入
+            {{ t('导入') }}
           </button>
         </div>
 
@@ -101,8 +107,10 @@ async function finishImport(): Promise<void> {
           <div class="card grid gap-3 px-3 py-2.5">
             <AppCheckbox
               v-model="state.exportBasicOnly"
-              label="仅导出基础信息"
-              description="不包含密码、私钥文件、私钥路径、密钥口令和启动命令。"
+              :label="t('仅导出基础信息')"
+              :description="
+                t('不包含密码、私钥文件、私钥路径、密钥口令和启动命令。')
+              "
               :disabled="state.loading"
             />
 
@@ -115,16 +123,22 @@ async function finishImport(): Promise<void> {
                   name="lucide:shield-alert"
                   :size="13"
                 />
-                完整备份会读取所选连接使用的私钥并加密保存，恢复时需要同一密码。
+                {{
+                  t(
+                    '完整备份会读取所选连接使用的私钥并加密保存，恢复时需要同一密码。'
+                  )
+                }}
               </p>
               <label class="grid gap-1.5 text-[11px]">
-                <span class="text-txt-2 font-medium">备份密码</span>
+                <span class="text-txt-2 font-medium">
+                  {{ t('备份密码') }}
+                </span>
                 <input
                   v-model="state.exportPassword"
                   type="password"
                   autocomplete="new-password"
                   class="field h-[34px] px-2.5"
-                  placeholder="至少 10 字节"
+                  :placeholder="t('至少 10 字节')"
                   :disabled="state.loading"
                 />
               </label>
@@ -137,7 +151,9 @@ async function finishImport(): Promise<void> {
           class="grid gap-3.5"
         >
           <div class="grid gap-2">
-            <label class="text-txt-2 text-[11px] font-medium">配置文件</label>
+            <label class="text-txt-2 text-[11px] font-medium">
+              {{ t('配置文件') }}
+            </label>
             <div class="flex gap-2">
               <div
                 class="field text-txt-3 flex min-w-0 flex-1 items-center gap-2 px-2.5 font-mono text-[10px]"
@@ -150,24 +166,24 @@ async function finishImport(): Promise<void> {
                 <span
                   class="truncate"
                   :title="state.importPath"
-                  >{{ state.importPath || '尚未选择文件' }}</span
+                  >{{ state.importPath || t('尚未选择文件') }}</span
                 >
               </div>
               <AppButton
                 :disabled="state.loading"
                 @click="chooseImportFile"
               >
-                浏览…
+                {{ t('浏览…') }}
               </AppButton>
             </div>
             <label class="grid gap-1.5 text-[11px]">
-              <span class="text-txt-2 font-medium">解密密码</span>
+              <span class="text-txt-2 font-medium"> {{ t('解密密码') }} </span>
               <input
                 v-model="state.importPassword"
                 type="password"
                 autocomplete="off"
                 class="field h-[34px] px-2.5"
-                placeholder="旧版或未加密文件可留空"
+                :placeholder="t('旧版或未加密文件可留空')"
                 :disabled="state.loading"
               />
             </label>
@@ -176,7 +192,7 @@ async function finishImport(): Promise<void> {
               :disabled="state.loading || !state.importPath"
               @click="previewImport"
             >
-              {{ state.loading ? '读取中…' : '读取配置' }}
+              {{ state.loading ? t('读取中…') : t('读取配置') }}
             </AppButton>
           </div>
 
@@ -187,8 +203,12 @@ async function finishImport(): Promise<void> {
                 :size="13"
                 class="text-success"
               />
-              已识别 {{ state.importPreview.sourceFormat }} 格式，共
-              {{ state.importPreview.connections.length }} 条 SSH 配置
+              {{
+                t('ssh.importPreview', {
+                  format: state.importPreview.sourceFormat,
+                  count: state.importPreview.connections.length,
+                })
+              }}
             </div>
 
             <p
@@ -213,19 +233,23 @@ async function finishImport(): Promise<void> {
               <AppCheckbox
                 v-if="state.importPreview.includesCredentials"
                 v-model="state.importCredentials"
-                label="导入密码和私钥"
+                :label="t('导入密码和私钥')"
                 :description="
                   canImportCredentials
-                    ? '旧版内嵌私钥会由 Rust 导入到本机 ~/.ssh，不会把密钥内容交给前端。'
-                    : '当前已关闭“记住密码”，因此敏感凭据不会导入。'
+                    ? t(
+                        '旧版内嵌私钥会由 Rust 导入到本机 ~/.ssh，不会把密钥内容交给前端。'
+                      )
+                    : t('当前已关闭“记住密码”，因此敏感凭据不会导入。')
                 "
                 :disabled="state.loading || !canImportCredentials"
               />
               <AppCheckbox
                 v-if="state.importPreview.includesStartupCommands"
                 v-model="state.importStartupCommands"
-                label="导入启动命令"
-                description="只保存配置；本次导入不会连接服务器或执行命令。"
+                :label="t('导入启动命令')"
+                :description="
+                  t('只保存配置；本次导入不会连接服务器或执行命令。')
+                "
                 :disabled="state.loading"
               />
             </div>
@@ -245,8 +269,9 @@ async function finishImport(): Promise<void> {
           <AppButton
             :disabled="state.loading"
             @click="emit('close')"
-            >取消</AppButton
           >
+            {{ t('取消') }}
+          </AppButton>
           <AppButton
             v-if="mode === 'export'"
             variant="primary"
@@ -255,8 +280,10 @@ async function finishImport(): Promise<void> {
           >
             {{
               state.loading
-                ? '导出中…'
-                : `导出 ${state.selectedExportIds.length} 条`
+                ? t('导出中…')
+                : t('导出 {value0} 条', {
+                    value0: state.selectedExportIds.length,
+                  })
             }}
           </AppButton>
           <AppButton
@@ -267,8 +294,10 @@ async function finishImport(): Promise<void> {
           >
             {{
               state.loading
-                ? '导入中…'
-                : `导入 ${state.selectedImportIds.length} 条`
+                ? t('导入中…')
+                : t('导入 {value0} 条', {
+                    value0: state.selectedImportIds.length,
+                  })
             }}
           </AppButton>
         </template>

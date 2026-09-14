@@ -9,6 +9,8 @@ globalThis.localStorage = {
 }
 globalThis.window = new EventTarget()
 const load = sourceLoader()
+const { i18n } = await load('src/i18n/index.ts')
+i18n.global.locale.value = 'zh-CN'
 const api = await load('src/api/terminal-commands.ts')
 const key = 'miraihub.terminal-commands.v1'
 

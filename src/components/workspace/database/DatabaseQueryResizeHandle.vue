@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { onBeforeUnmount, shallowRef } from 'vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -11,7 +15,7 @@ const props = withDefaults(
     minPaneSize?: number
   }>(),
   {
-    label: '调整 SQL 编辑器和查询结果区高度',
+    label: '',
     min: 15,
     max: 85,
     step: 2,
@@ -100,13 +104,13 @@ onBeforeUnmount(() => {
     role="separator"
     tabindex="0"
     aria-orientation="horizontal"
-    :aria-label="label"
+    :aria-label="label || t('调整 SQL 编辑器和查询结果区高度')"
     :aria-valuemin="min"
     :aria-valuemax="max"
     :aria-valuenow="Math.round(ratio)"
-    :aria-valuetext="`SQL 编辑器占 ${Math.round(ratio)}%`"
+    :aria-valuetext="t('SQL 编辑器占 {value0}%', { value0: Math.round(ratio) })"
     :class="['query-resize-handle', dragging && 'is-dragging']"
-    title="拖动调整高度；双击恢复默认"
+    :title="t('拖动调整高度；双击恢复默认')"
     @dblclick="reset"
     @keydown="handleKeydown"
     @pointerdown="startDragging"

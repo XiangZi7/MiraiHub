@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   onBeforeUnmount,
@@ -65,6 +67,8 @@ import SqlEditor from './database/SqlEditor.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
+
+const { t } = useI18n()
 
 interface QueryTab extends TabItem {
   kind: 'query'
@@ -261,7 +265,7 @@ const databaseKind = computed<DatabaseKind>(() =>
 const databaseName = computed(() => {
   if (session.value?.database) return session.value.database
   const target = props.connection
-  if (!target || !isDatabaseConnection(target)) return '未选择连接'
+  if (!target || !isDatabaseConnection(target)) return t('未选择连接')
   return target.settings.database || target.name
 })
 const databaseOptions = computed(() =>
@@ -273,11 +277,11 @@ const selectedDatabase = computed({
 })
 
 watch(connectionError, error => {
-  if (error) toast.error({ title: '数据库连接失败', description: error })
+  if (error) toast.error({ title: t('数据库连接失败'), description: error })
 })
 
 watch(objectsError, error => {
-  if (error) toast.error({ title: '读取数据库对象失败', description: error })
+  if (error) toast.error({ title: t('读取数据库对象失败'), description: error })
 })
 const activeTab = computed(() =>
   queryState.tabs.find(tab => tab.id === queryState.activeId)
@@ -395,18 +399,18 @@ const historyItems = computed<ContextMenuItem[]>(() => {
         hour: '2-digit',
         minute: '2-digit',
       }),
-      groupLabel: index === 0 ? '最近执行' : undefined,
+      groupLabel: index === 0 ? t('最近执行') : undefined,
     }))
   if (!items.length)
     items.push({
       id: 'empty',
-      label: '还没有查询历史',
+      label: t('还没有查询历史'),
       icon: 'lucide:inbox',
       disabled: true,
     })
   items.push({
     id: 'clear',
-    label: '清空当前连接历史',
+    label: t('清空当前连接历史'),
     icon: 'lucide:trash-2',
     danger: true,
     separatorBefore: true,
@@ -415,23 +419,33 @@ const historyItems = computed<ContextMenuItem[]>(() => {
   return items
 })
 const nameDialogTitle = computed(() => {
-  if (nameDialog.mode === 'create-database') return '新建数据库'
-  if (nameDialog.mode === 'rename-database') return '重命名数据库'
-  if (nameDialog.mode === 'save-query') return '保存查询'
-  if (nameDialog.mode === 'create-saved-query') return '新建已保存查询'
-  if (nameDialog.mode === 'rename-saved-query') return '重命名查询'
-  return `重命名${nameDialog.targetObject ? objectKindLabel(nameDialog.targetObject.kind) : '对象'}`
+  if (nameDialog.mode === 'create-database') return t('新建数据库')
+  if (nameDialog.mode === 'rename-database') return t('重命名数据库')
+  if (nameDialog.mode === 'save-query') return t('保存查询')
+  if (nameDialog.mode === 'create-saved-query') return t('新建已保存查询')
+  if (nameDialog.mode === 'rename-saved-query') return t('重命名查询')
+  return t('重命名{value0}', {
+    value0: nameDialog.targetObject
+      ? objectKindLabel(nameDialog.targetObject.kind)
+      : t('对象'),
+  })
 })
 const nameDialogDescription = computed(() => {
   if (nameDialog.mode === 'create-database')
-    return `${props.connection?.name ?? '数据库连接'} · 创建后会自动刷新对象树`
+    return t('{value0} · 创建后会自动刷新对象树', {
+      value0: props.connection?.name ?? t('数据库连接'),
+    })
   if (nameDialog.mode === 'rename-database' && databaseKind.value === 'mysql')
-    return 'MySQL 不支持原生 RENAME DATABASE；应用会拒绝危险的模拟迁移并给出说明。'
+    return t(
+      'MySQL 不支持原生 RENAME DATABASE；应用会拒绝危险的模拟迁移并给出说明。'
+    )
   if (
     nameDialog.mode === 'save-query' ||
     nameDialog.mode === 'create-saved-query'
   )
-    return `${nameDialog.queryDatabase} · 保存后会显示在 Queries 中，并自动同步后续修改`
+    return t('{value0} · 保存后会显示在 Queries 中，并自动同步后续修改', {
+      value0: nameDialog.queryDatabase,
+    })
   if (nameDialog.mode === 'rename-saved-query')
     return `${nameDialog.targetSavedQuery?.database ?? nameDialog.queryDatabase} / Queries`
   return (
@@ -440,24 +454,34 @@ const nameDialogDescription = computed(() => {
   )
 })
 const nameDialogConfirmLabel = computed(() => {
-  if (nameDialog.mode === 'create-database') return '创建数据库'
-  if (nameDialog.mode === 'save-query') return '保存查询'
-  if (nameDialog.mode === 'create-saved-query') return '创建查询'
-  return '保存名称'
+  if (nameDialog.mode === 'create-database') return t('创建数据库')
+  if (nameDialog.mode === 'save-query') return t('保存查询')
+  if (nameDialog.mode === 'create-saved-query') return t('创建查询')
+  return t('保存名称')
 })
 const deleteTitle = computed(() =>
   deleteDialog.savedQuery
-    ? '删除已保存查询？'
+    ? t('删除已保存查询？')
     : deleteDialog.object
-      ? `删除${objectKindLabel(deleteDialog.object.kind)}？`
-      : '删除数据库？'
+      ? t('删除{value0}？', {
+          value0: objectKindLabel(deleteDialog.object.kind),
+        })
+      : t('删除数据库？')
 )
 const deleteDescription = computed(() => {
   if (deleteDialog.savedQuery)
-    return `将删除查询“${deleteDialog.savedQuery.name}”。已经打开的标签会转为临时草稿，SQL 内容不会丢失。`
+    return t(
+      '将删除查询“{value0}”。已经打开的标签会转为临时草稿，SQL 内容不会丢失。',
+      { value0: deleteDialog.savedQuery.name }
+    )
   if (deleteDialog.object)
-    return `将永久删除 ${qualifiedName(deleteDialog.object)}。此操作无法撤销，请确认已有备份。`
-  return `将永久删除数据库“${deleteDialog.database}”及其中的全部对象和数据。当前活动数据库不能删除。`
+    return t('将永久删除 {value0}。此操作无法撤销，请确认已有备份。', {
+      value0: qualifiedName(deleteDialog.object),
+    })
+  return t(
+    '将永久删除数据库“{value0}”及其中的全部对象和数据。当前活动数据库不能删除。',
+    { value0: deleteDialog.database }
+  )
 })
 
 function refreshForConnection(connectionId: string): void {
@@ -485,10 +509,7 @@ defineExpose({
     props.connection &&
     ids.includes(props.connection.id) &&
     designerTabs.value.length
-      ? props.connection.name +
-        ' 有 ' +
-        designerTabs.value.length +
-        ' 个建表草稿，关闭连接后将丢失。'
+      ? `${props.connection.name}: ${t('database.unsavedTableDrafts', { count: designerTabs.value.length })}`
       : '',
 })
 
@@ -535,7 +556,7 @@ const queryTabActions = useDatabaseTabActions({
     const source = queryState.tabs.find(tab => tab.id === id)
     if (source?.kind === 'query') {
       const duplicate = addQueryTab(source.sql, source.database)
-      duplicate.label = source.label + ' 副本'
+      duplicate.label = t('{value0} 副本', { value0: source.label })
     }
   },
   copy: async id => {
@@ -543,9 +564,9 @@ const queryTabActions = useDatabaseTabActions({
     if (tab?.kind !== 'query') return
     try {
       await copyText(tab.sql)
-      toast.success('SQL 已复制')
+      toast.success(t('SQL 已复制'))
     } catch {
-      toast.error('复制失败，请检查剪贴板权限')
+      toast.error(t('复制失败，请检查剪贴板权限'))
     }
   },
 })
@@ -585,10 +606,10 @@ function objectTabId(object: DatabaseObject): string {
 }
 
 function objectKindLabel(kind: DatabaseObjectKind): string {
-  if (kind === 'table') return '表'
-  if (kind === 'view') return '视图'
-  if (kind === 'procedure') return '存储过程'
-  return '函数'
+  if (kind === 'table') return t('表')
+  if (kind === 'view') return t('视图')
+  if (kind === 'procedure') return t('存储过程')
+  return t('函数')
 }
 
 function objectIcon(kind: DatabaseObjectKind): string {
@@ -609,8 +630,10 @@ function openQuery(sql: string): void {
 
 function createObjectQuery(object: DatabaseObject): void {
   const name = qualifiedName(object)
-  if (object.kind === 'procedure') openQuery(`CALL ${name}(/* 参数 */);`)
-  else if (object.kind === 'function') openQuery(`SELECT ${name}(/* 参数 */);`)
+  if (object.kind === 'procedure')
+    openQuery(`CALL ${name}(/* ${t('参数')} */);`)
+  else if (object.kind === 'function')
+    openQuery(`SELECT ${name}(/* ${t('参数')} */);`)
   else openQuery(`SELECT *\nFROM ${name}\nLIMIT 100;`)
 }
 
@@ -668,7 +691,7 @@ function saveQueryTab(id: string): void {
       database: tab.database || databaseName.value,
     })
     persistQueries()
-    toast.success(`查询“${tab.label}”已保存`)
+    toast.success(t('查询“{value0}”已保存', { value0: tab.label }))
     return
   }
   showQueryNameDialog(
@@ -712,7 +735,7 @@ function showQueryNameDialog(
 function duplicateSavedQuery(query: SavedDatabaseQuery): void {
   const duplicate = createSavedQuery(
     query.database,
-    `${query.name} 副本`,
+    t('{value0} 副本', { value0: query.name }),
     query.sql
   )
   persistQueries()
@@ -754,7 +777,7 @@ function openTableDesigner(schema: string): void {
   const id = `table-designer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   queryState.tabs.push({
     id,
-    label: '新建表',
+    label: t('新建表'),
     icon: 'lucide:table-properties',
     closable: true,
     kind: 'table-designer',
@@ -778,7 +801,9 @@ async function handleTableCreated(
   )
   if (object) openObject(object)
   toast.success(
-    object ? `表“${name}”已创建并打开` : `表“${schema}.${name}”已创建`
+    object
+      ? t('表“{value0}”已创建并打开', { value0: name })
+      : t('表“{value0}.{value1}”已创建', { value0: schema, value1: name })
   )
 }
 
@@ -813,7 +838,7 @@ function openObject(
 
 async function copyObjectName(object: DatabaseObject): Promise<void> {
   await copyText(qualifiedName(object))
-  toast.success('已复制限定名称')
+  toast.success(t('已复制限定名称'))
 }
 
 function showNameDialog(
@@ -840,7 +865,7 @@ function showNameDialog(
 async function submitNameAction(name: string): Promise<void> {
   nameDialog.loading = true
   try {
-    let successMessage = '操作已完成'
+    let successMessage = t('操作已完成')
     if (nameDialog.mode === 'save-query') {
       const tab = queryState.tabs.find(
         candidate =>
@@ -848,14 +873,14 @@ async function submitNameAction(name: string): Promise<void> {
           candidate.id === nameDialog.targetQueryTabId
       )
       if (!tab || tab.kind !== 'query')
-        throw new Error('要保存的查询标签已关闭')
+        throw new Error(t('要保存的查询标签已关闭'))
       const saved = createSavedQuery(nameDialog.queryDatabase, name, tab.sql)
       tab.savedQueryId = saved.id
       tab.label = saved.name
       tab.icon = 'lucide:file-code-2'
       tab.database = saved.database
       persistQueries()
-      successMessage = `查询“${saved.name}”已保存`
+      successMessage = t('查询“{value0}”已保存', { value0: saved.name })
     } else if (nameDialog.mode === 'create-saved-query') {
       const saved = createSavedQuery(
         nameDialog.queryDatabase,
@@ -864,31 +889,31 @@ async function submitNameAction(name: string): Promise<void> {
       )
       persistQueries()
       await openSavedQuery(saved)
-      successMessage = `查询“${saved.name}”已创建`
+      successMessage = t('查询“{value0}”已创建', { value0: saved.name })
     } else if (
       nameDialog.mode === 'rename-saved-query' &&
       nameDialog.targetSavedQuery
     ) {
       const saved = updateSavedQuery(nameDialog.targetSavedQuery.id, { name })
-      if (!saved) throw new Error('查询不存在或已被删除')
+      if (!saved) throw new Error(t('查询不存在或已被删除'))
       for (const tab of queryState.tabs) {
         if (tab.kind === 'query' && tab.savedQueryId === saved.id)
           tab.label = saved.name
       }
       persistQueries()
-      successMessage = `查询已重命名为“${saved.name}”`
+      successMessage = t('查询已重命名为“{value0}”', { value0: saved.name })
     } else {
-      if (!sessionId.value) throw new Error('数据库尚未连接')
+      if (!sessionId.value) throw new Error(t('数据库尚未连接'))
       if (nameDialog.mode === 'create-database') {
         await database.createDatabase(sessionId.value, name)
-        successMessage = `数据库“${name}”已创建`
+        successMessage = t('数据库“{value0}”已创建', { value0: name })
       } else if (nameDialog.mode === 'rename-database') {
         await database.renameDatabase(
           sessionId.value,
           nameDialog.targetDatabase,
           name
         )
-        successMessage = `数据库已重命名为“${name}”`
+        successMessage = t('数据库已重命名为“{value0}”', { value0: name })
       } else if (nameDialog.targetObject) {
         await database.renameObject(
           sessionId.value,
@@ -896,7 +921,10 @@ async function submitNameAction(name: string): Promise<void> {
           name
         )
         closeObjectTab(nameDialog.targetObject)
-        successMessage = `${objectKindLabel(nameDialog.targetObject.kind)}已重命名为“${name}”`
+        successMessage = t('{value0}已重命名为“{value1}”', {
+          value0: objectKindLabel(nameDialog.targetObject.kind),
+          value1: name,
+        })
       }
       await refreshAll()
     }
@@ -904,7 +932,7 @@ async function submitNameAction(name: string): Promise<void> {
     nameDialog.open = false
   } catch (error) {
     toast.error({
-      title: '操作失败',
+      title: t('操作失败'),
       description: database.errorMessage(error),
     })
   } finally {
@@ -942,13 +970,15 @@ async function confirmDelete(): Promise<void> {
         continue
       tab.savedQueryId = null
       tab.icon = 'lucide:square-terminal'
-      tab.label = `${targetSavedQuery.name}（草稿）`
+      tab.label = t('{value0}（草稿）', { value0: targetSavedQuery.name })
     }
     persistQueries()
     deleteDialog.open = false
     deleteDialog.savedQuery = null
     toast.success(
-      `已删除查询“${targetSavedQuery.name}”，打开的内容已保留为草稿`
+      t('已删除查询“{value0}”，打开的内容已保留为草稿', {
+        value0: targetSavedQuery.name,
+      })
     )
     return
   }
@@ -961,16 +991,19 @@ async function confirmDelete(): Promise<void> {
     if (targetObject) {
       await database.dropObject(sessionId.value, targetObject)
       closeObjectTab(targetObject)
-      successMessage = `${objectKindLabel(targetObject.kind)}“${targetObject.name}”已删除`
+      successMessage = t('{value0}“{value1}”已删除', {
+        value0: objectKindLabel(targetObject.kind),
+        value1: targetObject.name,
+      })
     } else {
       await database.dropDatabase(sessionId.value, targetDatabase)
-      successMessage = `数据库“${targetDatabase}”已删除`
+      successMessage = t('数据库“{value0}”已删除', { value0: targetDatabase })
     }
     await refreshAll()
     toast.success(successMessage)
   } catch (error) {
     toast.error({
-      title: '删除失败',
+      title: t('删除失败'),
       description: database.errorMessage(error),
     })
   }
@@ -1037,7 +1070,7 @@ async function openDatabaseTransfer(
 ): Promise<void> {
   if (!connected.value || !name || state.preparingTransfer) return
   if (queryLoading.value) {
-    toast.warning('请等待当前查询完成后再导入或导出数据库')
+    toast.warning(t('请等待当前查询完成后再导入或导出数据库'))
     return
   }
   state.preparingTransfer = true
@@ -1082,9 +1115,9 @@ watch(
           :size="26"
         />
       </div>
-      <p class="text-txt-2 text-sm">还没有打开数据库</p>
+      <p class="text-txt-2 text-sm">{{ t('还没有打开数据库') }}</p>
       <p class="text-txt-4 max-w-70 text-xs">
-        从左侧选一个数据库连接，或新建一个
+        {{ t('从左侧选一个数据库连接，或新建一个') }}
       </p>
       <AppButton
         class="mt-1"
@@ -1092,7 +1125,7 @@ watch(
         ><AppIcon
           name="lucide:plus"
           :size="13"
-        /><span>新建数据库连接</span></AppButton
+        /><span> {{ t('新建数据库连接') }} </span></AppButton
       >
     </div>
   </div>
@@ -1154,7 +1187,7 @@ watch(
       pane-side="left"
       :min="sidebarMin"
       :max="sidebarMax"
-      label="调整数据库侧栏宽度"
+      :label="t('调整数据库侧栏宽度')"
       overlay
     />
 
@@ -1172,7 +1205,7 @@ watch(
           "
           @click="agentOpen = false"
         >
-          Query
+          {{ t('Query') }}
         </button>
         <button
           type="button"
@@ -1196,7 +1229,7 @@ watch(
         <IconButton
           icon="lucide:columns-2"
           :size="14"
-          title="AI Agent 分屏"
+          :title="t('AI Agent 分屏')"
           :class="agentOpen && agentSplit && 'text-accent'"
           @click="toggleAgentSplit"
         />
@@ -1227,7 +1260,7 @@ watch(
             <div
               class="scroll-none flex h-full max-w-3/4 min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto"
               role="group"
-              aria-label="数据库工具栏"
+              :aria-label="t('数据库工具栏')"
             >
               <IconButton
                 v-if="activeQuery"
@@ -1237,14 +1270,14 @@ watch(
                   'bg-accent-deep hover:bg-accent size-6 text-white hover:text-white',
                   queryLoading && '[&_svg]:animate-spin',
                 ]"
-                title="执行选中内容或全部 SQL（Ctrl+Enter）"
+                :title="t('执行选中内容或全部 SQL（Ctrl+Enter）')"
                 :disabled="!canRun"
                 @click="runQuery()"
               />
               <IconButton
                 :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
                 :size="13"
-                :title="connected ? '断开连接' : '重新连接'"
+                :title="connected ? t('断开连接') : t('重新连接')"
                 :disabled="status === 'connecting'"
                 @click="connected ? disconnect() : connect()"
               />
@@ -1252,7 +1285,7 @@ watch(
                 v-if="activeQuery"
                 icon="lucide:history"
                 :size="13"
-                title="查询历史"
+                :title="t('查询历史')"
                 @click="showHistory"
               />
               <IconButton
@@ -1265,8 +1298,8 @@ watch(
                 :size="13"
                 :title="
                   activeQuery.savedQueryId
-                    ? '立即保存查询（Ctrl+S）'
-                    : '保存到 Queries（Ctrl+S）'
+                    ? t('立即保存查询（Ctrl+S）')
+                    : t('保存到 Queries（Ctrl+S）')
                 "
                 @click="saveActiveQuery"
               />
@@ -1275,12 +1308,12 @@ watch(
                 variant="danger"
                 size="sm"
                 class="h-6"
-                title="取消当前查询"
+                :title="t('取消当前查询')"
                 @click="cancelQuery"
                 ><AppIcon
                   name="lucide:square"
                   :size="10"
-                /><span>停止</span></AppButton
+                /><span> {{ t('停止') }} </span></AppButton
               >
               <span
                 v-if="activeObject"
@@ -1292,9 +1325,9 @@ watch(
               <span
                 v-else-if="activeDesigner"
                 class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
-                >{{ activeDesigner.schema }}.<span class="text-txt-2"
-                  >新建表</span
-                ></span
+                >{{ activeDesigner.schema }}.<span class="text-txt-2">
+                  {{ t('新建表') }}
+                </span></span
               >
               <span
                 v-else-if="activeQuery?.savedQueryId"
@@ -1302,15 +1335,16 @@ watch(
                 ><AppIcon
                   name="lucide:cloud-check"
                   :size="10"
-                />自动保存</span
-              >
+                />
+                {{ t('自动保存') }}
+              </span>
               <div
                 v-if="connected && databaseOptions.length"
                 class="database-toolbar-select w-40 shrink-0"
               >
                 <AppSelect
                   v-model="selectedDatabase"
-                  label="活动数据库"
+                  :label="t('活动数据库')"
                   :options="databaseOptions"
                   :disabled="databasesLoading || queryLoading"
                   hide-label
@@ -1417,7 +1451,7 @@ watch(
           pane-side="right"
           :min="agentMin"
           :max="agentMax"
-          label="调整数据库 AI Agent 宽度"
+          :label="t('调整数据库 AI Agent 宽度')"
         />
         <AiAgentPanel
           v-show="agentOpen"
@@ -1437,7 +1471,7 @@ watch(
       :x="historyMenu.x"
       :y="historyMenu.y"
       :items="historyItems"
-      label="查询历史"
+      :label="t('查询历史')"
       @close="historyMenu.open = false"
       @select="handleHistoryAction"
     />
@@ -1462,9 +1496,9 @@ watch(
     />
     <AppConfirmDialog
       :open="!!queryTabActions.state.pendingIds.length"
-      title="关闭未保存的标签？"
+      :title="t('关闭未保存的标签？')"
       :description="queryTabActions.description.value"
-      confirm-label="放弃草稿并关闭"
+      :confirm-label="t('放弃草稿并关闭')"
       danger
       @close="queryTabActions.cancel"
       @confirm="queryTabActions.confirm"
@@ -1473,7 +1507,7 @@ watch(
       :open="deleteDialog.open"
       :title="deleteTitle"
       :description="deleteDescription"
-      :confirm-label="deleteDialog.savedQuery ? '删除查询' : '确认删除'"
+      :confirm-label="deleteDialog.savedQuery ? t('删除查询') : t('确认删除')"
       danger
       @close="deleteDialog.open = false"
       @confirm="confirmDelete"

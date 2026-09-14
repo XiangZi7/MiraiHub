@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import type { CSSProperties } from 'vue'
 import { computed, nextTick, reactive, shallowRef, useTemplateRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 interface SqlToken {
   text: string
@@ -329,8 +333,8 @@ defineExpose({ runnableSql })
         class="sql-editor scroll-thin selection:bg-violet/30 absolute inset-0 size-full resize-none overflow-auto bg-transparent px-3 py-2 outline-none"
         :disabled="disabled"
         spellcheck="false"
-        aria-label="SQL 编辑器"
-        placeholder="输入 SQL；选中片段后按 Ctrl+Enter 可只执行选中内容"
+        :aria-label="t('SQL 编辑器')"
+        :placeholder="t('输入 SQL；选中片段后按 Ctrl+Enter 可只执行选中内容')"
         @input="handleInput"
         @click="updateAutocomplete()"
         @keydown="handleKeydown"

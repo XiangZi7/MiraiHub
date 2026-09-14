@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import type { TerminalCommand } from '@/types/terminal-command'
 import { DEFAULT_TERMINAL_COMMANDS } from '@/constants/terminal-commands'
 
@@ -24,7 +25,8 @@ export function list(): TerminalCommand[] {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (raw === null) return DEFAULT_TERMINAL_COMMANDS.map(item => ({ ...item }))
   const parsed: unknown = JSON.parse(raw)
-  if (!Array.isArray(parsed)) throw new Error('常用指令数据格式无效')
+  if (!Array.isArray(parsed))
+    throw new Error(i18n.global.t('常用指令数据格式无效'))
   const seen = new Set<string>()
   return parsed
     .filter(validCommand)
@@ -47,12 +49,14 @@ export function save(name: string, command: string, id?: string): void {
   }
   if (!validCommand(item))
     throw new Error(
-      '请填写名称（最多 80 字）和单行命令（最多 8192 字），命令不能包含换行或控制字符。'
+      i18n.global.t(
+        '请填写名称（最多 80 字）和单行命令（最多 8192 字），命令不能包含换行或控制字符。'
+      )
     )
   const items = list()
   if (id) {
     const index = items.findIndex(entry => entry.id === id)
-    if (index < 0) throw new Error('该指令已被删除，请重新添加')
+    if (index < 0) throw new Error(i18n.global.t('该指令已被删除，请重新添加'))
     items[index] = item
   } else items.push(item)
   write(items)

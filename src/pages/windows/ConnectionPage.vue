@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, shallowRef } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import BrandLogo from '@/components/ui/BrandLogo.vue'
@@ -8,6 +10,8 @@ import { closeWindow, IS_TAURI } from '@/utils/window'
 import DatabaseConnectionForm from '@/components/connection/DatabaseConnectionForm.vue'
 import LocalConnectionForm from '@/components/connection/LocalConnectionForm.vue'
 import SshConnectionForm from '@/components/connection/SshConnectionForm.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{ kind: string; connectionId: string; group?: string }>(),
@@ -64,7 +68,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       <IconButton
         icon="lucide:x"
         :size="16"
-        title="关闭"
+        :title="t('关闭')"
         @click="closeDialog"
       />
     </header>

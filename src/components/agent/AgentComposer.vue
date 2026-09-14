@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { translateNativeMessage } from '@/i18n/native'
 import { computed, nextTick, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AgentApprovalMode, AgentDraftAttachment } from '@/types/agent'
@@ -38,10 +39,10 @@ const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
 const placeholder = computed(() =>
   props.awaitingApproval
-    ? '请先审批或拒绝上方操作…'
+    ? t('请先审批或拒绝上方操作…')
     : props.isDatabase
-      ? '询问数据库，或描述要完成的操作…'
-      : '描述问题，或让我帮你执行任务…'
+      ? t('询问数据库，或描述要完成的操作…')
+      : t('描述问题，或让我帮你执行任务…')
 )
 function keydown(event: KeyboardEvent): void {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -114,7 +115,7 @@ watch(
         :placeholder="placeholder"
         rows="2"
         maxlength="8000"
-        aria-label="发送给 AI 的消息"
+        :aria-label="t('发送给 AI 的消息')"
         :disabled="disabled"
         @keydown="keydown"
       />
@@ -154,8 +155,8 @@ watch(
           v-if="busy"
           type="button"
           class="composer-send"
-          title="停止后续操作"
-          aria-label="停止后续操作"
+          :title="t('停止后续操作')"
+          :aria-label="t('停止后续操作')"
           @click="emit('stop')"
         >
           <AppIcon
@@ -167,8 +168,8 @@ watch(
           v-else
           type="submit"
           class="composer-send"
-          aria-label="发送消息"
-          title="发送 (Enter)，换行 (Shift+Enter)"
+          :aria-label="t('发送消息')"
+          :title="t('发送 (Enter)，换行 (Shift+Enter)')"
           :disabled="!canSend"
         >
           <AppIcon
@@ -196,7 +197,7 @@ watch(
       class="composer-error"
       role="alert"
     >
-      {{ attachmentError || profileError }}
+      {{ translateNativeMessage(attachmentError || profileError) }}
     </p>
   </footer>
 </template>

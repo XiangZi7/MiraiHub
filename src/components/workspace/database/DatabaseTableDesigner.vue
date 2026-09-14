@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, ref } from 'vue'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -13,6 +15,8 @@ import { copyText } from '@/utils/clipboard'
 import DatabaseTableFieldsEditor from './designer/DatabaseTableFieldsEditor.vue'
 import DatabaseTableForeignKeysEditor from './designer/DatabaseTableForeignKeysEditor.vue'
 import DatabaseTableIndexesEditor from './designer/DatabaseTableIndexesEditor.vue'
+
+const { t } = useI18n()
 
 type DesignerPanel = 'columns' | 'indexes' | 'foreignKeys' | 'sql'
 
@@ -46,7 +50,7 @@ const draft = reactive<TableDesignerDraft>({
       unsigned: props.databaseKind === 'mysql',
       autoIncrement: true,
       defaultValue: '',
-      comment: '主键',
+      comment: t('主键'),
     },
   ],
   indexes: [],
@@ -64,7 +68,7 @@ const sqlPreview = computed(() => {
   try {
     return buildCreateTableSql({ kind: props.databaseKind, draft })
   } catch {
-    return '-- 完成必填配置后将在这里生成 CREATE TABLE SQL'
+    return t('-- 完成必填配置后将在这里生成 CREATE TABLE SQL')
   }
 })
 const tableObjects = computed(() =>
@@ -73,23 +77,28 @@ const tableObjects = computed(() =>
 const panelItems = computed(() => [
   {
     id: 'columns' as const,
-    label: '字段',
+    label: t('字段'),
     icon: 'lucide:columns-3',
     count: draft.columns.length,
   },
   {
     id: 'indexes' as const,
-    label: '索引',
+    label: t('索引'),
     icon: 'lucide:list-tree',
     count: draft.indexes.length,
   },
   {
     id: 'foreignKeys' as const,
-    label: '外键',
+    label: t('外键'),
     icon: 'lucide:link-2',
     count: draft.foreignKeys.length,
   },
-  { id: 'sql' as const, label: 'SQL 预览', icon: 'lucide:code-2', count: null },
+  {
+    id: 'sql' as const,
+    label: t('SQL 预览'),
+    icon: 'lucide:code-2',
+    count: null,
+  },
 ])
 const engineOptions = ['InnoDB', 'MyISAM', 'MEMORY'].map(value => ({
   value,
@@ -113,7 +122,7 @@ async function inspectReference(schema: string, table: string): Promise<void> {
     referencedColumns[key] = columns.map(column => column.name)
   } catch (cause) {
     toast.error({
-      title: '读取关联表字段失败',
+      title: t('读取关联表字段失败'),
       description: database.errorMessage(cause),
     })
   } finally {
@@ -124,7 +133,7 @@ async function inspectReference(schema: string, table: string): Promise<void> {
 async function copySql(): Promise<void> {
   if (!validation.value.valid) return
   await copyText(sqlPreview.value)
-  toast.success('建表 SQL 已复制')
+  toast.success(t('建表 SQL 已复制'))
 }
 
 function openSqlQuery(): void {
@@ -134,7 +143,7 @@ function openSqlQuery(): void {
 
 async function createTable(): Promise<void> {
   if (!validation.value.valid) {
-    toast.warning(validation.value.errors[0] ?? '请完善建表配置')
+    toast.warning(validation.value.errors[0] ?? t('请完善建表配置'))
     return
   }
   creating.value = true
@@ -149,7 +158,7 @@ async function createTable(): Promise<void> {
     emit('created', draft.schema, draft.name)
   } catch (cause) {
     toast.error({
-      title: '创建数据表失败',
+      title: t('创建数据表失败'),
       description: database.errorMessage(cause),
     })
   } finally {
@@ -168,10 +177,10 @@ async function createTable(): Promise<void> {
             :size="17"
         /></span>
         <div>
-          <h2>新建数据表</h2>
+          <h2>{{ t('新建数据表') }}</h2>
           <p>
             {{
-              databaseKind === 'mysql' ? 'MySQL 数据库' : 'PostgreSQL Schema'
+              databaseKind === 'mysql' ? t('MySQL 数据库') : 'PostgreSQL Schema'
             }}
             · {{ schema }}
           </p>
@@ -186,8 +195,9 @@ async function createTable(): Promise<void> {
           ><AppIcon
             name="lucide:square-terminal"
             :size="11"
-          />在查询中打开</AppButton
-        >
+          />
+          {{ t('在查询中打开') }}
+        </AppButton>
         <AppButton
           variant="primary"
           size="sm"
@@ -198,38 +208,40 @@ async function createTable(): Promise<void> {
             :name="creating ? 'lucide:loader-circle' : 'lucide:check'"
             :size="12"
             :class="creating && 'animate-spin'"
-          />{{ creating ? '正在创建…' : '创建表' }}</AppButton
+          />{{ creating ? t('正在创建…') : t('创建表') }}</AppButton
         >
       </div>
     </header>
 
     <section class="general-card">
-      <label class="field-label table-name"
-        >表名<AppInput
+      <label class="field-label table-name">
+        {{ t('表名') }}
+        <AppInput
           v-model="draft.name"
           size="sm"
           monospace
           autocomplete="off"
           spellcheck="false"
-          aria-label="表名"
+          :aria-label="t('表名')"
       /></label>
-      <label class="field-label"
-        >数据库 / Schema<AppInput
+      <label class="field-label">
+        {{ t('数据库 / Schema') }}
+        <AppInput
           v-model="draft.schema"
           size="sm"
           monospace
           autocomplete="off"
           spellcheck="false"
-          aria-label="数据库或 Schema"
+          :aria-label="t('数据库或 Schema')"
       /></label>
       <div
         v-if="databaseKind === 'mysql'"
         class="field-label"
       >
-        <span>存储引擎</span
+        <span> {{ t('存储引擎') }} </span
         ><AppSelect
           v-model="draft.engine"
-          label="存储引擎"
+          :label="t('存储引擎')"
           :options="engineOptions"
           hide-label
           compact
@@ -239,27 +251,28 @@ async function createTable(): Promise<void> {
         v-if="databaseKind === 'mysql'"
         class="field-label"
       >
-        <span>字符集</span
+        <span> {{ t('字符集') }} </span
         ><AppSelect
           v-model="draft.charset"
-          label="字符集"
+          :label="t('字符集')"
           :options="charsetOptions"
           hide-label
           compact
         />
       </div>
-      <label class="field-label comment-field"
-        >表备注<AppInput
+      <label class="field-label comment-field">
+        {{ t('表备注') }}
+        <AppInput
           v-model="draft.comment"
           size="sm"
-          placeholder="可选，用于说明表的用途"
-          aria-label="表备注"
+          :placeholder="t('可选，用于说明表的用途')"
+          :aria-label="t('表备注')"
       /></label>
     </section>
 
     <nav
       class="designer-tabs"
-      aria-label="建表配置"
+      :aria-label="t('建表配置')"
     >
       <AppButton
         v-for="item in panelItems"
@@ -311,8 +324,8 @@ async function createTable(): Promise<void> {
       >
         <div class="sql-heading">
           <div>
-            <h3>SQL 预览</h3>
-            <p>根据当前配置实时生成，可复制或转到查询页继续编辑。</p>
+            <h3>{{ t('SQL 预览') }}</h3>
+            <p>{{ t('根据当前配置实时生成，可复制或转到查询页继续编辑。') }}</p>
           </div>
           <AppButton
             size="sm"
@@ -322,8 +335,9 @@ async function createTable(): Promise<void> {
             ><AppIcon
               name="lucide:copy"
               :size="11"
-            />复制 SQL</AppButton
-          >
+            />
+            {{ t('复制 SQL') }}
+          </AppButton>
         </div>
         <pre class="sql-preview scroll-thin"><code>{{ sqlPreview }}</code></pre>
       </section>
@@ -337,7 +351,8 @@ async function createTable(): Promise<void> {
         <AppIcon
           name="lucide:circle-check"
           :size="12"
-        />配置有效，可创建数据表
+        />
+        {{ t('database.validTable') }}
       </div>
       <div
         v-else
@@ -348,14 +363,19 @@ async function createTable(): Promise<void> {
           name="lucide:circle-alert"
           :size="12"
         />{{ validation.errors[0]
-        }}<span v-if="validation.errors.length > 1"
-          >，另有 {{ validation.errors.length - 1 }} 项</span
-        >
+        }}<span v-if="validation.errors.length > 1">{{
+          t('database.moreErrors', { count: validation.errors.length - 1 })
+        }}</span>
       </div>
       <span class="text-txt-4 ml-auto text-[9.5px]"
-        >{{ draft.columns.length }} 字段 · {{ draft.indexes.length }} 索引 ·
-        {{ draft.foreignKeys.length }} 外键</span
-      >
+        >{{
+          t('database.tableCounts', {
+            columns: draft.columns.length,
+            indexes: draft.indexes.length,
+            keys: draft.foreignKeys.length,
+          })
+        }}
+      </span>
     </footer>
   </div>
 </template>

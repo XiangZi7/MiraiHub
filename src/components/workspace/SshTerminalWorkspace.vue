@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   defineAsyncComponent,
@@ -15,6 +17,8 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
+
+const { t } = useI18n()
 
 const AiAgentPanel = defineAsyncComponent(
   () => import('@/components/agent/AiAgentPanel.vue')
@@ -131,14 +135,14 @@ defineExpose({
       <IconButton
         icon="lucide:rows-2"
         :size="14"
-        title="新建或关闭第二个 SSH 终端"
+        :title="t('新建或关闭第二个 SSH 终端')"
         :class="split && 'text-accent'"
         @click="split = !split"
       />
       <IconButton
         icon="lucide:columns-2"
         :size="14"
-        title="AI Agent 分屏"
+        :title="t('AI Agent 分屏')"
         :class="aiOpen && aiSplit && 'text-accent'"
         @click="splitAgent"
       />
@@ -166,7 +170,7 @@ defineExpose({
             ref="secondary"
             v-if="split"
             :config="config"
-            :title="`${title || config.host} · 分屏`"
+            :title="t('{value0} · 分屏', { value0: title || config.host })"
             :terminal-type="terminalType"
             split
             @split="split = false"
@@ -179,7 +183,7 @@ defineExpose({
         pane-side="right"
         :min="agentMin"
         :max="agentMax"
-        label="调整 SSH AI Agent 宽度"
+        :label="t('调整 SSH AI Agent 宽度')"
       />
       <AiAgentPanel
         v-if="aiVisited"

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, onMounted, reactive, shallowRef } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -19,6 +21,8 @@ import { isLocalConnection } from '@/types/connection'
 import { IS_TAURI } from '@/utils/window'
 import ConnectionTagEditor from './ConnectionTagEditor.vue'
 import StartupCommandPresetField from './StartupCommandPresetField.vue'
+
+const { t } = useI18n()
 
 const { settings } = useSettings()
 
@@ -47,11 +51,13 @@ const form = reactive({
   description: '',
 })
 
-const shellOptions = LOCAL_SHELL_OPTIONS.map(option => ({
-  value: option.value,
-  label: option.label,
-  description: option.description,
-}))
+const shellOptions = computed(() =>
+  LOCAL_SHELL_OPTIONS.map(option => ({
+    value: option.value,
+    label: option.label,
+    description: t(option.description),
+  }))
+)
 
 const ready = computed(() => Boolean(form.name.trim()))
 
@@ -61,7 +67,7 @@ onMounted(async () => {
   try {
     const connection = await connectionsStore.get(props.connectionId)
     if (!connection || !isLocalConnection(connection)) {
-      toast.error('找不到要编辑的本地终端')
+      toast.error(t('找不到要编辑的本地终端'))
       return
     }
     Object.assign(form, {
@@ -75,7 +81,10 @@ onMounted(async () => {
       description: connection.description,
     })
   } catch (error) {
-    toast.error({ title: '读取本地终端失败', description: errorMessage(error) })
+    toast.error({
+      title: t('读取本地终端失败'),
+      description: errorMessage(error),
+    })
   } finally {
     loading.value = false
   }
@@ -86,7 +95,7 @@ async function browseDirectory(): Promise<void> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: '选择本地终端工作目录',
+    title: t('选择本地终端工作目录'),
   })
   if (typeof selected === 'string') form.workingDirectory = selected
 }
@@ -104,7 +113,7 @@ function normalizedTags(): string[] {
 
 async function save(): Promise<void> {
   if (!ready.value || saving.value) {
-    toast.warning('请填写终端名称')
+    toast.warning(t('请填写终端名称'))
     return
   }
 
@@ -129,10 +138,15 @@ async function save(): Promise<void> {
 
     if (props.connectionId) await update(props.connectionId, input)
     else await create(input)
-    toast.success(props.connectionId ? '本地终端已更新' : '本地终端已保存')
+    toast.success(
+      props.connectionId ? t('本地终端已更新') : t('本地终端已保存')
+    )
     emit('close')
   } catch (error) {
-    toast.error({ title: '保存本地终端失败', description: errorMessage(error) })
+    toast.error({
+      title: t('保存本地终端失败'),
+      description: errorMessage(error),
+    })
   } finally {
     saving.value = false
   }
@@ -151,9 +165,11 @@ async function save(): Promise<void> {
         <span class="text-base">›_</span>
       </div>
       <div>
-        <h2 class="text-txt text-xs font-semibold">Local Terminal</h2>
+        <h2 class="text-txt text-xs font-semibold">
+          {{ t('Local Terminal') }}
+        </h2>
         <p class="text-txt-4 mt-0.5 text-[10.5px]">
-          在本机 PTY 中启动一个独立 Shell 会话
+          {{ t('在本机 PTY 中启动一个独立 Shell 会话') }}
         </p>
       </div>
     </div>
@@ -163,15 +179,15 @@ async function save(): Promise<void> {
         <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
           <AppTextField
             v-model="form.name"
-            label="Name"
-            placeholder="e.g. Development"
+            :label="t('Name')"
+            :placeholder="t('e.g. Development')"
             required
             autofocus
           />
           <AppTextField
             v-model="form.group"
-            label="Group"
-            placeholder="e.g. Local"
+            :label="t('Group')"
+            :placeholder="t('e.g. Local')"
           />
         </div>
         <AppSelect
@@ -181,16 +197,20 @@ async function save(): Promise<void> {
         />
         <AppTextField
           v-model="form.workingDirectory"
-          label="Working Directory"
-          placeholder="留空使用当前用户目录"
+          :label="t('Working Directory')"
+          :placeholder="t('留空使用当前用户目录')"
           action-icon="lucide:folder-open"
-          action-title="选择工作目录"
+          :action-title="t('选择工作目录')"
           @action="browseDirectory"
         />
         <StartupCommandPresetField
           v-model="form.startupCommand"
-          placeholder="e.g. npm run dev"
-          description="每次启动或重连本地 Shell 后自动执行。支持多行命令，请使用所选 Shell 的语法；留空不执行，预设保存在本机。"
+          :placeholder="t('e.g. npm run dev')"
+          :description="
+            t(
+              '每次启动或重连本地 Shell 后自动执行。支持多行命令，请使用所选 Shell 的语法；留空不执行，预设保存在本机。'
+            )
+          "
         />
         <ConnectionTagEditor
           v-model="form.tags"
@@ -201,14 +221,15 @@ async function save(): Promise<void> {
           <label
             for="local-description"
             class="text-txt-2 block text-[11px] font-medium"
-            >Description (Optional)</label
           >
+            {{ t('Description (Optional)') }}
+          </label>
           <textarea
             id="local-description"
             v-model="form.description"
             class="local-description"
             rows="3"
-            placeholder="Add a description for this terminal…"
+            :placeholder="t('Add a description for this terminal…')"
           />
         </div>
       </div>
@@ -216,13 +237,15 @@ async function save(): Promise<void> {
 
     <footer class="local-footer">
       <div class="flex-1" />
-      <AppButton @click="emit('close')">Cancel</AppButton>
+      <AppButton @click="emit('close')"> {{ t('Cancel') }} </AppButton>
       <AppButton
         type="submit"
         variant="primary"
         :disabled="saving || loading"
       >
-        {{ saving ? 'Saving…' : props.connectionId ? 'Update' : 'Save' }}
+        {{
+          saving ? t('Saving…') : props.connectionId ? t('Update') : t('Save')
+        }}
       </AppButton>
     </footer>
   </form>

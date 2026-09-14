@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 /**
  * 连接配置的持久化。
  *
@@ -520,7 +521,9 @@ export function applyBackupSnapshot(
     tags: readTags(),
   }
   if (JSON.stringify(current) !== JSON.stringify(expected))
-    throw new Error('预览后连接配置发生变化，请重新读取备份并预览')
+    throw new Error(
+      i18n.global.t('预览后连接配置发生变化，请重新读取备份并预览')
+    )
   const keys = [STORAGE_KEY, GROUP_STORAGE_KEY, TAG_STORAGE_KEY]
   const before = keys.map(key => localStorage.getItem(key))
   try {

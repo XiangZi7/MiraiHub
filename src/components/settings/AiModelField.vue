@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { translateNativeMessage } from '@/i18n/native'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, reactive, useId, useTemplateRef, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -191,7 +192,7 @@ function focusout(event: FocusEvent): void {
       :role="error ? 'alert' : 'status'"
       :class="['ai-model-feedback', error ? 'text-danger' : 'text-txt-4']"
     >
-      {{ error || message }}
+      {{ translateNativeMessage(error || message) }}
     </p>
   </div>
 </template>

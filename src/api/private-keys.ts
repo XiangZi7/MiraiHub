@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 /**
  * SSH 私钥路径注册表。
  *
@@ -189,10 +190,13 @@ export function setDefaultPath(path: string): PrivateKeyRegistrySnapshot {
 
 /** 打开系统原生文件选择器；支持一次选择多把私钥。 */
 export async function pickPrivateKeys(): Promise<string[]> {
-  if (!IS_TAURI) throw new Error('系统文件选择器需要在 MiraiHub 桌面应用中运行')
+  if (!IS_TAURI)
+    throw new Error(
+      i18n.global.t('系统文件选择器需要在 MiraiHub 桌面应用中运行')
+    )
 
   const selected = await open({
-    title: '选择 SSH 私钥',
+    title: i18n.global.t('选择 SSH 私钥'),
     directory: false,
     multiple: true,
   })
@@ -203,7 +207,7 @@ export async function pickPrivateKeys(): Promise<string[]> {
     path => !path.toLocaleLowerCase().endsWith('.pub')
   )
   if (!privateKeyPaths.length)
-    throw new Error('请选择私钥文件，不要选择 .pub 公钥文件')
+    throw new Error(i18n.global.t('请选择私钥文件，不要选择 .pub 公钥文件'))
 
   return privateKeyPaths
 }

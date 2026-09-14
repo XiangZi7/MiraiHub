@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { computed, reactive } from 'vue'
 import type { ContextMenuItem } from '@/types/context-menu'
 interface QueryActionTab {
@@ -33,7 +34,13 @@ export function useDatabaseTabActions(options: Options) {
       .slice(0, 5)
       .map(tab => `“${tab.label}”`)
       .join('、')
-    return `${names}${tabs.length > 5 ? ` 等 ${tabs.length} 个标签` : ''}包含未保存的 SQL 或建表草稿。关闭后这些草稿将被丢弃；取消后可先保存或复制内容。`
+    return i18n.global.t('database.unsavedTabs', {
+      names:
+        names +
+        (tabs.length > 5
+          ? i18n.global.t('database.moreTabs', { count: tabs.length })
+          : ''),
+    })
   })
   function requestClose(ids: string[]): void {
     const tabs = options.tabs().filter(tab => ids.includes(tab.id))
@@ -54,18 +61,18 @@ export function useDatabaseTabActions(options: Options) {
     return [
       {
         id: 'query:duplicate',
-        label: '复制为新查询标签',
+        label: i18n.global.t('复制为新查询标签'),
         icon: 'lucide:copy-plus',
       },
       {
         id: 'query:save',
-        label: '保存查询',
+        label: i18n.global.t('保存查询'),
         icon: 'lucide:save',
         disabled: !tab.sql?.trim(),
       },
       {
         id: 'query:copy',
-        label: '复制 SQL',
+        label: i18n.global.t('复制 SQL'),
         icon: 'lucide:clipboard',
         disabled: !tab.sql?.trim(),
       },

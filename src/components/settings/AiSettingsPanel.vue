@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { translateNativeMessage } from '@/i18n/native'
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useAgentSettings } from '@/composables/useAgentSettings'
@@ -142,14 +143,14 @@ function confirmDelete(): void {
         role="alert"
         class="ai-settings-feedback scroll-thin text-danger"
       >
-        {{ error }}
+        {{ translateNativeMessage(error) }}
       </p>
       <p
         v-if="message"
         role="status"
         class="ai-settings-feedback scroll-thin text-success"
       >
-        {{ message }}
+        {{ translateNativeMessage(message) }}
       </p>
       <div class="ai-settings-actions">
         <AppButton

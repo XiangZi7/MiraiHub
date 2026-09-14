@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, shallowRef, useId } from 'vue'
 import IconButton from './IconButton.vue'
+
+const { t } = useI18n()
 
 type FieldType = 'text' | 'password'
 
@@ -47,7 +51,7 @@ const resolvedType = computed<'text' | 'password'>(() =>
 )
 
 const passwordButtonTitle = computed(() =>
-  passwordVisible.value ? '隐藏密码' : '显示密码'
+  passwordVisible.value ? t('隐藏密码') : t('显示密码')
 )
 </script>
 

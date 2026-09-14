@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 /**
  * SSH 终端会话。
  *
@@ -145,7 +146,7 @@ export function useSshTerminal() {
     options: TerminalConnectOptions = {}
   ): Promise<void> {
     const terminal = term.value
-    if (!terminal) throw new Error('终端尚未挂载')
+    if (!terminal) throw new Error(i18n.global.t('终端尚未挂载'))
 
     // 配置在独立窗口里可能被修改后重新打开同一标签。
     // 先清掉旧会话，避免一个终端同时订阅两条连接的输出。
@@ -191,8 +192,14 @@ export function useSshTerminal() {
         if (payload.status === 'disconnected') {
           state.error = payload.reason ?? ''
           const suffix =
-            payload.exitCode === null ? '' : `（退出码 ${payload.exitCode}）`
-          terminal.writeln(`\r\n\x1b[90m连接已断开${suffix}\x1b[0m`)
+            payload.exitCode === null
+              ? ''
+              : i18n.global.t('（退出码 {value0}）', {
+                  value0: payload.exitCode,
+                })
+          terminal.writeln(
+            `\r\n\x1b[90m${i18n.global.t('terminal.disconnected', { suffix })}\x1b[0m`
+          )
         }
       })
 
@@ -230,7 +237,9 @@ export function useSshTerminal() {
 
       state.status = 'disconnected'
       state.error = ssh.errorMessage(err)
-      terminal.writeln(`\r\n\x1b[31m连接失败：${state.error}\x1b[0m`)
+      terminal.writeln(
+        `\r\n\x1b[31m${i18n.global.t('terminal.connectionFailed', { error: state.error })}\x1b[0m`
+      )
 
       // TCP 已连上但订阅、PTY 或启动命令失败时，后端会话已经登记进管理器；
       // 只清前端订阅会把它永久留在会话表里，所以这里也要主动断开。
@@ -304,7 +313,9 @@ export function useSshTerminal() {
 
     state.status = 'disconnected'
     state.error = ssh.errorMessage(err)
-    term.value?.writeln(`\r\n\x1b[31m发送失败：${state.error}\x1b[0m`)
+    term.value?.writeln(
+      `\r\n\x1b[31m${i18n.global.t('terminal.sendFailed', { error: state.error })}\x1b[0m`
+    )
   }
 
   /** 统一发送用户输入，并同步维护一份轻量的当前行镜像供补全使用。 */

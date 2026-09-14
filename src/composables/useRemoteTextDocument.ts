@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import {
   computed,
   onBeforeUnmount,
@@ -74,7 +75,7 @@ export function useRemoteTextDocument(
   function review(): void {
     if (!dirty.value || state.busy) return
     if (textMetrics(state.draft).bytes > 1024 * 1024) {
-      state.error = '草稿超过 1 MB，请缩短后再保存'
+      state.error = i18n.global.t('草稿超过 1 MB，请缩短后再保存')
       return
     }
     state.reviewedText = state.draft
@@ -92,8 +93,10 @@ export function useRemoteTextDocument(
       state.draft = doc.text
       state.reviewing = false
       state.message = doc.backupPath
-        ? `已保存。原内容备份：${doc.backupPath}`
-        : '内容没有变化'
+        ? i18n.global.t('已保存。原内容备份：{value0}', {
+            value0: doc.backupPath,
+          })
+        : i18n.global.t('内容没有变化')
     } catch (error) {
       state.error = api.errorMessage(error)
       state.reviewing = false
@@ -103,7 +106,7 @@ export function useRemoteTextDocument(
   }
   function requestClose(): void {
     if (state.busy) {
-      state.message = '正在读取或保存，请稍后再关闭窗口。'
+      state.message = i18n.global.t('正在读取或保存，请稍后再关闭窗口。')
       return
     }
     if (!state.busy) {
@@ -125,7 +128,7 @@ export function useRemoteTextDocument(
     try {
       await copy(state.draft)
       scheduleClipboardClear(state.draft)
-      state.message = '草稿已复制'
+      state.message = i18n.global.t('草稿已复制')
     } catch (error) {
       state.error = api.errorMessage(error)
     }

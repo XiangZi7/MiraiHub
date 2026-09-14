@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, watch } from 'vue'
 import {
   open as openFileDialog,
@@ -13,6 +15,8 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import { toast } from '@/composables/useToast'
 import type { SavedConnection } from '@/types/connection'
 import { isDatabaseConnection } from '@/types/connection'
+
+const { t } = useI18n()
 
 export type DatabaseTransferMode = 'export' | 'import'
 
@@ -40,7 +44,9 @@ const state = reactive({
 })
 
 const isExport = computed(() => props.mode === 'export')
-const title = computed(() => (isExport.value ? '导出数据库' : '导入 SQL 文件'))
+const title = computed(() =>
+  isExport.value ? t('导出数据库') : t('导入 SQL 文件')
+)
 const databaseName = computed(() => {
   if (props.databaseName) return props.databaseName
   const connection = props.connection
@@ -78,30 +84,32 @@ function defaultExportName(): string {
 async function choosePath(): Promise<void> {
   if (isExport.value) {
     const selected = await saveFileDialog({
-      title: '选择 SQL 导出位置',
+      title: t('选择 SQL 导出位置'),
       defaultPath: defaultExportName(),
-      filters: [{ name: 'SQL 文件', extensions: ['sql'] }],
+      filters: [{ name: t('SQL 文件'), extensions: ['sql'] }],
     })
     if (selected) state.path = selected
     return
   }
 
   const selected = await openFileDialog({
-    title: '选择要导入的 SQL 文件',
+    title: t('选择要导入的 SQL 文件'),
     multiple: false,
     directory: false,
-    filters: [{ name: 'SQL 文件', extensions: ['sql'] }],
+    filters: [{ name: t('SQL 文件'), extensions: ['sql'] }],
   })
   if (typeof selected === 'string') state.path = selected
 }
 
 function requestRun(): void {
   if (!state.path) {
-    toast.warning(isExport.value ? '请先选择导出位置' : '请先选择 SQL 文件')
+    toast.warning(
+      isExport.value ? t('请先选择导出位置') : t('请先选择 SQL 文件')
+    )
     return
   }
   if (!props.sessionId) {
-    toast.error('数据库连接已断开，请重新连接后再试')
+    toast.error(t('数据库连接已断开，请重新连接后再试'))
     return
   }
 
@@ -128,21 +136,36 @@ async function runTransfer(): Promise<void> {
         state.dropExisting
       )
       toast.success({
-        title: '数据库导出完成',
-        description: `已导出 ${result.objects} 个对象、${result.rows} 行数据（${formatBytes(result.bytes)}），耗时 ${result.elapsedMs} ms。`,
+        title: t('数据库导出完成'),
+        description: t(
+          '已导出 {value0} 个对象、{value1} 行数据（{value2}），耗时 {value3} ms。',
+          {
+            value0: result.objects,
+            value1: result.rows,
+            value2: formatBytes(result.bytes),
+            value3: result.elapsedMs,
+          }
+        ),
       })
     } else {
       const result = await database.importSql(props.sessionId, state.path)
       toast.success({
-        title: 'SQL 导入完成',
-        description: `已执行 ${result.statements} 条 SQL，影响 ${result.rowsAffected} 行，耗时 ${result.elapsedMs} ms。`,
+        title: t('SQL 导入完成'),
+        description: t(
+          '已执行 {value0} 条 SQL，影响 {value1} 行，耗时 {value2} ms。',
+          {
+            value0: result.statements,
+            value1: result.rowsAffected,
+            value2: result.elapsedMs,
+          }
+        ),
       })
     }
     state.finished = true
     emit('finished', props.mode)
   } catch (error) {
     toast.error({
-      title: isExport.value ? '数据库导出失败' : 'SQL 导入失败',
+      title: isExport.value ? t('数据库导出失败') : t('SQL 导入失败'),
       description: database.errorMessage(error),
     })
   } finally {
@@ -159,7 +182,7 @@ async function cancelImport(): Promise<void> {
     await database.cancelQuery(props.sessionId)
   } catch (error) {
     toast.error({
-      title: '取消导入失败',
+      title: t('取消导入失败'),
       description: database.errorMessage(error),
     })
     state.cancelling = false
@@ -186,13 +209,13 @@ function formatBytes(bytes: number): string {
       >
         <AppDialog
           :title="title"
-          :description="`${connection?.name ?? '数据库'} · ${databaseName}`"
+          :description="`${connection?.name ?? t('数据库')} · ${databaseName}`"
           @close="requestClose"
         >
           <div class="grid gap-3.5">
             <div class="space-y-1.5">
               <label class="text-txt-2 text-[11px] font-medium">
-                {{ isExport ? '保存位置' : 'SQL 文件' }}
+                {{ isExport ? t('保存位置') : t('SQL 文件') }}
               </label>
               <div class="flex gap-2">
                 <div
@@ -206,14 +229,14 @@ function formatBytes(bytes: number): string {
                     class="shrink-0"
                   />
                   <span class="truncate">{{
-                    state.path || '尚未选择文件'
+                    state.path || t('尚未选择文件')
                   }}</span>
                 </div>
                 <AppButton
                   :disabled="state.running"
                   @click="choosePath"
                 >
-                  浏览…
+                  {{ t('浏览…') }}
                 </AppButton>
               </div>
             </div>
@@ -222,14 +245,18 @@ function formatBytes(bytes: number): string {
               <div class="card grid gap-3 px-3 py-2.5">
                 <AppCheckbox
                   v-model="state.includeData"
-                  label="包含表数据"
-                  description="关闭后只导出表、索引、约束、视图和例程结构。"
+                  :label="t('包含表数据')"
+                  :description="
+                    t('关闭后只导出表、索引、约束、视图和例程结构。')
+                  "
                   :disabled="state.running"
                 />
                 <AppCheckbox
                   v-model="state.dropExisting"
-                  label="导入前删除同名对象"
-                  description="在导出文件中加入表、视图、存储过程和函数的 DROP 语句。"
+                  :label="t('导入前删除同名对象')"
+                  :description="
+                    t('在导出文件中加入表、视图、存储过程和函数的 DROP 语句。')
+                  "
                   :disabled="state.running"
                 />
               </div>
@@ -241,8 +268,11 @@ function formatBytes(bytes: number): string {
                   :size="12"
                   class="mt-0.5 shrink-0"
                 />
-                导出为可再次导入的 SQL
-                文件；大表会分页读取，避免一次载入全部数据。
+                {{
+                  t(
+                    '导出为可再次导入的 SQL 文件；大表会分页读取，避免一次载入全部数据。'
+                  )
+                }}
               </p>
             </template>
 
@@ -255,10 +285,13 @@ function formatBytes(bytes: number): string {
                 :size="14"
                 class="mt-0.5 shrink-0"
               />
-              <span
-                >SQL
-                文件会直接在当前数据库会话中执行，可能创建、修改或删除数据。请确认文件来源可信并已做好备份。</span
-              >
+              <span>
+                {{
+                  t(
+                    'SQL 文件会直接在当前数据库会话中执行，可能创建、修改或删除数据。请确认文件来源可信并已做好备份。'
+                  )
+                }}
+              </span>
             </p>
 
             <p
@@ -273,10 +306,10 @@ function formatBytes(bytes: number): string {
               />
               {{
                 state.cancelling
-                  ? '正在取消导入…'
+                  ? t('正在取消导入…')
                   : isExport
-                    ? '正在导出，请稍候…'
-                    : '正在导入，请稍候…'
+                    ? t('正在导出，请稍候…')
+                    : t('正在导入，请稍候…')
               }}
             </p>
           </div>
@@ -288,14 +321,14 @@ function formatBytes(bytes: number): string {
               :disabled="state.cancelling"
               @click="cancelImport"
             >
-              {{ state.cancelling ? '取消中…' : '取消导入' }}
+              {{ state.cancelling ? t('取消中…') : t('取消导入') }}
             </AppButton>
             <AppButton
               v-else
               :disabled="state.running"
               @click="requestClose"
             >
-              {{ state.finished ? '完成' : '取消' }}
+              {{ state.finished ? t('完成') : t('取消') }}
             </AppButton>
             <AppButton
               v-if="!state.finished"
@@ -306,11 +339,11 @@ function formatBytes(bytes: number): string {
               {{
                 state.running
                   ? isExport
-                    ? '导出中…'
-                    : '导入中…'
+                    ? t('导出中…')
+                    : t('导入中…')
                   : isExport
-                    ? '开始导出'
-                    : '开始导入'
+                    ? t('开始导出')
+                    : t('开始导入')
               }}
             </AppButton>
           </template>
@@ -321,9 +354,14 @@ function formatBytes(bytes: number): string {
 
   <AppConfirmDialog
     :open="state.confirmingImport"
-    title="确认导入 SQL"
-    :description="`将执行“${state.path}”中的全部 SQL。该操作可能覆盖或删除 ${databaseName} 中的现有数据。`"
-    confirm-label="确认导入"
+    :title="t('确认导入 SQL')"
+    :description="
+      t(
+        '将执行“{value0}”中的全部 SQL。该操作可能覆盖或删除 {value1} 中的现有数据。',
+        { value0: state.path, value1: databaseName }
+      )
+    "
+    :confirm-label="t('确认导入')"
     danger
     @close="state.confirmingImport = false"
     @confirm="confirmImport"

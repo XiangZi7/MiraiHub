@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   nextTick,
@@ -16,6 +18,8 @@ import { copyText } from '@/utils/clipboard'
 import { findTerminalMatches } from '@/utils/terminal-search'
 import type { SshSessionStatus } from '@/types/ssh'
 import TerminalCommandMenu from './TerminalCommandMenu.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   terminal?: Terminal
@@ -51,28 +55,28 @@ const items = computed(() => {
   return [
     {
       id: 'copy',
-      label: '复制选中内容',
+      label: t('复制选中内容'),
       icon: 'lucide:copy',
       shortcut: 'Ctrl+Shift+C',
       disabled: !state.hasSelection,
     },
     {
       id: 'paste',
-      label: '粘贴',
+      label: t('粘贴'),
       icon: 'lucide:clipboard-paste',
       shortcut: 'Ctrl+Shift+V',
       disabled: props.status !== 'connected',
     },
-    { id: 'select-all', label: '全选', icon: 'lucide:text-select' },
+    { id: 'select-all', label: t('全选'), icon: 'lucide:text-select' },
     {
       id: 'clear',
-      label: '清除回滚内容',
+      label: t('清除回滚内容'),
       icon: 'lucide:eraser',
       separatorBefore: true,
     },
     {
       id: 'disconnect',
-      label: props.local ? '停止本地终端' : '断开连接',
+      label: props.local ? t('停止本地终端') : t('断开连接'),
       icon: 'lucide:unplug',
       disabled: props.status !== 'connected',
       separatorBefore: true,
@@ -232,7 +236,7 @@ async function runAction(id: string): Promise<void> {
       const text = terminal.getSelection()
       if (text) {
         await copyText(text)
-        toast.success('已复制终端选中内容')
+        toast.success(t('已复制终端选中内容'))
       }
     } else if (id === 'paste' && props.status === 'connected') {
       const text = await navigator.clipboard.readText()
@@ -245,7 +249,7 @@ async function runAction(id: string): Promise<void> {
     } else if (id === 'disconnect') emit('disconnect')
     terminal.focus()
   } catch (error) {
-    toast.error({ title: '终端操作失败', description: String(error) })
+    toast.error({ title: t('终端操作失败'), description: String(error) })
   }
 }
 function insertCommand(command: string): void {
@@ -266,35 +270,35 @@ function insertCommand(command: string): void {
       v-if="!local"
       :icon="split ? 'lucide:rows-2' : 'lucide:columns-2'"
       :size="14"
-      :title="split ? '关闭分屏' : '分屏（独立 SSH 会话）'"
+      :title="split ? t('关闭分屏') : t('分屏（独立 SSH 会话）')"
       :disabled="!available"
       @click="emit('split')"
     />
     <IconButton
       icon="lucide:copy"
       :size="14"
-      title="复制选中内容 (Ctrl+Shift+C)"
+      :title="t('复制选中内容 (Ctrl+Shift+C)')"
       :disabled="!state.hasSelection"
       @click="runAction('copy')"
     />
     <IconButton
       icon="lucide:search"
       :size="14"
-      title="搜索终端 (Ctrl+F)"
+      :title="t('搜索终端 (Ctrl+F)')"
       :disabled="!terminal"
       @click="openSearch"
     />
     <IconButton
       icon="lucide:rotate-cw"
       :size="14"
-      :title="local ? '重新启动' : '重连'"
+      :title="local ? t('重新启动') : t('重连')"
       :disabled="!available || status === 'connecting'"
       @click="emit('reconnect')"
     />
     <IconButton
       icon="lucide:ellipsis"
       :size="14"
-      title="更多"
+      :title="t('更多')"
       :disabled="!terminal"
       @click="openMenu"
     />
@@ -307,8 +311,8 @@ function insertCommand(command: string): void {
       <input
         ref="input"
         v-model="query"
-        aria-label="搜索终端内容"
-        placeholder="搜索终端内容…"
+        :aria-label="t('搜索终端内容')"
+        :placeholder="t('搜索终端内容…')"
         class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none"
         @keydown.enter.prevent="search($event.shiftKey ? -1 : 1)"
       />
@@ -320,21 +324,21 @@ function insertCommand(command: string): void {
       <IconButton
         icon="lucide:chevron-up"
         :size="12"
-        title="上一个 (Shift+Enter)"
+        :title="t('上一个 (Shift+Enter)')"
         :disabled="!matchCount"
         @click="search(-1)"
       />
       <IconButton
         icon="lucide:chevron-down"
         :size="12"
-        title="下一个 (Enter)"
+        :title="t('下一个 (Enter)')"
         :disabled="!matchCount"
         @click="search(1)"
       />
       <IconButton
         icon="lucide:x"
         :size="12"
-        title="关闭搜索"
+        :title="t('关闭搜索')"
         @click="closeSearch"
       />
     </div>
@@ -343,7 +347,7 @@ function insertCommand(command: string): void {
       :x="menuX"
       :y="menuY"
       :items="items"
-      label="终端操作"
+      :label="t('终端操作')"
       @close="closeMenu"
       @select="runAction"
     />

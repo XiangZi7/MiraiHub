@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { onBeforeUnmount, onMounted, shallowRef } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { IS_TAURI } from '@/utils/window'
@@ -25,7 +26,10 @@ export function useFullscreen() {
       else if (document.fullscreenElement) await document.exitFullscreen()
       await sync()
     } catch (error) {
-      toast.error({ title: '切换全屏失败', description: String(error) })
+      toast.error({
+        title: i18n.global.t('切换全屏失败'),
+        description: String(error),
+      })
     } finally {
       busy = false
     }

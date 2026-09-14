@@ -81,7 +81,7 @@ Promise.all([
   .catch(() => {
     const root = document.getElementById('app')
     if (root) {
-      root.textContent = '页面加载失败，请重新启动 MiraiHub。'
+      root.textContent = i18n.global.t('页面加载失败，请重新启动 MiraiHub。')
       root.style.cssText = 'padding:32px;color:#eee'
       // 启动失败也显示可读错误，避免主窗口一直隐藏在启动画面后。
       if (entry.surface === 'workspace') void appReady()

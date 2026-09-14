@@ -7,21 +7,47 @@ import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 
 function moduleUrl(path, replacements = {}) {
-  let { outputText } = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  })
-  for (const [source, target] of Object.entries({ vue: import.meta.resolve('vue'), ...replacements }))
-    outputText = outputText.replace(new RegExp(`from ['"]${source}['"]`, 'g'), `from '${target}'`)
+  let { outputText } = ts.transpileModule(
+    readFileSync(new URL(path, import.meta.url), 'utf8'),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.ESNext,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  )
+  for (const [source, target] of Object.entries({
+    vue: import.meta.resolve('vue'),
+    ...replacements,
+  }))
+    outputText = outputText.replace(
+      new RegExp(`from ['"]${source}['"]`, 'g'),
+      `from '${target}'`
+    )
   return `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`
 }
 const helpersUrl = moduleUrl('../src/utils/tab-actions.ts')
 const { tabCloseTargets, activeAfterTabClose } = await import(helpersUrl)
-const { useDatabaseTabActions } = await import(moduleUrl('../src/composables/useDatabaseTabActions.ts'))
+const localizedLoad = sourceLoader()
+const { i18n } = await localizedLoad('src/i18n/index.ts')
+i18n.global.locale.value = 'zh-CN'
+const { useDatabaseTabActions } = await localizedLoad(
+  'src/composables/useDatabaseTabActions.ts'
+)
 
 test('关闭范围按右键目标和当前显示顺序计算，并保留不可关闭标签', () => {
-  const tabs = ['a', 'fixed', 'c', 'b', 'd'].map(id => ({ id, closable: id !== 'fixed' }))
+  const tabs = ['a', 'fixed', 'c', 'b', 'd'].map(id => ({
+    id,
+    closable: id !== 'fixed',
+  }))
   const before = structuredClone(tabs)
-  for (const [scope, expected] of Object.entries({ current: ['b'], others: ['a', 'c', 'd'], left: ['a', 'c'], right: ['d'], all: ['a', 'c', 'b', 'd'] }))
+  for (const [scope, expected] of Object.entries({
+    current: ['b'],
+    others: ['a', 'c', 'd'],
+    left: ['a', 'c'],
+    right: ['d'],
+    all: ['a', 'c', 'b', 'd'],
+  }))
     assert.deepEqual(tabCloseTargets(tabs, 'b', scope), expected)
   assert.deepEqual(tabCloseTargets(tabs, 'fixed', 'current'), [])
   for (const scope of ['current', 'others', 'left', 'right', 'all'])
@@ -42,17 +68,33 @@ function queryFixture() {
   const tabs = reactive([
     { id: 'empty', label: 'Empty', kind: 'query', sql: '  ' },
     { id: 'draft', label: 'Draft', kind: 'query', sql: 'SELECT 1' },
-    { id: 'saved', label: 'Saved', kind: 'query', sql: 'SELECT 2', savedQueryId: 's1' },
-    { id: 'deleted', label: 'Deleted saved query', kind: 'query', sql: 'SELECT 3', savedQueryId: 'gone' },
+    {
+      id: 'saved',
+      label: 'Saved',
+      kind: 'query',
+      sql: 'SELECT 2',
+      savedQueryId: 's1',
+    },
+    {
+      id: 'deleted',
+      label: 'Deleted saved query',
+      kind: 'query',
+      sql: 'SELECT 3',
+      savedQueryId: 'gone',
+    },
     { id: 'designer', label: 'New table', kind: 'table-designer' },
     { id: 'object', label: 'Table data', kind: 'object' },
   ])
   const events = []
   const actions = useDatabaseTabActions({
-    tabs: () => tabs, close: ids => events.push(['close', ids]),
+    tabs: () => tabs,
+    close: ids => events.push(['close', ids]),
     hasSavedQuery: id => id === 's1',
-    save: id => events.push(['save', id]), duplicate: id => events.push(['duplicate', id]),
-    copy: async id => { events.push(['copy', id]) },
+    save: id => events.push(['save', id]),
+    duplicate: id => events.push(['duplicate', id]),
+    copy: async id => {
+      events.push(['copy', id])
+    },
   })
   return { tabs, events, actions }
 }
@@ -92,15 +134,26 @@ test('查询操作精确定位右键标签，空 SQL、非查询及已移除目�
   }
   await actions.action('object', 'query:duplicate')
   await actions.action('draft', 'unknown')
-  assert.deepEqual(events, [['save', 'draft'], ['copy', 'draft'], ['duplicate', 'draft']])
+  assert.deepEqual(events, [
+    ['save', 'draft'],
+    ['copy', 'draft'],
+    ['duplicate', 'draft'],
+  ])
 })
 
 test('工作区批量关闭保留共享数组引用，不激活即将被关闭的连接', async () => {
   const storage = new Map()
-  globalThis.localStorage = { setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }
+  globalThis.localStorage = {
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: key => storage.delete(key),
+  }
   const pinia = createPinia()
   setActivePinia(pinia)
-  const load = sourceLoader({ '@/stores/settings': dataModule('export const useSettingsStore=()=>({values:{restoreLastSession:true}})') })
+  const load = sourceLoader({
+    '@/stores/settings': dataModule(
+      'export const useSettingsStore=()=>({values:{restoreLastSession:true}})'
+    ),
+  })
   const { useWorkspaceTabs } = await load('src/composables/useWorkspaceTabs.ts')
   const workspace = useWorkspaceTabs()
   const shared = workspace.tabs
@@ -108,10 +161,15 @@ test('工作区批量关闭保留共享数组引用，不激活即将被关闭�
   workspace.activate('b')
   await nextTick()
   const activated = []
-  const stop = watch(workspace.activeId, id => activated.push(id), { flush: 'sync' })
+  const stop = watch(workspace.activeId, id => activated.push(id), {
+    flush: 'sync',
+  })
   workspace.closeMany(['b', 'c'])
   assert.equal(workspace.tabs, shared)
-  assert.deepEqual(shared.map(tab => tab.id), ['a', 'd'])
+  assert.deepEqual(
+    shared.map(tab => tab.id),
+    ['a', 'd']
+  )
   assert.deepEqual(activated, ['d'])
   workspace.reorder(1, 0)
   workspace.closeMany(['a'])
@@ -120,30 +178,50 @@ test('工作区批量关闭保留共享数组引用，不激活即将被关闭�
   await nextTick()
   assert.equal(workspace.activeId.value, '')
   assert.deepEqual(shared, [])
-  assert.deepEqual(JSON.parse(storage.get('miraihub:workspace-tabs')), { ids: [], activeId: '' })
+  assert.deepEqual(JSON.parse(storage.get('miraihub:workspace-tabs')), {
+    ids: [],
+    activeId: '',
+  })
   stop()
   disposePinia(pinia)
   delete globalThis.localStorage
 })
 
-
 test('菜单在打开确认框前恢复标签焦点，后续更新不会抢走弹窗焦点', async () => {
-  const { useTabContextMenu } = await import(moduleUrl('../src/composables/useTabContextMenu.ts', {
+  const { useTabContextMenu } = await sourceLoader({
     '@/utils/tab-actions': helpersUrl,
-    '@/utils/clipboard': 'data:text/javascript,export async function copyText(){}',
-    '@/composables/useToast': 'data:text/javascript,export const toast={success(){},error(){}}',
-  }))
+    '@/utils/clipboard':
+      'data:text/javascript,export async function copyText(){}',
+    '@/composables/useToast':
+      'data:text/javascript,export const toast={success(){},error(){}}',
+  })('src/composables/useTabContextMenu.ts')
   const body = { closest: () => null }
   const dialog = { closest: () => null }
   const menuItem = { closest: () => ({}) }
   globalThis.document = { activeElement: menuItem, body }
-  const tab = { dataset: { reorderableTabId: 'b' }, focus: () => { document.activeElement = tab }, closest: () => null }
+  const tab = {
+    dataset: { reorderableTabId: 'b' },
+    focus: () => {
+      document.activeElement = tab
+    },
+    closest: () => null,
+  }
   let previous
   const menu = useTabContextMenu({
-    tabs: () => [{ id: 'a', label: 'A', closable: true }, { id: 'b', label: 'B', closable: true }],
-    container: () => ({ querySelectorAll: () => [tab] }), active: () => 'a', extraItems: () => [],
-    close: () => { previous = document.activeElement; document.activeElement = dialog },
-    closeMany: () => {}, reorder: () => {}, action: () => {},
+    tabs: () => [
+      { id: 'a', label: 'A', closable: true },
+      { id: 'b', label: 'B', closable: true },
+    ],
+    container: () => ({ querySelectorAll: () => [tab] }),
+    active: () => 'a',
+    extraItems: () => [],
+    close: () => {
+      previous = document.activeElement
+      document.activeElement = dialog
+    },
+    closeMany: () => {},
+    reorder: () => {},
+    action: () => {},
   })
   menu.state.id = 'b'
   menu.state.open = true

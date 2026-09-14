@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -11,6 +13,8 @@ import type {
   TableDesignerColumn,
   TableDesignerForeignKey,
 } from '@/types/database-designer'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: TableDesignerForeignKey[]
@@ -45,7 +49,7 @@ const referentialActions: readonly ReferentialAction[] = [
 const localColumnOptions = computed(() =>
   props.columns.map(column => ({
     value: column.name,
-    label: column.name || '未命名字段',
+    label: column.name || t('未命名字段'),
   }))
 )
 const tableSelectOptions = computed(() =>
@@ -131,8 +135,8 @@ function removeForeignKey(id: string): void {
   <section class="designer-section">
     <div class="designer-section-heading">
       <div>
-        <h3>外键约束</h3>
-        <p>关联已有表，并配置更新、删除时的参照行为。</p>
+        <h3>{{ t('外键约束') }}</h3>
+        <p>{{ t('关联已有表，并配置更新、删除时的参照行为。') }}</p>
       </div>
       <AppButton
         size="sm"
@@ -140,8 +144,9 @@ function removeForeignKey(id: string): void {
         ><AppIcon
           name="lucide:plus"
           :size="11"
-        />添加外键</AppButton
-      >
+        />
+        {{ t('添加外键') }}
+      </AppButton>
     </div>
 
     <div class="foreign-key-list scroll-thin">
@@ -156,8 +161,9 @@ function removeForeignKey(id: string): void {
               name="lucide:link-2"
               :size="14"
           /></span>
-          <label class="field-label"
-            >约束名<AppInput
+          <label class="field-label">
+            {{ t('约束名') }}
+            <AppInput
               :model-value="foreignKey.name"
               monospace
               @update:model-value="
@@ -168,19 +174,19 @@ function removeForeignKey(id: string): void {
             icon="lucide:trash-2"
             :size="12"
             class="text-danger hover:text-danger size-7"
-            title="删除外键"
+            :title="t('删除外键')"
             @click="removeForeignKey(foreignKey.id)"
           />
         </div>
 
         <div class="reference-flow">
           <div class="field-label">
-            <span>本地字段</span
+            <span> {{ t('本地字段') }} </span
             ><AppSelect
               :model-value="foreignKey.column"
-              label="本地字段"
+              :label="t('本地字段')"
               :options="localColumnOptions"
-              placeholder="请选择字段"
+              :placeholder="t('请选择字段')"
               hide-label
               compact
               @update:model-value="
@@ -194,12 +200,12 @@ function removeForeignKey(id: string): void {
               :size="14"
           /></span>
           <div class="field-label">
-            <span>引用表</span
+            <span> {{ t('引用表') }} </span
             ><AppSelect
               :model-value="referenceKey(foreignKey)"
-              label="引用表"
+              :label="t('引用表')"
               :options="tableSelectOptions"
-              placeholder="请选择引用表"
+              :placeholder="t('请选择引用表')"
               hide-label
               compact
               searchable
@@ -212,15 +218,15 @@ function removeForeignKey(id: string): void {
               :size="14"
           /></span>
           <div class="field-label">
-            <span>引用字段</span
+            <span> {{ t('引用字段') }} </span
             ><AppSelect
               :model-value="foreignKey.referencedColumn"
-              label="引用字段"
+              :label="t('引用字段')"
               :options="referencedColumnOptions(foreignKey)"
               :placeholder="
                 loadingReference === referenceKey(foreignKey)
-                  ? '正在读取字段…'
-                  : '请选择字段'
+                  ? t('正在读取字段…')
+                  : t('请选择字段')
               "
               hide-label
               compact
@@ -237,10 +243,10 @@ function removeForeignKey(id: string): void {
 
         <div class="action-grid">
           <div class="field-label">
-            <span>删除时</span
+            <span> {{ t('删除时') }} </span
             ><AppSelect
               :model-value="foreignKey.onDelete"
-              label="删除时"
+              :label="t('删除时')"
               :options="actionOptions"
               hide-label
               compact
@@ -252,10 +258,10 @@ function removeForeignKey(id: string): void {
             />
           </div>
           <div class="field-label">
-            <span>更新时</span
+            <span> {{ t('更新时') }} </span
             ><AppSelect
               :model-value="foreignKey.onUpdate"
-              label="更新时"
+              :label="t('更新时')"
               :options="actionOptions"
               hide-label
               compact
@@ -270,7 +276,10 @@ function removeForeignKey(id: string): void {
             <AppIcon
               name="lucide:info"
               :size="11"
-            />SET NULL 要求本地字段允许为空；CASCADE 会同步变更关联数据。
+            />
+            {{
+              t('SET NULL 要求本地字段允许为空；CASCADE 会同步变更关联数据。')
+            }}
           </p>
         </div>
       </article>
@@ -283,8 +292,8 @@ function removeForeignKey(id: string): void {
           name="lucide:link-2"
           :size="24"
         />
-        <p>尚未配置外键</p>
-        <span>添加后可从当前数据库的已有表中选择引用字段。</span>
+        <p>{{ t('尚未配置外键') }}</p>
+        <span> {{ t('添加后可从当前数据库的已有表中选择引用字段。') }} </span>
       </div>
     </div>
   </section>

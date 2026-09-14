@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, nextTick, shallowRef, useTemplateRef, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type { SshRemoteFile } from '@/types/ssh'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   path: string
@@ -139,9 +143,9 @@ defineExpose({
         type="text"
         spellcheck="false"
         autocomplete="off"
-        aria-label="远端文件路径"
+        :aria-label="t('远端文件路径')"
         :disabled="!connected"
-        :placeholder="connected ? '/path/to/folder' : '连接后可输入目录路径'"
+        :placeholder="connected ? '/path/to/folder' : t('连接后可输入目录路径')"
         @focus="showSuggestions"
         @input="showSuggestions"
         @keydown="handleKeydown"
@@ -160,7 +164,7 @@ defineExpose({
         v-if="open && suggestions.length"
         class="path-suggestions"
         role="listbox"
-        aria-label="目录建议"
+        :aria-label="t('目录建议')"
       >
         <button
           v-for="(item, index) in suggestions"

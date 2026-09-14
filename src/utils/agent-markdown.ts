@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it/browser'
+import { i18n } from '@/i18n'
 
 export function isAgentWebLink(value: string): boolean {
   try {
@@ -33,18 +34,19 @@ markdown.renderer.rules.link_open = (
 markdown.renderer.rules.image = (tokens, index, options, env, renderer) => {
   const token = tokens[index]
   const label =
-    renderer.renderInlineAsText(token.children ?? [], options, env) || '图片'
+    renderer.renderInlineAsText(token.children ?? [], options, env) ||
+    i18n.global.t('图片')
   const url = String(token.attrGet('src') ?? '')
   if (!isAgentWebLink(url)) return escape(label)
-  return `<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">查看图片：${escape(label)}</a>`
+  return `<a href="${escape(url)}" target="_blank" rel="noopener noreferrer">${escape(i18n.global.t('agent.viewImage', { name: label }))}</a>`
 }
 markdown.renderer.rules.fence = (tokens, index) => {
   const token = tokens[index]
-  const language = token.info.trim().split(/\s+/)[0] || '代码'
-  return `<div class="md-code"><div class="md-code-header"><span>${escape(language)}</span><button type="button" data-copy-code aria-label="复制代码">复制</button></div><pre tabindex="0" aria-label="代码块"><code>${escape(token.content)}</code></pre></div>\n`
+  const language = token.info.trim().split(/\s+/)[0] || i18n.global.t('代码')
+  return `<div class="md-code"><div class="md-code-header"><span>${escape(language)}</span><button type="button" data-copy-code aria-label="${escape(i18n.global.t('复制代码'))}">${escape(i18n.global.t('复制'))}</button></div><pre tabindex="0" aria-label="${escape(i18n.global.t('代码块'))}"><code>${escape(token.content)}</code></pre></div>\n`
 }
 markdown.renderer.rules.table_open = () =>
-  '<div class="md-table" tabindex="0" role="region" aria-label="表格，可横向滚动"><table>\n'
+  `<div class="md-table" tabindex="0" role="region" aria-label="${escape(i18n.global.t('表格，可横向滚动'))}"><table>\n`
 markdown.renderer.rules.table_close = () => '</table></div>\n'
 
 export function renderAgentMarkdown(content: string): string {

@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { computed, reactive, watch, type MaybeRefOrGetter, toValue } from 'vue'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import * as connections from '@/api/connections'
@@ -94,7 +95,7 @@ export function useSshConfigTransfer(opened: MaybeRefOrGetter<boolean>) {
   )
 
   function selectedSnapshot(): ConnectionSnapshot {
-    if (!state.snapshot) throw new Error('SSH 配置尚未加载完成')
+    if (!state.snapshot) throw new Error(i18n.global.t('SSH 配置尚未加载完成'))
     const ids = new Set(state.selectedExportIds)
     const selectedConnections = state.snapshot.connections.filter(
       connection => ids.has(connection.id) && isSshConnection(connection)
@@ -125,20 +126,22 @@ export function useSshConfigTransfer(opened: MaybeRefOrGetter<boolean>) {
     if (state.loading) return false
     state.error = ''
     if (!state.selectedExportIds.length) {
-      state.error = '请至少选择一个 SSH 配置'
+      state.error = i18n.global.t('请至少选择一个 SSH 配置')
       return false
     }
     if (!state.exportBasicOnly && utf8Length(state.exportPassword) < 10) {
-      state.error = '包含密码和私钥时，备份密码至少需要 10 字节'
+      state.error = i18n.global.t('包含密码和私钥时，备份密码至少需要 10 字节')
       return false
     }
 
     state.loading = true
     try {
       const destination = await save({
-        title: '导出 SSH 配置',
+        title: i18n.global.t('导出 SSH 配置'),
         defaultPath: `MiraiHub-ssh-${new Date().toISOString().slice(0, 10)}.json`,
-        filters: [{ name: 'MiraiHub SSH 配置', extensions: ['json'] }],
+        filters: [
+          { name: i18n.global.t('MiraiHub SSH 配置'), extensions: ['json'] },
+        ],
       })
       if (!destination) return false
 
@@ -155,8 +158,11 @@ export function useSshConfigTransfer(opened: MaybeRefOrGetter<boolean>) {
       )
       state.exportPassword = ''
       toast.success({
-        title: 'SSH 配置已导出',
-        description: `已导出 ${state.selectedExportIds.length} 条配置到 ${destination}`,
+        title: i18n.global.t('SSH 配置已导出'),
+        description: i18n.global.t('已导出 {value0} 条配置到 {value1}', {
+          value0: state.selectedExportIds.length,
+          value1: destination,
+        }),
       })
       return true
     } catch (error) {
@@ -170,10 +176,10 @@ export function useSshConfigTransfer(opened: MaybeRefOrGetter<boolean>) {
   async function chooseImportFile(): Promise<void> {
     if (state.loading) return
     const path = await open({
-      title: '选择 SSH 配置文件',
+      title: i18n.global.t('选择 SSH 配置文件'),
       directory: false,
       multiple: false,
-      filters: [{ name: 'SSH 配置备份', extensions: ['json'] }],
+      filters: [{ name: i18n.global.t('SSH 配置备份'), extensions: ['json'] }],
     })
     if (typeof path !== 'string') return
     state.importPath = path
@@ -209,7 +215,7 @@ export function useSshConfigTransfer(opened: MaybeRefOrGetter<boolean>) {
     if (!state.importPreview || state.loading) return false
     state.error = ''
     if (!state.selectedImportIds.length) {
-      state.error = '请至少选择一个 SSH 配置'
+      state.error = i18n.global.t('请至少选择一个 SSH 配置')
       return false
     }
     state.loading = true
@@ -224,7 +230,7 @@ export function useSshConfigTransfer(opened: MaybeRefOrGetter<boolean>) {
       const skipped = state.selectedImportIds.length - importableIds.length
       if (!importableIds.length) {
         state.importPassword = ''
-        toast.info('所选 SSH 配置均已存在，未重复导入')
+        toast.info(i18n.global.t('所选 SSH 配置均已存在，未重复导入'))
         return true
       }
       const imported = parseConnectionBackup(
@@ -256,8 +262,11 @@ export function useSshConfigTransfer(opened: MaybeRefOrGetter<boolean>) {
       state.importPassword = ''
       state.snapshot = plan.next
       toast.success({
-        title: 'SSH 配置导入完成',
-        description: `新增 ${added} 条，跳过 ${skipped + planSkipped} 条同 ID 配置。不会自动连接服务器。`,
+        title: i18n.global.t('SSH 配置导入完成'),
+        description: i18n.global.t(
+          '新增 {value0} 条，跳过 {value1} 条同 ID 配置。不会自动连接服务器。',
+          { value0: added, value1: skipped + planSkipped }
+        ),
       })
       return true
     } catch (error) {

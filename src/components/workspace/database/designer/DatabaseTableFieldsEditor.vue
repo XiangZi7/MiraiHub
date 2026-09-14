@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
@@ -9,6 +11,8 @@ import IconButton from '@/components/ui/IconButton.vue'
 import type { DatabaseKind } from '@/types/database'
 import type { TableDesignerColumn } from '@/types/database-designer'
 import { columnTypes } from '@/utils/database-ddl'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: TableDesignerColumn[]
@@ -78,8 +82,8 @@ function moveColumn(index: number, direction: -1 | 1): void {
   <section class="designer-section">
     <div class="designer-section-heading">
       <div>
-        <h3>字段定义</h3>
-        <p>配置字段类型、长度、主键、默认值与自动递增。</p>
+        <h3>{{ t('字段定义') }}</h3>
+        <p>{{ t('配置字段类型、长度、主键、默认值与自动递增。') }}</p>
       </div>
       <AppButton
         size="sm"
@@ -88,7 +92,8 @@ function moveColumn(index: number, direction: -1 | 1): void {
         <AppIcon
           name="lucide:plus"
           :size="11"
-        />添加字段
+        />
+        {{ t('添加字段') }}
       </AppButton>
     </div>
 
@@ -96,22 +101,22 @@ function moveColumn(index: number, direction: -1 | 1): void {
       <table class="designer-table min-w-[1120px]">
         <thead>
           <tr>
-            <th class="w-16">排序</th>
-            <th class="min-w-36">字段名</th>
-            <th class="min-w-38">类型</th>
-            <th class="w-24">长度/精度</th>
-            <th class="w-14">可空</th>
-            <th class="w-14">主键</th>
-            <th class="w-14">唯一</th>
+            <th class="w-16">{{ t('排序') }}</th>
+            <th class="min-w-36">{{ t('字段名') }}</th>
+            <th class="min-w-38">{{ t('类型') }}</th>
+            <th class="w-24">{{ t('长度/精度') }}</th>
+            <th class="w-14">{{ t('可空') }}</th>
+            <th class="w-14">{{ t('主键') }}</th>
+            <th class="w-14">{{ t('唯一') }}</th>
             <th
               v-if="databaseKind === 'mysql'"
               class="w-16"
             >
-              无符号
+              {{ t('无符号') }}
             </th>
-            <th class="w-16">自增</th>
-            <th class="min-w-40">默认值</th>
-            <th class="min-w-44">备注</th>
+            <th class="w-16">{{ t('自增') }}</th>
+            <th class="min-w-40">{{ t('默认值') }}</th>
+            <th class="min-w-44">{{ t('备注') }}</th>
             <th class="w-10" />
           </tr>
         </thead>
@@ -126,7 +131,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
                   icon="lucide:chevron-up"
                   :size="11"
                   class="size-6"
-                  title="上移"
+                  :title="t('上移')"
                   :disabled="index === 0"
                   @click="moveColumn(index, -1)"
                 />
@@ -134,7 +139,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
                   icon="lucide:chevron-down"
                   :size="11"
                   class="size-6"
-                  title="下移"
+                  :title="t('下移')"
                   :disabled="index === modelValue.length - 1"
                   @click="moveColumn(index, 1)"
                 />
@@ -145,14 +150,14 @@ function moveColumn(index: number, direction: -1 | 1): void {
                 :model-value="column.name"
                 variant="cell"
                 monospace
-                aria-label="字段名"
+                :aria-label="t('字段名')"
                 @update:model-value="updateColumn(column.id, { name: $event })"
               />
             </td>
             <td>
               <AppSelect
                 :model-value="column.dataType"
-                label="字段类型"
+                :label="t('字段类型')"
                 :options="typeOptions"
                 hide-label
                 compact
@@ -167,7 +172,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
                 variant="cell"
                 monospace
                 placeholder="255 / 10,2"
-                aria-label="长度或精度"
+                :aria-label="t('长度或精度')"
                 @update:model-value="
                   updateColumn(column.id, { length: $event })
                 "
@@ -177,7 +182,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
               <div class="flex justify-center">
                 <AppCheckbox
                   :model-value="column.nullable"
-                  label="允许为空"
+                  :label="t('允许为空')"
                   hide-label
                   :disabled="column.primaryKey"
                   @update:model-value="
@@ -190,7 +195,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
               <div class="flex justify-center">
                 <AppCheckbox
                   :model-value="column.primaryKey"
-                  label="主键"
+                  :label="t('主键')"
                   hide-label
                   @update:model-value="
                     updateColumn(column.id, {
@@ -205,7 +210,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
               <div class="flex justify-center">
                 <AppCheckbox
                   :model-value="column.unique"
-                  label="唯一"
+                  :label="t('唯一')"
                   hide-label
                   @update:model-value="
                     updateColumn(column.id, { unique: $event })
@@ -217,7 +222,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
               <div class="flex justify-center">
                 <AppCheckbox
                   :model-value="column.unsigned"
-                  label="无符号"
+                  :label="t('无符号')"
                   hide-label
                   @update:model-value="
                     updateColumn(column.id, { unsigned: $event })
@@ -229,7 +234,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
               <div class="flex justify-center">
                 <AppCheckbox
                   :model-value="column.autoIncrement"
-                  label="自动递增"
+                  :label="t('自动递增')"
                   hide-label
                   @update:model-value="
                     updateColumn(column.id, { autoIncrement: $event })
@@ -243,7 +248,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
                 variant="cell"
                 monospace
                 placeholder="NULL / CURRENT_TIMESTAMP"
-                aria-label="默认值表达式"
+                :aria-label="t('默认值表达式')"
                 :disabled="column.autoIncrement"
                 @update:model-value="
                   updateColumn(column.id, { defaultValue: $event })
@@ -254,8 +259,8 @@ function moveColumn(index: number, direction: -1 | 1): void {
               <AppInput
                 :model-value="column.comment"
                 variant="cell"
-                placeholder="字段说明"
-                aria-label="字段备注"
+                :placeholder="t('字段说明')"
+                :aria-label="t('字段备注')"
                 @update:model-value="
                   updateColumn(column.id, { comment: $event })
                 "
@@ -266,7 +271,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
                 icon="lucide:trash-2"
                 :size="11"
                 class="text-danger hover:text-danger size-6"
-                title="删除字段"
+                :title="t('删除字段')"
                 @click="removeColumn(column.id)"
               />
             </td>
@@ -276,7 +281,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
               :colspan="databaseKind === 'mysql' ? 12 : 11"
               class="text-txt-4 h-28 text-center"
             >
-              尚未添加字段
+              {{ t('尚未添加字段') }}
             </td>
           </tr>
         </tbody>

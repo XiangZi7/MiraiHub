@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { onScopeDispose, reactive, toRefs } from 'vue'
 import type { AgentAttachment, AgentDraftAttachment } from '@/types/agent'
 import {
@@ -35,7 +36,7 @@ export function useAgentDraft(
     const token = ++readVersion
     state.attachmentError = ''
     if (state.attachments.length + files.length > AGENT_MAX_FILES) {
-      state.attachmentError = '每条消息最多添加 4 个文件'
+      state.attachmentError = i18n.global.t('每条消息最多添加 4 个文件')
       return
     }
     state.reading = true
@@ -48,7 +49,7 @@ export function useAgentDraft(
         combined.reduce((sum, file) => sum + file.size, 0) >
         AGENT_MAX_ATTACHMENT_BYTES
       )
-        throw new Error('附件总大小不能超过 128 KB')
+        throw new Error(i18n.global.t('附件总大小不能超过 128 KB'))
       state.attachments = combined
     } catch (error) {
       if (token === readVersion)
@@ -70,7 +71,7 @@ export function useAgentDraft(
     reset()
     const token = version
     const accepted = await send(
-      prompt,
+      prompt.trim() ? prompt : i18n.global.t('agent.analyzeAttachments'),
       attachments.map(({ name, content }) => ({ name, content }))
     )
     if (

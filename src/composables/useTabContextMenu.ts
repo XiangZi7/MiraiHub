@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { computed, nextTick, reactive, watch } from 'vue'
 import type { ContextMenuItem } from '@/types/context-menu'
 import { tabCloseTargets, type TabCloseScope } from '@/utils/tab-actions'
@@ -35,7 +36,7 @@ export function useTabContextMenu(options: Options) {
     return [
       ...scopes.map(({ scope, label, icon }) => ({
         id: `tabs:${scope}`,
-        label,
+        label: i18n.global.t(label),
         icon,
         groupLabel: scope === 'current' ? target.value!.label : undefined,
         disabled: !tabCloseTargets(tabs, state.id, scope).length,
@@ -119,9 +120,9 @@ export function useTabContextMenu(options: Options) {
     } else if (action === 'tabs:copy') {
       try {
         await copyText(tab.label)
-        toast.success('标签名称已复制')
+        toast.success(i18n.global.t('标签名称已复制'))
       } catch {
-        toast.error('复制失败，请检查剪贴板权限')
+        toast.error(i18n.global.t('复制失败，请检查剪贴板权限'))
       }
     } else options.action(id, action)
   }

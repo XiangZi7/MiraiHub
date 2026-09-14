@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, toRefs, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import type { AgentApproval } from '@/types/agent'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   approval: AgentApproval
@@ -33,34 +37,40 @@ const expired = computed(() => seconds.value === 0)
 <template>
   <section
     class="approval"
-    aria-label="操作审批"
+    :aria-label="t('操作审批')"
   >
     <div class="flex items-center gap-2 font-medium">
       <AppIcon
         name="lucide:shield-alert"
         :size="16"
-      />{{ expired ? '审批已过期' : '需要你的审批'
+      />{{ expired ? t('审批已过期') : t('需要你的审批')
       }}<span class="ml-auto text-[10px] font-normal"
         >{{ Math.floor(seconds / 60) }}:{{
           String(seconds % 60).padStart(2, '0')
         }}</span
       >
     </div>
-    <p class="text-txt-3 mt-3 text-[11px]">执行目标（已锁定）</p>
+    <p class="text-txt-3 mt-3 text-[11px]">{{ t('执行目标（已锁定）') }}</p>
     <p class="text-txt mt-1 font-mono text-[12px] break-all">{{ target }}</p>
-    <p class="text-txt-3 mt-3 text-[11px]">{{ approval.label }} · 完整内容</p>
+    <p class="text-txt-3 mt-3 text-[11px]">
+      {{ t(approval.label) }} · {{ t('完整内容') }}
+    </p>
     <pre
       class="command"
       dir="ltr"
       >{{ approval.command }}</pre>
-    <p class="text-txt-3 text-[11px]">AI 提议的原因</p>
+    <p class="text-txt-3 text-[11px]">{{ t('AI 提议的原因') }}</p>
     <p
       class="text-txt-2 mt-1 text-[12px] leading-relaxed break-words whitespace-pre-wrap"
     >
       {{ approval.reason }}
     </p>
     <p class="text-txt-3 mt-3 text-[11px] leading-relaxed">
-      仅批准这一次操作；结果会发给已配置的模型。操作可能立即生效，停止任务不会自动回滚。
+      {{
+        t(
+          '仅批准这一次操作；结果会发给已配置的模型。操作可能立即生效，停止任务不会自动回滚。'
+        )
+      }}
     </p>
     <label
       class="text-txt-2 my-3 flex cursor-pointer items-start gap-2 text-[11px]"
@@ -69,21 +79,24 @@ const expired = computed(() => seconds.value === 0)
         type="checkbox"
         class="mt-0.5 accent-amber-400"
         :disabled="busy || expired"
-      />我已核对目标、完整命令及其影响</label
-    >
+      />
+      {{ t('我已核对目标、完整命令及其影响') }}
+    </label>
     <div class="flex flex-wrap gap-2">
       <AppButton
         size="sm"
         :disabled="busy"
         @click="emit('decide', false)"
-        >拒绝并停止</AppButton
+      >
+        {{ t('拒绝并停止') }} </AppButton
       ><AppButton
         size="sm"
         variant="danger"
         :disabled="busy || expired || !reviewed"
         @click="emit('decide', true)"
-        >批准本次执行</AppButton
       >
+        {{ t('批准本次执行') }}
+      </AppButton>
     </div>
   </section>
 </template>

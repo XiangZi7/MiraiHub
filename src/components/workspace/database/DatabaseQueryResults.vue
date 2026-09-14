@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, shallowRef, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -6,6 +8,8 @@ import IconButton from '@/components/ui/IconButton.vue'
 import type { DatabaseExecution } from '@/types/database'
 import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   execution: DatabaseExecution | null
@@ -146,7 +150,7 @@ async function copyResult(): Promise<void> {
         v-if="loading"
         class="text-txt-3"
       >
-        正在执行查询…
+        {{ t('正在执行查询…') }}
       </p>
       <p
         v-else-if="error"
@@ -171,14 +175,14 @@ async function copyResult(): Promise<void> {
           v-if="execution.cancelled"
           class="text-amber"
         >
-          执行已由用户取消。
+          {{ t('执行已由用户取消。') }}
         </p>
       </div>
       <p
         v-else
         class="text-txt-4"
       >
-        执行查询后将在这里显示消息。
+        {{ t('执行查询后将在这里显示消息。') }}
       </p>
     </div>
 
@@ -196,7 +200,7 @@ async function copyResult(): Promise<void> {
             :size="14"
             class="animate-spin"
           />
-          正在执行查询…
+          {{ t('正在执行查询…') }}
         </span>
       </div>
       <div
@@ -209,7 +213,7 @@ async function copyResult(): Promise<void> {
         v-else-if="!result"
         class="text-txt-4 grid h-full place-items-center text-xs"
       >
-        按 Ctrl+Enter 或点击执行按钮运行 SQL
+        {{ t('按 Ctrl+Enter 或点击执行按钮运行 SQL') }}
       </div>
       <div
         v-else-if="!result.columns.length"
@@ -281,13 +285,14 @@ async function copyResult(): Promise<void> {
       <span
         v-if="result?.truncated"
         class="text-amber ml-2"
-        >结果已截断</span
       >
+        {{ t('结果已截断') }}
+      </span>
       <span
         v-if="execution && execution.statements.length > 1"
         class="text-txt-4 ml-2"
       >
-        共 {{ execution.statements.length }} 条语句
+        {{ t('database.statements', { count: execution.statements.length }) }}
       </span>
       <div class="flex-1" />
       <div
@@ -297,19 +302,19 @@ async function copyResult(): Promise<void> {
         <IconButton
           icon="lucide:copy"
           :size="11"
-          title="复制为 CSV"
+          :title="t('复制为 CSV')"
           @click="copyResult"
         />
         <IconButton
           icon="lucide:file-down"
           :size="11"
-          title="导出 CSV"
+          :title="t('导出 CSV')"
           @click="exportResult('csv')"
         />
         <IconButton
           icon="lucide:braces"
           :size="11"
-          title="导出 JSON"
+          :title="t('导出 JSON')"
           @click="exportResult('json')"
         />
       </div>

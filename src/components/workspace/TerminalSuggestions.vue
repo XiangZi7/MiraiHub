@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import type { CSSProperties } from 'vue'
 import { computed, nextTick, useTemplateRef, watch } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type { ShellSuggestion } from '@/types/ssh'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   items: readonly ShellSuggestion[]
@@ -66,7 +70,7 @@ function kindLabel(item: ShellSuggestion): string {
     ref="menu"
     class="terminal-suggestions"
     role="listbox"
-    aria-label="终端输入建议"
+    :aria-label="t('终端输入建议')"
     :style="menuStyle"
   >
     <div class="terminal-suggestions-list">
@@ -102,8 +106,8 @@ function kindLabel(item: ShellSuggestion): string {
     </div>
 
     <footer class="terminal-suggestions-footer">
-      <span>↑↓ 选择</span>
-      <span>Tab 接受</span>
+      <span> {{ t('↑↓ 选择') }} </span>
+      <span> {{ t('Tab 接受') }} </span>
       <AppIcon
         v-if="loading"
         name="lucide:loader-circle"

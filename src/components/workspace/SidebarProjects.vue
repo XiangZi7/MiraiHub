@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, toRefs, useTemplateRef, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
 import ConnectionTagBadge from '@/components/connection/ConnectionTagBadge.vue'
@@ -24,6 +26,8 @@ import {
   CONNECTION_SORT_OPTIONS,
   type ConnectionSort,
 } from '@/utils/connection-list'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   label: string
@@ -127,39 +131,45 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     return [
       {
         id: 'open',
-        label: props.openIds.has(connection.id) ? '切换到连接' : '打开连接',
+        label: props.openIds.has(connection.id)
+          ? t('切换到连接')
+          : t('打开连接'),
         icon: database ? 'lucide:database' : 'lucide:square-terminal',
       },
       ...(database
         ? [
             {
               id: 'new-database-query',
-              label: '新建查询',
+              label: t('新建查询'),
               icon: 'lucide:square-terminal',
               iconTone: 'blue' as const,
             },
           ]
         : []),
-      { id: 'edit', label: '编辑连接', icon: 'lucide:pencil' },
+      { id: 'edit', label: t('编辑连接'), icon: 'lucide:pencil' },
       // 克隆整条配置（含认证方式与启动命令），不是把连接信息拷到剪贴板。
-      { id: 'duplicate', label: '克隆连接', icon: 'lucide:copy-plus' },
+      { id: 'duplicate', label: t('克隆连接'), icon: 'lucide:copy-plus' },
       ...(database
         ? [
             {
               id: 'database-transfer',
-              label: '导入 / 导出',
+              label: t('导入 / 导出'),
               icon: 'lucide:arrow-left-right',
               separatorBefore: true,
               children: [
                 {
                   id: 'export-database',
-                  label: connected ? '导出为 SQL…' : '导出为 SQL（请先连接）',
+                  label: connected
+                    ? t('导出为 SQL…')
+                    : t('导出为 SQL（请先连接）'),
                   icon: 'lucide:database-backup',
                   disabled: !connected,
                 },
                 {
                   id: 'import-database',
-                  label: connected ? '从 SQL 导入…' : '从 SQL 导入（请先连接）',
+                  label: connected
+                    ? t('从 SQL 导入…')
+                    : t('从 SQL 导入（请先连接）'),
                   icon: 'lucide:file-input',
                   disabled: !connected,
                 },
@@ -169,7 +179,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         : []),
       {
         id: 'delete',
-        label: '删除连接',
+        label: t('删除连接'),
         icon: 'lucide:trash-2',
         danger: true,
         separatorBefore: true,
@@ -183,13 +193,14 @@ const contextItems = computed<ContextMenuItem[]>(() => {
   const items: ContextMenuItem[] = [
     {
       id: 'add-connection',
-      label: group.kind === 'database' ? '新建数据库连接' : '新建 SSH 连接',
+      label:
+        group.kind === 'database' ? t('新建数据库连接') : t('新建 SSH 连接'),
       icon: group.kind === 'database' ? 'lucide:database' : 'lucide:server',
     },
-    { id: 'create-group', label: '新建分组', icon: 'lucide:folder-plus' },
+    { id: 'create-group', label: t('新建分组'), icon: 'lucide:folder-plus' },
     {
       id: 'toggle-group',
-      label: isExpanded(group.id) ? '收起分组' : '展开分组',
+      label: isExpanded(group.id) ? t('收起分组') : t('展开分组'),
       icon: isExpanded(group.id)
         ? 'lucide:folder-closed'
         : 'lucide:folder-open',
@@ -200,10 +211,10 @@ const contextItems = computed<ContextMenuItem[]>(() => {
   // 默认分组是未分组连接的归属桶，仅持久化分组支持重命名和删除。
   if (!group.virtual) {
     items.push(
-      { id: 'rename-group', label: '重命名分组', icon: 'lucide:pencil' },
+      { id: 'rename-group', label: t('重命名分组'), icon: 'lucide:pencil' },
       {
         id: 'delete-group',
-        label: '删除分组',
+        label: t('删除分组'),
         icon: 'lucide:trash-2',
         danger: true,
         separatorBefore: true,
@@ -373,7 +384,7 @@ function runContextAction(action: string): void {
 
     <SidebarGroupEditor
       v-if="state.creatingGroup"
-      placeholder="New group"
+      :placeholder="t('New group')"
       @submit="createGroup"
       @cancel="state.creatingGroup = false"
     />
@@ -455,7 +466,7 @@ function runContextAction(action: string): void {
               :title="
                 node.kind === 'local'
                   ? endpointOf(node)
-                  : `${endpointOf(node)} · 双击连接`
+                  : t('{value0} · 双击连接', { value0: endpointOf(node) })
               "
               @click="selectConnection($event, node)"
               @dblclick="openConnection(node)"
@@ -504,7 +515,7 @@ function runContextAction(action: string): void {
         class="text-txt-4 px-3 py-5 text-center text-[11px]"
         role="status"
       >
-        没有匹配的连接
+        {{ t('没有匹配的连接') }}
       </p>
       <button
         v-if="loaded && !groups.length"
@@ -512,7 +523,7 @@ function runContextAction(action: string): void {
         class="border-line text-txt-4 hover:border-line-strong hover:text-txt-3 w-full rounded-lg border border-dashed px-3 py-4 text-center text-[11px] transition-colors"
         @click="emit('addConnection')"
       >
-        还没有连接，点这里新建
+        {{ t('还没有连接，点这里新建') }}
       </button>
     </div>
 
@@ -523,8 +534,8 @@ function runContextAction(action: string): void {
       :items="contextItems"
       :label="
         state.menuConnection
-          ? `${state.menuConnection.name} 操作`
-          : `${state.menuGroup?.name ?? ''} 分组操作`
+          ? t('{value0} 操作', { value0: state.menuConnection.name })
+          : t('{value0} 分组操作', { value0: state.menuGroup?.name ?? '' })
       "
       @select="runContextAction"
       @close="closeContextMenu"

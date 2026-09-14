@@ -38,7 +38,7 @@ const options = computed(() => [
   })),
   {
     value: 'custom',
-    label: t('自定义'),
+    label: '自定义',
     description: t('分别调整请求次数、上下文容量和历史消息数'),
   },
 ])

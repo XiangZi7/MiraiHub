@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, nextTick, toRef, useId, watch } from 'vue'
 import { useVirtualList } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -6,6 +8,8 @@ import { FILE_KIND_META, extensionOf } from '@/constants/files'
 import { formatBytes } from '@/utils/format'
 import { formatDateTime } from '@/utils/time'
 import type { SshRemoteFile } from '@/types/ssh'
+
+const { t } = useI18n()
 
 const props = defineProps<{ files: SshRemoteFile[]; selected: string }>()
 const emit = defineEmits<{
@@ -96,7 +100,7 @@ async function navigate(event: KeyboardEvent): Promise<void> {
     v-bind="containerProps"
     class="scroll-thin focus-visible:ring-accent/60 min-h-0 flex-1 outline-none focus-visible:ring-1 focus-visible:ring-inset"
     role="listbox"
-    aria-label="远端文件"
+    :aria-label="t('远端文件')"
     :aria-activedescendant="activeDescendant"
     tabindex="0"
     @keydown="navigate"

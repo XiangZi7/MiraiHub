@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, onMounted, reactive, shallowRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
@@ -20,6 +22,8 @@ import type {
 } from '@/types/database'
 import ConnectionFilePathField from './ConnectionFilePathField.vue'
 import ConnectionGroupSelect from './ConnectionGroupSelect.vue'
+
+const { t } = useI18n()
 
 const { settings } = useSettings()
 
@@ -102,7 +106,7 @@ async function loadConnection(): Promise<void> {
   try {
     const connection = await connectionsStore.get(props.connectionId)
     if (!connection || !isDatabaseConnection(connection)) {
-      toast.error('找不到要编辑的数据库连接')
+      toast.error(t('找不到要编辑的数据库连接'))
       return
     }
 
@@ -125,7 +129,7 @@ async function loadConnection(): Promise<void> {
     savePassword.value = Boolean(settings.password)
   } catch (error) {
     toast.error({
-      title: '读取连接失败',
+      title: t('读取连接失败'),
       description: databaseApi.errorMessage(error),
     })
   } finally {
@@ -150,27 +154,27 @@ function selectedFileName(path: string): string {
 
 function handleSslFileSelected(label: string, path: string): void {
   toast.success({
-    title: `已选择${label}`,
+    title: t('已选择{value0}', { value0: label }),
     description: selectedFileName(path),
   })
 }
 
 function handleSslFileError(message: string): void {
-  toast.error({ title: '选择 SSL 文件失败', description: message })
+  toast.error({ title: t('选择 SSL 文件失败'), description: message })
 }
 
 /** 校验必填项，不通过则跳回 General 并提示 */
 function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
-    toast.warning('请填写连接名称、主机和用户名')
+    toast.warning(t('请填写连接名称、主机和用户名'))
     return false
   }
 
   const port = Number(form.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     activeSection.value = 'general'
-    toast.warning('端口必须是 1–65535 之间的整数')
+    toast.warning(t('端口必须是 1–65535 之间的整数'))
     return false
   }
 
@@ -179,7 +183,7 @@ function validate(): boolean {
     Boolean(form.clientCertificate.trim()) !== Boolean(form.clientKey.trim())
   ) {
     activeSection.value = 'ssl'
-    toast.warning('客户端证书和客户端私钥需要同时选择')
+    toast.warning(t('客户端证书和客户端私钥需要同时选择'))
     return false
   }
 
@@ -210,10 +214,10 @@ async function testConnection(): Promise<void> {
   testing.value = true
   try {
     await databaseApi.testConnection(buildConfig())
-    toast.success('数据库连接成功')
+    toast.success(t('数据库连接成功'))
   } catch (error) {
     toast.error({
-      title: '数据库连接失败',
+      title: t('数据库连接失败'),
       description: databaseApi.errorMessage(error),
     })
   } finally {
@@ -258,11 +262,13 @@ async function saveConnection(): Promise<void> {
     if (props.connectionId) await update(props.connectionId, input)
     else await create(input)
 
-    toast.success(props.connectionId ? '数据库连接已更新' : '数据库连接已保存')
+    toast.success(
+      props.connectionId ? t('数据库连接已更新') : t('数据库连接已保存')
+    )
     emit('close')
   } catch (err) {
     toast.error({
-      title: '保存数据库连接失败',
+      title: t('保存数据库连接失败'),
       description: databaseApi.errorMessage(err),
     })
   } finally {
@@ -283,7 +289,7 @@ async function saveConnection(): Promise<void> {
     >
       <AppButton
         v-for="section in [
-          { id: 'general', label: 'General' },
+          { id: 'general', label: t('General') },
           { id: 'ssl', label: 'SSL' },
         ] as const"
         :key="section.id"
@@ -296,7 +302,7 @@ async function saveConnection(): Promise<void> {
         ]"
         @click="activeSection = section.id"
       >
-        {{ section.label }}
+        {{ t(section.label) }}
       </AppButton>
     </div>
 
@@ -306,11 +312,11 @@ async function saveConnection(): Promise<void> {
         class="grid gap-3.5"
       >
         <fieldset class="space-y-1.5">
-          <legend class="connection-label">Connection Type</legend>
+          <legend class="connection-label">{{ t('Connection Type') }}</legend>
           <div
             class="database-kinds"
             role="radiogroup"
-            aria-label="Database type"
+            :aria-label="t('Database type')"
           >
             <AppButton
               v-for="option in databaseKinds"
@@ -336,7 +342,7 @@ async function saveConnection(): Promise<void> {
         <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
           <AppTextField
             v-model="form.name"
-            label="Connection Name"
+            :label="t('Connection Name')"
             :placeholder="`e.g. ${databaseLabel} Database`"
             required
             autofocus
@@ -350,14 +356,14 @@ async function saveConnection(): Promise<void> {
         <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
           <AppTextField
             v-model="form.host"
-            label="Host"
-            placeholder="localhost or db.example.com"
+            :label="t('Host')"
+            :placeholder="t('localhost or db.example.com')"
             inputmode="url"
             required
           />
           <AppTextField
             v-model="form.port"
-            label="Port"
+            :label="t('Port')"
             :placeholder="defaultPort"
             inputmode="numeric"
             required
@@ -366,13 +372,13 @@ async function saveConnection(): Promise<void> {
 
         <AppTextField
           v-model="form.database"
-          label="Database Name (Optional)"
-          placeholder="e.g. production"
+          :label="t('Database Name (Optional)')"
+          :placeholder="t('e.g. production')"
         />
 
         <AppTextField
           v-model="form.username"
-          label="Username"
+          :label="t('Username')"
           :placeholder="kind === 'mysql' ? 'e.g. root' : 'e.g. postgres'"
           autocomplete="username"
           required
@@ -381,14 +387,14 @@ async function saveConnection(): Promise<void> {
         <div class="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
           <AppTextField
             v-model="form.password"
-            label="Password"
+            :label="t('Password')"
             type="password"
-            placeholder="Enter password"
+            :placeholder="t('Enter password')"
             autocomplete="current-password"
           />
           <AppCheckbox
             v-model="savePassword"
-            label="Save password"
+            :label="t('Save password')"
             :disabled="!settings.rememberPasswords"
             class="mb-2"
           />
@@ -396,10 +402,10 @@ async function saveConnection(): Promise<void> {
 
         <AppTextarea
           v-model="form.description"
-          label="Description (Optional)"
+          :label="t('Description (Optional)')"
           :rows="2"
           class="resize-none"
-          placeholder="Add a description for this connection…"
+          :placeholder="t('Add a description for this connection…')"
         />
       </div>
 
@@ -408,44 +414,49 @@ async function saveConnection(): Promise<void> {
         class="grid gap-3.5"
       >
         <div class="connection-section-copy">
-          Configure encrypted transport for this {{ databaseLabel }} connection.
+          {{ t('connection.sslHelp', { type: databaseLabel }) }}
         </div>
 
         <AppSelect
           v-model="form.sslMode"
-          label="SSL Mode"
-          :options="sslModeOptions"
+          :label="t('SSL Mode')"
+          :options="
+            sslModeOptions.map(option => ({
+              ...option,
+              label: t(option.label),
+            }))
+          "
         />
 
         <template v-if="form.sslMode !== 'disable'">
           <ConnectionFilePathField
             v-model="form.caCertificate"
-            label="CA Certificate"
-            placeholder="选择或输入 CA 证书路径"
-            dialog-title="选择 CA 证书"
-            filter-name="CA 证书"
+            :label="t('CA Certificate')"
+            :placeholder="t('选择或输入 CA 证书路径')"
+            :dialog-title="t('选择 CA 证书')"
+            :filter-name="t('CA 证书')"
             :extensions="certificateExtensions"
-            @selected="handleSslFileSelected('CA 证书', $event)"
+            @selected="handleSslFileSelected(t('CA 证书'), $event)"
             @error="handleSslFileError"
           />
           <ConnectionFilePathField
             v-model="form.clientCertificate"
-            label="Client Certificate"
-            placeholder="可选：选择客户端证书"
-            dialog-title="选择客户端证书"
-            filter-name="客户端证书"
+            :label="t('Client Certificate')"
+            :placeholder="t('可选：选择客户端证书')"
+            :dialog-title="t('选择客户端证书')"
+            :filter-name="t('客户端证书')"
             :extensions="certificateExtensions"
-            @selected="handleSslFileSelected('客户端证书', $event)"
+            @selected="handleSslFileSelected(t('客户端证书'), $event)"
             @error="handleSslFileError"
           />
           <ConnectionFilePathField
             v-model="form.clientKey"
-            label="Client Key"
-            placeholder="可选：选择客户端私钥"
-            dialog-title="选择客户端私钥"
-            filter-name="客户端私钥"
+            :label="t('Client Key')"
+            :placeholder="t('可选：选择客户端私钥')"
+            :dialog-title="t('选择客户端私钥')"
+            :filter-name="t('客户端私钥')"
             :extensions="privateKeyExtensions"
-            @selected="handleSslFileSelected('客户端私钥', $event)"
+            @selected="handleSslFileSelected(t('客户端私钥'), $event)"
             @error="handleSslFileError"
           />
         </template>
@@ -457,16 +468,16 @@ async function saveConnection(): Promise<void> {
         :disabled="testing || loadingConnection"
         @click="testConnection"
       >
-        {{ testing ? 'Testing…' : 'Test Connection' }}
+        {{ testing ? t('Testing…') : t('Test Connection') }}
       </AppButton>
       <div class="flex-1" />
-      <AppButton @click="emit('close')"> Cancel </AppButton>
+      <AppButton @click="emit('close')"> {{ t('Cancel') }} </AppButton>
       <AppButton
         type="submit"
         variant="primary"
         :disabled="saving || loadingConnection"
       >
-        {{ saving ? 'Saving…' : 'Save' }}
+        {{ saving ? t('Saving…') : t('Save') }}
       </AppButton>
     </footer>
   </form>

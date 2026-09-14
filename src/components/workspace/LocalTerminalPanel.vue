@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, useTemplateRef, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import TerminalActions from './TerminalActions.vue'
@@ -8,6 +10,8 @@ import { toast } from '@/composables/useToast'
 import type { LocalConnectionSettings } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   connectionId?: string
@@ -35,7 +39,11 @@ const shellLabel = computed(
 
 const statusMeta = computed(() => {
   if (status.value === 'connected')
-    return { text: 'Connected', tone: 'text-success', dot: 'success' as const }
+    return {
+      text: t('Connected'),
+      tone: 'text-success',
+      dot: 'success' as const,
+    }
   if (status.value === 'connecting')
     return { text: 'Starting…', tone: 'text-amber', dot: 'amber' as const }
   return { text: 'Disconnected', tone: 'text-txt-3', dot: 'txt-3' as const }
@@ -45,7 +53,8 @@ watch(status, value => emit('status', value, sessionId.value), {
   immediate: true,
 })
 watch(error, message => {
-  if (message) toast.error({ title: '启动本地终端失败', description: message })
+  if (message)
+    toast.error({ title: t('启动本地终端失败'), description: message })
 })
 
 watch(

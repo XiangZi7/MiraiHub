@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { invoke } from '@tauri-apps/api/core'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
 import type { SshConfigTransferPreview } from '@/types/ssh-config-transfer'
@@ -5,7 +6,9 @@ import { IS_TAURI } from '@/utils/window'
 export { errorMessage } from './ssh'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (!IS_TAURI)
-    return Promise.reject(new Error('此功能需要在 MiraiHub 桌面程序中使用'))
+    return Promise.reject(
+      new Error(i18n.global.t('此功能需要在 MiraiHub 桌面程序中使用'))
+    )
   return invoke<T>(command, args)
 }
 export interface Tunnel {

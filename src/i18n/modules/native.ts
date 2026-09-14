@@ -1,0 +1,114 @@
+/** Application-owned native messages. Service responses, SQL, and shell output stay verbatim. */
+export const en = {
+  '此窗口无权调用 AI 功能': 'This window cannot access AI features',
+  任务已取消: 'Task cancelled',
+  审批已使用或不存在: 'Approval has already been used or does not exist',
+  审批与本次操作不匹配: 'Approval does not match this operation',
+  '审批已过期，请重新发起请求': 'Approval expired. Submit a new request.',
+  'AI 会话不存在，请开始新对话':
+    'AI session not found. Start a new conversation.',
+  'SSH 目标不能包含数据库': 'An SSH target cannot include a database',
+  'AI 仅支持已连接的 SSH 或数据库':
+    'AI requires a connected SSH session or database',
+  '连接或活动数据库已变化，审批失效':
+    'The connection or active database changed. Approval is no longer valid.',
+  数据库已切换: 'Database switched',
+  读取数据库结构超时: 'Reading database structure timed out',
+  'SQL 超时，已请求取消；此前语句可能已提交，请核对结果':
+    'SQL timed out and cancellation was requested. Earlier statements may have committed. Check the results.',
+  服务未返回兼容的文本响应:
+    'The service did not return a compatible text response',
+  '模型连接成功（未发送服务器或数据库数据）':
+    'Model connection successful (no server or database data was sent)',
+  'AI 配置已变化，请重新选择配置后发送':
+    'AI configuration changed. Select the profile again before sending.',
+  '运行中的 AI 对话过多，请先停止或清空对话':
+    'Too many active AI conversations. Stop or clear one first.',
+  请等待当前任务结束或开始新对话:
+    'Wait for the current task to finish or start a new conversation',
+  '已阻止并行工具调用，请使用支持单工具调用的模型':
+    'Parallel tool calls were blocked. Use a model that supports single tool calls.',
+  '缺少有效工具调用 ID': 'A valid tool call ID is missing',
+  不支持的工具类型: 'Unsupported tool type',
+  '等待审批；尚未执行': 'Awaiting approval; not executed yet',
+  '完全访问权限：自动执行': 'Full access: automatic execution',
+  模型没有返回文本或有效工具调用:
+    'The model returned neither text nor a valid tool call',
+  '已拒绝；任务停止，未执行该操作':
+    'Rejected; task stopped without executing this operation',
+  用户批准本次执行: 'User approved this operation',
+  '已停止后续操作；正在执行的操作可能已生效':
+    'Further operations stopped; operations already running may have taken effect',
+  读取服务器状态: 'Read server status',
+  读取数据库结构: 'Read database structure',
+  '执行 Shell 命令': 'Execute shell command',
+  '执行 SQL': 'Execute SQL',
+  读取服务器的固定状态信息: 'Read predefined server status information',
+  读取当前数据库的对象和字段结构:
+    'Read objects and column definitions in the current database',
+  工具参数不符合后端安全策略:
+    'Tool arguments do not meet the backend safety policy',
+  '工具参数为空、过长或包含非法字符':
+    'Tool arguments are empty, too long, or contain invalid characters',
+  工具参数过长: 'Tool arguments are too long',
+  对象名称过长: 'Object name is too long',
+  '未知工具或工具与当前连接类型不匹配，已阻止执行':
+    'Execution blocked: unknown tool or incompatible connection type',
+  只读探针不在允许列表中: 'Read-only probe is not in the allowlist',
+  '服务未返回兼容的模型列表，请手动输入模型 ID':
+    'The service returned an incompatible model list. Enter the model ID manually.',
+  '模型列表分页无效，请手动输入模型 ID':
+    'Invalid model list pagination. Enter the model ID manually.',
+  '模型列表分页未前进，请手动输入模型 ID':
+    'Model list pagination did not advance. Enter the model ID manually.',
+  无法定位聊天记录目录: 'Could not locate the chat history directory',
+  '无效的聊天会话 ID': 'Invalid conversation ID',
+  聊天记录文件过大: 'Chat history file is too large',
+  聊天记录已损坏: 'Chat history is corrupted',
+  此聊天记录不属于当前连接或数据库:
+    'This chat history belongs to a different connection or database',
+  无法保存聊天记录: 'Could not save chat history',
+  '请输入 1 至 60 个字符的会话名称，不能包含换行或控制字符':
+    'Enter a conversation name of 1–60 characters without newlines or control characters',
+  '上一轮操作仍在结束中，请稍后继续此会话':
+    'The previous operation is still finishing. Resume this conversation shortly.',
+  '此会话仍在处理中，请先停止当前操作':
+    'This conversation is still running. Stop the current operation first.',
+  '聊天记录已损坏，无法加载历史列表':
+    'Chat history is corrupted. Could not load the history list.',
+  '聊天记录文件与会话 ID 不匹配':
+    'Chat history file does not match the conversation ID',
+  '请输入不超过 16000 字节的消息，或添加文本附件':
+    'Enter a message up to 16000 bytes or attach a text file',
+  '附件必须是非空的 UTF-8 文本，单个文件不能超过 64 KB':
+    'Attachments must contain non-empty UTF-8 text, up to 64 KB per file',
+  无法读取附件: 'Could not read attachment',
+  '请先在设置 → AI Agent 中启用并填写模型':
+    'Enable and configure a model in Settings → AI Agent first',
+  'API 地址无效': 'Invalid API URL',
+  'API 地址必须使用 HTTPS（本机可用 HTTP），不能包含账号、查询参数或片段':
+    'API URLs must use HTTPS (HTTP is allowed locally) and cannot include credentials, query parameters, or fragments',
+  'AI 配置不存在，请重新选择或添加配置':
+    'AI profile not found. Select or add a profile.',
+  '请填写配置名称（最多 80 字）': 'Enter a profile name (up to 80 characters)',
+  '最多保存 100 个 AI 配置': 'Up to 100 AI profiles can be saved',
+  'AI 设置损坏，无法读取': 'AI settings are corrupted and cannot be read',
+  无法定位设置目录: 'Could not locate the settings directory',
+  模型或密钥格式无效: 'Invalid model or key format',
+  '更换服务地址时请重新输入密钥或选择清除旧密钥，避免将旧密钥发送到其他服务':
+    'When changing the service URL, re-enter the key or clear the old key to avoid sending it to another service',
+  读取模型响应失败: 'Could not read model response',
+  '模型响应超过 1 MB 限制': 'Model response exceeds the 1 MB limit',
+  '模型响应不是有效 JSON': 'Model response is not valid JSON',
+  '工具调用参数不是有效 JSON': 'Tool call arguments are not valid JSON',
+  不支持的消息类型: 'Unsupported message type',
+  工具定义无效: 'Invalid tool definition',
+  '服务未返回兼容 Claude Messages 的响应':
+    'The service did not return a compatible Claude Messages response',
+  '模型输出达到长度上限，请缩小任务范围后重试':
+    'Model output reached the length limit. Reduce the task scope and try again.',
+  'Claude 工具参数无效': 'Invalid Claude tool arguments',
+} satisfies Record<string, string>
+export const zh = Object.fromEntries(
+  Object.keys(en).map(key => [key, key])
+) as Record<keyof typeof en, string>

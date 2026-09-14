@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { translateNativeMessage } from '@/i18n/native'
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   nextTick,
@@ -19,6 +22,8 @@ import IconButton from '@/components/ui/IconButton.vue'
 import AgentApprovalCard from './AgentApprovalCard.vue'
 import AgentMarkdown from './AgentMarkdown.vue'
 import AgentConversationMenu from './AgentConversationMenu.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -81,18 +86,18 @@ const isDatabase = computed(() => props.target.kind === 'database')
 const suggestions = computed(() =>
   isDatabase.value
     ? [
-        '查看表结构',
-        '分析数据库结构并给出优化建议',
-        '帮我编写查询',
-        '检查索引并说明改进方案',
+        t('查看表结构'),
+        t('分析数据库结构并给出优化建议'),
+        t('帮我编写查询'),
+        t('检查索引并说明改进方案'),
       ]
     : [
-        '检查系统状态',
-        '查看磁盘使用情况',
-        '查看运行中的进程',
-        '检查网络状态',
-        '分析服务器问题',
-        '更新系统软件包',
+        t('检查系统状态'),
+        t('查看磁盘使用情况'),
+        t('查看运行中的进程'),
+        t('检查网络状态'),
+        t('分析服务器问题'),
+        t('更新系统软件包'),
       ]
 )
 const canSend = computed(() =>
@@ -114,11 +119,11 @@ const canSend = computed(() =>
 const statusLabel = computed(
   () =>
     ({
-      running: '正在处理',
-      approval: '等待审批',
-      completed: '本轮完成',
-      cancelled: '已停止',
-      failed: '任务未完成',
+      running: t('正在处理'),
+      approval: t('等待审批'),
+      completed: t('本轮完成'),
+      cancelled: t('已停止'),
+      failed: t('任务未完成'),
     })[run.value?.status ?? 'completed']
 )
 async function submit(): Promise<void> {
@@ -151,10 +156,10 @@ async function copyConversation(): Promise<void> {
   try {
     await copyText(
       [
-        `目标：${run.value.target}`,
+        t('目标：{value0}', { value0: run.value.target }),
         ...run.value.entries.map(
           entry =>
-            `${entry.role}: ${entry.text}${entry.attachments?.length ? `\n附件：${entry.attachments.map(file => file.name).join('、')}` : ''}${entry.detail ? `\n${entry.detail}` : ''}`
+            `${entry.role}: ${entry.text}${entry.attachments?.length ? `\n${t('agent.attachments', { names: entry.attachments.map(file => file.name).join(', ') })}` : ''}${entry.detail ? `\n${entry.detail}` : ''}`
         ),
       ].join('\n\n')
     )
@@ -199,29 +204,29 @@ watch(
       /><span
         class="text-txt-2 max-w-44 truncate text-[11px]"
         :title="title"
-        >{{ title || (isDatabase ? 'Database' : 'Server') }}</span
+        >{{ title || (isDatabase ? t('Database') : t('Server')) }}</span
       >
       <span class="agent-tab">AI Agent <span class="beta">BETA</span></span>
       <div class="flex-1" />
       <IconButton
         icon="lucide:columns-2"
         :size="14"
-        :title="split ? '退出 AI 分屏' : '在旁边分屏显示'"
+        :title="split ? t('退出 AI 分屏') : t('在旁边分屏显示')"
         :class="split && 'text-accent'"
         @click="emit('split')"
       />
       <IconButton
         :icon="copied ? 'lucide:check' : 'lucide:copy'"
         :size="14"
-        title="复制对话与操作记录"
+        :title="t('复制对话与操作记录')"
         :disabled="!run"
         @click="copyConversation"
       />
       <IconButton
         icon="lucide:square-pen"
         :size="14"
-        title="开始新对话"
-        aria-label="开始新对话"
+        :title="t('开始新对话')"
+        :aria-label="t('开始新对话')"
         :disabled="
           switchingConversation ||
           historyLoading ||
@@ -246,7 +251,7 @@ watch(
       <IconButton
         icon="lucide:x"
         :size="14"
-        title="关闭 AI Agent"
+        :title="t('关闭 AI Agent')"
         @click="emit('close')"
       />
     </header>
@@ -259,7 +264,7 @@ watch(
         class="text-txt-3 mb-3 text-[11px]"
         role="status"
       >
-        正在加载聊天记录…
+        {{ t('正在加载聊天记录…') }}
       </p>
       <div
         v-if="!run"
@@ -272,31 +277,33 @@ watch(
           />
         </div>
         <div>
-          <h2>AI Agent ({{ isDatabase ? 'Database' : 'Terminal' }})</h2>
+          <h2>AI Agent ({{ isDatabase ? t('Database') : t('Terminal') }})</h2>
           <p>
-            协助{{
-              isDatabase ? '查询、分析和管理数据库' : '诊断问题和管理服务器'
+            {{
+              isDatabase
+                ? t('协助查询、分析和管理数据库')
+                : t('协助诊断问题和管理服务器')
             }}
           </p>
         </div>
       </div>
       <template v-if="!run">
         <div class="welcome">
-          <p>告诉我你想完成什么，我可以帮你：</p>
+          <p>{{ t('告诉我你想完成什么，我可以帮你：') }}</p>
           <ul>
             <li
               v-for="item in isDatabase
                 ? [
-                    '查看表与字段结构',
-                    '编写和分析 SQL 查询',
-                    '定位数据库问题',
-                    '提出索引及性能优化建议',
+                    t('查看表与字段结构'),
+                    t('编写和分析 SQL 查询'),
+                    t('定位数据库问题'),
+                    t('提出索引及性能优化建议'),
                   ]
                 : [
-                    '检查系统、磁盘和网络状态',
-                    '分析命令输出与运行问题',
-                    '制定修复步骤',
-                    '执行服务器维护命令',
+                    t('检查系统、磁盘和网络状态'),
+                    t('分析命令输出与运行问题'),
+                    t('制定修复步骤'),
+                    t('执行服务器维护命令'),
                   ]"
               :key="item"
             >
@@ -328,7 +335,7 @@ watch(
           :key="`${run.id}-${index}`"
           class="message"
           :class="entry.role"
-          :aria-label="entry.role === 'user' ? '你的消息' : undefined"
+          :aria-label="entry.role === 'user' ? t('你的消息') : undefined"
         >
           <template v-if="entry.role === 'user' || entry.role === 'assistant'"
             ><div
@@ -386,9 +393,13 @@ watch(
                       : 'lucide:terminal'
                 "
                 :size="13"
-              />{{ entry.text }}
+              />{{ translateNativeMessage(entry.text) }}
             </summary>
-            <pre v-if="entry.detail">{{ entry.detail }}</pre>
+            <pre v-if="entry.detail">{{
+              entry.role === 'error'
+                ? translateNativeMessage(entry.detail)
+                : entry.detail
+            }}</pre>
           </details>
         </article>
         <AgentApprovalCard
@@ -410,7 +421,7 @@ watch(
           v-if="run.status === 'cancelled'"
           class="text-txt-3 text-[11px] leading-relaxed"
         >
-          已停止后续步骤。正在执行的操作可能已生效，请核对远端状态。
+          {{ t('已停止后续步骤。正在执行的操作可能已生效，请核对远端状态。') }}
         </p>
       </div>
       <p
@@ -418,20 +429,20 @@ watch(
         role="alert"
         class="text-danger mt-3 text-[11px]"
       >
-        {{ run.saveError }}
+        {{ translateNativeMessage(run.saveError) }}
       </p>
       <p
         v-if="error"
         role="alert"
         class="border-danger/30 bg-danger/5 text-danger mt-3 rounded-lg border p-3 text-[12px]"
       >
-        {{ error }}
+        {{ translateNativeMessage(error) }}
       </p>
       <div
         v-if="!target.sessionId"
         class="border-line text-txt-3 mt-4 rounded-lg border p-3 text-[12px]"
       >
-        请先连接{{ isDatabase ? '数据库' : 'SSH 服务器' }}。
+        {{ isDatabase ? t('请先连接数据库。') : t('请先连接 SSH 服务器。') }}
       </div>
     </div>
     <AgentComposer

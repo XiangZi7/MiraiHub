@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { nextTick, onMounted, shallowRef, useTemplateRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import { toast } from '@/composables/useToast'
+
+const { t } = useI18n()
 
 const props = defineProps<{ name: string }>()
 const emit = defineEmits<{
@@ -16,7 +20,7 @@ const input = useTemplateRef<HTMLInputElement>('input')
 function submit(): void {
   const name = value.value.trim()
   if (!name || name === '.' || name === '..' || /[\\/]/.test(name)) {
-    toast.warning('请输入不含斜杠的有效文件名')
+    toast.warning(t('请输入不含斜杠的有效文件名'))
     return
   }
   emit('submit', name)
@@ -33,16 +37,17 @@ onMounted(
 
 <template>
   <AppDialog
-    title="重命名远端文件"
-    description="只修改名称，文件仍保留在当前目录。"
+    :title="t('重命名远端文件')"
+    :description="t('只修改名称，文件仍保留在当前目录。')"
     @close="emit('close')"
   >
     <form @submit.prevent="submit">
       <label
         for="remote-file-name"
         class="text-txt-2 block text-[11px] font-medium"
-        >新名称</label
       >
+        {{ t('新名称') }}
+      </label>
       <input
         id="remote-file-name"
         ref="input"
@@ -57,14 +62,16 @@ onMounted(
       <AppButton
         size="sm"
         @click="emit('close')"
-        >取消</AppButton
       >
+        {{ t('取消') }}
+      </AppButton>
       <AppButton
         size="sm"
         variant="primary"
         @click="submit"
-        >重命名</AppButton
       >
+        {{ t('重命名') }}
+      </AppButton>
     </template>
   </AppDialog>
 </template>

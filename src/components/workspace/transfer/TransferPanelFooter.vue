@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import AppIcon from '@/components/ui/AppIcon.vue'
+
+const { t } = useI18n()
 
 defineProps<{
   summary: string
@@ -32,13 +36,13 @@ const emit = defineEmits<{
     <div
       class="transfer-footer-actions"
       role="group"
-      aria-label="批量操作"
+      :aria-label="t('批量操作')"
     >
       <button
         type="button"
         class="transfer-footer-button"
-        :title="canResume ? '全部继续' : '全部暂停'"
-        :aria-label="canResume ? '全部继续' : '全部暂停'"
+        :title="canResume ? t('全部继续') : t('全部暂停')"
+        :aria-label="canResume ? t('全部继续') : t('全部暂停')"
         :disabled="!canPause && !canResume"
         @click="canResume ? emit('resumeAll') : emit('pauseAll')"
       >
@@ -50,8 +54,8 @@ const emit = defineEmits<{
       <button
         type="button"
         class="transfer-footer-button transfer-footer-button-danger"
-        title="全部取消"
-        aria-label="全部取消"
+        :title="t('全部取消')"
+        :aria-label="t('全部取消')"
         :disabled="!canCancel"
         @click="emit('cancelAll')"
       >
@@ -63,8 +67,8 @@ const emit = defineEmits<{
       <button
         type="button"
         class="transfer-footer-button"
-        title="清除已结束的记录"
-        aria-label="清除已结束的记录"
+        :title="t('清除已结束的记录')"
+        :aria-label="t('清除已结束的记录')"
         :disabled="!canClear"
         @click="emit('clearHistory')"
       >

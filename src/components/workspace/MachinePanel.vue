@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { nextTick, toRef, useTemplateRef } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
@@ -8,6 +10,8 @@ import type { SavedConnection } from '@/types/connection'
 import { cn } from '@/utils/cn'
 import FilesView from './FilesView.vue'
 import ServerOverview from './ServerOverview.vue'
+
+const { t } = useI18n()
 
 /**
  * 机器详情面板。
@@ -65,7 +69,7 @@ const sessionId = toRef(props, 'sessionId')
           :name="item.icon"
           :size="13"
         />
-        <span>{{ item.label }}</span>
+        <span>{{ t(item.label) }}</span>
       </button>
 
       <div class="flex-1" />
@@ -73,7 +77,7 @@ const sessionId = toRef(props, 'sessionId')
       <IconButton
         icon="lucide:panel-right-close"
         :size="14"
-        title="收起机器面板"
+        :title="t('收起机器面板')"
         @click="$emit('close')"
       />
     </header>

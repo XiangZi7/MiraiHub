@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   onBeforeUnmount,
@@ -14,6 +16,8 @@ import WindowControls from '@/components/ui/WindowControls.vue'
 import * as api from '@/api/operations'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
 
+const { t } = useI18n()
+
 // 响应式状态
 const state = reactive({
   // 当前原生窗口在 Rust 中绑定的目标，不从 URL 或本地存储读取
@@ -26,7 +30,7 @@ const state = reactive({
 const { target, error, closing } = toRefs(state)
 const caption = computed(() => {
   if (!state.target) return 'MiraiHub'
-  const name = state.target.path.split('/').pop() || '远端文件'
+  const name = state.target.path.split('/').pop() || t('远端文件')
   return `${name} — ${state.target.connectionName} — MiraiHub`
 })
 const editor = useTemplateRef<InstanceType<typeof RemoteTextEditor>>('editor')
@@ -117,12 +121,13 @@ onBeforeUnmount(() => {
       v-else
       class="window-loading"
     >
-      <p>{{ error ? '无法打开远端编辑窗口' : '正在打开远端编辑器…' }}</p>
+      <p>{{ error ? t('无法打开远端编辑窗口') : t('正在打开远端编辑器…') }}</p>
       <AppButton
         :disabled="closing"
         @click="finish"
-        >关闭窗口</AppButton
       >
+        {{ t('关闭窗口') }}
+      </AppButton>
     </div>
   </main>
 </template>

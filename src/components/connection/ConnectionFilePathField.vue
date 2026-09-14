@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { shallowRef } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import AppTextField from '@/components/ui/AppTextField.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -13,7 +17,7 @@ const props = withDefaults(
   }>(),
   {
     placeholder: '',
-    filterName: '证书与密钥文件',
+    filterName: '',
     extensions: () => [],
   }
 )
@@ -39,7 +43,12 @@ async function selectFile(): Promise<void> {
       directory: false,
       multiple: false,
       filters: props.extensions.length
-        ? [{ name: props.filterName, extensions: [...props.extensions] }]
+        ? [
+            {
+              name: props.filterName || t('证书与密钥文件'),
+              extensions: [...props.extensions],
+            },
+          ]
         : undefined,
     })
     const path = Array.isArray(selected) ? selected[0] : selected
@@ -60,7 +69,7 @@ async function selectFile(): Promise<void> {
     :label="label"
     :placeholder="placeholder"
     action-icon="lucide:folder-open"
-    :action-title="selecting ? '正在打开文件选择器…' : dialogTitle"
+    :action-title="selecting ? t('正在打开文件选择器…') : dialogTitle"
     :action-disabled="selecting"
     @action="selectFile"
   />

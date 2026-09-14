@@ -37,7 +37,7 @@ const themeName = computed(() =>
     ? selected.value.name || t('未命名皮肤')
     : props.values.skinTheme === 'kuriyama-mirai'
       ? 'Kuriyama Mirai'
-      : 'Default Theme'
+      : t('Default Theme')
 )
 
 function selectTheme(id: string): void {
@@ -207,7 +207,7 @@ watch(
             <ThemePreview :values="DEFAULT_SETTINGS" />
           </div>
           <span class="card-copy"
-            ><strong>Default Theme</strong
+            ><strong> {{ t('Default Theme') }} </strong
             ><small>{{ t('经典深色 · 专注于此刻') }}</small></span
           >
           <span
@@ -217,7 +217,7 @@ watch(
               name="lucide:check"
               :size="12"
           /></span>
-          <span class="card-caption">MiraiHub Original</span>
+          <span class="card-caption"> {{ t('MiraiHub Original') }} </span>
         </button>
         <button
           type="button"
@@ -315,7 +315,7 @@ watch(
           compact
           :model-value="effective.skinBase"
           :options="[
-            { value: 'default', label: 'Default Theme' },
+            { value: 'default', label: t('Default Theme') },
             { value: 'kuriyama-mirai', label: 'Kuriyama Mirai' },
           ]"
           @update:model-value="update({ skinBase: $event })"

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, onBeforeUnmount, onMounted, reactive, toRefs } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import * as ssh from '@/api/ssh'
@@ -8,6 +10,8 @@ import OperationDialog from './OperationDialog.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import { copyText } from '@/utils/clipboard'
+
+const { t } = useI18n()
 const emit = defineEmits<{ close: [] }>()
 // 预览后只执行后端锁定的计划，编辑表单不会改变已审批内容。
 const state = reactive({
@@ -86,7 +90,9 @@ async function execute(): Promise<void> {
   try {
     state.plan = await api.runBatch(state.plan.id)
   } catch (error) {
-    state.error = `执行状态未确认：${api.errorMessage(error)}。请刷新结果，不要重复执行。`
+    state.error = t('执行状态未确认：{value0}。请刷新结果，不要重复执行。', {
+      value0: api.errorMessage(error),
+    })
     await poll()
   } finally {
     state.busy = false
@@ -143,14 +149,16 @@ async function copyResults(): Promise<void> {
 </script>
 <template>
   <OperationDialog
-    title="批量服务器操作"
+    :title="t('批量服务器操作')"
     :busy="busy"
     wide
     @close="close"
     ><p class="text-txt-3 text-[11px] leading-5">
-      最多选择 20 台已连接的 SSH
-      服务器。先核对完整命令和目标列表，再批准本次执行。并发数为
-      3；一台失败不会阻止其他服务器。
+      {{
+        t(
+          '最多选择 20 台已连接的 SSH 服务器。先核对完整命令和目标列表，再批准本次执行。并发数为 3；一台失败不会阻止其他服务器。'
+        )
+      }}
     </p>
     <template v-if="!plan"
       ><div class="batch-inputs">
@@ -158,18 +166,21 @@ async function copyResults(): Promise<void> {
           <div
             class="border-line flex items-center justify-between border-b p-2"
           >
-            <span class="text-[11px]">选择服务器（{{ selected.length }}）</span
+            <span class="text-[11px]">{{
+              t('batch.selectServers', { count: selected.length })
+            }}</span
             ><AppButton
               size="sm"
               @click="refresh"
-              >刷新</AppButton
             >
+              {{ t('刷新') }}
+            </AppButton>
           </div>
           <p
             v-if="!sessions.length"
             class="text-txt-4 p-4 text-[11px]"
           >
-            请先打开并连接 SSH 服务器。
+            {{ t('请先打开并连接 SSH 服务器。') }}
           </p>
           <label
             v-for="s in sessions"
@@ -183,17 +194,18 @@ async function copyResults(): Promise<void> {
               "
             /><span
               >{{ s.username }}@{{ s.host
-              }}<small>端口 {{ s.port }}</small></span
+              }}<small> {{ t('端口') }} {{ s.port }}</small></span
             ></label
           >
         </div>
-        <label class="command-input"
-          >要执行的完整命令<textarea
+        <label class="command-input">
+          {{ t('要执行的完整命令') }}
+          <textarea
             v-model="command"
             :disabled="busy"
             maxlength="8192"
             spellcheck="false"
-            placeholder="例如：df -h&#10;每台服务器使用独立命令通道。"
+            :placeholder="t('batch.placeholder')"
           />
         </label>
       </div>
@@ -202,8 +214,9 @@ async function copyResults(): Promise<void> {
           variant="primary"
           :disabled="busy || !selected.length || !command.trim()"
           @click="prepare"
-          >生成执行预览</AppButton
         >
+          {{ t('生成执行预览') }}
+        </AppButton>
       </div></template
     >
     <template v-else
@@ -211,16 +224,18 @@ async function copyResults(): Promise<void> {
         <div class="flex flex-wrap items-center justify-between gap-2">
           <strong>{{
             plan.status === 'pending'
-              ? '待审批的执行计划'
+              ? t('待审批的执行计划')
               : plan.status === 'running'
-                ? '执行中'
+                ? t('执行中')
                 : plan.status === 'expired'
-                  ? '计划已过期'
+                  ? t('计划已过期')
                   : plan.status === 'cancelled'
-                    ? '已停止后续任务'
-                    : '执行结束'
+                    ? t('已停止后续任务')
+                    : t('执行结束')
           }}</strong
-          ><span>{{ count }} / {{ plan.targets.length }} 已处理</span>
+          ><span>{{
+            t('batch.processed', { count, total: plan.targets.length })
+          }}</span>
         </div>
         <pre
           class="command-preview"
@@ -230,8 +245,11 @@ async function copyResults(): Promise<void> {
           v-if="plan.status === 'pending'"
           class="text-txt-3 text-[11px]"
         >
-          计划有效期 5 分钟。每条命令最多运行 30 秒，输出最多约 16
-          KB。修改操作可能立即生效，停止任务不会回滚。
+          {{
+            t(
+              '计划有效期 5 分钟。每条命令最多运行 30 秒，输出最多约 16 KB。修改操作可能立即生效，停止任务不会回滚。'
+            )
+          }}
         </p>
         <label
           v-if="plan.status === 'pending'"
@@ -239,31 +257,34 @@ async function copyResults(): Promise<void> {
           ><input
             v-model="reviewed"
             type="checkbox"
-          />我已核对下方全部目标和完整命令</label
-        >
+          />
+          {{ t('我已核对下方全部目标和完整命令') }}
+        </label>
         <div class="mt-3 flex flex-wrap gap-2">
           <AppButton
             v-if="plan.status === 'pending'"
             variant="danger"
             :disabled="busy || !reviewed"
             @click="execute"
-            >批准在 {{ plan.targets.length }} 台服务器执行一次</AppButton
+            >{{ t('batch.approve', { count: plan.targets.length }) }}</AppButton
           ><AppButton
             v-if="running"
             @click="stop"
-            >停止尚未开始的任务</AppButton
+          >
+            {{ t('停止尚未开始的任务') }} </AppButton
           ><AppButton
             v-if="!running"
             :disabled="busy"
             @click="reset"
             >{{
-              plan.status === 'pending' ? '取消计划并修改' : '新建任务'
+              plan.status === 'pending' ? t('取消计划并修改') : t('新建任务')
             }}</AppButton
           ><AppButton
             :disabled="busy"
             @click="copyResults"
-            >复制执行记录</AppButton
           >
+            {{ t('复制执行记录') }}
+          </AppButton>
         </div>
       </div>
       <div class="batch-results">
@@ -283,11 +304,11 @@ async function copyResults(): Promise<void> {
               "
               >{{
                 {
-                  pending: '等待',
-                  running: '执行中',
-                  success: '成功',
-                  failed: '失败',
-                  cancelled: '已取消',
+                  pending: t('等待'),
+                  running: t('执行中'),
+                  success: t('成功'),
+                  failed: t('失败'),
+                  cancelled: t('已取消'),
                 }[row.status]
               }}</span
             >
@@ -296,7 +317,9 @@ async function copyResults(): Promise<void> {
             v-if="row.output"
             class="text-txt-4 mt-2 text-[10px]"
           >
-            退出码 {{ row.output.exitCode ?? '未报告' }}
+            {{
+              t('batch.exitCode', { code: row.output.exitCode ?? t('未报告') })
+            }}
           </p>
           <pre v-if="row.output"
             >{{ row.output.stdout }}{{ row.output.stderr }}</pre>
@@ -304,7 +327,7 @@ async function copyResults(): Promise<void> {
             v-else
             class="text-txt-3 p-2 text-[11px]"
           >
-            {{ row.error || '尚无输出' }}
+            {{ row.error || t('尚无输出') }}
           </p>
         </details>
       </div></template
@@ -318,9 +341,13 @@ async function copyResults(): Promise<void> {
     </p></OperationDialog
   ><AppConfirmDialog
     :open="closing"
-    title="停止并关闭批量任务？"
-    description="未开始的任务将被取消。正在执行的命令可能仍在远端运行，已产生的修改不会回滚。"
-    confirm-label="停止并关闭"
+    :title="t('停止并关闭批量任务？')"
+    :description="
+      t(
+        '未开始的任务将被取消。正在执行的命令可能仍在远端运行，已产生的修改不会回滚。'
+      )
+    "
+    :confirm-label="t('停止并关闭')"
     @close="closing = false"
     @confirm="confirmClose"
   />

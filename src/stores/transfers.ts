@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { computed, onScopeDispose, reactive, watch } from 'vue'
 import * as ssh from '@/api/ssh'
 import { settingNumber } from '@/composables/useSettings'
@@ -295,7 +296,7 @@ export const useTransfersStore = defineStore('transfers', () => {
       direction: 'download',
       fileName: nameOf(options.remotePath),
       source: options.remotePath,
-      target: options.localPath || '临时目录',
+      target: options.localPath || i18n.global.t('临时目录'),
       connectionName: options.connectionName ?? '',
     })
 

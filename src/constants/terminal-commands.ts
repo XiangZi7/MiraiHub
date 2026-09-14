@@ -1,4 +1,5 @@
 import type { TerminalCommand } from '@/types/terminal-command'
+import { translateLabel } from '@/i18n'
 
 export const DEFAULT_TERMINAL_COMMANDS: readonly TerminalCommand[] = [
   { id: 'list', name: '列出文件', command: 'ls -lah' },
@@ -12,3 +13,15 @@ export const DEFAULT_TERMINAL_COMMANDS: readonly TerminalCommand[] = [
   { id: 'network', name: '网络地址', command: 'ip addr' },
   { id: 'system', name: '系统信息', command: 'uname -a' },
 ]
+
+/** User-edited names and commands keep their original content. */
+export function terminalCommandLabel(command: TerminalCommand): string {
+  return DEFAULT_TERMINAL_COMMANDS.some(
+    item =>
+      item.id === command.id &&
+      item.name === command.name &&
+      item.command === command.command
+  )
+    ? translateLabel(command.name)
+    : command.name
+}

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, shallowRef, useTemplateRef, watch } from 'vue'
 import { useEventListener, useNow } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -15,6 +17,8 @@ import TransferTaskGroup from './transfer/TransferTaskGroup.vue'
 import TransferStatusFilter, {
   type TransferStatusFilter as TransferFilter,
 } from './transfer/TransferStatusFilter.vue'
+
+const { t } = useI18n()
 
 interface TransferGroupView {
   key: string
@@ -70,7 +74,7 @@ const groups = computed<TransferGroupView[]>(() => {
   const byConnection = new Map<string, TransferGroupView>()
 
   for (const task of visibleTasks.value) {
-    const connectionName = task.connectionName || 'Remote server'
+    const connectionName = task.connectionName || t('Remote server')
     const key = `${task.direction}:${connectionName}`
     const existing = byConnection.get(key)
     if (existing) {
@@ -129,23 +133,27 @@ const status = computed<{ label: string; icon: string; busy: boolean }>(() => {
   const active = activeTasks.value
   if (!active.length) {
     if (tasks.some(task => task.status === 'error'))
-      return { label: 'Failed', icon: 'lucide:circle-alert', busy: false }
+      return { label: t('Failed'), icon: 'lucide:circle-alert', busy: false }
     if (tasks.some(task => task.status === 'cancelled'))
-      return { label: 'Cancelled', icon: 'lucide:circle-x', busy: false }
+      return { label: t('Cancelled'), icon: 'lucide:circle-x', busy: false }
     return tasks.length
-      ? { label: 'Complete', icon: 'lucide:circle-check', busy: false }
-      : { label: 'Idle', icon: 'lucide:moon', busy: false }
+      ? { label: t('Complete'), icon: 'lucide:circle-check', busy: false }
+      : { label: t('Idle'), icon: 'lucide:moon', busy: false }
   }
   if (!active.some(task => task.status === 'running'))
     return active.some(task => task.status === 'queued')
-      ? { label: 'Queued', icon: 'lucide:clock', busy: false }
-      : { label: 'Paused', icon: 'lucide:pause', busy: false }
+      ? { label: t('Queued'), icon: 'lucide:clock', busy: false }
+      : { label: t('Paused'), icon: 'lucide:pause', busy: false }
   const directions = new Set(active.map(task => task.direction))
   if (directions.size > 1)
-    return { label: 'Transferring', icon: 'lucide:loader-circle', busy: true }
+    return {
+      label: t('Transferring'),
+      icon: 'lucide:loader-circle',
+      busy: true,
+    }
   return directions.has('upload')
-    ? { label: 'Uploading', icon: 'lucide:loader-circle', busy: true }
-    : { label: 'Downloading', icon: 'lucide:loader-circle', busy: true }
+    ? { label: t('Uploading'), icon: 'lucide:loader-circle', busy: true }
+    : { label: t('Downloading'), icon: 'lucide:loader-circle', busy: true }
 })
 
 const footerSummary = computed(() => {
@@ -156,16 +164,16 @@ const footerSummary = computed(() => {
       : formatBytes(0)
   const rate = aggregate.value.rate ? formatRate(aggregate.value.rate) : '--'
   const remaining = aggregate.value.remainingMs
-    ? ` · 剩余 ${formatDuration(aggregate.value.remainingMs)}`
+    ? ` · ${t('transfer.remaining', { duration: formatDuration(aggregate.value.remainingMs) })}`
     : ''
   return `${formatBytes(aggregate.value.transferredBytes)} / ${total} · ${rate}${remaining}`
 })
 
 const emptyLabel = computed(() => {
-  if (statusFilter.value === 'active') return '当前没有进行中的传输'
-  if (statusFilter.value === 'completed') return '还没有已完成的传输'
-  if (statusFilter.value === 'failed') return '当前没有错误或已取消的传输'
-  return '还没有文件传输'
+  if (statusFilter.value === 'active') return t('当前没有进行中的传输')
+  if (statusFilter.value === 'completed') return t('还没有已完成的传输')
+  if (statusFilter.value === 'failed') return t('当前没有错误或已取消的传输')
+  return t('还没有文件传输')
 })
 
 watch([open, unreadCount], ([visible]) => {
@@ -203,12 +211,12 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       class="icon-btn relative"
       :title="
         hasUnreadError
-          ? '文件传输：有失败的任务'
+          ? t('文件传输：有失败的任务')
           : unreadCount
-            ? '文件传输：有新的传输结果'
-            : '文件传输'
+            ? t('文件传输：有新的传输结果')
+            : t('文件传输')
       "
-      aria-label="文件传输"
+      :aria-label="t('文件传输')"
       :aria-expanded="open"
       aria-haspopup="dialog"
       @click="open = !open"
@@ -236,7 +244,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           ref="panelRoot"
           class="overlay-surface transfer-center"
           role="dialog"
-          aria-label="File Transfer"
+          :aria-label="t('文件传输')"
         >
           <TransferPanelHeader
             :status-label="status.label"

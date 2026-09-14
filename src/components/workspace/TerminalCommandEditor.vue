@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { onMounted, reactive, toRefs, useTemplateRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import type { TerminalCommand } from '@/types/terminal-command'
+
+const { t } = useI18n()
 
 const props = defineProps<{ command: TerminalCommand | null }>()
 const emit = defineEmits<{
@@ -28,17 +32,19 @@ function save(): void {
     class="grid gap-3 p-3"
     @submit.prevent="save"
   >
-    <label class="grid gap-1.5 text-xs"
-      >名称<input
+    <label class="grid gap-1.5 text-xs">
+      {{ t('名称') }}
+      <input
         ref="nameInput"
         v-model="name"
         class="field"
         maxlength="80"
         required
-        placeholder="例如：查看 Docker 容器"
+        :placeholder="t('例如：查看 Docker 容器')"
     /></label>
-    <label class="grid gap-1.5 text-xs"
-      >命令（单行）<input
+    <label class="grid gap-1.5 text-xs">
+      {{ t('命令（单行）') }}
+      <input
         v-model="value"
         class="field font-mono"
         maxlength="8192"
@@ -51,15 +57,17 @@ function save(): void {
       <AppButton
         size="sm"
         @click="emit('cancel')"
-        >取消</AppButton
       >
+        {{ t('取消') }}
+      </AppButton>
       <AppButton
         size="sm"
         type="submit"
         variant="primary"
         :disabled="!name.trim() || !value.trim()"
-        >保存</AppButton
       >
+        {{ t('保存') }}
+      </AppButton>
     </div>
   </form>
 </template>

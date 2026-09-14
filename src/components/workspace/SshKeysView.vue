@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { onMounted, shallowRef, useTemplateRef } from 'vue'
 import { useClipboard } from '@vueuse/core'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
@@ -14,6 +16,8 @@ import { formatDate, formatRelative } from '@/utils/time'
 import { cn } from '@/utils/cn'
 import { scheduleClipboardClear } from '@/utils/clipboard'
 import GenerateKeyDialog from './GenerateKeyDialog.vue'
+
+const { t } = useI18n()
 
 /**
  * SSH 密钥管理。
@@ -62,10 +66,10 @@ async function confirmDelete(): Promise<void> {
 
   try {
     await remove(target.id)
-    toast.success(`密钥“${target.label}”已删除`)
+    toast.success(t('密钥“{value0}”已删除', { value0: target.label }))
   } catch (caught) {
     toast.error({
-      title: '删除 SSH 密钥失败',
+      title: t('删除 SSH 密钥失败'),
       description: error.value || String(caught),
     })
   }
@@ -74,26 +78,26 @@ async function confirmDelete(): Promise<void> {
 async function refreshKeys(): Promise<void> {
   await refresh()
   if (error.value)
-    toast.error({ title: '扫描 SSH 密钥失败', description: error.value })
+    toast.error({ title: t('扫描 SSH 密钥失败'), description: error.value })
 }
 
 async function copyFingerprint(): Promise<void> {
   if (!current.value) return
   await fingerprintClip.copy(current.value.fingerprint)
   scheduleClipboardClear(current.value.fingerprint)
-  toast.success('SSH 指纹已复制')
+  toast.success(t('SSH 指纹已复制'))
 }
 
 async function copyPublicKey(): Promise<void> {
   if (!current.value) return
   await publicKeyClip.copy(current.value.publicKey)
   scheduleClipboardClear(current.value.publicKey)
-  toast.success('SSH 公钥已复制')
+  toast.success(t('SSH 公钥已复制'))
 }
 
 function makeDefault(path: string): void {
   setDefaultPrivateKey(path)
-  toast.success('默认私钥已更新')
+  toast.success(t('默认私钥已更新'))
 }
 
 /**
@@ -106,13 +110,13 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
   try {
     await generate(request)
     generateOpen.value = false
-    toast.success(`SSH 密钥“${request.label}”已生成`)
+    toast.success(t('SSH 密钥“{value0}”已生成', { value0: request.label }))
   } catch (err) {
     // Tauri 的结构化 AppError 是普通对象，String(err) 只会得到 [object Object]。
     // composable 已用统一的 errorMessage 提取过可读文案，优先回传那一份。
     dialogRef.value?.fail()
     toast.error({
-      title: '生成 SSH 密钥失败',
+      title: t('生成 SSH 密钥失败'),
       description:
         error.value || (err instanceof Error ? err.message : String(err)),
     })
@@ -128,19 +132,18 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         class="border-line-soft flex h-10 shrink-0 items-center gap-1 border-b pr-2 pl-3"
       >
         <p class="text-txt-2 flex-1 text-[11px] font-medium">
-          Keys
-          <span class="text-txt-4">({{ keys.length }})</span>
+          {{ t('Keys') }} <span class="text-txt-4">({{ keys.length }})</span>
         </p>
         <IconButton
           icon="lucide:refresh-cw"
           :size="14"
-          title="重新扫描"
+          :title="t('重新扫描')"
           @click="refreshKeys"
         />
         <IconButton
           icon="lucide:plus"
           :size="14"
-          title="生成新密钥"
+          :title="t('生成新密钥')"
           @click="generateOpen = true"
         />
       </header>
@@ -149,7 +152,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         <SearchField
           v-model="keyword"
           icon="lucide:search"
-          placeholder="搜索密钥…"
+          :placeholder="t('搜索密钥…')"
         />
       </div>
 
@@ -169,14 +172,15 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           <span class="min-w-0 flex-1 text-left">
             <span class="text-txt block truncate text-xs">{{ key.label }}</span>
             <span class="text-txt-4 block truncate text-[10.5px]">
-              {{ SSH_KEY_KIND_META[key.kind].label }} · {{ key.bits }} bits
+              {{ SSH_KEY_KIND_META[key.kind].label }} · {{ key.bits }}
+              {{ t('bits') }}
             </span>
           </span>
           <!-- tooltip 挂在 span 上：SVG 元素的 title 属性不会触发浏览器提示 -->
           <span
             v-if="key.encrypted"
             class="shrink-0"
-            title="私钥有口令保护"
+            :title="t('私钥有口令保护')"
           >
             <AppIcon
               name="lucide:lock"
@@ -187,7 +191,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           <span
             v-if="defaultPrivateKey === key.id"
             class="shrink-0"
-            title="默认私钥"
+            :title="t('默认私钥')"
           >
             <AppIcon
               name="lucide:star"
@@ -201,13 +205,13 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           v-if="loading"
           class="text-txt-4 py-8 text-center text-xs"
         >
-          正在扫描 ~/.ssh …
+          {{ t('正在扫描 ~/.ssh …') }}
         </p>
         <p
           v-else-if="!visibleKeys.length"
           class="text-txt-4 py-8 text-center text-xs"
         >
-          {{ keyword ? '没有匹配的密钥' : '~/.ssh 下没有找到密钥' }}
+          {{ keyword ? t('没有匹配的密钥') : t('~/.ssh 下没有找到密钥') }}
         </p>
       </div>
     </nav>
@@ -232,14 +236,16 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           v-if="defaultPrivateKey === current.id"
           class="bg-violet/15 text-violet shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
         >
-          Default
+          {{ t('Default') }}
         </span>
         <div class="flex-1" />
         <IconButton
           icon="lucide:star"
           :size="14"
           :title="
-            defaultPrivateKey === current.id ? '当前默认私钥' : '设为默认私钥'
+            defaultPrivateKey === current.id
+              ? t('当前默认私钥')
+              : t('设为默认私钥')
           "
           :disabled="defaultPrivateKey === current.id"
           :class="
@@ -250,7 +256,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         <IconButton
           icon="lucide:trash-2"
           :size="14"
-          title="删除密钥"
+          :title="t('删除密钥')"
           @click="requestDelete(current.id, current.label)"
         />
       </header>
@@ -259,7 +265,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         <!-- 元信息 -->
         <div class="mb-5 grid grid-cols-2 gap-2.5">
           <div class="card px-3 py-2.5">
-            <p class="text-txt-3 text-[11px]">Modified</p>
+            <p class="text-txt-3 text-[11px]">{{ t('Modified') }}</p>
             <p
               class="text-txt mt-1 text-xs"
               :title="formatDate(current.modifiedAt)"
@@ -268,7 +274,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
             </p>
           </div>
           <div class="card px-3 py-2.5">
-            <p class="text-txt-3 text-[11px]">Comment</p>
+            <p class="text-txt-3 text-[11px]">{{ t('Comment') }}</p>
             <p
               class="text-txt mt-1 truncate text-xs"
               :title="current.comment"
@@ -277,11 +283,13 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
             </p>
           </div>
           <div class="card px-3 py-2.5">
-            <p class="text-txt-3 text-[11px]">Length</p>
-            <p class="text-txt mt-1 text-xs">{{ current.bits }} bits</p>
+            <p class="text-txt-3 text-[11px]">{{ t('Length') }}</p>
+            <p class="text-txt mt-1 text-xs">
+              {{ current.bits }} {{ t('bits') }}
+            </p>
           </div>
           <div class="card px-3 py-2.5">
-            <p class="text-txt-3 text-[11px]">Passphrase</p>
+            <p class="text-txt-3 text-[11px]">{{ t('Passphrase') }}</p>
             <p class="text-txt mt-1 flex items-center gap-1.5 text-xs">
               <AppIcon
                 :name="current.encrypted ? 'lucide:lock' : 'lucide:lock-open'"
@@ -295,7 +303,9 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
 
         <!-- 路径 -->
         <section class="mb-5">
-          <h3 class="text-txt-2 mb-2 text-[13px] font-medium">Path</h3>
+          <h3 class="text-txt-2 mb-2 text-[13px] font-medium">
+            {{ t('Path') }}
+          </h3>
           <div class="card px-3 py-2">
             <code
               class="text-txt-2 block truncate font-mono text-[11.5px]"
@@ -307,7 +317,9 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
 
         <!-- 指纹 -->
         <section class="mb-5">
-          <h3 class="text-txt-2 mb-2 text-[13px] font-medium">Fingerprint</h3>
+          <h3 class="text-txt-2 mb-2 text-[13px] font-medium">
+            {{ t('Fingerprint') }}
+          </h3>
           <div class="card flex items-center gap-2 px-3 py-2">
             <code
               class="text-txt-2 min-w-0 flex-1 truncate font-mono text-[11.5px]"
@@ -318,7 +330,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
                 fingerprintClip.copied.value ? 'lucide:check' : 'lucide:copy'
               "
               :size="13"
-              title="复制指纹"
+              :title="t('复制指纹')"
               @click="copyFingerprint"
             />
           </div>
@@ -328,7 +340,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
         <section>
           <div class="mb-2 flex items-center gap-2">
             <h3 class="text-txt-2 flex-1 text-[13px] font-medium">
-              Public key
+              {{ t('Public key') }}
             </h3>
             <button
               type="button"
@@ -341,7 +353,9 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
                 "
                 :size="12"
               />
-              <span>{{ publicKeyClip.copied.value ? '已复制' : '复制' }}</span>
+              <span>{{
+                publicKeyClip.copied.value ? t('已复制') : t('复制')
+              }}</span>
             </button>
           </div>
           <pre
@@ -365,9 +379,9 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
             :size="26"
           />
         </div>
-        <p class="text-txt-2 text-sm">还没有密钥</p>
+        <p class="text-txt-2 text-sm">{{ t('还没有密钥') }}</p>
         <p class="text-txt-4 max-w-70 text-xs">
-          生成一把新密钥，或把已有的放进 ~/.ssh
+          {{ t('生成一把新密钥，或把已有的放进 ~/.ssh') }}
         </p>
         <button
           type="button"
@@ -378,7 +392,7 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
             name="lucide:plus"
             :size="13"
           />
-          <span>生成新密钥</span>
+          <span> {{ t('生成新密钥') }} </span>
         </button>
       </div>
     </div>
@@ -391,9 +405,13 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
     />
     <AppConfirmDialog
       :open="Boolean(pendingDelete)"
-      title="删除 SSH 密钥？"
-      :description="`将从 ~/.ssh 永久删除密钥“${pendingDelete?.label ?? ''}”及其公钥文件，此操作无法撤销。`"
-      confirm-label="确认删除"
+      :title="t('删除 SSH 密钥？')"
+      :description="
+        t('将从 ~/.ssh 永久删除密钥“{value0}”及其公钥文件，此操作无法撤销。', {
+          value0: pendingDelete?.label ?? '',
+        })
+      "
+      :confirm-label="t('确认删除')"
       danger
       @close="pendingDelete = null"
       @confirm="confirmDelete"

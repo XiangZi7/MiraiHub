@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, onMounted, reactive, toRefs } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import * as ssh from '@/api/ssh'
@@ -8,6 +10,8 @@ import OperationDialog from './OperationDialog.vue'
 import TunnelCreateForm from './TunnelCreateForm.vue'
 import TunnelList from './TunnelList.vue'
 import { copyText } from '@/utils/clipboard'
+
+const { t } = useI18n()
 const props = defineProps<{ preferredSessionId?: string }>()
 const emit = defineEmits<{ close: [] }>()
 // 响应式状态
@@ -113,13 +117,13 @@ async function copy(row: api.Tunnel): Promise<void> {
 
 <template>
   <OperationDialog
-    title="SSH 隧道 / 本地端口转发"
+    :title="t('SSH 隧道 / 本地端口转发')"
     :busy="busy"
     @close="emit('close')"
   >
     <div class="tunnel-manager">
       <p class="tunnel-intro">
-        通过已连接的 SSH 服务器，将本机端口转发到远端服务。
+        {{ t('通过已连接的 SSH 服务器，将本机端口转发到远端服务。') }}
       </p>
       <TunnelCreateForm
         v-model:session-id="sessionId"
@@ -146,8 +150,11 @@ async function copy(row: api.Tunnel): Promise<void> {
         @action="action"
       />
       <p class="tunnel-footer">
-        关闭此窗口后隧道继续运行，断开 SSH 或退出应用后停止。每条隧道最多 32
-        个并发连接。
+        {{
+          t(
+            '关闭此窗口后隧道继续运行，断开 SSH 或退出应用后停止。每条隧道最多 32 个并发连接。'
+          )
+        }}
       </p>
     </div>
   </OperationDialog>

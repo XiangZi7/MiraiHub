@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import AppIcon from '@/components/ui/AppIcon.vue'
+
+const { t } = useI18n()
 
 defineProps<{
   statusLabel: string
@@ -21,10 +25,10 @@ const emit = defineEmits<{
         :size="14"
         class="transfer-title-icon"
       />
-      <h2 class="transfer-title">文件传输</h2>
+      <h2 class="transfer-title">{{ t('文件传输') }}</h2>
       <span
         class="transfer-overview"
-        aria-label="Overall transfer progress"
+        :aria-label="t('Overall transfer progress')"
       >
         <AppIcon
           :name="statusIcon"
@@ -37,8 +41,8 @@ const emit = defineEmits<{
       <button
         type="button"
         class="transfer-close"
-        title="关闭"
-        aria-label="Close file transfer"
+        :title="t('关闭')"
+        :aria-label="t('Close file transfer')"
         @click="emit('close')"
       >
         <AppIcon

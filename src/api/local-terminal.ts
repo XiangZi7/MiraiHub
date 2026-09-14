@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
@@ -12,7 +13,7 @@ const EVENT_OUTPUT = 'local-terminal://output'
 const EVENT_STATUS = 'local-terminal://status'
 
 function ensureTauri(): void {
-  if (!IS_TAURI) throw new Error('本地终端需要在桌面应用中运行')
+  if (!IS_TAURI) throw new Error(i18n.global.t('本地终端需要在桌面应用中运行'))
 }
 
 export async function create(config: LocalTerminalConfig): Promise<string> {

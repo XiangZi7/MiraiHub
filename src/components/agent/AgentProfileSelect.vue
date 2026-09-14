@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import AppSelect from '@/components/ui/AppSelect.vue'
+
+const { t } = useI18n()
 defineProps<{
   activeId: string
   options: { value: string; label: string; disabled?: boolean }[]
@@ -13,8 +17,8 @@ const emit = defineEmits<{ select: [id: string] }>()
       :model-value="activeId"
       :options="options"
       :disabled="disabled || !options.length"
-      placeholder="请添加并启用配置"
-      label="选择 AI 模型"
+      :placeholder="t('请添加并启用配置')"
+      :label="t('选择 AI 模型')"
       hide-label
       compact
       searchable

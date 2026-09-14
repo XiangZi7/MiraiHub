@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, useTemplateRef } from 'vue'
 import AppIcon from './AppIcon.vue'
 import AppContextMenu from './AppContextMenu.vue'
@@ -7,6 +9,8 @@ import { useTabContextMenu } from '@/composables/useTabContextMenu'
 import StatusDot from './StatusDot.vue'
 import { useTabReorder } from '@/composables/useTabReorder'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 export interface TabItem {
   /** 唯一标识 */
@@ -121,7 +125,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
   <div
     ref="tabList"
     role="tablist"
-    aria-label="打开的标签"
+    :aria-label="t('打开的标签')"
     class="scroll-none flex h-full min-w-0 items-center gap-0.5 overflow-x-auto"
   >
     <!-- 关闭按钮嵌在标签里，所以外层用 div 而不是 button：button 不能嵌套 -->
@@ -134,7 +138,11 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       :aria-selected="active === tab.id"
       :aria-posinset="index + 1"
       :aria-setsize="tabs.length"
-      :title="`${tab.label} · 右键操作，中键关闭；拖动或 Alt + ←/→ 排序`"
+      :title="
+        t('{value0} · 右键操作，中键关闭；拖动或 Alt + ←/→ 排序', {
+          value0: tab.label,
+        })
+      "
       :style="
         active === tab.id
           ? { borderBottomColor: tab.accent || 'var(--color-accent)' }
@@ -181,7 +189,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
         type="button"
         data-tab-action
         class="hover:bg-hover -mr-1 grid size-4 shrink-0 place-items-center rounded opacity-0 transition-opacity group-focus-within:opacity-60 group-hover:opacity-60 hover:opacity-100!"
-        :title="`关闭 ${tab.label}`"
+        :title="t('关闭 {value0}', { value0: tab.label })"
         @click.stop="emit('close', tab.id)"
       >
         <AppIcon
@@ -196,7 +204,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       type="button"
       data-tab-action
       class="icon-btn ml-1"
-      title="新建"
+      :title="t('新建')"
       @click="emit('add')"
     >
       <AppIcon
@@ -211,7 +219,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       :x="menu.state.x"
       :y="menu.state.y"
       :items="menu.items.value"
-      label="标签页操作"
+      :label="t('标签页操作')"
       @select="menu.select"
       @close="menu.dismiss"
     />

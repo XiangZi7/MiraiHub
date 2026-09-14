@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { sourceLoader } from './helpers/source-module.mjs'
-const { renderAgentMarkdown, isAgentWebLink } = await sourceLoader()(
+const load = sourceLoader()
+const { i18n } = await load('src/i18n/index.ts')
+i18n.global.locale.value = 'zh-CN'
+const { renderAgentMarkdown, isAgentWebLink } = await load(
   'src/utils/agent-markdown.ts'
 )
 

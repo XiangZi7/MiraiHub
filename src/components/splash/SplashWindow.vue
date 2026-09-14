@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
+
 // 浏览器预览入口复用独立启动页，Logo、动画和材质始终与原生启动窗口一致。
 </script>
 
@@ -6,7 +9,7 @@
   <iframe
     class="splash-preview"
     src="/splash.html"
-    title="MiraiHub 启动画面"
+    :title="t('MiraiHub 启动画面')"
   />
 </template>
 

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, shallowRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
@@ -8,6 +10,8 @@ import { toast } from '@/composables/useToast'
 import { RSA_BITS_OPTIONS, SSH_KEY_KIND_OPTIONS } from '@/constants/ssh-keys'
 import type { GenerateKeyRequest, SshKeyKind } from '@/types/ssh'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 /**
  * 生成 SSH 密钥。
@@ -58,24 +62,24 @@ function submit(): void {
   const label = form.label.trim()
 
   if (!label) {
-    toast.warning('请填写密钥名')
+    toast.warning(t('请填写密钥名'))
     return
   }
 
   // 与 Rust 侧 validate_label 保持一致。前端先挡一道是为了即时反馈，
   // 后端那道才是真正的防线 —— 这里的校验绕过去也没用
   if (label.includes('/') || label.includes('\\') || label.includes('..')) {
-    toast.warning('密钥名不能包含路径分隔符或 ..')
+    toast.warning(t('密钥名不能包含路径分隔符或 ..'))
     return
   }
 
   if (label.endsWith('.pub')) {
-    toast.warning('密钥名不能以 .pub 结尾，公钥会自动生成')
+    toast.warning(t('密钥名不能以 .pub 结尾，公钥会自动生成'))
     return
   }
 
   if (form.passphrase !== form.confirm) {
-    toast.warning('两次输入的口令不一致')
+    toast.warning(t('两次输入的口令不一致'))
     return
   }
 
@@ -102,8 +106,8 @@ defineExpose({ fail })
 
 <template>
   <AppDialog
-    title="生成新密钥"
-    description="密钥会写入 ~/.ssh，私钥不会离开本机"
+    :title="t('生成新密钥')"
+    :description="t('密钥会写入 ~/.ssh，私钥不会离开本机')"
     @close="emit('close')"
   >
     <form
@@ -112,11 +116,13 @@ defineExpose({ fail })
     >
       <!-- 算法 -->
       <fieldset class="space-y-1.5">
-        <legend class="text-txt-2 text-[11px] font-medium">算法</legend>
+        <legend class="text-txt-2 text-[11px] font-medium">
+          {{ t('算法') }}
+        </legend>
         <div
           class="grid grid-cols-3 gap-2"
           role="radiogroup"
-          aria-label="密钥算法"
+          :aria-label="t('密钥算法')"
         >
           <AppButton
             v-for="option in SSH_KEY_KIND_OPTIONS"
@@ -134,14 +140,14 @@ defineExpose({ fail })
             @click="selectKind(option.value)"
           >
             <span class="text-[11.5px] font-medium">{{ option.label }}</span>
-            <span class="text-txt-4 text-[10px]">{{ option.hint }}</span>
+            <span class="text-txt-4 text-[10px]">{{ t(option.hint) }}</span>
           </AppButton>
         </div>
       </fieldset>
 
       <AppTextField
         v-model="form.label"
-        label="密钥名"
+        :label="t('密钥名')"
         placeholder="id_ed25519"
         required
       />
@@ -151,11 +157,13 @@ defineExpose({ fail })
         v-if="showBits"
         class="space-y-1.5"
       >
-        <legend class="text-txt-2 text-[11px] font-medium">位数</legend>
+        <legend class="text-txt-2 text-[11px] font-medium">
+          {{ t('位数') }}
+        </legend>
         <div
           class="flex gap-2"
           role="radiogroup"
-          aria-label="RSA 密钥位数"
+          :aria-label="t('RSA 密钥位数')"
         >
           <AppButton
             v-for="bits in RSA_BITS_OPTIONS"
@@ -179,24 +187,24 @@ defineExpose({ fail })
 
       <AppTextField
         v-model="form.comment"
-        label="注释（可选）"
-        placeholder="留空则用 user@hostname"
+        :label="t('注释（可选）')"
+        :placeholder="t('留空则用 user@hostname')"
       />
 
       <AppTextField
         v-model="form.passphrase"
-        label="口令（可选）"
+        :label="t('口令（可选）')"
         type="password"
-        placeholder="留空表示不加密私钥"
+        :placeholder="t('留空表示不加密私钥')"
         autocomplete="new-password"
       />
 
       <AppTextField
         v-if="form.passphrase"
         v-model="form.confirm"
-        label="确认口令"
+        :label="t('确认口令')"
         type="password"
-        placeholder="再输一次"
+        :placeholder="t('再输一次')"
         autocomplete="new-password"
       />
 
@@ -210,19 +218,21 @@ defineExpose({ fail })
           :size="13"
           class="mt-px shrink-0"
         />
-        <span>不设口令的私钥，任何拿到文件的人都能直接登录你的服务器</span>
+        <span>
+          {{ t('不设口令的私钥，任何拿到文件的人都能直接登录你的服务器') }}
+        </span>
       </p>
     </form>
 
     <template #footer>
       <div class="flex-1" />
-      <AppButton @click="emit('close')"> 取消 </AppButton>
+      <AppButton @click="emit('close')"> {{ t('取消') }} </AppButton>
       <AppButton
         variant="primary"
         :disabled="submitting"
         @click="submit"
       >
-        {{ submitting ? '生成中…' : '生成' }}
+        {{ submitting ? t('生成中…') : t('生成') }}
       </AppButton>
     </template>
   </AppDialog>

@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type {
@@ -13,7 +14,9 @@ import type {
 import { IS_TAURI } from '@/utils/window'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (!IS_TAURI)
-    return Promise.reject(new Error('请在 MiraiHub 桌面程序中使用 AI Agent'))
+    return Promise.reject(
+      new Error(i18n.global.t('请在 MiraiHub 桌面程序中使用 AI Agent'))
+    )
   return invoke<T>(command, args)
 }
 export const getConfig = () => call<AgentSettings>('ai_get_config')

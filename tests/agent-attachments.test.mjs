@@ -4,6 +4,7 @@ import { effectScope } from 'vue'
 import { sourceLoader } from './helpers/source-module.mjs'
 
 const load = sourceLoader()
+const { i18n } = await load('src/i18n/index.ts')
 const { readAgentAttachment } = await load('src/utils/agent-attachments.ts')
 const { useAgentDraft } = await load('src/composables/useAgentDraft.ts')
 const file = (content, name = 'server.log') => new File([content], name)
@@ -83,13 +84,16 @@ test('file-only sending works, rejected sends restore drafts, and late rejection
   )
   await draft.addFiles([file('SELECT 1', 'query.sql')])
   await draft.submit()
-  assert.equal(payload.prompt, '')
+  assert.equal(payload.prompt, 'Please analyze the attached files.')
   assert.deepEqual(payload.attachments, [
     { name: 'query.sql', content: 'SELECT 1' },
   ])
   assert.equal(draft.attachments.value.length, 1)
+  i18n.global.locale.value = 'zh-CN'
   accept = true
   await draft.submit()
+  assert.equal(payload.prompt, '请分析上传的文件。')
+  i18n.global.locale.value = 'en-US'
   assert.equal(draft.attachments.value.length, 0)
   accept = null
   draft.prompt.value = 'old'

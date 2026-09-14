@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { translateNativeMessage } from '@/i18n/native'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { computed } from 'vue'
@@ -58,12 +59,12 @@ const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
 
           <div class="toast-copy">
             <span class="sr-only">{{ toneMeta[item.tone].label }}：</span>
-            <p class="toast-title">{{ item.title }}</p>
+            <p class="toast-title">{{ translateNativeMessage(item.title) }}</p>
             <p
               v-if="item.description"
               class="toast-description scroll-thin"
             >
-              {{ item.description }}
+              {{ translateNativeMessage(item.description) }}
             </p>
           </div>
 

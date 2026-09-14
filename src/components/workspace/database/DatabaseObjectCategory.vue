@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { reactive, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -9,6 +11,8 @@ import type {
   DatabaseObjectKind,
 } from '@/types/database'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   schema: string
@@ -87,7 +91,7 @@ watch(
       v-if="!objects.length"
       class="text-txt-4 flex h-7 items-center gap-1.5 pl-10 text-[10.5px]"
     >
-      <span>暂无对象</span>
+      <span> {{ t('暂无对象') }} </span>
     </div>
 
     <template
@@ -102,7 +106,13 @@ watch(
             selectedKey === databaseObjectKey(object) && 'nav-item-active'
           )
         "
-        :title="`${object.schema}.${object.name}${object.identity ? `(${object.identity})` : ''}（双击打开）`"
+        :title="
+          t('{value0}.{value1}{value2}（双击打开）', {
+            value0: object.schema,
+            value1: object.name,
+            value2: object.identity ? `(${object.identity})` : '',
+          })
+        "
         @dblclick="emit('open', object)"
         @contextmenu.prevent.stop="emit('context', $event, object)"
       >
@@ -153,7 +163,7 @@ watch(
           v-if="inspectingKeys.has(databaseObjectKey(object))"
           class="text-txt-4 py-1 pl-15 text-[10.5px]"
         >
-          读取字段…
+          {{ t('读取字段…') }}
         </div>
         <div
           v-for="column in columnsFor(object)"

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, watch } from 'vue'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -12,6 +14,8 @@ import type {
 } from '@/types/database'
 import { copyText as copyClipboardText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 type RoutinePanel = 'definition' | 'parameters' | 'ddl'
 
@@ -32,14 +36,14 @@ const state = reactive({
   error: '',
 })
 
-const panels: Array<{ id: RoutinePanel; label: string }> = [
-  { id: 'definition', label: '定义' },
-  { id: 'parameters', label: '参数' },
+const panels = computed<Array<{ id: RoutinePanel; label: string }>>(() => [
+  { id: 'definition', label: t('定义') },
+  { id: 'parameters', label: t('参数') },
   { id: 'ddl', label: 'DDL' },
-]
+])
 
 const kindLabel = computed(() =>
-  props.object.kind === 'procedure' ? '存储过程' : '函数'
+  props.object.kind === 'procedure' ? t('存储过程') : t('函数')
 )
 const code = computed(() => {
   if (!state.detail) return ''
@@ -58,7 +62,7 @@ async function loadDetail(): Promise<void> {
     state.error = database.errorMessage(error)
     state.detail = null
     toast.error({
-      title: `读取${kindLabel.value}失败`,
+      title: t('读取{value0}失败', { value0: kindLabel.value }),
       description: state.error,
     })
   } finally {
@@ -68,7 +72,7 @@ async function loadDetail(): Promise<void> {
 
 async function copyText(value: string): Promise<void> {
   await copyClipboardText(value)
-  toast.success(`${kindLabel.value}定义已复制`)
+  toast.success(t('{value0}定义已复制', { value0: kindLabel.value }))
 }
 
 function queryTemplate(): string {
@@ -78,7 +82,7 @@ function queryTemplate(): string {
       .filter(parameter => parameter.mode.toLocaleUpperCase() !== 'OUT')
       .map(
         parameter =>
-          `/* ${parameter.name || '参数'}: ${parameter.dataType} */ NULL`
+          `/* ${parameter.name || t('参数')}: ${parameter.dataType} */ NULL`
       )
       .join(', ') ?? ''
   return props.object.kind === 'procedure'
@@ -130,14 +134,14 @@ watch(
       <IconButton
         icon="lucide:rotate-cw"
         :size="13"
-        title="刷新详情"
+        :title="t('刷新详情')"
         :disabled="state.loading"
         @click="loadDetail"
       />
       <IconButton
         icon="lucide:play"
         :size="13"
-        title="生成调用语句"
+        :title="t('生成调用语句')"
         @click="emit('query', queryTemplate())"
       />
     </header>
@@ -173,7 +177,8 @@ watch(
               name="lucide:loader-circle"
               :size="14"
               class="text-accent animate-spin"
-            />正在读取{{ kindLabel }}…</span
+            />
+            {{ t('正在读取') }} {{ kindLabel }}…</span
           >
         </div>
         <div
@@ -181,12 +186,13 @@ watch(
           class="text-txt-4 grid flex-1 place-items-center text-center text-xs"
         >
           <div>
-            <p>详情读取失败</p>
+            <p>{{ t('详情读取失败') }}</p>
             <AppButton
               class="mt-3"
               @click="loadDetail"
-              >重新加载</AppButton
             >
+              {{ t('重新加载') }}
+            </AppButton>
           </div>
         </div>
 
@@ -200,13 +206,13 @@ watch(
             <thead class="bg-panel text-txt-3">
               <tr>
                 <th class="border-line-soft border px-3 py-2 font-medium">
-                  参数名
+                  {{ t('参数名') }}
                 </th>
                 <th class="border-line-soft border px-3 py-2 font-medium">
-                  类型
+                  {{ t('类型') }}
                 </th>
                 <th class="border-line-soft border px-3 py-2 font-medium">
-                  模式
+                  {{ t('模式') }}
                 </th>
               </tr>
             </thead>
@@ -235,7 +241,7 @@ watch(
                   colspan="3"
                   class="border-line-soft text-txt-4 border px-3 py-8 text-center"
                 >
-                  此对象没有参数
+                  {{ t('此对象没有参数') }}
                 </td>
               </tr>
             </tbody>
@@ -254,11 +260,12 @@ watch(
             <AppIcon
               name="lucide:copy"
               :size="11"
-            />复制
+            />
+            {{ t('复制') }}
           </AppButton>
           <pre
             class="text-term-fg pr-22 font-mono text-[11.5px] leading-5 whitespace-pre-wrap"
-            >{{ code || '没有可用的定义' }}</pre>
+            >{{ code || t('没有可用的定义') }}</pre>
         </div>
       </div>
 
@@ -266,19 +273,21 @@ watch(
         v-if="state.detail"
         class="border-line-soft bg-panel scroll-thin w-76 shrink-0 overflow-y-auto border-l p-3"
       >
-        <h3 class="text-txt mb-2 text-[12px] font-medium">参数信息</h3>
+        <h3 class="text-txt mb-2 text-[12px] font-medium">
+          {{ t('参数信息') }}
+        </h3>
         <div class="border-line-soft overflow-hidden rounded-lg border">
           <table class="w-full border-collapse text-left text-[10.5px]">
             <thead class="bg-card text-txt-3">
               <tr>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
-                  参数名
+                  {{ t('参数名') }}
                 </th>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
-                  类型
+                  {{ t('类型') }}
                 </th>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
-                  模式
+                  {{ t('模式') }}
                 </th>
               </tr>
             </thead>
@@ -306,41 +315,43 @@ watch(
                   colspan="3"
                   class="text-txt-4 px-2 py-4 text-center"
                 >
-                  无参数
+                  {{ t('无参数') }}
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <h3 class="text-txt mt-4 mb-2 text-[12px] font-medium">基本信息</h3>
+        <h3 class="text-txt mt-4 mb-2 text-[12px] font-medium">
+          {{ t('基本信息') }}
+        </h3>
         <dl
           class="border-line-soft bg-card grid grid-cols-[88px_minmax(0,1fr)] gap-x-2 gap-y-2 rounded-lg border p-3 text-[10.5px]"
         >
-          <dt class="text-txt-4">名称</dt>
+          <dt class="text-txt-4">{{ t('名称') }}</dt>
           <dd
             class="text-txt-2 truncate"
             :title="state.detail.name"
           >
             {{ state.detail.name }}
           </dd>
-          <dt class="text-txt-4">数据库</dt>
+          <dt class="text-txt-4">{{ t('数据库') }}</dt>
           <dd class="text-txt-2 truncate">{{ state.detail.schema }}</dd>
           <template v-if="state.detail.returnType"
-            ><dt class="text-txt-4">返回类型</dt>
+            ><dt class="text-txt-4">{{ t('返回类型') }}</dt>
             <dd class="text-blue font-mono">
               {{ state.detail.returnType }}
             </dd></template
           >
-          <dt class="text-txt-4">语言</dt>
+          <dt class="text-txt-4">{{ t('语言') }}</dt>
           <dd class="text-txt-2 font-mono">
             {{ state.detail.language || 'SQL' }}
           </dd>
-          <dt class="text-txt-4">创建时间</dt>
+          <dt class="text-txt-4">{{ t('创建时间') }}</dt>
           <dd class="text-txt-3">{{ state.detail.createdAt || '—' }}</dd>
-          <dt class="text-txt-4">更新时间</dt>
+          <dt class="text-txt-4">{{ t('更新时间') }}</dt>
           <dd class="text-txt-3">{{ state.detail.updatedAt || '—' }}</dd>
-          <dt class="text-txt-4">注释</dt>
+          <dt class="text-txt-4">{{ t('注释') }}</dt>
           <dd class="text-txt-3 break-words">
             {{ state.detail.comment || '—' }}
           </dd>

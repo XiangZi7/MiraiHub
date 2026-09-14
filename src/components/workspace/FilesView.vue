@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   reactive,
@@ -32,6 +34,8 @@ import FileConflictDialog from './FileConflictDialog.vue'
 import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
 import RemoteFileList from './RemoteFileList.vue'
 import RemotePathInput from './RemotePathInput.vue'
+
+const { t } = useI18n()
 
 const { settings } = useSettings()
 
@@ -132,13 +136,14 @@ watch(visibleEntries, files => {
 })
 
 watch(error, message => {
-  if (message) toast.error({ title: '读取远端文件失败', description: message })
+  if (message)
+    toast.error({ title: t('读取远端文件失败'), description: message })
 })
 
 async function copyPath(): Promise<void> {
   await pathClip.copy(path.value)
   scheduleClipboardClear(path.value)
-  toast.success('远端路径已复制')
+  toast.success(t('远端路径已复制'))
 }
 
 const contextItems = computed<ContextMenuItem[]>(() => {
@@ -148,30 +153,33 @@ const contextItems = computed<ContextMenuItem[]>(() => {
   return [
     {
       id: 'open',
-      label: directory || file.kind === 'symlink' ? '打开目录' : '编辑文本文件',
+      label:
+        directory || file.kind === 'symlink'
+          ? t('打开目录')
+          : t('编辑文本文件'),
       icon: directory ? 'lucide:folder-open' : 'lucide:file-pen-line',
     },
     {
       id: 'external',
-      label: '下载并用外部程序打开',
+      label: t('下载并用外部程序打开'),
       icon: 'lucide:external-link',
       disabled: directory,
     },
     {
       id: 'download',
-      label: '下载到…',
+      label: t('下载到…'),
       icon: 'lucide:download',
       disabled: directory,
     },
     {
       id: 'rename',
-      label: '重命名',
+      label: t('重命名'),
       icon: 'lucide:pencil',
       separatorBefore: true,
     },
     {
       id: 'delete',
-      label: '删除',
+      label: t('删除'),
       icon: 'lucide:trash-2',
       danger: true,
       separatorBefore: true,
@@ -183,7 +191,10 @@ const summary = computed(() => {
   const dirs = visibleEntries.value.filter(
     item => item.kind === 'directory'
   ).length
-  return `${dirs} 个目录，${visibleEntries.value.length - dirs} 个文件`
+  return t('{value0} 个目录，{value1} 个文件', {
+    value0: dirs,
+    value1: visibleEntries.value.length - dirs,
+  })
 })
 
 function remoteChildPath(name: string): string {
@@ -214,7 +225,7 @@ async function pickUpload(directoryOnly: boolean): Promise<void> {
   if (props.sessionId !== session || !path.value) return
   const directory = path.value
   const result = await openFileDialog({
-    title: directoryOnly ? '选择要上传的文件夹' : '选择要上传的文件',
+    title: directoryOnly ? t('选择要上传的文件夹') : t('选择要上传的文件'),
     multiple: true,
     directory: directoryOnly,
   })
@@ -228,7 +239,7 @@ async function pickUpload(directoryOnly: boolean): Promise<void> {
           localPath,
           remotePath: directory,
         },
-        '当前服务器或目录已变化，请重新选择上传项目'
+        t('当前服务器或目录已变化，请重新选择上传项目')
       )
     }
     return
@@ -239,7 +250,7 @@ async function pickUpload(directoryOnly: boolean): Promise<void> {
 async function download(file: SshRemoteFile): Promise<void> {
   if (file.kind === 'directory') return
   const destination = await saveFileDialog({
-    title: `下载 ${file.name}`,
+    title: t('下载 {value0}', { value0: file.name }),
     defaultPath: defaultDownloadPath(file.name),
   })
   if (!destination) return
@@ -289,7 +300,7 @@ function runContextAction(action: string): void {
   else if (action === 'external')
     void openExternal(file).catch(error =>
       toast.error({
-        title: '打开文件失败',
+        title: t('打开文件失败'),
         description: ssh.errorMessage(error),
       })
     )
@@ -308,10 +319,10 @@ async function renameFile(name: string): Promise<void> {
   try {
     await ssh.renamePath(props.sessionId, file.path, remoteChildPath(name))
     await refresh()
-    toast.success(`已重命名为“${name}”`)
+    toast.success(t('已重命名为“{value0}”', { value0: name }))
   } catch (renameError) {
     toast.error({
-      title: '重命名失败',
+      title: t('重命名失败'),
       description: ssh.errorMessage(renameError),
     })
   }
@@ -321,10 +332,10 @@ async function deleteFile(file: SshRemoteFile): Promise<void> {
   try {
     await ssh.deletePath(props.sessionId, file.path, file.kind === 'directory')
     await refresh()
-    toast.success(`已删除“${file.name}”`)
+    toast.success(t('已删除“{value0}”', { value0: file.name }))
   } catch (deleteError) {
     toast.error({
-      title: '删除失败',
+      title: t('删除失败'),
       description: ssh.errorMessage(deleteError),
     })
   }
@@ -361,28 +372,28 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       <IconButton
         icon="lucide:house"
         :size="14"
-        title="主目录"
+        :title="t('主目录')"
         :disabled="!connected"
         @click="load('')"
       />
       <IconButton
         icon="lucide:arrow-left"
         :size="14"
-        title="后退"
+        :title="t('后退')"
         :disabled="!canGoBack"
         @click="goBack"
       />
       <IconButton
         icon="lucide:arrow-right"
         :size="14"
-        title="前进"
+        :title="t('前进')"
         :disabled="!canGoForward"
         @click="goForward"
       />
       <IconButton
         icon="lucide:arrow-up"
         :size="14"
-        title="上一级"
+        :title="t('上一级')"
         :disabled="!connected || path === '/'"
         @click="goUp"
       />
@@ -392,41 +403,41 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       <IconButton
         :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'"
         :size="14"
-        title="复制路径"
+        :title="t('复制路径')"
         :disabled="!path"
         @click="copyPath"
       />
       <IconButton
         icon="lucide:upload"
         :size="14"
-        title="上传文件"
+        :title="t('上传文件')"
         :disabled="!connected"
         @click="pickUploadFiles"
       />
       <IconButton
         icon="lucide:folder-up"
         :size="14"
-        title="上传文件夹"
+        :title="t('上传文件夹')"
         :disabled="!connected"
         @click="pickUploadFolder"
       />
       <IconButton
         icon="lucide:download"
         :size="14"
-        title="下载选中文件"
+        :title="t('下载选中文件')"
         :disabled="!selectedFile || selectedFile.kind === 'directory'"
         @click="selectedFile && download(selectedFile)"
       />
       <IconButton
         :icon="settings.showHiddenFiles ? 'lucide:eye' : 'lucide:eye-off'"
         :size="14"
-        :title="settings.showHiddenFiles ? '隐藏点文件' : '显示隐藏文件'"
+        :title="settings.showHiddenFiles ? t('隐藏点文件') : t('显示隐藏文件')"
         @click="toggleHidden"
       />
       <IconButton
         icon="lucide:rotate-cw"
         :size="14"
-        title="刷新"
+        :title="t('刷新')"
         :disabled="!connected"
         @click="refresh"
       />
@@ -452,8 +463,8 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       />
       <input
         v-model="filterText"
-        aria-label="筛选当前目录文件"
-        placeholder="筛选当前目录文件…"
+        :aria-label="t('筛选当前目录文件')"
+        :placeholder="t('筛选当前目录文件…')"
         class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none"
         @keydown.esc.stop="filterText = ''"
       />
@@ -461,7 +472,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         v-if="filterText"
         icon="lucide:x"
         :size="12"
-        title="清除文件筛选"
+        :title="t('清除文件筛选')"
         @click="filterText = ''"
       />
     </div>
@@ -469,9 +480,9 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     <div
       class="border-line-soft text-txt-3 grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b px-3 py-1.5 text-[11px] font-medium"
     >
-      <span>Name</span>
-      <span class="text-right">Size</span>
-      <span>Modified</span>
+      <span> {{ t('Name') }} </span>
+      <span class="text-right"> {{ t('Size') }} </span>
+      <span> {{ t('Modified') }} </span>
     </div>
 
     <RemoteFileList
@@ -485,13 +496,13 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         v-if="loading"
         class="text-txt-4 py-8 text-center text-xs"
       >
-        正在读取目录…
+        {{ t('正在读取目录…') }}
       </p>
       <p
         v-else-if="!connected"
         class="text-txt-4 py-8 text-center text-xs"
       >
-        连上服务器后可以浏览远端文件
+        {{ t('连上服务器后可以浏览远端文件') }}
       </p>
       <p
         v-else-if="!visibleEntries.length && !error"
@@ -499,10 +510,10 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       >
         {{
           filterText.trim()
-            ? '没有匹配的文件'
+            ? t('没有匹配的文件')
             : entries.length
-              ? '隐藏文件已在设置中隐藏'
-              : '这个目录是空的'
+              ? t('隐藏文件已在设置中隐藏')
+              : t('这个目录是空的')
         }}
       </p>
     </RemoteFileList>
@@ -510,9 +521,11 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     <footer
       class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px]"
     >
-      <span class="truncate">{{ connected ? summary : '未连接' }}</span>
+      <span class="truncate">{{ connected ? summary : t('未连接') }}</span>
       <div class="flex-1" />
-      <span class="text-txt-4 shrink-0">双击打开 · 可拖入本地文件上传</span>
+      <span class="text-txt-4 shrink-0">
+        {{ t('双击打开 · 可拖入本地文件上传') }}
+      </span>
     </footer>
 
     <Transition name="drop-overlay">
@@ -529,9 +542,11 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
             :size="24"
           />
         </div>
-        <p class="text-txt mt-3 text-[13px] font-semibold">松开即可上传</p>
+        <p class="text-txt mt-3 text-[13px] font-semibold">
+          {{ t('松开即可上传') }}
+        </p>
         <p class="text-txt-3 mt-1 text-[10.5px]">
-          文件或文件夹会上传到 {{ path || '主目录' }}
+          {{ t('files.dropDestination', { path: path || t('主目录') }) }}
         </p>
       </div>
     </Transition>
@@ -549,20 +564,28 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     :x="state.menuX"
     :y="state.menuY"
     :items="contextItems"
-    :label="state.menuFile ? `${state.menuFile.name} 操作` : '文件操作'"
+    :label="
+      state.menuFile
+        ? t('{value0} 操作', { value0: state.menuFile.name })
+        : t('文件操作')
+    "
     @select="runContextAction"
     @close="state.menuOpen = false"
   />
 
   <AppConfirmDialog
     :open="Boolean(state.pendingDelete)"
-    title="删除远端项目"
+    :title="t('删除远端项目')"
     :description="
       state.pendingDelete?.kind === 'directory'
-        ? `确定删除空目录“${state.pendingDelete?.name ?? ''}”吗？此操作无法撤销。`
-        : `确定删除远端文件“${state.pendingDelete?.name ?? ''}”吗？此操作无法撤销。`
+        ? t('确定删除空目录“{value0}”吗？此操作无法撤销。', {
+            value0: state.pendingDelete?.name ?? '',
+          })
+        : t('确定删除远端文件“{value0}”吗？此操作无法撤销。', {
+            value0: state.pendingDelete?.name ?? '',
+          })
     "
-    confirm-label="删除"
+    :confirm-label="t('删除')"
     danger
     @close="state.pendingDelete = null"
     @confirm="confirmDelete"

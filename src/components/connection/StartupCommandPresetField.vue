@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   nextTick,
@@ -13,6 +15,8 @@ import IconButton from '@/components/ui/IconButton.vue'
 import { useStartupCommandPresets } from '@/composables/useStartupCommandPresets'
 import { toast } from '@/composables/useToast'
 
+const { t } = useI18n()
+
 const props = withDefaults(
   defineProps<{
     placeholder?: string
@@ -20,7 +24,7 @@ const props = withDefaults(
   }>(),
   {
     placeholder: 'e.g. cd /srv/app && tmux attach || tmux',
-    description: 'SSH shell 就绪后自动执行；预设保存在本机。',
+    description: '',
   }
 )
 
@@ -34,7 +38,7 @@ const nameInput = useTemplateRef<HTMLInputElement>('presetName')
 const commandId = useId()
 
 const presetOptions = computed(() => [
-  { value: '', label: '不使用预设', description: '保留当前输入的命令' },
+  { value: '', label: t('不使用预设'), description: t('保留当前输入的命令') },
   ...presets.value.map(preset => ({
     value: preset.id,
     label: preset.name,
@@ -49,7 +53,7 @@ watch(selectedId, id => {
 
 async function beginSave(): Promise<void> {
   if (!command.value.trim()) {
-    toast.warning('先填写初始化命令')
+    toast.warning(t('先填写初始化命令'))
     return
   }
 
@@ -69,7 +73,7 @@ async function savePreset(): Promise<void> {
   const preset = await save(name, value)
   selectedId.value = preset.id
   naming.value = false
-  toast.success(`预设“${preset.name}”已保存`)
+  toast.success(t('预设“{value0}”已保存', { value0: preset.name }))
 }
 
 async function removePreset(): Promise<void> {
@@ -77,31 +81,31 @@ async function removePreset(): Promise<void> {
 
   await remove(selectedId.value)
   selectedId.value = ''
-  toast.success('预设已删除，当前命令保留')
+  toast.success(t('预设已删除，当前命令保留'))
 }
 </script>
 
 <template>
   <fieldset class="startup-command-field">
     <legend class="text-txt-2 mb-1.5 block text-[11px] font-medium">
-      Initialization Command
+      {{ t('Initialization Command') }}
     </legend>
 
     <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-end gap-2">
       <AppSelect
         v-model="selectedId"
-        label="初始化命令预设"
+        :label="t('初始化命令预设')"
         :options="presetOptions"
         hide-label
       />
       <IconButton
         icon="lucide:save"
-        title="把当前命令保存为预设"
+        :title="t('把当前命令保存为预设')"
         @click="beginSave"
       />
       <IconButton
         icon="lucide:trash-2"
-        title="删除选中的预设"
+        :title="t('删除选中的预设')"
         :disabled="!selectedId"
         @click="removePreset"
       />
@@ -115,8 +119,8 @@ async function removePreset(): Promise<void> {
         ref="presetName"
         v-model="presetName"
         class="preset-name-input"
-        placeholder="预设名称，例如：进入项目并启动 tmux"
-        aria-label="初始化命令预设名称"
+        :placeholder="t('预设名称，例如：进入项目并启动 tmux')"
+        :aria-label="t('初始化命令预设名称')"
         maxlength="64"
         @keydown.enter.prevent="savePreset"
         @keydown.esc.prevent="naming = false"
@@ -126,13 +130,13 @@ async function removePreset(): Promise<void> {
         variant="primary"
         @click="savePreset"
       >
-        保存预设
+        {{ t('保存预设') }}
       </AppButton>
       <AppButton
         size="sm"
         @click="naming = false"
       >
-        取消
+        {{ t('取消') }}
       </AppButton>
     </div>
 
@@ -142,12 +146,12 @@ async function removePreset(): Promise<void> {
       class="command-input mt-2"
       rows="3"
       :placeholder="props.placeholder"
-      aria-label="Initialization Command"
+      :aria-label="t('Initialization Command')"
       spellcheck="false"
     />
 
     <p class="text-txt-4 mt-1.5 text-[10.5px]">
-      {{ props.description }}
+      {{ props.description || t('SSH shell 就绪后自动执行；预设保存在本机。') }}
     </p>
   </fieldset>
 </template>

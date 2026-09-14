@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { onBeforeUnmount, reactive, shallowRef, toRefs, watch } from 'vue'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
@@ -97,7 +98,7 @@ export function useLocalTerminal() {
 
   async function connect(settings: LocalConnectionSettings): Promise<void> {
     const terminal = term.value
-    if (!terminal) throw new Error('终端尚未挂载')
+    if (!terminal) throw new Error(i18n.global.t('终端尚未挂载'))
     // PTY 使用回车提交命令；统一多行输入，避免 Windows CRLF 被提交两次。
     const startupCommand = settings.startupCommand
       ?.trim()
@@ -170,7 +171,9 @@ export function useLocalTerminal() {
 
       state.status = 'disconnected'
       state.error = errorMessage(err)
-      terminal.writeln(`\r\n\x1b[31m启动本地终端失败：${state.error}\x1b[0m`)
+      terminal.writeln(
+        `\r\n\x1b[31m${i18n.global.t('terminal.localStartFailed', { error: state.error })}\x1b[0m`
+      )
       const id = state.sessionId
       await cleanup()
       if (id) await localTerminal.close(id).catch(() => {})
@@ -184,8 +187,12 @@ export function useLocalTerminal() {
 
     state.error = payload.reason ?? ''
     const suffix =
-      payload.exitCode === null ? '' : `（退出码 ${payload.exitCode}）`
-    term.value?.writeln(`\r\n\x1b[90m本地终端已退出${suffix}\x1b[0m`)
+      payload.exitCode === null
+        ? ''
+        : i18n.global.t('（退出码 {value0}）', { value0: payload.exitCode })
+    term.value?.writeln(
+      `\r\n\x1b[90m${i18n.global.t('terminal.localExit', { suffix })}\x1b[0m`
+    )
   }
 
   const resize = useDebounceFn(() => {
@@ -224,7 +231,9 @@ export function useLocalTerminal() {
     if (state.status !== 'connected') return
     state.status = 'disconnected'
     state.error = errorMessage(err)
-    term.value?.writeln(`\r\n\x1b[31m写入本地终端失败：${state.error}\x1b[0m`)
+    term.value?.writeln(
+      `\r\n\x1b[31m${i18n.global.t('terminal.localWriteFailed', { error: state.error })}\x1b[0m`
+    )
   }
 
   onBeforeUnmount(() => {

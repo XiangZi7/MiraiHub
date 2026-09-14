@@ -7,14 +7,19 @@
  */
 
 import { settingsSnapshot } from '@/composables/useSettings'
+import { i18n } from '@/i18n'
 
 /** 相对时间的分档，单位毫秒。从小到大匹配，命中即返回 */
-const UNITS: { limit: number; divisor: number; suffix: string }[] = [
-  { limit: 60_000, divisor: 1000, suffix: '秒前' },
-  { limit: 3_600_000, divisor: 60_000, suffix: '分钟前' },
-  { limit: 86_400_000, divisor: 3_600_000, suffix: '小时前' },
-  { limit: 2_592_000_000, divisor: 86_400_000, suffix: '天前' },
-  { limit: 31_536_000_000, divisor: 2_592_000_000, suffix: '个月前' },
+const UNITS: {
+  limit: number
+  divisor: number
+  unit: Intl.RelativeTimeFormatUnit
+}[] = [
+  { limit: 60_000, divisor: 1000, unit: 'second' },
+  { limit: 3_600_000, divisor: 60_000, unit: 'minute' },
+  { limit: 86_400_000, divisor: 3_600_000, unit: 'hour' },
+  { limit: 2_592_000_000, divisor: 86_400_000, unit: 'day' },
+  { limit: 31_536_000_000, divisor: 2_592_000_000, unit: 'month' },
 ]
 
 const pad = (value: number): string => String(value).padStart(2, '0')
@@ -32,10 +37,13 @@ export function formatRelative(timestamp: number): string {
 
   // 时钟回拨或后端时间超前时 diff 为负，按"刚刚"处理，
   // 否则会算出"-3 分钟前"这种明显错误的文案
-  if (diff < 30_000) return '刚刚'
+  if (diff < 30_000) return i18n.global.t('刚刚')
 
-  for (const { limit, divisor, suffix } of UNITS) {
-    if (diff < limit) return `${Math.floor(diff / divisor)} ${suffix}`
+  for (const { limit, divisor, unit } of UNITS) {
+    if (diff < limit)
+      return new Intl.RelativeTimeFormat(i18n.global.locale.value, {
+        numeric: 'always',
+      }).format(-Math.floor(diff / divisor), unit)
   }
 
   return formatDate(timestamp)

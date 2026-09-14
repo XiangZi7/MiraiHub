@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { translateNativeMessage } from '@/i18n/native'
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   nextTick,
@@ -14,6 +17,8 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   conversations: AgentConversation[]
@@ -219,8 +224,8 @@ useEventListener(
     type="button"
     class="icon-btn history-trigger"
     :class="{ 'text-accent': open, 'text-danger': error }"
-    title="聊天记录"
-    aria-label="聊天记录"
+    :title="t('聊天记录')"
+    :aria-label="t('聊天记录')"
     aria-haspopup="dialog"
     :aria-expanded="open"
     :aria-controls="open ? menuId : undefined"
@@ -251,19 +256,19 @@ useEventListener(
           :id="titleId"
           class="flex-1 text-xs font-medium"
         >
-          聊天记录
+          {{ t('聊天记录') }}
         </h3>
         <span class="text-txt-4 text-[10px]">{{ conversations.length }}</span>
         <IconButton
           icon="lucide:refresh-cw"
-          title="刷新聊天记录"
+          :title="t('刷新聊天记录')"
           :size="13"
           :disabled="loading || unavailable"
           @click="emit('refresh')"
         />
         <IconButton
           icon="lucide:x"
-          title="关闭聊天记录"
+          :title="t('关闭聊天记录')"
           :size="13"
           @click="close()"
         />
@@ -276,8 +281,8 @@ useEventListener(
         <input
           ref="searchInput"
           v-model="search"
-          aria-label="搜索聊天记录"
-          placeholder="搜索会话"
+          :aria-label="t('搜索聊天记录')"
+          :placeholder="t('搜索会话')"
           :disabled="Boolean(editingId) || mutating"
         />
       </label>
@@ -287,11 +292,11 @@ useEventListener(
           class="history-empty"
           role="status"
         >
-          正在加载…
+          {{ t('正在加载…') }}
         </p>
         <ul
           v-else
-          aria-label="历史会话列表"
+          :aria-label="t('历史会话列表')"
         >
           <li
             v-for="item in visible"
@@ -307,15 +312,15 @@ useEventListener(
               <input
                 data-rename-input
                 v-model="draft"
-                aria-label="会话名称"
+                :aria-label="t('会话名称')"
                 maxlength="60"
                 :disabled="unavailable"
               />
               <button
                 class="icon-btn"
                 type="submit"
-                title="保存名称"
-                aria-label="保存名称"
+                :title="t('保存名称')"
+                :aria-label="t('保存名称')"
                 :disabled="unavailable || !draft.trim()"
               >
                 <AppIcon
@@ -325,7 +330,7 @@ useEventListener(
               </button>
               <IconButton
                 icon="lucide:x"
-                title="取消改名"
+                :title="t('取消改名')"
                 :size="13"
                 :disabled="mutating"
                 @click="cancelEdit"
@@ -341,7 +346,9 @@ useEventListener(
                 @click="select(item.id)"
               >
                 <span class="flex min-w-0 items-center gap-1.5"
-                  ><span class="truncate">{{ item.title }}</span
+                  ><span class="truncate">{{
+                    translateNativeMessage(item.title)
+                  }}</span
                   ><AppIcon
                     v-if="item.id === activeId"
                     name="lucide:check"
@@ -355,14 +362,14 @@ useEventListener(
               <div class="history-actions">
                 <IconButton
                   icon="lucide:pencil"
-                  :title="`重命名 ${item.title}`"
+                  :title="t('重命名 {value0}', { value0: item.title })"
                   :size="12"
                   :disabled="unavailable"
                   @click="edit(item)"
                 />
                 <IconButton
                   icon="lucide:trash-2"
-                  :title="`删除 ${item.title}`"
+                  :title="t('删除 {value0}', { value0: item.title })"
                   :size="12"
                   :disabled="unavailable"
                   @click="askDelete(item)"
@@ -375,29 +382,31 @@ useEventListener(
           v-if="!loading && !visible.length"
           class="history-empty"
         >
-          {{ search.trim() ? '没有匹配的会话' : '还没有聊天记录' }}
+          {{ search.trim() ? t('没有匹配的会话') : t('还没有聊天记录') }}
         </p>
       </div>
       <div
         v-if="deleting"
         class="history-delete"
       >
-        <p>删除「{{ deleting.title }}」及其聊天记录？此操作无法撤销。</p>
+        <p>{{ t('agent.deleteConversation', { name: deleting.title }) }}</p>
         <div class="mt-2 flex justify-end gap-2">
           <AppButton
             size="sm"
             variant="ghost"
             :disabled="mutating"
             @click="deleting = null"
-            >取消</AppButton
           >
+            {{ t('取消') }}
+          </AppButton>
           <AppButton
             size="sm"
             class="text-danger"
             :disabled="mutating"
             @click="emit('remove', deleting.id)"
-            >确认删除</AppButton
           >
+            {{ t('确认删除') }}
+          </AppButton>
         </div>
       </div>
       <p
@@ -405,7 +414,7 @@ useEventListener(
         role="alert"
         class="text-danger px-3 py-2 text-[11px]"
       >
-        {{ error }}
+        {{ translateNativeMessage(error) }}
       </p>
     </section>
   </Teleport>

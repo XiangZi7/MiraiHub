@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   nextTick,
@@ -15,7 +17,10 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
 import TerminalCommandEditor from './TerminalCommandEditor.vue'
 import { useTerminalCommandsStore } from '@/stores/terminal-commands'
+import { terminalCommandLabel } from '@/constants/terminal-commands'
 import type { TerminalCommand } from '@/types/terminal-command'
+
+const { t } = useI18n()
 
 defineProps<{ connected: boolean }>()
 const emit = defineEmits<{ insert: [command: string] }>()
@@ -135,7 +140,7 @@ useEventListener(window, 'resize', () => {
     ref="trigger"
     type="button"
     class="command-trigger"
-    title="常用指令"
+    :title="t('常用指令')"
     :aria-expanded="open"
     aria-haspopup="dialog"
     @click="toggle"
@@ -164,7 +169,9 @@ useEventListener(window, 'resize', () => {
           :id="titleId"
           class="flex-1 text-xs font-medium"
         >
-          {{ editing ? (current ? '编辑指令' : '添加指令') : '常用指令' }}
+          {{
+            editing ? (current ? t('编辑指令') : t('添加指令')) : t('常用指令')
+          }}
         </h3>
         <AppButton
           v-if="!editing"
@@ -172,12 +179,12 @@ useEventListener(window, 'resize', () => {
           variant="ghost"
           :aria-pressed="managing"
           @click="managing = !managing"
-          >{{ managing ? '完成' : '管理 / 排序' }}</AppButton
+          >{{ managing ? t('完成') : t('管理 / 排序') }}</AppButton
         >
         <IconButton
           icon="lucide:x"
           :size="13"
-          title="关闭常用指令"
+          :title="t('关闭常用指令')"
           @click="close()"
         />
       </header>
@@ -192,7 +199,7 @@ useEventListener(window, 'resize', () => {
         <ol
           v-else
           class="p-1.5"
-          aria-label="常用指令列表"
+          :aria-label="t('常用指令列表')"
         >
           <li
             v-for="(command, index) in commands"
@@ -203,10 +210,12 @@ useEventListener(window, 'resize', () => {
               type="button"
               class="command-insert"
               :disabled="!connected"
-              :title="`填入终端：${command.command}`"
+              :title="t('填入终端：{value0}', { value0: command.command })"
               @click="insert(command.command)"
             >
-              <span class="min-w-0 truncate">{{ command.name }}</span>
+              <span class="min-w-0 truncate">{{
+                terminalCommandLabel(command)
+              }}</span>
               <code class="text-txt-4 min-w-0 truncate text-[10px]">{{
                 command.command
               }}</code>
@@ -218,27 +227,27 @@ useEventListener(window, 'resize', () => {
               <IconButton
                 icon="lucide:chevron-up"
                 :size="12"
-                :title="`上移 ${command.name}`"
+                :title="t('上移 {value0}', { value0: command.name })"
                 :disabled="index === 0"
                 @click="update(() => store.move(command.id, -1))"
               />
               <IconButton
                 icon="lucide:chevron-down"
                 :size="12"
-                :title="`下移 ${command.name}`"
+                :title="t('下移 {value0}', { value0: command.name })"
                 :disabled="index === commands.length - 1"
                 @click="update(() => store.move(command.id, 1))"
               />
               <IconButton
                 icon="lucide:pencil"
                 :size="12"
-                :title="`编辑 ${command.name}`"
+                :title="t('编辑 {value0}', { value0: command.name })"
                 @click="edit(command)"
               />
               <IconButton
                 icon="lucide:x"
                 :size="12"
-                :title="`删除 ${command.name}`"
+                :title="t('删除 {value0}', { value0: command.name })"
                 @click="update(() => store.remove(command.id))"
               />
             </div>
@@ -248,7 +257,7 @@ useEventListener(window, 'resize', () => {
           v-if="!editing && !commands.length"
           class="text-txt-4 p-4 text-center text-xs"
         >
-          还没有常用指令，点击下方添加。
+          {{ t('还没有常用指令，点击下方添加。') }}
         </p>
       </div>
       <p
@@ -268,10 +277,15 @@ useEventListener(window, 'resize', () => {
           ><AppIcon
             name="lucide:plus"
             :size="13"
-          />添加命令</AppButton
-        >
+          />
+          {{ t('添加命令') }}
+        </AppButton>
         <p class="text-txt-4 text-center text-[10px]">
-          {{ connected ? '点击填入终端，按回车执行' : '连接 SSH 后可填入指令' }}
+          {{
+            connected
+              ? t('点击填入终端，按回车执行')
+              : t('连接 SSH 后可填入指令')
+          }}
         </p>
       </footer>
     </section>

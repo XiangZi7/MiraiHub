@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, onMounted, reactive, shallowRef, useId, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
@@ -18,6 +20,8 @@ import ConnectionTagEditor from './ConnectionTagEditor.vue'
 import ConnectionGroupSelect from './ConnectionGroupSelect.vue'
 import PrivateKeySelector from './PrivateKeySelector.vue'
 import StartupCommandPresetField from './StartupCommandPresetField.vue'
+
+const { t } = useI18n()
 
 const { settings } = useSettings()
 
@@ -124,7 +128,7 @@ async function loadConnection(): Promise<void> {
   try {
     const connection = await connectionsStore.get(props.connectionId)
     if (!connection || !isSshConnection(connection)) {
-      toast.error('找不到要编辑的 SSH 连接')
+      toast.error(t('找不到要编辑的 SSH 连接'))
       return
     }
 
@@ -160,7 +164,7 @@ async function loadConnection(): Promise<void> {
       settings.auth.type === 'password' && Boolean(settings.auth.password)
   } catch (error) {
     toast.error({
-      title: '读取 SSH 连接失败',
+      title: t('读取 SSH 连接失败'),
       description: ssh.errorMessage(error),
     })
   } finally {
@@ -254,10 +258,15 @@ async function browsePrivateKeys(): Promise<void> {
     const remembered = rememberImported(paths)
     form.privateKey = remembered[0]?.path ?? paths[0]
     toast.success(
-      paths.length > 1 ? `已保存 ${paths.length} 把私钥` : '已选择私钥'
+      paths.length > 1
+        ? t('已保存 {value0} 把私钥', { value0: paths.length })
+        : t('已选择私钥')
     )
   } catch (error) {
-    toast.error({ title: '选择私钥失败', description: ssh.errorMessage(error) })
+    toast.error({
+      title: t('选择私钥失败'),
+      description: ssh.errorMessage(error),
+    })
   } finally {
     browsingPrivateKeys.value = false
   }
@@ -267,7 +276,7 @@ async function browsePrivateKeys(): Promise<void> {
 function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
-    toast.warning('请先填写连接名称、主机和用户名')
+    toast.warning(t('请先填写连接名称、主机和用户名'))
     return false
   }
 
@@ -275,13 +284,13 @@ function validate(): boolean {
 
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     activeSection.value = 'general'
-    toast.warning('端口必须是 1–65535 之间的整数')
+    toast.warning(t('端口必须是 1–65535 之间的整数'))
     return false
   }
 
   if (!Number.isInteger(timeoutSecs) || timeoutSecs < 1 || timeoutSecs > 3600) {
     activeSection.value = 'advanced'
-    toast.warning('连接超时必须是 1–3600 秒之间的整数')
+    toast.warning(t('连接超时必须是 1–3600 秒之间的整数'))
     return false
   }
 
@@ -292,13 +301,13 @@ function validate(): boolean {
     keepaliveSecs > 86400
   ) {
     activeSection.value = 'advanced'
-    toast.warning('Keep Alive 必须是 0–86400 秒之间的整数')
+    toast.warning(t('Keep Alive 必须是 0–86400 秒之间的整数'))
     return false
   }
 
   if (form.authentication === 'private-key' && !form.privateKey.trim()) {
     activeSection.value = 'ssh-key'
-    toast.warning('请先选择私钥文件')
+    toast.warning(t('请先选择私钥文件'))
     return false
   }
 
@@ -307,7 +316,7 @@ function validate(): boolean {
     form.privateKey.trim().toLocaleLowerCase().endsWith('.pub')
   ) {
     activeSection.value = 'ssh-key'
-    toast.warning('请选择私钥文件，不要选择 .pub 公钥文件')
+    toast.warning(t('请选择私钥文件，不要选择 .pub 公钥文件'))
     return false
   }
 
@@ -325,9 +334,12 @@ async function testConnection(): Promise<void> {
   try {
     const sessionId = await ssh.connect(buildConfig())
     await ssh.disconnect(sessionId)
-    toast.success('SSH 连接成功')
+    toast.success(t('SSH 连接成功'))
   } catch (err) {
-    toast.error({ title: 'SSH 连接失败', description: ssh.errorMessage(err) })
+    toast.error({
+      title: t('SSH 连接失败'),
+      description: ssh.errorMessage(err),
+    })
   } finally {
     testing.value = false
   }
@@ -373,11 +385,13 @@ async function saveConnection(): Promise<void> {
     if (props.connectionId) await update(props.connectionId, input)
     else await create(input)
 
-    toast.success(props.connectionId ? 'SSH 连接已更新' : 'SSH 连接已保存')
+    toast.success(
+      props.connectionId ? t('SSH 连接已更新') : t('SSH 连接已保存')
+    )
     emit('close')
   } catch (err) {
     toast.error({
-      title: '保存 SSH 连接失败',
+      title: t('保存 SSH 连接失败'),
       description: ssh.errorMessage(err),
     })
   } finally {
@@ -394,7 +408,7 @@ async function saveConnection(): Promise<void> {
     <div
       class="connection-tabs"
       role="tablist"
-      aria-label="SSH connection settings"
+      :aria-label="t('SSH connection settings')"
     >
       <button
         v-for="section in sections"
@@ -408,7 +422,7 @@ async function saveConnection(): Promise<void> {
         ]"
         @click="activeSection = section.id"
       >
-        {{ section.label }}
+        {{ t(section.label) }}
       </button>
     </div>
 
@@ -420,8 +434,8 @@ async function saveConnection(): Promise<void> {
         <div class="grid grid-cols-[minmax(0,1fr)_160px] gap-3">
           <AppTextField
             v-model="form.name"
-            label="Connection Name"
-            placeholder="e.g. Production Server"
+            :label="t('Connection Name')"
+            :placeholder="t('e.g. Production Server')"
             required
             autofocus
           />
@@ -434,14 +448,14 @@ async function saveConnection(): Promise<void> {
         <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
           <AppTextField
             v-model="form.host"
-            label="Host"
-            placeholder="192.168.1.100 or server.example.com"
+            :label="t('Host')"
+            :placeholder="t('192.168.1.100 or server.example.com')"
             inputmode="url"
             required
           />
           <AppTextField
             v-model="form.port"
-            label="Port"
+            :label="t('Port')"
             placeholder="22"
             inputmode="numeric"
             required
@@ -450,8 +464,8 @@ async function saveConnection(): Promise<void> {
 
         <AppTextField
           v-model="form.username"
-          label="Username"
-          placeholder="e.g. ubuntu"
+          :label="t('Username')"
+          :placeholder="t('e.g. ubuntu')"
           autocomplete="username"
           required
         />
@@ -464,22 +478,27 @@ async function saveConnection(): Promise<void> {
 
         <AppSelect
           v-model="form.authentication"
-          label="Authentication Method"
-          :options="authenticationOptions"
+          :label="t('Authentication Method')"
+          :options="
+            authenticationOptions.map(option => ({
+              ...option,
+              label: t(option.label),
+            }))
+          "
         />
 
         <template v-if="form.authentication === 'password'">
           <div class="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
             <AppTextField
               v-model="form.password"
-              label="Password"
+              :label="t('Password')"
               type="password"
-              placeholder="Enter password"
+              :placeholder="t('Enter password')"
               autocomplete="current-password"
             />
             <AppCheckbox
               v-model="savePassword"
-              label="Save password"
+              :label="t('Save password')"
               :disabled="!settings.rememberPasswords"
               class="mb-2"
             />
@@ -492,11 +511,13 @@ async function saveConnection(): Promise<void> {
         >
           <AppTextField
             v-model="form.privateKey"
-            label="Private Key"
-            placeholder="选择或输入私钥路径（支持 PEM）"
+            :label="t('Private Key')"
+            :placeholder="t('选择或输入私钥路径（支持 PEM）')"
             action-icon="lucide:folder-open"
             :action-title="
-              browsingPrivateKeys ? '正在打开文件选择器…' : '选择 SSH 私钥文件'
+              browsingPrivateKeys
+                ? t('正在打开文件选择器…')
+                : t('选择 SSH 私钥文件')
             "
             :action-disabled="browsingPrivateKeys"
             @action="browsePrivateKeys"
@@ -506,7 +527,7 @@ async function saveConnection(): Promise<void> {
             class="text-violet hover:text-txt w-fit text-left text-[11px]"
             @click="activeSection = 'ssh-key'"
           >
-            Configure private key →
+            {{ t('Configure private key →') }}
           </AppButton>
         </div>
 
@@ -514,14 +535,15 @@ async function saveConnection(): Promise<void> {
           <label
             :for="descriptionId"
             class="connection-label"
-            >Description (Optional)</label
           >
+            {{ t('Description (Optional)') }}
+          </label>
           <textarea
             :id="descriptionId"
             v-model="form.description"
             class="connection-textarea"
             rows="2"
-            placeholder="Add a description for this connection…"
+            :placeholder="t('Add a description for this connection…')"
           />
         </div>
       </div>
@@ -531,23 +553,25 @@ async function saveConnection(): Promise<void> {
         class="grid gap-3.5"
       >
         <div class="connection-section-copy">
-          Fine-tune connection stability and terminal startup behavior.
+          {{
+            t('Fine-tune connection stability and terminal startup behavior.')
+          }}
         </div>
         <div class="grid grid-cols-2 gap-3">
           <AppTextField
             v-model="form.timeout"
-            label="Connection Timeout (s)"
+            :label="t('Connection Timeout (s)')"
             inputmode="numeric"
           />
           <AppTextField
             v-model="form.keepAlive"
-            label="Keep Alive (s)"
+            :label="t('Keep Alive (s)')"
             inputmode="numeric"
           />
         </div>
         <AppSelect
           v-model="form.terminalType"
-          label="Terminal Type"
+          :label="t('Terminal Type')"
           :options="terminalOptions"
         />
         <StartupCommandPresetField v-model="form.startupCommand" />
@@ -558,8 +582,11 @@ async function saveConnection(): Promise<void> {
         class="grid gap-3.5"
       >
         <div class="connection-section-copy">
-          Choose a saved private key or add several keys with the native file
-          picker.
+          {{
+            t(
+              'Choose a saved private key or add several keys with the native file picker.'
+            )
+          }}
         </div>
         <PrivateKeySelector
           v-model="form.privateKey"
@@ -572,9 +599,9 @@ async function saveConnection(): Promise<void> {
         />
         <AppTextField
           v-model="form.passphrase"
-          label="Key Passphrase"
+          :label="t('Key Passphrase')"
           type="password"
-          placeholder="Optional passphrase"
+          :placeholder="t('Optional passphrase')"
           autocomplete="off"
         />
       </div>
@@ -584,37 +611,39 @@ async function saveConnection(): Promise<void> {
         class="grid gap-3.5"
       >
         <div class="connection-section-copy">
-          Route this SSH connection through a SOCKS or HTTP proxy.
+          {{ t('Route this SSH connection through a SOCKS or HTTP proxy.') }}
         </div>
         <AppSelect
           v-model="form.proxyType"
-          label="Proxy Type"
-          :options="proxyOptions"
+          :label="t('Proxy Type')"
+          :options="
+            proxyOptions.map(option => ({ ...option, label: t(option.label) }))
+          "
         />
         <template v-if="form.proxyType !== 'none'">
           <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
             <AppTextField
               v-model="form.proxyHost"
-              label="Proxy Host"
+              :label="t('Proxy Host')"
               placeholder="127.0.0.1"
             />
             <AppTextField
               v-model="form.proxyPort"
-              label="Port"
+              :label="t('Port')"
               placeholder="1080"
               inputmode="numeric"
             />
           </div>
           <AppTextField
             v-model="form.proxyUsername"
-            label="Proxy Username"
-            placeholder="Optional"
+            :label="t('Proxy Username')"
+            :placeholder="t('Optional')"
           />
           <AppTextField
             v-model="form.proxyPassword"
-            label="Proxy Password"
+            :label="t('Proxy Password')"
             type="password"
-            placeholder="Optional"
+            :placeholder="t('Optional')"
           />
         </template>
       </div>
@@ -625,16 +654,18 @@ async function saveConnection(): Promise<void> {
         :disabled="testing"
         @click="testConnection"
       >
-        {{ testing ? 'Testing…' : 'Test Connection' }}
+        {{ testing ? t('Testing…') : t('Test Connection') }}
       </AppButton>
       <div class="flex-1" />
-      <AppButton @click="emit('close')"> Cancel </AppButton>
+      <AppButton @click="emit('close')"> {{ t('Cancel') }} </AppButton>
       <AppButton
         type="submit"
         variant="primary"
         :disabled="saving || loadingConnection"
       >
-        {{ saving ? 'Saving…' : props.connectionId ? 'Update' : 'Save' }}
+        {{
+          saving ? t('Saving…') : props.connectionId ? t('Update') : t('Save')
+        }}
       </AppButton>
     </footer>
   </form>

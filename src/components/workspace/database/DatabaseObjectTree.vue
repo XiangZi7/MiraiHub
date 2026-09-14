@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, shallowRef, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
@@ -18,6 +20,8 @@ import { cn } from '@/utils/cn'
 import DatabaseObjectCategory from './DatabaseObjectCategory.vue'
 import DatabaseObjectContextMenu from './DatabaseObjectContextMenu.vue'
 import DatabaseSavedQueryCategory from './DatabaseSavedQueryCategory.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   databaseName: string
@@ -161,25 +165,25 @@ function createObjectItems(schema: string): ContextMenuItem[] {
   return [
     {
       id: `create-table:${schema}`,
-      label: '新建表',
+      label: t('新建表'),
       icon: 'lucide:table-2',
       iconTone: 'blue',
     },
     {
       id: `create-view:${schema}`,
-      label: '新建视图',
+      label: t('新建视图'),
       icon: 'lucide:eye',
       iconTone: 'violet',
     },
     {
       id: `create-procedure:${schema}`,
-      label: '新建存储过程',
+      label: t('新建存储过程'),
       icon: 'lucide:workflow',
       iconTone: 'violet',
     },
     {
       id: `create-function:${schema}`,
-      label: '新建函数',
+      label: t('新建函数'),
       icon: 'lucide:braces',
       iconTone: 'amber',
     },
@@ -195,7 +199,9 @@ const transferItems = computed<ContextMenuItem[]>(() => [
   {
     id: 'export-database',
     label:
-      props.databaseKind === 'postgresql' ? '导出当前数据库…' : '导出数据库…',
+      props.databaseKind === 'postgresql'
+        ? t('导出当前数据库…')
+        : t('导出数据库…'),
     icon: 'lucide:database-backup',
     iconTone: 'blue',
     separatorBefore: true,
@@ -204,7 +210,9 @@ const transferItems = computed<ContextMenuItem[]>(() => [
   {
     id: 'import-database',
     label:
-      props.databaseKind === 'postgresql' ? '导入到当前数据库…' : '导入数据库…',
+      props.databaseKind === 'postgresql'
+        ? t('导入到当前数据库…')
+        : t('导入数据库…'),
     icon: 'lucide:file-input',
     iconTone: 'blue',
     disabled: props.loading || !transferDatabase.value,
@@ -216,19 +224,19 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     return [
       {
         id: 'create-database',
-        label: '新建数据库',
+        label: t('新建数据库'),
         icon: 'lucide:database',
         iconTone: 'violet',
       },
       {
         id: 'new-query',
-        label: '新建查询',
+        label: t('新建查询'),
         icon: 'lucide:square-terminal',
         iconTone: 'blue',
       },
       {
         id: 'refresh',
-        label: '刷新数据库列表',
+        label: t('刷新数据库列表'),
         icon: 'lucide:rotate-cw',
         separatorBefore: true,
       },
@@ -248,19 +256,19 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         },
         {
           id: 'new-query',
-          label: '新建查询',
+          label: t('新建查询'),
           icon: 'lucide:square-terminal',
           iconTone: 'blue',
         },
         {
           id: 'create-object',
-          label: '新建对象',
+          label: t('新建对象'),
           icon: 'lucide:plus',
           children: createObjectItems(context.database),
         },
         {
           id: 'refresh',
-          label: '刷新对象树',
+          label: t('刷新对象树'),
           icon: 'lucide:rotate-cw',
           separatorBefore: true,
         },
@@ -271,7 +279,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     return [
       {
         id: 'activate-database',
-        label: active ? '当前数据库' : '设为当前数据库',
+        label: active ? t('当前数据库') : t('设为当前数据库'),
         icon: 'lucide:circle-check',
         checked: active,
         disabled: active,
@@ -279,13 +287,13 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       },
       {
         id: 'new-query',
-        label: '新建查询',
+        label: t('新建查询'),
         icon: 'lucide:square-terminal',
         iconTone: 'blue',
       },
       {
         id: 'create-object',
-        label: '新建对象',
+        label: t('新建对象'),
         icon: 'lucide:plus',
         children: createObjectItems(context.database),
       },
@@ -294,15 +302,15 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         id: 'rename-database',
         label:
           props.databaseKind === 'mysql'
-            ? '迁移/重命名数据库…'
-            : '重命名数据库…',
+            ? t('迁移/重命名数据库…')
+            : t('重命名数据库…'),
         icon: 'lucide:pencil',
         separatorBefore: true,
       },
-      { id: 'refresh', label: '刷新', icon: 'lucide:rotate-cw' },
+      { id: 'refresh', label: t('刷新'), icon: 'lucide:rotate-cw' },
       {
         id: 'remove-database',
-        label: '删除数据库…',
+        label: t('删除数据库…'),
         icon: 'lucide:trash-2',
         iconTone: 'danger',
         danger: true,
@@ -315,15 +323,15 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     return [
       {
         id: 'create-current-object',
-        label: `新建${kindLabel(context.category)}`,
+        label: t('新建{value0}', { value0: kindLabel(context.category) }),
         icon: 'lucide:plus',
         iconTone: 'violet',
         groupLabel: `${context.database} / ${kindLabel(context.category)}`,
       },
-      { id: 'new-query', label: '新建查询', icon: 'lucide:square-terminal' },
+      { id: 'new-query', label: t('新建查询'), icon: 'lucide:square-terminal' },
       {
         id: 'refresh',
-        label: '刷新对象树',
+        label: t('刷新对象树'),
         icon: 'lucide:rotate-cw',
         separatorBefore: true,
       },
@@ -334,14 +342,14 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     return [
       {
         id: 'create-saved-query',
-        label: '新建已保存查询',
+        label: t('新建已保存查询'),
         icon: 'lucide:file-plus-2',
         iconTone: 'blue',
         groupLabel: `${context.database} / Queries`,
       },
       {
         id: 'new-query',
-        label: '新建临时查询',
+        label: t('新建临时查询'),
         icon: 'lucide:square-terminal',
       },
     ]
@@ -353,25 +361,25 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     return [
       {
         id: 'open-saved-query',
-        label: '打开查询',
+        label: t('打开查询'),
         icon: 'lucide:file-code-2',
         iconTone: 'blue',
         groupLabel: query.name,
       },
       {
         id: 'duplicate-saved-query',
-        label: '创建副本',
+        label: t('创建副本'),
         icon: 'lucide:copy-plus',
       },
       {
         id: 'rename-saved-query',
-        label: '重命名…',
+        label: t('重命名…'),
         icon: 'lucide:pencil',
         separatorBefore: true,
       },
       {
         id: 'remove-saved-query',
-        label: '删除查询…',
+        label: t('删除查询…'),
         icon: 'lucide:trash-2',
         iconTone: 'danger',
         danger: true,
@@ -383,10 +391,10 @@ const contextItems = computed<ContextMenuItem[]>(() => {
 })
 
 function kindLabel(kind: DatabaseObjectKind): string {
-  if (kind === 'table') return '表'
-  if (kind === 'view') return '视图'
-  if (kind === 'procedure') return '存储过程'
-  return '函数'
+  if (kind === 'table') return t('表')
+  if (kind === 'view') return t('视图')
+  if (kind === 'procedure') return t('存储过程')
+  return t('函数')
 }
 
 function toggle(key: string): void {
@@ -459,7 +467,7 @@ function handleContextAction(id: string): void {
 <template>
   <nav
     class="border-line-soft bg-panel flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-r"
-    aria-label="数据库对象"
+    :aria-label="t('数据库对象')"
     @contextmenu.prevent="showContext($event, 'root')"
   >
     <div
@@ -479,19 +487,19 @@ function handleContextAction(id: string): void {
       <IconButton
         icon="lucide:square-terminal"
         :size="13"
-        title="在当前数据库中新建查询"
+        :title="t('在当前数据库中新建查询')"
         @click.stop="emit('newQuery', activeDatabase || undefined)"
       />
       <IconButton
         icon="lucide:plus"
         :size="13"
-        title="新建数据库"
+        :title="t('新建数据库')"
         @click.stop="emit('createDatabase')"
       />
       <IconButton
         icon="lucide:rotate-cw"
         :size="13"
-        title="刷新对象树"
+        :title="t('刷新对象树')"
         :disabled="loading"
         @click.stop="emit('refresh')"
       />
@@ -501,7 +509,7 @@ function handleContextAction(id: string): void {
       <SearchField
         v-model="search"
         icon="lucide:search"
-        placeholder="搜索查询、表、视图或存储过程"
+        :placeholder="t('搜索查询、表、视图或存储过程')"
       />
     </div>
 
@@ -510,19 +518,19 @@ function handleContextAction(id: string): void {
         v-if="loading && !objects.length && !savedQueries.length"
         class="text-txt-4 px-2 py-3 text-[11px]"
       >
-        正在读取数据库结构…
+        {{ t('正在读取数据库结构…') }}
       </div>
       <div
         v-else-if="error && !objects.length && !savedQueries.length"
         class="text-txt-4 px-2 py-3 text-[11px] leading-5"
       >
-        对象列表加载失败，请刷新重试
+        {{ t('对象列表加载失败，请刷新重试') }}
       </div>
       <div
         v-else-if="!schemas.length"
         class="text-txt-4 px-2 py-3 text-[11px]"
       >
-        当前连接中没有可显示的数据库对象
+        {{ t('当前连接中没有可显示的数据库对象') }}
       </div>
 
       <template
@@ -567,7 +575,7 @@ function handleContextAction(id: string): void {
           <span
             v-if="databaseKind === 'mysql' && schema.name === activeDatabase"
             class="bg-accent size-1.5 shrink-0 rounded-full shadow-[0_0_7px_var(--color-accent)]"
-            title="当前数据库"
+            :title="t('当前数据库')"
           />
         </AppButton>
 
@@ -575,7 +583,7 @@ function handleContextAction(id: string): void {
           <DatabaseObjectCategory
             :schema="schema.name"
             kind="table"
-            label="Tables"
+            :label="t('Tables')"
             icon="lucide:table-2"
             icon-class="text-blue"
             :objects="schema.tables"
@@ -621,7 +629,7 @@ function handleContextAction(id: string): void {
           <DatabaseObjectCategory
             :schema="schema.name"
             kind="view"
-            label="Views"
+            :label="t('Views')"
             icon="lucide:eye"
             icon-class="text-accent"
             :objects="schema.views"
@@ -648,7 +656,7 @@ function handleContextAction(id: string): void {
           <DatabaseObjectCategory
             :schema="schema.name"
             kind="procedure"
-            label="Stored Procedures"
+            :label="t('Stored Procedures')"
             icon="lucide:workflow"
             icon-class="text-violet"
             :objects="schema.procedures"
@@ -675,7 +683,7 @@ function handleContextAction(id: string): void {
           <DatabaseObjectCategory
             :schema="schema.name"
             kind="function"
-            label="Functions"
+            :label="t('Functions')"
             icon="lucide:braces"
             icon-class="text-amber"
             :objects="schema.functions"
@@ -724,7 +732,7 @@ function handleContextAction(id: string): void {
       :x="context.x"
       :y="context.y"
       :items="contextItems"
-      label="数据库对象操作"
+      :label="t('数据库对象操作')"
       @close="context.open = false"
       @select="handleContextAction"
     />

@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 /**
  * SSH 能力的前端封装。
  *
@@ -59,7 +60,7 @@ export function errorMessage(err: unknown): string {
 
 /** 浏览器里直接预览时没有 Tauri 后端，给出明确报错而不是让 invoke 抛底层异常 */
 function ensureTauri(): void {
-  if (!IS_TAURI) throw new Error('SSH 功能需要在桌面应用中运行')
+  if (!IS_TAURI) throw new Error(i18n.global.t('SSH 功能需要在桌面应用中运行'))
 }
 
 /**

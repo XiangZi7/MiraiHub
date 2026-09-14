@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed } from 'vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type { SshConfigTransferItem } from '@/types/ssh-config-transfer'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   items: readonly SshConfigTransferItem[]
@@ -28,8 +32,8 @@ function setSelected(id: string, selected: boolean): void {
 
 function authLabel(type: SshConfigTransferItem['authType']): string {
   return {
-    password: '密码',
-    privateKey: '私钥',
+    password: t('密码'),
+    privateKey: t('私钥'),
     agent: 'SSH Agent',
   }[type]
 }
@@ -40,7 +44,12 @@ function authLabel(type: SshConfigTransferItem['authType']): string {
     <div class="ssh-config-checklist-header">
       <AppCheckbox
         v-model="allSelected"
-        :label="`全选（${selectedIds.length}/${items.length}）`"
+        :label="
+          t('全选（{value0}/{value1}）', {
+            value0: selectedIds.length,
+            value1: items.length,
+          })
+        "
         :disabled="disabled || !items.length"
       />
     </div>
@@ -56,7 +65,7 @@ function authLabel(type: SshConfigTransferItem['authType']): string {
       >
         <AppCheckbox
           :model-value="selectedIds.includes(item.id)"
-          :label="`选择 ${item.name}`"
+          :label="t('选择 {value0}', { value0: item.name })"
           hide-label
           :disabled="disabled"
           @update:model-value="setSelected(item.id, $event)"
@@ -91,7 +100,7 @@ function authLabel(type: SshConfigTransferItem['authType']): string {
       v-else
       class="text-txt-4 px-3 py-8 text-center text-[11px]"
     >
-      没有可选择的 SSH 配置
+      {{ t('没有可选择的 SSH 配置') }}
     </p>
   </div>
 </template>

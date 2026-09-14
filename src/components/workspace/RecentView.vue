@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, shallowRef, toRefs } from 'vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -17,6 +19,8 @@ import type { SavedConnection } from '@/types/connection'
 import { endpointOf } from '@/types/connection'
 import { cn } from '@/utils/cn'
 import { formatRelative } from '@/utils/time'
+
+const { t } = useI18n()
 
 const { settings } = useSettings()
 
@@ -100,7 +104,7 @@ const visibleGroups = computed<RecentGroup[]>(() => {
         usedAt: item.lastUsedAt,
       }))
 
-    return { id: bucket.id, label: bucket.label, items }
+    return { id: bucket.id, label: t(bucket.label), items }
   }).filter(group => group.items.length > 0)
 })
 
@@ -124,10 +128,10 @@ async function clearHistory(): Promise<void> {
     await Promise.all(
       usedConnections.value.map(item => update(item.id, { lastUsedAt: 0 }))
     )
-    toast.success('最近会话记录已清空')
+    toast.success(t('最近会话记录已清空'))
   } catch (error) {
     toast.error({
-      title: '清空最近会话失败',
+      title: t('清空最近会话失败'),
       description: error instanceof Error ? error.message : String(error),
     })
   }
@@ -147,7 +151,7 @@ async function clearHistory(): Promise<void> {
         :class="cn('seg', filter === item.id && 'seg-active')"
         @click="filter = item.id"
       >
-        {{ item.label }}
+        {{ t(item.label) }}
       </button>
 
       <div class="flex-1" />
@@ -155,13 +159,13 @@ async function clearHistory(): Promise<void> {
       <SearchField
         v-model="keyword"
         icon="lucide:search"
-        placeholder="搜索会话…"
+        :placeholder="t('搜索会话…')"
         class="h-7 w-56"
       />
       <IconButton
         icon="lucide:trash-2"
         :size="14"
-        title="清空记录"
+        :title="t('清空记录')"
         @click="clearConfirmOpen = true"
       />
     </header>
@@ -219,14 +223,14 @@ async function clearHistory(): Promise<void> {
             <button
               type="button"
               class="btn shrink-0 px-2 py-1 text-[11px] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-              title="重新连接"
+              :title="t('重新连接')"
               @click="reopen(session.id)"
             >
               <AppIcon
                 name="lucide:rotate-cw"
                 :size="12"
               />
-              <span>Reconnect</span>
+              <span> {{ t('Reconnect') }} </span>
             </button>
           </div>
         </div>
@@ -246,15 +250,15 @@ async function clearHistory(): Promise<void> {
             />
           </div>
           <p class="text-txt-2 text-sm">
-            {{ hasHistory ? '没有匹配的会话' : '还没有会话记录' }}
+            {{ hasHistory ? t('没有匹配的会话') : t('还没有会话记录') }}
           </p>
           <p class="text-txt-4 max-w-70 text-xs">
             {{
               hasHistory
-                ? '换个关键词，或把筛选切回 All'
+                ? t('换个关键词，或把筛选切回 All')
                 : settings.saveSessionHistory
-                  ? '打开一个连接后，这里会记下来'
-                  : '会话历史已在设置中关闭'
+                  ? t('打开一个连接后，这里会记下来')
+                  : t('会话历史已在设置中关闭')
             }}
           </p>
         </div>
@@ -265,15 +269,15 @@ async function clearHistory(): Promise<void> {
     <footer
       class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center border-t px-3 text-[10.5px]"
     >
-      <span>{{ total }} sessions</span>
+      <span>{{ t('recent.sessions', { count: total }) }}</span>
       <div class="flex-1" />
-      <span>点击 Reconnect 回到该连接</span>
+      <span> {{ t('点击 Reconnect 回到该连接') }} </span>
     </footer>
     <AppConfirmDialog
       :open="clearConfirmOpen"
-      title="清空最近会话？"
-      description="仅清除最近使用时间，已经保存的连接配置会保留。"
-      confirm-label="确认清空"
+      :title="t('清空最近会话？')"
+      :description="t('仅清除最近使用时间，已经保存的连接配置会保留。')"
+      :confirm-label="t('确认清空')"
       danger
       @close="clearConfirmOpen = false"
       @confirm="clearHistory"

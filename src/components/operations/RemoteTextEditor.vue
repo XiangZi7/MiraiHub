@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, toRefs } from 'vue'
 import { useRemoteTextDocument } from '@/composables/useRemoteTextDocument'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
@@ -7,6 +9,8 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
+
+const { t } = useI18n()
 const props = defineProps<RemoteEditRequest & { standalone?: boolean }>()
 const emit = defineEmits<{
   close: []
@@ -39,12 +43,12 @@ const {
   reviewedText,
   discard,
 } = toRefs(state)
-const fileName = computed(() => props.path.split('/').pop() || '远端文件')
+const fileName = computed(() => props.path.split('/').pop() || t('远端文件'))
 defineExpose({ requestClose })
 </script>
 <template>
   <OperationDialog
-    title="远端文本编辑器"
+    :title="t('远端文本编辑器')"
     wide
     :standalone="standalone"
     :busy="busy"
@@ -62,7 +66,7 @@ defineExpose({ requestClose })
           ><span
             v-if="dirty"
             class="dirty-dot"
-            title="未保存"
+            :title="t('未保存')"
           />
         </div>
         <span
@@ -72,14 +76,14 @@ defineExpose({ requestClose })
       </div>
       <IconButton
         icon="lucide:rotate-cw"
-        title="重新加载"
+        :title="t('重新加载')"
         :size="15"
         :disabled="busy || reviewing"
         @click="requestReload"
       />
       <IconButton
         icon="lucide:copy"
-        title="复制草稿"
+        :title="t('复制草稿')"
         :size="15"
         :disabled="!remote"
         @click="copyDraft"
@@ -87,11 +91,12 @@ defineExpose({ requestClose })
       <AppButton
         variant="primary"
         size="sm"
-        title="预览修改并保存 (Ctrl+S)"
+        :title="t('预览修改并保存 (Ctrl+S)')"
         :disabled="!dirty || busy || reviewing"
         @click="review"
-        >保存</AppButton
       >
+        {{ t('保存') }}
+      </AppButton>
     </div>
     <p
       v-if="error"
@@ -109,22 +114,24 @@ defineExpose({ requestClose })
     </p>
     <template v-if="reviewing && remote">
       <p class="text-amber text-[12px]">
-        核对以下完整内容后，确认保存到上方服务器与路径。
+        {{ t('核对以下完整内容后，确认保存到上方服务器与路径。') }}
       </p>
       <div class="editor-review">
-        <label
-          >打开时的内容<textarea
+        <label>
+          {{ t('打开时的内容') }}
+          <textarea
             :value="remote.text"
             readonly
             spellcheck="false"
-            aria-label="保存前的远端内容"
+            :aria-label="t('保存前的远端内容')"
           /></label
-        ><label
-          >即将保存的内容<textarea
+        ><label>
+          {{ t('即将保存的内容') }}
+          <textarea
             :value="reviewedText"
             readonly
             spellcheck="false"
-            aria-label="即将保存的内容"
+            :aria-label="t('即将保存的内容')"
           />
         </label>
       </div>
@@ -132,12 +139,13 @@ defineExpose({ requestClose })
         <AppButton
           :disabled="busy"
           @click="reviewing = false"
-          >返回编辑</AppButton
+        >
+          {{ t('返回编辑') }} </AppButton
         ><AppButton
           variant="primary"
           :disabled="busy"
           @click="save"
-          >{{ busy ? '正在检查并保存…' : '确认保存到远端' }}</AppButton
+          >{{ busy ? t('正在检查并保存…') : t('确认保存到远端') }}</AppButton
         >
       </div>
     </template>
@@ -147,33 +155,44 @@ defineExpose({ requestClose })
       class="editor-input"
       :disabled="busy || !remote"
       spellcheck="false"
-      aria-label="远端文件内容"
-      :placeholder="busy ? '正在读取远端文本…' : '打开文件后即可编辑'"
+      :aria-label="t('远端文件内容')"
+      :placeholder="busy ? t('正在读取远端文本…') : t('打开文件后即可编辑')"
     />
     <footer class="editor-status">
       <span :class="dirty && 'text-amber'">{{
-        busy ? '处理中…' : !remote ? '未加载' : dirty ? '未保存' : '已同步'
+        busy
+          ? t('处理中…')
+          : !remote
+            ? t('未加载')
+            : dirty
+              ? t('未保存')
+              : t('已同步')
       }}</span>
       <span class="editor-format"
         >UTF-8{{ remote?.bom ? ' BOM' : '' }} ·
-        {{ remote?.lineEnding || 'LF' }} · {{ lines }} 行 ·
+        {{ remote?.lineEnding || 'LF' }} ·
+        {{ t('common.lines', { count: lines }) }} ·
         {{ (bytes / 1024).toFixed(1) }} KB</span
       >
       <details class="editor-help">
-        <summary>保存说明</summary>
+        <summary>{{ t('保存说明') }}</summary>
         <p>
-          支持 1 MB 以内的 UTF-8
-          普通文件。保存前检查冲突并备份原内容；保留基本权限、所有者及换行格式。特殊
-          ACL、扩展属性和硬链接关系不保留。
+          {{
+            t(
+              '支持 1 MB 以内的 UTF-8 普通文件。保存前检查冲突并备份原内容；保留基本权限、所有者及换行格式。特殊 ACL、扩展属性和硬链接关系不保留。'
+            )
+          }}
         </p>
       </details>
     </footer>
   </OperationDialog>
   <AppConfirmDialog
     :open="!!discard"
-    :title="discard === 'close' ? '关闭未保存的文件？' : '放弃草稿并重新加载？'"
-    description="当前修改尚未保存。可以取消并复制草稿，避免丢失编辑内容。"
-    confirm-label="放弃修改"
+    :title="
+      discard === 'close' ? t('关闭未保存的文件？') : t('放弃草稿并重新加载？')
+    "
+    :description="t('当前修改尚未保存。可以取消并复制草稿，避免丢失编辑内容。')"
+    :confirm-label="t('放弃修改')"
     danger
     @close="discard = ''"
     @confirm="confirmDiscard"

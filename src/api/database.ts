@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 /** 数据库 Tauri 命令的前端封装。 */
 
 import { invoke } from '@tauri-apps/api/core'
@@ -22,7 +23,8 @@ import { settingNumber } from '@/composables/useSettings'
 export { errorMessage, isAppError } from './ssh'
 
 function ensureTauri(): void {
-  if (!IS_TAURI) throw new Error('数据库功能需要在桌面应用中运行')
+  if (!IS_TAURI)
+    throw new Error(i18n.global.t('数据库功能需要在桌面应用中运行'))
 }
 
 export async function testConnection(config: DatabaseConfig): Promise<void> {

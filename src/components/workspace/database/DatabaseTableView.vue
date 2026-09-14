@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, shallowRef, watch } from 'vue'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -20,6 +22,8 @@ import type {
 } from '@/types/database'
 import { copyText as copyClipboardText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 type DetailPanel =
   'definition' | 'data' | 'columns' | 'indexes' | 'relations' | 'ddl'
@@ -63,33 +67,41 @@ const confirmOpen = shallowRef(false)
 let loadRevision = 0
 let pageRevision = 0
 
-const tablePanels: Array<{ id: DetailPanel; label: string; icon: string }> = [
-  { id: 'data', label: '数据', icon: 'lucide:table-2' },
-  { id: 'columns', label: '字段', icon: 'lucide:columns-3' },
-  { id: 'indexes', label: '索引', icon: 'lucide:list-tree' },
-  { id: 'relations', label: '外键', icon: 'lucide:git-branch' },
+const tablePanels = computed<
+  Array<{ id: DetailPanel; label: string; icon: string }>
+>(() => [
+  { id: 'data', label: t('数据'), icon: 'lucide:table-2' },
+  { id: 'columns', label: t('字段'), icon: 'lucide:columns-3' },
+  { id: 'indexes', label: t('索引'), icon: 'lucide:list-tree' },
+  { id: 'relations', label: t('外键'), icon: 'lucide:git-branch' },
   { id: 'ddl', label: 'DDL', icon: 'lucide:file-code-2' },
-]
-const viewPanels: Array<{ id: DetailPanel; label: string; icon: string }> = [
-  { id: 'definition', label: '定义', icon: 'lucide:file-code-2' },
-  { id: 'data', label: '数据预览', icon: 'lucide:table-2' },
+])
+const viewPanels = computed<
+  Array<{ id: DetailPanel; label: string; icon: string }>
+>(() => [
+  { id: 'definition', label: t('定义'), icon: 'lucide:file-code-2' },
+  { id: 'data', label: t('数据预览'), icon: 'lucide:table-2' },
   { id: 'ddl', label: 'DDL', icon: 'lucide:braces' },
-]
+])
 
-const pageSizeOptions = [50, 100, 200, 500].map(value => ({
-  value: String(value),
-  label: `${value} 行/页`,
-}))
-const operatorOptions: Array<{ value: RowFilterOperator; label: string }> = [
-  { value: 'contains', label: '包含' },
-  { value: 'equals', label: '等于' },
-  { value: 'notEquals', label: '不等于' },
-  { value: 'startsWith', label: '开头是' },
-  { value: 'greaterThan', label: '大于' },
-  { value: 'lessThan', label: '小于' },
-  { value: 'isNull', label: '为空' },
-  { value: 'notNull', label: '不为空' },
-]
+const pageSizeOptions = computed(() =>
+  [50, 100, 200, 500].map(value => ({
+    value: String(value),
+    label: t('{value0} 行/页', { value0: value }),
+  }))
+)
+const operatorOptions = computed<
+  Array<{ value: RowFilterOperator; label: string }>
+>(() => [
+  { value: 'contains', label: t('包含') },
+  { value: 'equals', label: t('等于') },
+  { value: 'notEquals', label: t('不等于') },
+  { value: 'startsWith', label: t('开头是') },
+  { value: 'greaterThan', label: t('大于') },
+  { value: 'lessThan', label: t('小于') },
+  { value: 'isNull', label: t('为空') },
+  { value: 'notNull', label: t('不为空') },
+])
 
 const filterColumnOptions = computed(() =>
   (state.detail?.columns ?? []).map(column => ({
@@ -99,7 +111,9 @@ const filterColumnOptions = computed(() =>
   }))
 )
 const isView = computed(() => props.object.kind === 'view')
-const panels = computed(() => (isView.value ? viewPanels : tablePanels))
+const panels = computed(() =>
+  isView.value ? viewPanels.value : tablePanels.value
+)
 const gridColumns = computed(() =>
   state.page?.columns.length
     ? state.page.columns
@@ -163,7 +177,7 @@ async function loadDetailAndRows(): Promise<void> {
   } catch (error) {
     if (revision === loadRevision) {
       state.error = database.errorMessage(error)
-      toast.error({ title: '读取表结构失败', description: state.error })
+      toast.error({ title: t('读取表结构失败'), description: state.error })
     }
   } finally {
     if (revision === loadRevision) state.loading = false
@@ -188,7 +202,7 @@ async function loadRows(): Promise<void> {
   } catch (error) {
     if (revision === pageRevision) {
       state.error = database.errorMessage(error)
-      toast.error({ title: '读取表数据失败', description: state.error })
+      toast.error({ title: t('读取表数据失败'), description: state.error })
     }
   } finally {
     if (revision === pageRevision) state.pageLoading = false
@@ -249,7 +263,7 @@ async function calculateCount(): Promise<void> {
     )
   } catch (error) {
     toast.error({
-      title: '统计行数失败',
+      title: t('统计行数失败'),
       description: database.errorMessage(error),
     })
   } finally {
@@ -364,11 +378,15 @@ async function commitChanges(): Promise<void> {
     clearChanges()
     await loadRows()
     toast.success(
-      `已提交 ${mutations.length} 项改动，影响 ${result.rowsAffected} 行（${result.elapsedMs} ms）`
+      t('已提交 {value0} 项改动，影响 {value1} 行（{value2} ms）', {
+        value0: mutations.length,
+        value1: result.rowsAffected,
+        value2: result.elapsedMs,
+      })
     )
   } catch (error) {
     toast.error({
-      title: '提交数据改动失败',
+      title: t('提交数据改动失败'),
       description: database.errorMessage(error),
     })
   } finally {
@@ -378,7 +396,7 @@ async function commitChanges(): Promise<void> {
 
 async function copyText(value: string): Promise<void> {
   await copyClipboardText(value)
-  toast.success('已复制到剪贴板')
+  toast.success(t('已复制到剪贴板'))
 }
 
 watch(
@@ -440,14 +458,14 @@ watch(
       <span
         v-if="!canEditExisting && state.detail?.kind === 'table'"
         class="text-amber mr-1 text-[10px]"
-        title="当前表没有主键，现有行无法安全定位"
+        :title="t('当前表没有主键，现有行无法安全定位')"
       >
-        无主键 · 只读行
+        {{ t('无主键 · 只读行') }}
       </span>
       <IconButton
         icon="lucide:rotate-cw"
         :size="13"
-        title="刷新当前对象"
+        :title="t('刷新当前对象')"
         :disabled="state.loading || state.pageLoading"
         @click="loadDetailAndRows"
       />
@@ -462,20 +480,22 @@ watch(
           name="lucide:loader-circle"
           :size="14"
           class="animate-spin"
-        />读取表结构…</span
-      >
+        />
+        {{ t('读取表结构…') }}
+      </span>
     </div>
     <div
       v-else-if="state.error && !state.detail"
       class="text-txt-4 grid min-h-0 flex-1 place-items-center text-center text-xs"
     >
       <div>
-        <p>表结构读取失败</p>
+        <p>{{ t('表结构读取失败') }}</p>
         <AppButton
           class="mt-3"
           @click="loadDetailAndRows"
-          >重新加载</AppButton
         >
+          {{ t('重新加载') }}
+        </AppButton>
       </div>
     </div>
 
@@ -491,7 +511,7 @@ watch(
             <div class="w-32">
               <AppSelect
                 v-model="filterDraft.column"
-                label="筛选字段"
+                :label="t('筛选字段')"
                 :options="filterColumnOptions"
                 hide-label
                 compact
@@ -501,7 +521,7 @@ watch(
             <div class="w-24">
               <AppSelect
                 v-model="filterDraft.operator"
-                label="筛选方式"
+                :label="t('筛选方式')"
                 :options="operatorOptions"
                 hide-label
                 compact
@@ -512,7 +532,7 @@ watch(
               v-model="filterDraft.value"
               size="sm"
               class="min-w-28 flex-1"
-              placeholder="筛选值"
+              :placeholder="t('筛选值')"
               @keydown.enter="applyFilter"
             />
             <AppButton
@@ -522,12 +542,13 @@ watch(
               <AppIcon
                 name="lucide:filter"
                 :size="11"
-              />筛选
+              />
+              {{ t('筛选') }}
             </AppButton>
             <IconButton
               icon="lucide:list-filter-plus"
               :size="12"
-              title="清除筛选"
+              :title="t('清除筛选')"
               :disabled="!state.filters.length && !filterDraft.value"
               @click="clearFilter"
             />
@@ -540,7 +561,8 @@ watch(
               <AppIcon
                 name="lucide:plus"
                 :size="11"
-              />新增行
+              />
+              {{ t('新增行') }}
             </AppButton>
             <AppButton
               size="sm"
@@ -550,7 +572,8 @@ watch(
               <AppIcon
                 name="lucide:save"
                 :size="11"
-              />提交
+              />
+              {{ t('提交') }}
               <span v-if="pendingMutationCount"
                 >({{ pendingMutationCount }})</span
               >
@@ -558,7 +581,7 @@ watch(
             <IconButton
               icon="lucide:undo-2"
               :size="12"
-              title="放弃未提交改动"
+              :title="t('放弃未提交改动')"
               :disabled="!pendingMutationCount && !insertedRows.length"
               @click="clearChanges"
             />
@@ -590,7 +613,7 @@ watch(
                     v-for="(column, columnIndex) in gridColumns"
                     :key="`${column.name}:${columnIndex}`"
                     class="border-line-soft hover:bg-hover min-w-36 cursor-pointer border-r border-b px-2.5 py-1.5 font-medium select-none"
-                    :title="`按 ${column.name} 排序`"
+                    :title="t('按 {value0} 排序', { value0: column.name })"
                     @click="toggleSort(column.name)"
                   >
                     <span>{{ column.name }}</span>
@@ -641,7 +664,9 @@ watch(
                       :size="11"
                       class="text-txt-4 hover:text-danger size-6"
                       :title="
-                        deletedRows.has(rowIndex) ? '撤销删除' : '标记删除'
+                        deletedRows.has(rowIndex)
+                          ? t('撤销删除')
+                          : t('标记删除')
                       "
                       @click="toggleDelete(rowIndex)"
                     />
@@ -703,7 +728,7 @@ watch(
                   <td
                     class="border-line-soft text-accent border-r border-b px-1.5 py-1 text-right"
                   >
-                    NEW
+                    {{ t('NEW') }}
                   </td>
                   <td
                     v-if="canInsert"
@@ -713,7 +738,7 @@ watch(
                       icon="lucide:x"
                       :size="11"
                       class="text-txt-4 hover:text-danger size-6"
-                      title="移除新增行"
+                      :title="t('移除新增行')"
                       @click="insertedRows.splice(rowIndex, 1)"
                     />
                   </td>
@@ -728,7 +753,7 @@ watch(
                       monospace
                       :placeholder="
                         column.autoIncrement
-                          ? '自动生成'
+                          ? t('自动生成')
                           : insertedValue(rowIndex, column.name) === null
                             ? 'NULL'
                             : ''
@@ -741,7 +766,7 @@ watch(
                       v-if="column.nullable"
                       variant="bare"
                       class="bg-raised text-txt-4 hover:text-violet absolute top-1/2 right-1 hidden -translate-y-1/2 rounded px-1 text-[9px] group-focus-within/cell:block"
-                      title="设为 NULL"
+                      :title="t('设为 NULL')"
                       @click="setInsertedValue(rowIndex, column.name, null)"
                       >NULL</AppButton
                     >
@@ -755,7 +780,7 @@ watch(
               "
               class="text-txt-4 grid h-full place-items-center py-12 text-xs"
             >
-              当前条件下没有数据
+              {{ t('当前条件下没有数据') }}
             </div>
           </div>
 
@@ -765,29 +790,29 @@ watch(
             <IconButton
               icon="lucide:chevron-left"
               :size="12"
-              title="上一页"
+              :title="t('上一页')"
               :disabled="state.offset === 0 || state.pageLoading"
               @click="changePage(-1)"
             />
-            <span>第 {{ pageNumber }} 页</span>
+            <span>{{ t('database.page', { page: pageNumber }) }}</span>
             <IconButton
               icon="lucide:chevron-right"
               :size="12"
-              title="下一页"
+              :title="t('下一页')"
               :disabled="!state.page?.hasMore || state.pageLoading"
               @click="changePage(1)"
             />
             <div class="w-25">
               <AppSelect
                 v-model="state.pageSize"
-                label="分页大小"
+                :label="t('分页大小')"
                 :options="pageSizeOptions"
                 hide-label
                 compact
               />
             </div>
             <span class="text-txt-4 ml-1">
-              {{ state.page?.rows.length ?? 0 }} 行 ·
+              {{ t('common.rows', { count: state.page?.rows.length ?? 0 }) }} ·
               {{ state.page?.elapsedMs ?? 0 }} ms
             </span>
             <AppButton
@@ -798,12 +823,16 @@ watch(
             >
               {{
                 state.countLoading
-                  ? '统计中…'
+                  ? t('统计中…')
                   : state.exactCount !== null
-                    ? `精确 ${state.exactCount.toLocaleString()} 行`
+                    ? t('精确 {value0} 行', {
+                        value0: state.exactCount.toLocaleString(),
+                      })
                     : estimatedCount !== null && estimatedCount !== undefined
-                      ? `约 ${estimatedCount.toLocaleString()} 行 · 点此精确统计`
-                      : '统计总行数'
+                      ? t('约 {value0} 行 · 点此精确统计', {
+                          value0: estimatedCount.toLocaleString(),
+                        })
+                      : t('统计总行数')
               }}
             </AppButton>
             <div class="flex-1" />
@@ -811,7 +840,7 @@ watch(
               v-if="state.page?.sql"
               variant="bare"
               class="text-txt-4 hover:bg-hover hover:text-txt-2 rounded px-1.5 py-1 font-mono"
-              title="复制本页实际 SQL"
+              :title="t('复制本页实际 SQL')"
               @click="copyText(state.page.sql)"
             >
               SQL
@@ -820,7 +849,7 @@ watch(
               v-if="state.page?.sql"
               icon="lucide:external-link"
               :size="11"
-              title="发送到查询编辑器"
+              :title="t('发送到查询编辑器')"
               @click="emit('query', state.page.sql)"
             />
           </footer>
@@ -834,19 +863,19 @@ watch(
             <thead class="bg-panel text-txt-3 sticky top-0">
               <tr>
                 <th class="border-line-soft border-b px-3 py-2 font-medium">
-                  字段
+                  {{ t('字段') }}
                 </th>
                 <th class="border-line-soft border-b px-3 py-2 font-medium">
-                  类型
+                  {{ t('类型') }}
                 </th>
                 <th class="border-line-soft border-b px-3 py-2 font-medium">
-                  约束
+                  {{ t('约束') }}
                 </th>
                 <th class="border-line-soft border-b px-3 py-2 font-medium">
-                  默认值
+                  {{ t('默认值') }}
                 </th>
                 <th class="border-line-soft border-b px-3 py-2 font-medium">
-                  备注
+                  {{ t('备注') }}
                 </th>
               </tr>
             </thead>
@@ -873,7 +902,9 @@ watch(
                 </td>
                 <td class="border-line-soft text-txt-3 border-b px-3 py-2">
                   {{ column.nullable ? 'NULL' : 'NOT NULL'
-                  }}<span v-if="column.autoIncrement"> · 自动生成</span>
+                  }}<span v-if="column.autoIncrement">
+                    · {{ t('自动生成') }}</span
+                  >
                 </td>
                 <td
                   class="border-line-soft text-txt-3 max-w-64 truncate border-b px-3 py-2 font-mono"
@@ -900,7 +931,7 @@ watch(
             v-if="!state.detail.indexes.length"
             class="text-txt-4 text-xs"
           >
-            没有索引
+            {{ t('没有索引') }}
           </div>
           <div
             v-for="index in state.detail.indexes"
@@ -937,7 +968,7 @@ watch(
             v-if="!state.detail.foreignKeys.length"
             class="text-txt-4 text-xs"
           >
-            没有外键
+            {{ t('没有外键') }}
           </div>
           <div
             v-for="foreignKey in state.detail.foreignKeys"
@@ -972,11 +1003,12 @@ watch(
             ><AppIcon
               name="lucide:copy"
               :size="11"
-            />复制 DDL</AppButton
-          >
+            />
+            {{ t('复制 DDL') }}
+          </AppButton>
           <pre
             class="text-term-fg pr-24 font-mono text-[11.5px] leading-5 whitespace-pre-wrap"
-            >{{ state.detail.ddl || '无法生成 DDL' }}</pre>
+            >{{ state.detail.ddl || t('无法生成 DDL') }}</pre>
         </div>
       </div>
 
@@ -984,40 +1016,44 @@ watch(
         v-if="isView"
         class="border-line-soft bg-panel scroll-thin w-76 shrink-0 overflow-y-auto border-l p-3"
       >
-        <h3 class="text-txt mb-2 text-[12px] font-medium">视图信息</h3>
+        <h3 class="text-txt mb-2 text-[12px] font-medium">
+          {{ t('视图信息') }}
+        </h3>
         <dl
           class="border-line-soft bg-card grid grid-cols-[88px_minmax(0,1fr)] gap-x-2 gap-y-2 rounded-lg border p-3 text-[10.5px]"
         >
-          <dt class="text-txt-4">名称</dt>
+          <dt class="text-txt-4">{{ t('名称') }}</dt>
           <dd
             class="text-txt-2 truncate"
             :title="object.name"
           >
             {{ object.name }}
           </dd>
-          <dt class="text-txt-4">数据库</dt>
+          <dt class="text-txt-4">{{ t('数据库') }}</dt>
           <dd class="text-txt-2 truncate">{{ object.schema }}</dd>
-          <dt class="text-txt-4">创建时间</dt>
+          <dt class="text-txt-4">{{ t('创建时间') }}</dt>
           <dd class="text-txt-3">{{ object.createdAt || '—' }}</dd>
-          <dt class="text-txt-4">更新时间</dt>
+          <dt class="text-txt-4">{{ t('更新时间') }}</dt>
           <dd class="text-txt-3">{{ object.updatedAt || '—' }}</dd>
-          <dt class="text-txt-4">注释</dt>
+          <dt class="text-txt-4">{{ t('注释') }}</dt>
           <dd class="text-txt-3 break-words">{{ object.comment || '—' }}</dd>
         </dl>
 
-        <h3 class="text-txt mt-4 mb-2 text-[12px] font-medium">字段信息</h3>
+        <h3 class="text-txt mt-4 mb-2 text-[12px] font-medium">
+          {{ t('字段信息') }}
+        </h3>
         <div class="border-line-soft overflow-hidden rounded-lg border">
           <table class="w-full border-collapse text-left text-[10.5px]">
             <thead class="bg-card text-txt-3">
               <tr>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
-                  字段名
+                  {{ t('字段名') }}
                 </th>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
-                  类型
+                  {{ t('类型') }}
                 </th>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
-                  可空
+                  {{ t('可空') }}
                 </th>
               </tr>
             </thead>
@@ -1037,7 +1073,7 @@ watch(
                   {{ column.dataType }}
                 </td>
                 <td class="border-line-soft text-txt-3 border-b px-2 py-1.5">
-                  {{ column.nullable ? '是' : '否' }}
+                  {{ column.nullable ? t('是') : t('否') }}
                 </td>
               </tr>
             </tbody>
@@ -1048,9 +1084,19 @@ watch(
 
     <AppConfirmDialog
       :open="confirmOpen"
-      title="提交数据改动？"
-      :description="`将以单个事务提交 ${pendingMutationCount} 项改动${deleteCount ? `，其中删除 ${deleteCount} 行` : ''}。任一语句失败会整体回滚。`"
-      confirm-label="提交改动"
+      :title="t('提交数据改动？')"
+      :description="
+        t(
+          '将以单个事务提交 {value0} 项改动{value1}。任一语句失败会整体回滚。',
+          {
+            value0: pendingMutationCount,
+            value1: deleteCount
+              ? t('，其中删除 {value0} 行', { value0: deleteCount })
+              : '',
+          }
+        )
+      "
+      :confirm-label="t('提交改动')"
       :danger="deleteCount > 0"
       @close="confirmOpen = false"
       @confirm="commitChanges"

@@ -1,8 +1,13 @@
 <script setup lang="ts">
+import { translateNativeMessage } from '@/i18n/native'
+import { useI18n } from 'vue-i18n'
+
 import { computed } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type { FileTransferTask } from '@/composables/useFileTransfers'
 import { formatBytes } from '@/utils/format'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   task: Readonly<FileTransferTask>
@@ -147,13 +152,15 @@ const statusIcon = computed(() => {
       </div>
       <p
         :class="['transfer-file-path', task.error && 'transfer-file-error']"
-        :title="task.error || displayPath"
+        :title="task.error ? translateNativeMessage(task.error) : displayPath"
       >
         <AppIcon
           :name="task.error ? 'lucide:triangle-alert' : 'lucide:folder'"
           :size="10"
         />
-        <span>{{ task.error || displayPath }}</span>
+        <span>{{
+          task.error ? translateNativeMessage(task.error) : displayPath
+        }}</span>
       </p>
       <div
         class="transfer-file-track"
@@ -174,8 +181,8 @@ const statusIcon = computed(() => {
         v-if="task.status === 'running'"
         type="button"
         class="transfer-action"
-        title="暂停"
-        aria-label="Pause transfer"
+        :title="t('暂停')"
+        :aria-label="t('Pause transfer')"
         @click="emit('pause', task.id)"
       >
         <AppIcon
@@ -187,8 +194,8 @@ const statusIcon = computed(() => {
         v-else-if="task.status === 'paused'"
         type="button"
         class="transfer-action"
-        title="继续"
-        aria-label="Resume transfer"
+        :title="t('继续')"
+        :aria-label="t('Resume transfer')"
         @click="emit('resume', task.id)"
       >
         <AppIcon
@@ -199,7 +206,7 @@ const statusIcon = computed(() => {
       <span
         v-else-if="task.status === 'completed'"
         class="transfer-result transfer-result-success"
-        title="已完成"
+        :title="t('已完成')"
       >
         <AppIcon
           name="lucide:circle-check"
@@ -209,7 +216,7 @@ const statusIcon = computed(() => {
       <span
         v-else-if="task.status === 'error'"
         class="transfer-result transfer-result-error"
-        title="失败"
+        :title="t('失败')"
       >
         <AppIcon
           name="lucide:circle-alert"
@@ -219,7 +226,7 @@ const statusIcon = computed(() => {
       <span
         v-else-if="task.status === 'cancelled'"
         class="transfer-result transfer-result-cancelled"
-        title="已取消"
+        :title="t('已取消')"
       >
         <AppIcon
           name="lucide:circle-x"
@@ -231,8 +238,8 @@ const statusIcon = computed(() => {
         v-if="!settled"
         type="button"
         class="transfer-action transfer-action-cancel"
-        title="取消"
-        aria-label="Cancel transfer"
+        :title="t('取消')"
+        :aria-label="t('Cancel transfer')"
         @click="emit('cancel', task.id)"
       >
         <AppIcon

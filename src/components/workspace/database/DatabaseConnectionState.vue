@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
 import type { SshSessionStatus } from '@/types/ssh'
+
+const { t } = useI18n()
 
 defineProps<{
   status: SshSessionStatus
@@ -33,16 +37,18 @@ const password = defineModel<string>('password', { required: true })
         />
       </div>
       <p class="text-txt-2 text-sm">
-        {{ status === 'connecting' ? '正在连接数据库…' : '数据库连接未建立' }}
+        {{
+          status === 'connecting' ? t('正在连接数据库…') : t('数据库连接未建立')
+        }}
       </p>
       <AppTextField
         v-if="needsPassword"
         v-model="password"
         class="w-full text-left"
-        label="Password"
+        :label="t('Password')"
         type="password"
         autocomplete="current-password"
-        placeholder="输入本次连接使用的密码"
+        :placeholder="t('输入本次连接使用的密码')"
         @keyup.enter="emit('connect', password)"
       />
       <AppButton
@@ -54,7 +60,7 @@ const password = defineModel<string>('password', { required: true })
           name="lucide:plug-zap"
           :size="13"
         />
-        重新连接
+        {{ t('重新连接') }}
       </AppButton>
     </div>
   </div>

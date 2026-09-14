@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import {
   computed,
   onBeforeUnmount,
@@ -209,7 +210,10 @@ export function useAiAgent(
         await api.cancel(id)
       } catch (error) {
         if (token === generation)
-          state.error = `停止请求未确认：${api.errorMessage(error)}。请核对远端执行情况。`
+          state.error = i18n.global.t(
+            '停止请求未确认：{value0}。请核对远端执行情况。',
+            { value0: api.errorMessage(error) }
+          )
       }
     }
     if (token === generation) await refreshHistory(token)
@@ -296,7 +300,10 @@ export function useAiAgent(
       if (approve) await advance(token)
     } catch (error) {
       if (token === generation) {
-        state.error = `审批结果未确认：${api.errorMessage(error)}。请核对远端状态，不要重复执行。`
+        state.error = i18n.global.t(
+          '审批结果未确认：{value0}。请核对远端状态，不要重复执行。',
+          { value0: api.errorMessage(error) }
+        )
         if (state.run) {
           state.run.approval = null
           state.run.status = 'failed'

@@ -1,5 +1,6 @@
 import type { AgentApiFormat, AgentProfileDraft } from '@/types/agent'
 import { DEFAULT_AGENT_LIMITS } from './agent-limits'
+import { i18n, translateLabel } from '@/i18n'
 
 export const AGENT_PROVIDER_PRESETS = [
   {
@@ -49,7 +50,12 @@ export function newAgentProfile(presetId = 'openai'): AgentProfileDraft {
     AGENT_PROVIDER_PRESETS.find(item => item.value === presetId) ??
     AGENT_PROVIDER_PRESETS[0]
   return {
-    name: preset.value === 'custom' ? '我的中转站' : `${preset.label} 官网`,
+    name:
+      preset.value === 'custom'
+        ? i18n.global.t('我的中转站')
+        : i18n.global.t('agent.officialProfile', {
+            name: translateLabel(preset.label),
+          }),
     apiFormat: preset.apiFormat,
     baseUrl: preset.baseUrl,
     model: '',

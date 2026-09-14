@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type {
@@ -6,6 +8,8 @@ import type {
   FileTransferTask,
 } from '@/composables/useFileTransfers'
 import TransferTaskCard from './TransferTaskCard.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   direction: FileTransferDirection
@@ -27,7 +31,7 @@ const directionIcon = computed(() =>
   props.direction === 'upload' ? 'lucide:cloud-upload' : 'lucide:cloud-download'
 )
 const directionLabel = computed(() =>
-  props.direction === 'upload' ? '上传到' : '下载自'
+  props.direction === 'upload' ? t('上传到') : t('下载自')
 )
 </script>
 
@@ -41,11 +45,11 @@ const directionLabel = computed(() =>
       />
       <h3 class="transfer-group-title">
         <span>{{ directionLabel }}</span>
-        {{ connectionName || 'Remote server' }}
+        {{ connectionName || t('Remote server') }}
       </h3>
       <span
         class="transfer-group-meta"
-        title="已完成 / 总数"
+        :title="t('已完成 / 总数')"
       >
         <AppIcon
           name="lucide:list-checks"

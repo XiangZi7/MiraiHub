@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { nextTick, onMounted, shallowRef, useTemplateRef } from 'vue'
 import IconButton from '@/components/ui/IconButton.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -44,20 +48,20 @@ onMounted(
       ref="input"
       v-model="value"
       :placeholder="placeholder"
-      aria-label="分组名称"
+      :aria-label="t('分组名称')"
       maxlength="64"
       @keydown.esc.prevent="emit('cancel')"
     />
     <IconButton
       icon="lucide:check"
       :size="12"
-      title="确认"
+      :title="t('确认')"
       @click="submit"
     />
     <IconButton
       icon="lucide:x"
       :size="12"
-      title="取消"
+      :title="t('取消')"
       @click="emit('cancel')"
     />
   </form>

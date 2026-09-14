@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import type {
   ConnectionGroup,
   ConnectionTagDefinition,
@@ -38,12 +39,12 @@ const COLORS = [
 ] as const
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
-    throw new Error('备份中存在无效对象')
+    throw new Error(i18n.global.t('备份中存在无效对象'))
   return value as Record<string, unknown>
 }
 function string(value: unknown, name: string, max = 4096): string {
   if (typeof value !== 'string' || value.length > max || value.includes('\0'))
-    throw new Error(`${name} 无效或过长`)
+    throw new Error(i18n.global.t('{value0} 无效或过长', { value0: name }))
   return value
 }
 function optional(value: unknown, name: string, max = 4096): string {
@@ -61,12 +62,12 @@ function number(
     value < min ||
     value > max
   )
-    throw new Error(`${name} 无效`)
+    throw new Error(i18n.global.t('{value0} 无效', { value0: name }))
   return value
 }
 function array(value: unknown, name: string, max: number): unknown[] {
   if (!Array.isArray(value) || value.length > max)
-    throw new Error(`${name} 无效或数量过多`)
+    throw new Error(i18n.global.t('{value0} 无效或数量过多', { value0: name }))
   return value
 }
 function choice<T extends string>(
@@ -74,7 +75,8 @@ function choice<T extends string>(
   choices: readonly T[],
   name: string
 ): T {
-  if (!choices.includes(value as T)) throw new Error(`${name} 不受支持`)
+  if (!choices.includes(value as T))
+    throw new Error(i18n.global.t('{value0} 不受支持', { value0: name }))
   return value as T
 }
 function connection(value: unknown): SavedConnection {
@@ -83,46 +85,76 @@ function connection(value: unknown): SavedConnection {
   const kind = choice(
     v.kind,
     ['ssh', 'mysql', 'postgresql', 'local'],
-    '连接类型'
+    i18n.global.t('连接类型')
   )
   const common = {
-    id: string(v.id, '连接 ID', 200),
-    name: string(v.name, '连接名', 200),
+    id: string(v.id, i18n.global.t('连接 ID'), 200),
+    name: string(v.name, i18n.global.t('连接名'), 200),
     kind,
-    host: string(v.host, '主机', 253),
-    port: number(v.port, '端口', kind === 'local' ? 0 : 1, 65535),
-    username: string(v.username, '用户名', 256),
-    group: string(v.group, '分组', 200),
-    description: optional(v.description, '备注'),
-    tags: array(v.tags ?? [], '标签', 50).map(t => string(t, '标签名', 100)),
-    tagColor: choice(v.tagColor ?? 'green', COLORS, '标签颜色'),
-    createdAt: number(v.createdAt, '创建时间'),
+    host: string(v.host, i18n.global.t('主机'), 253),
+    port: number(
+      v.port,
+      i18n.global.t('端口'),
+      kind === 'local' ? 0 : 1,
+      65535
+    ),
+    username: string(v.username, i18n.global.t('用户名'), 256),
+    group: string(v.group, i18n.global.t('分组'), 200),
+    description: optional(v.description, i18n.global.t('备注')),
+    tags: array(v.tags ?? [], i18n.global.t('标签'), 50).map(t =>
+      string(t, i18n.global.t('标签名'), 100)
+    ),
+    tagColor: choice(v.tagColor ?? 'green', COLORS, i18n.global.t('标签颜色')),
+    createdAt: number(v.createdAt, i18n.global.t('创建时间')),
     lastUsedAt: 0,
   }
   if (!common.id || !common.name || (kind !== 'local' && !common.host))
-    throw new Error('连接 ID、名称和主机不能为空')
+    throw new Error(i18n.global.t('连接 ID、名称和主机不能为空'))
   if (kind === 'ssh') {
     const a = object(s.auth),
-      type = choice(a.type, ['password', 'privateKey', 'agent'], '认证方式')
+      type = choice(
+        a.type,
+        ['password', 'privateKey', 'agent'],
+        i18n.global.t('认证方式')
+      )
     const auth =
       type === 'password'
-        ? { type, password: optional(a.password, '密码', 8192) }
+        ? { type, password: optional(a.password, i18n.global.t('密码'), 8192) }
         : type === 'privateKey'
           ? {
               type,
-              path: string(a.path, '密钥路径'),
-              passphrase: optional(a.passphrase, '私钥口令', 8192),
+              path: string(a.path, i18n.global.t('密钥路径')),
+              passphrase: optional(
+                a.passphrase,
+                i18n.global.t('私钥口令'),
+                8192
+              ),
             }
           : { type }
     return {
       ...common,
       settings: {
         auth,
-        timeoutSecs: number(s.timeoutSecs ?? 30, 'SSH 超时', 1, 300),
-        keepaliveSecs: number(s.keepaliveSecs ?? 30, '心跳间隔', 0, 3600),
+        timeoutSecs: number(
+          s.timeoutSecs ?? 30,
+          i18n.global.t('SSH 超时'),
+          1,
+          300
+        ),
+        keepaliveSecs: number(
+          s.keepaliveSecs ?? 30,
+          i18n.global.t('心跳间隔'),
+          0,
+          3600
+        ),
         terminalType:
-          optional(s.terminalType, '终端类型', 100) || 'xterm-256color',
-        startupCommand: optional(s.startupCommand, '启动命令', 8192),
+          optional(s.terminalType, i18n.global.t('终端类型'), 100) ||
+          'xterm-256color',
+        startupCommand: optional(
+          s.startupCommand,
+          i18n.global.t('启动命令'),
+          8192
+        ),
       },
     }
   }
@@ -130,16 +162,27 @@ function connection(value: unknown): SavedConnection {
     return {
       ...common,
       settings: {
-        shell: choice(s.shell, ['powershell', 'cmd', 'git-bash'], '本地终端'),
-        workingDirectory: optional(s.workingDirectory, '工作目录'),
-        startupCommand: optional(s.startupCommand, '启动命令', 8192),
+        shell: choice(
+          s.shell,
+          ['powershell', 'cmd', 'git-bash'],
+          i18n.global.t('本地终端')
+        ),
+        workingDirectory: optional(
+          s.workingDirectory,
+          i18n.global.t('工作目录')
+        ),
+        startupCommand: optional(
+          s.startupCommand,
+          i18n.global.t('启动命令'),
+          8192
+        ),
       },
     }
   return {
     ...common,
     settings: {
-      database: optional(s.database, '数据库名称', 256),
-      password: optional(s.password, '密码', 8192),
+      database: optional(s.database, i18n.global.t('数据库名称'), 256),
+      password: optional(s.password, i18n.global.t('密码'), 8192),
       ssl: s.ssl === true,
       ...(s.sslMode !== undefined
         ? {
@@ -152,44 +195,49 @@ function connection(value: unknown): SavedConnection {
                 'verify-ca',
                 'verify-full',
               ] as const,
-              'SSL 策略'
+              i18n.global.t('SSL 策略')
             ),
           }
         : {}),
-      caCertificate: optional(s.caCertificate, 'CA 证书路径'),
-      clientCertificate: optional(s.clientCertificate, '客户端证书路径'),
-      clientKey: optional(s.clientKey, '客户端密钥路径'),
+      caCertificate: optional(s.caCertificate, i18n.global.t('CA 证书路径')),
+      clientCertificate: optional(
+        s.clientCertificate,
+        i18n.global.t('客户端证书路径')
+      ),
+      clientKey: optional(s.clientKey, i18n.global.t('客户端密钥路径')),
     },
   }
 }
 export function parseConnectionBackup(value: unknown): ConnectionBackup {
   const root = object(value)
   if (root.format !== 'miraihub-connections' || root.version !== 1)
-    throw new Error('不支持的连接备份格式或版本')
-  const connections = array(root.connections, '连接', 5000).map(connection)
+    throw new Error(i18n.global.t('不支持的连接备份格式或版本'))
+  const connections = array(root.connections, i18n.global.t('连接'), 5000).map(
+    connection
+  )
   if (new Set(connections.map(c => c.id)).size !== connections.length)
-    throw new Error('备份中存在重复连接 ID')
-  const groups = array(root.groups, '分组', 1000).map(v => {
+    throw new Error(i18n.global.t('备份中存在重复连接 ID'))
+  const groups = array(root.groups, i18n.global.t('分组'), 1000).map(v => {
     const g = object(v)
     return {
-      id: string(g.id, '分组 ID', 200),
-      name: string(g.name, '分组名', 200),
-      kind: choice(g.kind, ['ssh', 'database'], '分组类型'),
-      createdAt: number(g.createdAt, '分组时间'),
+      id: string(g.id, i18n.global.t('分组 ID'), 200),
+      name: string(g.name, i18n.global.t('分组名'), 200),
+      kind: choice(g.kind, ['ssh', 'database'], i18n.global.t('分组类型')),
+      createdAt: number(g.createdAt, i18n.global.t('分组时间')),
     }
   })
-  const tags = array(root.tags, '标签目录', 1000).map(v => {
+  const tags = array(root.tags, i18n.global.t('标签目录'), 1000).map(v => {
     const t = object(v)
     return {
-      name: string(t.name, '标签名', 100),
-      color: choice(t.color, COLORS, '标签颜色'),
-      createdAt: number(t.createdAt, '标签时间'),
+      name: string(t.name, i18n.global.t('标签名'), 100),
+      color: choice(t.color, COLORS, i18n.global.t('标签颜色')),
+      createdAt: number(t.createdAt, i18n.global.t('标签时间')),
     }
   })
   return {
     format: 'miraihub-connections',
     version: 1,
-    createdAt: number(root.createdAt, '备份时间'),
+    createdAt: number(root.createdAt, i18n.global.t('备份时间')),
     includesCredentials: root.includesCredentials === true,
     connections,
     groups,
@@ -312,7 +360,7 @@ export function restorePlan(
       ) {
         c.id = newId()
         if (next.connections.some(item => item.id === c.id))
-          throw new Error('无法生成唯一连接 ID')
+          throw new Error(i18n.global.t('无法生成唯一连接 ID'))
       }
       next.connections.push(c)
     }

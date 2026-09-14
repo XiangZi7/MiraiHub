@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   nextTick,
   onBeforeUnmount,
@@ -8,6 +10,8 @@ import {
 } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import IconButton from '@/components/ui/IconButton.vue'
+
+const { t } = useI18n()
 const props = withDefaults(
   defineProps<{
     title: string
@@ -82,7 +86,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           <IconButton
             icon="lucide:x"
             :size="16"
-            title="关闭"
+            :title="t('关闭')"
             :disabled="busy"
             @click="emit('close')"
           />

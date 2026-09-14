@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, reactive, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -18,9 +22,9 @@ const props = withDefaults(
   {
     description: '',
     initialValue: '',
-    label: '名称',
-    placeholder: '请输入名称',
-    confirmLabel: '确认',
+    label: '',
+    placeholder: '',
+    confirmLabel: '',
     loading: false,
   }
 )
@@ -64,8 +68,8 @@ function submit(): void {
           >
             <AppTextField
               v-model="state.name"
-              :label="label"
-              :placeholder="placeholder"
+              :label="label || t('名称')"
+              :placeholder="placeholder || t('请输入名称')"
               required
               autofocus
             />
@@ -76,14 +80,15 @@ function submit(): void {
             <AppButton
               :disabled="loading"
               @click="emit('close')"
-              >取消</AppButton
             >
+              {{ t('取消') }}
+            </AppButton>
             <AppButton
               variant="primary"
               :disabled="!canSubmit"
               @click="submit"
             >
-              {{ loading ? '处理中…' : confirmLabel }}
+              {{ loading ? t('处理中…') : confirmLabel || t('确认') }}
             </AppButton>
           </template>
         </AppDialog>

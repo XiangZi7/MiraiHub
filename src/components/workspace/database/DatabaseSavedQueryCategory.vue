@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { reactive, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type { SavedDatabaseQuery } from '@/types/database-query'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   database: string
@@ -49,7 +53,7 @@ watch(
       :size="13"
       class="text-cyan"
     />
-    <span>Queries</span>
+    <span> {{ t('Queries') }} </span>
     <span class="text-txt-4 ml-auto text-[10px]">{{ queries.length }}</span>
   </AppButton>
 
@@ -63,7 +67,7 @@ watch(
       <AppIcon
         name="lucide:plus"
         :size="11"
-      /><span>新建已保存查询</span>
+      /><span> {{ t('新建已保存查询') }} </span>
     </AppButton>
     <AppButton
       v-for="query in queries"
@@ -75,7 +79,12 @@ watch(
           selectedId === query.id && 'nav-item-active'
         )
       "
-      :title="`${query.name}\n${query.database} · 点击打开`"
+      :title="
+        t('database.queryTooltip', {
+          name: query.name,
+          database: query.database,
+        })
+      "
       @click="emit('open', query)"
       @contextmenu.prevent.stop="emit('context', $event, query)"
     >
@@ -87,7 +96,7 @@ watch(
       <span class="min-w-0 flex-1 truncate text-left">{{ query.name }}</span>
       <span
         class="query-saved-dot"
-        title="已保存"
+        :title="t('已保存')"
       />
     </AppButton>
   </template>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   nextTick,
@@ -18,6 +20,8 @@ import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from './TerminalSuggestions.vue'
 import TerminalActions from './TerminalActions.vue'
+
+const { t } = useI18n()
 
 const { settings } = useSettings()
 
@@ -108,7 +112,8 @@ watch(
   { immediate: true }
 )
 watch(error, message => {
-  if (message) toast.error({ title: 'SSH 终端连接失败', description: message })
+  if (message)
+    toast.error({ title: t('SSH 终端连接失败'), description: message })
 })
 
 /** 工具条上的连接状态文案与配色 */
@@ -116,7 +121,7 @@ const statusMeta = computed(() => {
   switch (status.value) {
     case 'connected':
       return {
-        text: 'Connected',
+        text: t('Connected'),
         tone: 'text-success',
         dot: 'success' as const,
       }
@@ -129,7 +134,7 @@ const statusMeta = computed(() => {
 
 /** 标题栏展示的目标 */
 const endpoint = computed(() => {
-  if (!props.config) return '未选择服务器'
+  if (!props.config) return t('未选择服务器')
 
   return props.title || `${props.config.username}@${props.config.host}`
 })
@@ -141,7 +146,11 @@ const endpoint = computed(() => {
 const connectingText = computed(() => {
   if (!props.config) return ''
 
-  return `正在连接 ${props.config.username}@${props.config.host}:${props.config.port} …`
+  return t('正在连接 {value0}@{value1}:{value2} …', {
+    value0: props.config.username,
+    value1: props.config.host,
+    value2: props.config.port,
+  })
 })
 
 /**
@@ -443,9 +452,9 @@ defineExpose({
             :size="26"
           />
         </div>
-        <p class="text-txt-2 text-sm">还没有打开终端</p>
+        <p class="text-txt-2 text-sm">{{ t('还没有打开终端') }}</p>
         <p class="text-txt-4 max-w-70 text-xs">
-          从左侧选一台服务器，或新建一个连接
+          {{ t('从左侧选一台服务器，或新建一个连接') }}
         </p>
       </div>
     </div>

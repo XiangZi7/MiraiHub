@@ -1,6 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 export type TransferStatusFilter = 'all' | 'active' | 'completed' | 'failed'
 
@@ -13,38 +18,40 @@ const emit = defineEmits<{
   'update:modelValue': [value: TransferStatusFilter]
 }>()
 
-const filters: Array<{
-  id: TransferStatusFilter
-  label: string
-  icon: string
-  tone: string
-}> = [
-  { id: 'all', label: '全部', icon: 'lucide:layers', tone: 'text-txt-3' },
+const filters = computed<
+  Array<{
+    id: TransferStatusFilter
+    label: string
+    icon: string
+    tone: string
+  }>
+>(() => [
+  { id: 'all', label: t('全部'), icon: 'lucide:layers', tone: 'text-txt-3' },
   {
     id: 'active',
-    label: '进行中',
+    label: t('进行中'),
     icon: 'lucide:loader-circle',
     tone: 'text-blue',
   },
   {
     id: 'completed',
-    label: '已完成',
+    label: t('已完成'),
     icon: 'lucide:circle-check',
     tone: 'text-success',
   },
   {
     id: 'failed',
-    label: '失败',
+    label: t('失败'),
     icon: 'lucide:circle-alert',
     tone: 'text-danger',
   },
-]
+])
 </script>
 
 <template>
   <nav
     class="transfer-filters"
-    aria-label="传输状态筛选"
+    :aria-label="t('传输状态筛选')"
   >
     <button
       v-for="filter in filters"

@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { defineAsyncComponent, reactive, toRefs } from 'vue'
 import IconButton from '@/components/ui/IconButton.vue'
+
+const { t } = useI18n()
 const TunnelManagerDialog = defineAsyncComponent(
   () => import('./TunnelManagerDialog.vue')
 )
@@ -16,12 +20,12 @@ const { tunnels, batch } = toRefs(state)
     <IconButton
       icon="lucide:network"
       :size="14"
-      title="SSH 隧道 / 端口转发"
+      :title="t('SSH 隧道 / 端口转发')"
       @click="tunnels = true"
     /><IconButton
       icon="lucide:layers"
       :size="14"
-      title="批量服务器操作"
+      :title="t('批量服务器操作')"
       @click="batch = true"
     /><TunnelManagerDialog
       v-if="tunnels"

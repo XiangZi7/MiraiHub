@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { translateNativeMessage } from '@/i18n/native'
 import { useI18n } from 'vue-i18n'
 import { computed, shallowRef, watch } from 'vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
@@ -66,12 +67,14 @@ watch([open, unreadCount], ([visible]) => {
             }}</span>
             <time>{{ formatDateTime(item.createdAt) }}</time>
           </div>
-          <p class="text-txt text-xs break-words">{{ item.title }}</p>
+          <p class="text-txt text-xs break-words">
+            {{ translateNativeMessage(item.title) }}
+          </p>
           <p
             v-if="item.description"
             class="text-txt-3 mt-1 text-[11px] break-words whitespace-pre-wrap"
           >
-            {{ item.description }}
+            {{ translateNativeMessage(item.description) }}
           </p>
         </li>
       </ol>

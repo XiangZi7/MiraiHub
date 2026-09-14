@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { computed, useId } from 'vue'
 import type { Tunnel } from '@/api/operations'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{ tunnels: readonly Tunnel[] }>()
 const emit = defineEmits<{
@@ -23,18 +27,19 @@ const runningCount = computed(
   >
     <div class="tunnel-list-heading">
       <h3 :id="titleId">
-        隧道列表 <span class="tunnel-count">{{ tunnels.length }}</span>
+        {{ t('隧道列表') }}
+        <span class="tunnel-count">{{ tunnels.length }}</span>
       </h3>
       <span
         v-if="runningCount"
         class="tunnel-running-summary"
-        >{{ runningCount }} 个监听中</span
+        >{{ t('tunnel.listening', { count: runningCount }) }}</span
       >
     </div>
     <div
       class="tunnel-list scroll-thin"
       :tabindex="tunnels.length ? 0 : undefined"
-      :aria-label="tunnels.length ? '隧道记录' : undefined"
+      :aria-label="tunnels.length ? t('隧道记录') : undefined"
     >
       <div
         v-if="!tunnels.length"
@@ -44,8 +49,8 @@ const runningCount = computed(
           name="lucide:network"
           :size="24"
         />
-        <p>暂无隧道</p>
-        <span>选择 SSH 连接并填写端口，建立第一条隧道。</span>
+        <p>{{ t('暂无隧道') }}</p>
+        <span> {{ t('选择 SSH 连接并填写端口，建立第一条隧道。') }} </span>
       </div>
       <article
         v-for="row in tunnels"
@@ -62,17 +67,21 @@ const runningCount = computed(
             />
             <code>{{ row.targetHost }}:{{ row.targetPort }}</code>
           </div>
-          <p class="tunnel-row-endpoint">通过 {{ row.endpoint }}</p>
+          <p class="tunnel-row-endpoint">
+            {{ t('tunnel.via', { endpoint: row.endpoint }) }}
+          </p>
           <div class="tunnel-row-status">
             <span
               class="tunnel-status-badge"
               :class="row.status === 'running' && 'is-running'"
             >
               <span class="tunnel-status-dot" />{{
-                row.status === 'running' ? '监听中' : '已停止'
+                row.status === 'running' ? t('监听中') : t('已停止')
               }}
             </span>
-            <span>{{ row.connections }} 个活动连接</span>
+            <span>{{
+              t('tunnel.connections', { count: row.connections })
+            }}</span>
           </div>
           <p
             v-if="row.error"
@@ -84,14 +93,14 @@ const runningCount = computed(
         <div class="tunnel-row-actions">
           <IconButton
             icon="lucide:copy"
-            title="复制本地连接地址"
+            :title="t('复制本地连接地址')"
             :size="14"
             @click="emit('copy', row)"
           />
           <AppButton
             size="sm"
             @click="emit('action', row)"
-            >{{ row.status === 'running' ? '停止' : '移除' }}</AppButton
+            >{{ row.status === 'running' ? t('停止') : t('移除') }}</AppButton
           >
         </div>
       </article>

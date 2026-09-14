@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import {
   computed,
   nextTick,
@@ -15,6 +17,8 @@ import {
   CONNECTION_SORT_OPTIONS,
   type ConnectionSort,
 } from '@/utils/connection-list'
+
+const { t } = useI18n()
 
 defineProps<{ label: string; expanded: boolean; transferable?: boolean }>()
 const keyword = defineModel<string>('keyword', { required: true })
@@ -50,7 +54,7 @@ async function toggleSearch(): Promise<void> {
 const options = computed(() =>
   CONNECTION_SORT_OPTIONS.map(option => ({
     id: option.value,
-    label: option.label,
+    label: t(option.label),
     icon: sort.value === option.value ? 'lucide:check' : undefined,
   }))
 )
@@ -73,7 +77,7 @@ function selectSort(id: string): void {
       <IconButton
         icon="lucide:search"
         :size="13"
-        :title="searchOpen ? '取消搜索' : '搜索连接'"
+        :title="searchOpen ? t('取消搜索') : t('搜索连接')"
         :aria-expanded="searchOpen"
         :aria-controls="searchId"
         :class="{ 'bg-hover text-txt': searchOpen }"
@@ -82,26 +86,26 @@ function selectSort(id: string): void {
       <IconButton
         icon="lucide:arrow-down-up"
         :size="13"
-        title="排序连接"
+        :title="t('排序连接')"
         @click="showSort"
       />
       <IconButton
         v-if="transferable"
         icon="lucide:arrow-left-right"
         :size="13"
-        title="导入 / 导出 SSH 配置"
+        :title="t('导入 / 导出 SSH 配置')"
         @click="emit('transfer')"
       />
       <IconButton
         :icon="expanded ? 'lucide:chevrons-up' : 'lucide:chevrons-down'"
         :size="13"
-        :title="expanded ? '全部折叠' : '全部展开'"
+        :title="expanded ? t('全部折叠') : t('全部展开')"
         @click="emit('toggleAll')"
       />
       <IconButton
         icon="lucide:folder-plus"
         :size="13"
-        title="新建分组"
+        :title="t('新建分组')"
         @click="emit('createGroup')"
       />
     </div>
@@ -122,8 +126,8 @@ function selectSort(id: string): void {
           ref="searchInput"
           v-model="keyword"
           type="search"
-          aria-label="搜索连接"
-          placeholder="搜索名称、地址、分组…"
+          :aria-label="t('搜索连接')"
+          :placeholder="t('搜索名称、地址、分组…')"
           class="min-w-0 flex-1"
         />
       </label>
@@ -133,7 +137,7 @@ function selectSort(id: string): void {
       :x="x"
       :y="y"
       :items="options"
-      label="连接排序"
+      :label="t('连接排序')"
       @close="open = false"
       @select="selectSort"
     />

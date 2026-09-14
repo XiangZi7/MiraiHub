@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { useSavedQueriesStore } from '@/stores/saved-queries'
 import { computed, readonly } from 'vue'
 import type {
@@ -41,7 +42,7 @@ export function useSavedDatabaseQueries(connectionId: string) {
     requested: string,
     ignoreId = ''
   ): string {
-    const base = requested.trim().slice(0, 120) || '未命名查询'
+    const base = requested.trim().slice(0, 120) || i18n.global.t('未命名查询')
     const used = new Set(
       state.items
         .filter(

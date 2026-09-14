@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import AppIcon from '@/components/ui/AppIcon.vue'
+
+const { t } = useI18n()
 
 withDefaults(
   defineProps<{
@@ -43,7 +47,7 @@ const emit = defineEmits<{
       v-if="removable"
       type="button"
       class="connection-tag-remove"
-      :aria-label="`移除标签 ${label}`"
+      :aria-label="t('移除标签 {value0}', { value0: label })"
       @click.stop="emit('remove')"
     >
       <AppIcon

@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 import { useEventListener } from '@vueuse/core'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   open: boolean
@@ -51,39 +55,44 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               id="file-conflict-title"
               class="text-txt text-[13px] font-semibold"
             >
-              远端已有同名文件或文件夹
+              {{ t('远端已有同名文件或文件夹') }}
             </h2>
             <p class="text-txt-3 mt-1 text-[11px] leading-4 break-all">
-              “{{
-                fileName
-              }}”已经存在。文件夹会合并，并覆盖其中的同名文件；远端其他文件会保留。是否继续？
+              {{ t('files.conflict', { name: fileName }) }}
             </p>
             <AppCheckbox
               v-if="remaining > 0"
               v-model="always"
               class="mt-3"
-              label="总是执行本次选择"
-              :description="`应用到本批次后续 ${remaining} 个项目的同名冲突`"
+              :label="t('总是执行本次选择')"
+              :description="
+                t('应用到本批次后续 {value0} 个项目的同名冲突', {
+                  value0: remaining,
+                })
+              "
             />
           </div>
           <footer class="col-span-2 mt-2 flex justify-end gap-2">
             <AppButton
               size="sm"
               @click="emit('cancel')"
-              >取消全部</AppButton
             >
+              {{ t('取消全部') }}
+            </AppButton>
             <AppButton
               size="sm"
               @click="emit('skip')"
-              >跳过</AppButton
             >
+              {{ t('跳过') }}
+            </AppButton>
             <AppButton
               size="sm"
               variant="primary"
               autofocus
               @click="emit('overwrite')"
-              >合并 / 覆盖</AppButton
             >
+              {{ t('合并 / 覆盖') }}
+            </AppButton>
           </footer>
         </section>
       </div>
