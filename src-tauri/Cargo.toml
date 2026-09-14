@@ -1,6 +1,6 @@
 [package]
 name = "miraihub"
-version = "2.0.5"
+version = "2.0.6"
 description = "一站式服务器与开发基础设施工作台：SSH 终端、远端文件、数据库管理、服务器监控与 AI Agent"
 authors = ["XiangZi <793923048@qq.com>"]
 homepage = "https://github.com/XiangZi7/MiraiHub"
