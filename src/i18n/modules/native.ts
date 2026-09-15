@@ -1,5 +1,21 @@
 /** Application-owned native messages. Service responses, SQL, and shell output stay verbatim. */
 export const en = {
+  'Redis 连接已断开，请重新连接':
+    'Redis connection closed. Reconnect to continue.',
+  'Redis 数据库索引必须是非负整数':
+    'Redis database index must be a non-negative integer',
+  'Redis TLS 请选择 Disable 或 Verify Full':
+    'For Redis TLS, select Disable or Verify Full',
+  'Redis 命令转义不完整': 'Incomplete Redis command escape',
+  'Redis 命令引号未闭合': 'Unclosed quote in Redis command',
+  '请输入 Redis 命令': 'Enter a Redis command',
+  '此命令会改变 Redis 连接状态；切换数据库请使用顶部数据库索引':
+    'This command changes Redis connection state. Use the database index field to switch databases.',
+  'Redis 键不存在或已过期': 'Redis key does not exist or has expired',
+  'Redis 键不存在或类型已变化，请刷新':
+    'Redis key no longer exists or its type changed. Refresh to continue.',
+  'TTL 必须为正整数，-1 表示永不过期':
+    'TTL must be a positive integer, or -1 for no expiry',
   '只读检查：自动执行': 'Read-only check: automatic execution',
   '审批已过期，未执行该操作；可以继续发送消息':
     'Approval expired. The operation was not executed. You can continue chatting.',

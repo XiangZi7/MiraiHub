@@ -1,6 +1,8 @@
 /** 与 Rust `db/models.rs` 对齐的数据库 IPC 类型。 */
 
 export type DatabaseKind = 'mysql' | 'postgresql'
+/** 工作台连接协议；SQL 方言仍限定为 DatabaseKind。 */
+export type DatabaseConnectionKind = DatabaseKind | 'redis'
 export type DatabaseSslMode =
   'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full'
 
@@ -17,6 +19,10 @@ export interface DatabaseConfig {
   clientKey: string
   timeoutSecs: number
   maxConnections: number
+}
+
+export type DatabaseConnectionConfig = Omit<DatabaseConfig, 'kind'> & {
+  kind: DatabaseConnectionKind
 }
 
 export interface DatabaseSession {

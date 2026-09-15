@@ -15,6 +15,7 @@ const props = defineProps<{
   canSend: boolean
   awaitingApproval: boolean
   isDatabase: boolean
+  isRedis?: boolean
   attachments: AgentDraftAttachment[]
   reading: boolean
   attachmentError: string
@@ -40,7 +41,9 @@ const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
 const placeholder = computed(() =>
   props.awaitingApproval
     ? t('请先审批或拒绝上方操作…')
-    : props.isDatabase
+    : props.isRedis
+      ? t('询问 Redis 键、TTL，或描述要执行的命令…')
+      : props.isDatabase
       ? t('询问数据库，或描述要完成的操作…')
       : t('描述问题，或让我帮你执行任务…')
 )

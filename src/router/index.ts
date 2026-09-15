@@ -61,7 +61,9 @@ export function createAppRouter(
     if (to.name !== 'servers' && to.name !== 'databases') return
     const matches = (connection: { kind: string }) =>
       to.name === 'databases'
-        ? connection.kind === 'mysql' || connection.kind === 'postgresql'
+        ? connection.kind === 'mysql' ||
+          connection.kind === 'postgresql' ||
+          connection.kind === 'redis'
         : connection.kind === 'ssh' || connection.kind === 'local'
     const id =
       typeof to.params.connectionId === 'string' ? to.params.connectionId : ''
@@ -103,7 +105,9 @@ export function createAppRouter(
 export function connectionLocation(connection: { id: string; kind: string }) {
   return {
     name:
-      connection.kind === 'mysql' || connection.kind === 'postgresql'
+      connection.kind === 'mysql' ||
+      connection.kind === 'postgresql' ||
+      connection.kind === 'redis'
         ? 'databases'
         : 'servers',
     params: { connectionId: connection.id },

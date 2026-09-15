@@ -19,6 +19,7 @@ pub mod error;
 pub mod ipc;
 pub mod local_terminal;
 pub mod platform;
+pub mod redis_db;
 pub mod ssh;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

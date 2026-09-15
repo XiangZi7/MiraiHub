@@ -17,6 +17,7 @@ impl ApprovalMode {
             Self::Auto => match action {
                 Action::Shell { command, .. } => !super::read_only::shell(command),
                 Action::Sql { sql, .. } => !super::read_only::sql(sql),
+                Action::RedisCommand { .. } => true,
                 _ => false,
             },
             Self::Full => false,
@@ -37,6 +38,9 @@ pub enum Action {
     Schema { schema: String, table: String },
     Shell { command: String, reason: String },
     Sql { sql: String, reason: String },
+    RedisScan { cursor: String, pattern: String },
+    RedisInspect { key: String },
+    RedisCommand { command: String, reason: String },
 }
 impl Action {
     pub fn approval_details(&self) -> (String, String) {
@@ -51,12 +55,22 @@ impl Action {
             ),
             Self::Shell { command, reason } => (command.clone(), reason.clone()),
             Self::Sql { sql, reason } => (sql.clone(), reason.clone()),
+            Self::RedisScan { cursor, pattern } => (
+                json!({"command":"SCAN","cursor":cursor,"pattern":pattern,"count":100}).to_string(),
+                "扫描当前 Redis 数据库中的一批键".into(),
+            ),
+            Self::RedisInspect { key } => (
+                json!({"keyBase64":key,"read":"type, TTL and bounded value preview"}).to_string(),
+                "读取 Redis 键类型、TTL 和部分内容".into(),
+            ),
+            Self::RedisCommand { command, reason } => (command.clone(), reason.clone()),
         }
     }
     pub fn approval(&self) -> Option<(&str, &str)> {
         match self {
             Self::Shell { command, reason } => Some((command, reason)),
             Self::Sql { sql, reason } => Some((sql, reason)),
+            Self::RedisCommand { command, reason } => Some((command, reason)),
             _ => None,
         }
     }
@@ -66,6 +80,9 @@ impl Action {
             Self::Schema { .. } => "读取数据库结构",
             Self::Shell { .. } => "执行 Shell 命令",
             Self::Sql { .. } => "执行 SQL",
+            Self::RedisScan { .. } => "扫描 Redis 键",
+            Self::RedisInspect { .. } => "读取 Redis 键",
+            Self::RedisCommand { .. } => "执行 Redis 命令",
         }
     }
 }
@@ -91,6 +108,17 @@ struct Shell {
 struct Sql {
     sql: String,
     reason: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RedisScan {
+    cursor: String,
+    pattern: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RedisInspect {
+    key: String,
 }
 fn parse<T: serde::de::DeserializeOwned>(args: &str) -> AppResult<T> {
     serde_json::from_str(args).map_err(|_| AppError::invalid_input("工具参数不符合后端安全策略"))
@@ -136,6 +164,28 @@ pub fn classify(kind: &str, name: &str, args: &str) -> AppResult<Action> {
                 reason: a.reason,
             })
         }
+        ("redis", "redis_scan") => {
+            let a: RedisScan = parse(args)?;
+            if a.cursor.parse::<u64>().is_err() || a.pattern.len() > 4096 {
+                return Err(AppError::invalid_input("Redis 扫描参数无效"));
+            }
+            Ok(Action::RedisScan { cursor: a.cursor, pattern: a.pattern })
+        }
+        ("redis", "redis_inspect") => {
+            let a: RedisInspect = parse(args)?;
+            use base64::Engine;
+            if a.key.len() > 8192 || base64::engine::general_purpose::STANDARD.decode(&a.key).is_err() {
+                return Err(AppError::invalid_input("Redis 键标识无效"));
+            }
+            Ok(Action::RedisInspect { key: a.key })
+        }
+        ("redis", "propose_redis") => {
+            let a: Shell = parse(args)?;
+            bounded(&a.command, 8192)?;
+            bounded(&a.reason, 2000)?;
+            crate::redis_db::validate_agent_command(&a.command)?;
+            Ok(Action::RedisCommand { command: a.command, reason: a.reason })
+        }
         _ => Err(AppError::invalid_input(
             "未知工具或工具与当前连接类型不匹配，已阻止执行",
         )),
@@ -159,11 +209,19 @@ pub fn definitions(kind: &str) -> Value {
         tool("server_status","Run a fixed Linux read-only probe under the user's approval mode. No file contents, secrets or environment variables.",json!({"probe":{"type":"string","enum":["system","disk","processes","network"]}}),json!(["probe"])),
         tool("propose_shell","Provide an EXACT shell command. The backend applies the user's approval mode. Explain effects and risks. Never claim it ran before a tool result.",json!({"command":{"type":"string"},"reason":{"type":"string"}}),json!(["command","reason"]))
     ])
-    } else {
+    } else if kind == "database" {
         json!([
         tool("database_schema","Read metadata only. Empty schema and table lists objects; supply both for column structure. No row data.",json!({"schema":{"type":"string"},"table":{"type":"string"}}),json!(["schema","table"])),
         tool("propose_sql","Provide exact SQL for the selected database. The backend applies the user's approval mode, including for SELECT or EXPLAIN because SQL can have side effects. Explain effects and returned data. Use LIMIT for reads.",json!({"sql":{"type":"string"},"reason":{"type":"string"}}),json!(["sql","reason"]))
     ])
+    } else if kind == "redis" {
+        json!([
+            tool("redis_scan", "Scan one batch of keys in the bound Redis database with SCAN COUNT 100. Start cursor at string 0; continue using the returned cursor until it is 0. Empty batches and duplicates are possible. pattern is a Redis glob, usually *. Key id is base64 of raw bytes; retain it for redis_inspect.", json!({"cursor":{"type":"string"},"pattern":{"type":"string"}}), json!(["cursor","pattern"])),
+            tool("redis_inspect", "Read one key's type, TTL, length and bounded value preview. key must be the exact base64 id returned by redis_scan, including for binary keys. No writes. Results may be truncated or expire concurrently.", json!({"key":{"type":"string"}}), json!(["key"])),
+            tool("propose_redis", "Provide one EXACT Redis command with quoted/escaped arguments. All custom commands require approval in Ask/Auto. Explain effects and returned data. Prefer bounded ranges and SCAN over KEYS. Connection-state commands, SELECT, AUTH, transactions and subscriptions are unavailable. The selected database is fixed; each tool uses an independent connection. Writes are immediate and not rolled back.", json!({"command":{"type":"string"},"reason":{"type":"string"}}), json!(["command","reason"]))
+        ])
+    } else {
+        json!([])
     }
 }
 #[cfg(test)]

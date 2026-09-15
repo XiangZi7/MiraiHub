@@ -36,7 +36,7 @@ import { activeAfterTabClose } from '@/utils/tab-actions'
 import { useSavedDatabaseQueries } from '@/composables/useSavedDatabaseQueries'
 import { toast } from '@/composables/useToast'
 import type { SavedConnection } from '@/types/connection'
-import { isDatabaseConnection } from '@/types/connection'
+import { isSqlConnection } from '@/types/connection'
 import type { ContextMenuItem } from '@/types/context-menu'
 import type {
   DatabaseHistoryEntry,
@@ -160,7 +160,7 @@ const querySplitStyle = computed(() => {
   return { gridTemplateRows: `${editorRatio}fr 10px ${100 - editorRatio}fr` }
 })
 const configuredDatabase =
-  props.connection && isDatabaseConnection(props.connection)
+  props.connection && isSqlConnection(props.connection)
     ? props.connection.settings.database
     : ''
 const {
@@ -258,14 +258,14 @@ const {
 })
 
 const databaseKind = computed<DatabaseKind>(() =>
-  props.connection && isDatabaseConnection(props.connection)
+  props.connection && isSqlConnection(props.connection)
     ? props.connection.kind
     : 'mysql'
 )
 const databaseName = computed(() => {
   if (session.value?.database) return session.value.database
   const target = props.connection
-  if (!target || !isDatabaseConnection(target)) return t('未选择连接')
+  if (!target || !isSqlConnection(target)) return t('未选择连接')
   return target.settings.database || target.name
 })
 const databaseOptions = computed(() =>

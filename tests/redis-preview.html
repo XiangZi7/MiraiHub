@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Redis 工作台交互预览</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWindow: { label: 'main' } },
+      }
+    </script>
+    <script type="module">
+      import { createApp, h, reactive } from 'vue'
+      import { i18n } from '/src/i18n/index.ts'
+      import { pinia } from '/src/stores'
+      import { addCollection } from '@iconify/vue'
+      import icons from 'virtual:mirai-icons'
+      import RedisView from '/src/components/workspace/RedisView.vue'
+      import DatabaseConnectionForm from '/src/components/connection/DatabaseConnectionForm.vue'
+      import '/src/assets/styles/main.css'
+      addCollection(icons)
+      i18n.global.locale.value = 'zh-CN'
+      const state = reactive({
+        database: '0',
+        value: '{"name":"MiraiHub","enabled":true}',
+        ttl: 3600000,
+        kind: 'mysql',
+        calls: [],
+      })
+      const key = name => ({ id: btoa(name), name })
+      const keys = [
+        key('user:1001'),
+        key('session:active'),
+        key('cache:settings'),
+        key('events:stream'),
+      ]
+      const session = () => ({
+        sessionId: 'preview',
+        database: state.database,
+        endpoint: '127.0.0.1:6379',
+      })
+      window.__TAURI_INTERNALS__.invoke = async (command, args = {}) => {
+        state.calls.push(command)
+        if (command === 'redis_connect') return session()
+        if (
+          command === 'redis_disconnect' ||
+          command === 'redis_test_connection'
+        )
+          return
+        if (command === 'redis_use_database') {
+          state.database = args.database
+          return session()
+        }
+        if (command === 'redis_scan')
+          return {
+            cursor: '0',
+            keys:
+              state.database === '0'
+                ? keys.filter(
+                    key =>
+                      args.pattern === '*' ||
+                      key.name.startsWith(args.pattern.replace('*', ''))
+                  )
+                : [],
+          }
+        if (command === 'redis_inspect')
+          return {
+            key: keys.find(key => key.id === args.key),
+            keyType: 'string',
+            ttlMs: state.ttl,
+            length: state.value.length,
+            value: state.value,
+            editable: true,
+            truncated: false,
+          }
+        if (command === 'redis_save_string') {
+          state.value = args.value
+          return
+        }
+        if (command === 'redis_expire_key') {
+          state.ttl = args.ttlSecs === -1 ? -1 : args.ttlSecs * 1000
+          return
+        }
+        if (command === 'redis_execute')
+          return {
+            value: args.command.toUpperCase() === 'PING' ? 'PONG' : 'OK',
+            elapsedMs: 2,
+            truncated: false,
+          }
+        if (command === 'redis_delete_key') {
+          keys.splice(
+            keys.findIndex(key => key.id === args.key),
+            1
+          )
+          return
+        }
+        throw new Error(`Unexpected preview command: ${command}`)
+      }
+      const connection = {
+        id: 'redis-preview',
+        name: 'Development Redis',
+        kind: 'redis',
+        host: '127.0.0.1',
+        port: 6379,
+        username: '',
+        settings: {
+          database: '0',
+          password: '',
+          ssl: false,
+          sslMode: 'disable',
+        },
+      }
+      const form = new URLSearchParams(location.search).has('form')
+      createApp({
+        render: () =>
+          h(
+            'div',
+            { class: 'h-screen flex flex-col', style: 'min-width:600px' },
+            [
+              h(
+                'div',
+                { class: 'text-txt-3 text-xs px-4 py-2 border-b border-line' },
+                'Redis 交互测试 · 模拟数据'
+              ),
+              form
+                ? h(DatabaseConnectionForm, {
+                    kind: state.kind,
+                    'onUpdate:kind': value => (state.kind = value),
+                  })
+                : h(RedisView, { connection, active: true }),
+            ]
+          ),
+      })
+        .use(pinia)
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

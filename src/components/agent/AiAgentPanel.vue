@@ -84,9 +84,17 @@ const draft = useAgentDraft((text, attachments) =>
 )
 const { prompt, attachments, reading, attachmentError } = draft
 const scroll = useTemplateRef<HTMLElement>('scroll')
-const isDatabase = computed(() => props.target.kind === 'database')
+const isRedis = computed(() => props.target.kind === 'redis')
+const isDatabase = computed(() => props.target.kind !== 'ssh')
 const suggestions = computed(() =>
-  isDatabase.value
+  isRedis.value
+    ? [
+        t('扫描当前 Redis 数据库的键'),
+        t('检查 Redis 键的类型和 TTL'),
+        t('帮我编写 Redis 命令'),
+        t('分析 Redis 内存使用情况'),
+      ]
+    : isDatabase.value
     ? [
         t('查看表结构'),
         t('分析数据库结构并给出优化建议'),
@@ -303,7 +311,7 @@ watch(
           />
         </div>
         <div>
-          <h2>AI Agent ({{ isDatabase ? t('Database') : t('Terminal') }})</h2>
+          <h2>AI Agent ({{ isRedis ? 'Redis' : isDatabase ? t('Database') : t('Terminal') }})</h2>
           <p>
             {{
               isDatabase
@@ -318,7 +326,14 @@ watch(
           <p>{{ t('告诉我你想完成什么，我可以帮你：') }}</p>
           <ul>
             <li
-              v-for="item in isDatabase
+              v-for="item in isRedis
+                ? [
+                    t('扫描键并查看内容'),
+                    t('检查键类型与过期时间'),
+                    t('编写和执行 Redis 命令'),
+                    t('分析 Redis 状态与内存使用'),
+                  ]
+                : isDatabase
                 ? [
                     t('查看表与字段结构'),
                     t('编写和分析 SQL 查询'),
@@ -520,6 +535,7 @@ watch(
       :can-send="canSend"
       :awaiting-approval="awaitingApproval"
       :is-database="isDatabase"
+      :is-redis="isRedis"
       :attachments="attachments"
       :reading="reading"
       :attachment-error="attachmentError"

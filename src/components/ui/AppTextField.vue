@@ -18,6 +18,8 @@ const props = withDefaults(
     autofocus?: boolean
     inputmode?: 'text' | 'numeric' | 'url'
     readonly?: boolean
+    disabled?: boolean
+    hideLabel?: boolean
     /** 可选的尾部操作图标，例如文件选择器。 */
     actionIcon?: string
     actionTitle?: string
@@ -31,6 +33,8 @@ const props = withDefaults(
     autofocus: false,
     inputmode: 'text',
     readonly: false,
+    disabled: false,
+    hideLabel: false,
     actionIcon: '',
     actionTitle: '',
     actionDisabled: false,
@@ -59,7 +63,9 @@ const passwordButtonTitle = computed(() =>
   <div class="space-y-1.5">
     <label
       :for="inputId"
-      class="text-txt-2 block text-[11px] font-medium"
+      :class="
+        hideLabel ? 'sr-only' : 'text-txt-2 block text-[11px] font-medium'
+      "
     >
       {{ label }}
       <span
@@ -81,6 +87,7 @@ const passwordButtonTitle = computed(() =>
         :autofocus="autofocus"
         :inputmode="inputmode"
         :readonly="readonly"
+        :disabled="disabled"
         class="min-w-0 flex-1 px-2.5"
         @blur="emit('blur', $event)"
       />
@@ -92,6 +99,7 @@ const passwordButtonTitle = computed(() =>
         :title="passwordButtonTitle"
         :aria-label="passwordButtonTitle"
         :aria-pressed="passwordVisible"
+        :disabled="disabled"
         class="mr-0.5"
         @click="passwordVisible = !passwordVisible"
       />
@@ -102,7 +110,7 @@ const passwordButtonTitle = computed(() =>
         :size="14"
         :title="actionTitle"
         :aria-label="actionTitle"
-        :disabled="actionDisabled"
+        :disabled="actionDisabled || disabled"
         class="mr-0.5"
         @click="emit('action')"
       />

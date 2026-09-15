@@ -10,14 +10,15 @@ import AppTextField from '@/components/ui/AppTextField.vue'
 import AppTextarea from '@/components/ui/AppTextarea.vue'
 import * as connectionsStore from '@/api/connections'
 import * as databaseApi from '@/api/database'
+import * as redisApi from '@/api/redis'
 import { useConnections } from '@/composables/useConnections'
 import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { NewConnection } from '@/types/connection'
 import { isDatabaseConnection } from '@/types/connection'
 import type {
-  DatabaseConfig,
-  DatabaseKind,
+  DatabaseConnectionConfig,
+  DatabaseConnectionKind,
   DatabaseSslMode,
 } from '@/types/database'
 import ConnectionFilePathField from './ConnectionFilePathField.vue'
@@ -41,7 +42,7 @@ const props = withDefaults(
   }
 )
 
-const kind = defineModel<DatabaseKind>('kind', { required: true })
+const kind = defineModel<DatabaseConnectionKind>('kind', { required: true })
 
 const emit = defineEmits<{
   close: []
@@ -55,11 +56,15 @@ const testing = shallowRef(false)
 const saving = shallowRef(false)
 const loadingConnection = shallowRef(Boolean(props.connectionId))
 const savePassword = shallowRef<boolean>(settings.rememberPasswords)
-const databaseKinds: Array<{ id: DatabaseKind; label: string; icon: string }> =
-  [
-    { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
-    { id: 'postgresql', label: 'PostgreSQL', icon: 'lucide:cylinder' },
-  ]
+const databaseKinds: Array<{
+  id: DatabaseConnectionKind
+  label: string
+  icon: string
+}> = [
+  { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
+  { id: 'postgresql', label: 'PostgreSQL', icon: 'lucide:cylinder' },
+  { id: 'redis', label: 'Redis', icon: 'lucide:layers' },
+]
 const sslModeOptions = [
   { value: 'disable', label: 'Disable' },
   { value: 'prefer', label: 'Prefer' },
@@ -69,11 +74,22 @@ const sslModeOptions = [
 ] as const
 const certificateExtensions = ['pem', 'crt', 'cer'] as const
 const privateKeyExtensions = ['pem', 'key'] as const
-const portForKind = (value: DatabaseKind): string =>
-  value === 'mysql' ? '3306' : '5432'
+const portForKind = (value: DatabaseConnectionKind): string =>
+  value === 'redis' ? '6379' : value === 'mysql' ? '3306' : '5432'
 const defaultPort = computed(() => portForKind(kind.value))
 const databaseLabel = computed(() =>
-  kind.value === 'mysql' ? 'MySQL' : 'PostgreSQL'
+  kind.value === 'redis'
+    ? 'Redis'
+    : kind.value === 'mysql'
+      ? 'MySQL'
+      : 'PostgreSQL'
+)
+const availableSslModes = computed(() =>
+  kind.value === 'redis'
+    ? sslModeOptions.filter(
+        option => option.value === 'disable' || option.value === 'verify-full'
+      )
+    : sslModeOptions
 )
 
 const form = reactive({
@@ -95,7 +111,7 @@ const isReady = computed<boolean>(
   () =>
     form.name.trim().length > 0 &&
     form.host.trim().length > 0 &&
-    form.username.trim().length > 0
+    (kind.value === 'redis' || form.username.trim().length > 0)
 )
 
 onMounted(loadConnection)
@@ -138,11 +154,17 @@ async function loadConnection(): Promise<void> {
 }
 
 /** 切换数据库协议；端口仍是旧协议默认值时一并换成新默认值。 */
-function selectKind(nextKind: DatabaseKind): void {
+function selectKind(nextKind: DatabaseConnectionKind): void {
   if (nextKind === kind.value) return
 
   const previousDefaultPort = defaultPort.value
+  const wasRedis = kind.value === 'redis'
   kind.value = nextKind
+
+  if (nextKind === 'redis' || wasRedis) {
+    form.database = nextKind === 'redis' ? '0' : ''
+    form.sslMode = nextKind === 'redis' ? 'disable' : 'prefer'
+  }
 
   if (!form.port.trim() || form.port === previousDefaultPort)
     form.port = portForKind(nextKind)
@@ -167,7 +189,11 @@ function handleSslFileError(message: string): void {
 function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
-    toast.warning(t('请填写连接名称、主机和用户名'))
+    toast.warning(
+      kind.value === 'redis'
+        ? t('请填写连接名称和主机')
+        : t('请填写连接名称、主机和用户名')
+    )
     return false
   }
 
@@ -175,6 +201,16 @@ function validate(): boolean {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     activeSection.value = 'general'
     toast.warning(t('端口必须是 1–65535 之间的整数'))
+    return false
+  }
+
+  if (
+    kind.value === 'redis' &&
+    form.database.trim() &&
+    !/^\d{1,10}$/.test(form.database.trim())
+  ) {
+    activeSection.value = 'general'
+    toast.warning(t('Redis 数据库索引必须是非负整数'))
     return false
   }
 
@@ -190,7 +226,7 @@ function validate(): boolean {
   return true
 }
 
-function buildConfig(): DatabaseConfig {
+function buildConfig(): DatabaseConnectionConfig {
   return {
     kind: kind.value,
     host: form.host.trim(),
@@ -213,7 +249,9 @@ async function testConnection(): Promise<void> {
 
   testing.value = true
   try {
-    await databaseApi.testConnection(buildConfig())
+    const config = buildConfig()
+    if (config.kind === 'redis') await redisApi.testConnection(config)
+    else await databaseApi.testConnection({ ...config, kind: config.kind })
     toast.success(t('数据库连接成功'))
   } catch (error) {
     toast.error({
@@ -229,7 +267,7 @@ async function testConnection(): Promise<void> {
  * 保存连接。
  *
  * 存下来之后侧栏的 Databases 分组就能看到它、点开成标签页；
- * 真正的查询执行要等 db 模块落地。
+ * Redis 与 SQL 数据库共用连接存储，各自建立原生驱动会话。
  */
 async function saveConnection(): Promise<void> {
   if (!validate() || saving.value) return
@@ -372,16 +410,27 @@ async function saveConnection(): Promise<void> {
 
         <AppTextField
           v-model="form.database"
-          :label="t('Database Name (Optional)')"
-          :placeholder="t('e.g. production')"
+          :label="
+            kind === 'redis'
+              ? t('Redis 数据库索引（默认 0）')
+              : t('Database Name (Optional)')
+          "
+          :placeholder="kind === 'redis' ? '0' : t('e.g. production')"
+          :inputmode="kind === 'redis' ? 'numeric' : 'text'"
         />
 
         <AppTextField
           v-model="form.username"
-          :label="t('Username')"
-          :placeholder="kind === 'mysql' ? 'e.g. root' : 'e.g. postgres'"
+          :label="kind === 'redis' ? t('ACL 用户名（可选）') : t('Username')"
+          :placeholder="
+            kind === 'redis'
+              ? 'default'
+              : kind === 'mysql'
+                ? 'e.g. root'
+                : 'e.g. postgres'
+          "
           autocomplete="username"
-          required
+          :required="kind !== 'redis'"
         />
 
         <div class="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
@@ -421,7 +470,7 @@ async function saveConnection(): Promise<void> {
           v-model="form.sslMode"
           :label="t('SSL Mode')"
           :options="
-            sslModeOptions.map(option => ({
+            availableSslModes.map(option => ({
               ...option,
               label: t(option.label),
             }))
@@ -536,7 +585,7 @@ async function saveConnection(): Promise<void> {
 
 .database-kinds {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 

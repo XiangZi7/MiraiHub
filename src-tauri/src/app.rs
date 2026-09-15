@@ -11,7 +11,7 @@ use tauri::{
     App, AppHandle, Builder, RunEvent, Wry,
 };
 
-use crate::{agent, db, ipc, local_terminal, platform, ssh};
+use crate::{agent, db, ipc, local_terminal, platform, redis_db, ssh};
 
 /// 组装并启动应用。
 pub fn run() {
@@ -58,6 +58,7 @@ fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
         .manage(ssh::SessionManager::new())
         .manage(ssh::TransferManager::new())
         .manage(db::DatabaseManager::new())
+        .manage(redis_db::RedisManager::default())
         .manage(local_terminal::LocalTerminalManager::new())
         .manage(platform::commands::WindowPreferences::default())
 }
@@ -181,6 +182,8 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
         tauri::async_runtime::block_on(manager.shutdown());
         let databases = app.state::<db::DatabaseManager>();
         tauri::async_runtime::block_on(databases.shutdown());
+        let redis = app.state::<redis_db::RedisManager>();
+        tauri::async_runtime::block_on(redis.shutdown());
         let local_terminals = app.state::<local_terminal::LocalTerminalManager>();
         local_terminals.shutdown();
     }

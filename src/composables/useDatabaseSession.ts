@@ -8,7 +8,7 @@ import {
 } from 'vue'
 import * as database from '@/api/database'
 import type { SavedConnection } from '@/types/connection'
-import { isDatabaseConnection, toDatabaseConfig } from '@/types/connection'
+import { isSqlConnection, toDatabaseConfig } from '@/types/connection'
 import type {
   DatabaseColumn,
   DatabaseExecution,
@@ -108,7 +108,7 @@ export function useDatabaseSession(
     resetData()
     void release(previousSession)
 
-    if (!target || !isDatabaseConnection(target)) {
+    if (!target || !isSqlConnection(target)) {
       setStatus('disconnected')
       return
     }

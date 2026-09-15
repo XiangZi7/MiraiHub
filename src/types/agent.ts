@@ -1,5 +1,5 @@
 export interface AgentTarget {
-  kind: 'ssh' | 'database'
+  kind: 'ssh' | 'database' | 'redis'
   sessionId: string
   database: string
 }

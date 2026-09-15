@@ -7,12 +7,15 @@ import { registerWorkspaceController } from '@/composables/useWorkspaceControlle
 import { useWorkspaceStatus } from '@/composables/useWorkspaceStatus'
 import { isDatabaseConnection } from '@/types/connection'
 import DatabaseView from '@/components/workspace/DatabaseView.vue'
+import RedisView from '@/components/workspace/RedisView.vue'
 const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
 const { activeNav } = useWorkspaceNavigation()
 const views =
-  useTemplateRef<Array<InstanceType<typeof DatabaseView>>>('databaseViews')
+  useTemplateRef<
+    Array<InstanceType<typeof DatabaseView> | InstanceType<typeof RedisView>>
+  >('databaseViews')
 const handleSshStatus = useWorkspaceStatus()
 const activeDatabaseConnection = computed(() => {
   const connection = activeTab.value?.connection
@@ -50,8 +53,9 @@ registerWorkspaceController('databases', {
 </script>
 <template>
   <div class="contents">
-    <DatabaseView
+    <component
       v-for="tab in databaseTabViews"
+      :is="tab.connection.kind === 'redis' ? RedisView : DatabaseView"
       v-show="activeId === tab.id"
       ref="databaseViews"
       :key="tab.id"

@@ -10,7 +10,7 @@
 use tauri::ipc::Invoke;
 use tauri::Wry;
 
-use crate::{agent, db, local_terminal, platform, ssh};
+use crate::{agent, db, local_terminal, platform, redis_db, ssh};
 
 /// 构造全部命令的分发闭包，交给 `tauri::Builder::invoke_handler`。
 ///
@@ -114,6 +114,17 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         db::commands::db_cancel_query,
         db::commands::db_export_sql,
         db::commands::db_import_sql,
+        // ---------- Redis ----------
+        redis_db::commands::redis_test_connection,
+        redis_db::commands::redis_connect,
+        redis_db::commands::redis_disconnect,
+        redis_db::commands::redis_use_database,
+        redis_db::commands::redis_scan,
+        redis_db::commands::redis_inspect,
+        redis_db::commands::redis_execute,
+        redis_db::commands::redis_save_string,
+        redis_db::commands::redis_delete_key,
+        redis_db::commands::redis_expire_key,
         // ---------- 本地终端 ----------
         local_terminal::local_terminal_create,
         local_terminal::local_terminal_write,

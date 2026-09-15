@@ -1,5 +1,44 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  'Redis 命令': 'Redis command',
+  请填写连接名称和主机: 'Enter a connection name and host',
+  'Redis 数据库索引必须是非负整数':
+    'Redis database index must be a non-negative integer',
+  'Redis 数据库索引（默认 0）': 'Redis database index (default 0)',
+  'ACL 用户名（可选）': 'ACL username (optional)',
+  '搜索 Redis 键': 'Search Redis keys',
+  扫描键: 'Scan keys',
+  'Redis 键列表': 'Redis keys',
+  空字符串键: 'Empty string key',
+  '正在扫描…': 'Scanning…',
+  '本批无匹配键，可继续扫描': 'No matches in this batch. Continue scanning.',
+  '没有匹配的 Redis 键': 'No matching Redis keys',
+  '已加载 {count} 个键': '{count} keys loaded',
+  继续扫描: 'Continue scan',
+  永不过期: 'No expiry',
+  已过期: 'Expired',
+  删除键: 'Delete key',
+  'String 值': 'String value',
+  保存值: 'Save value',
+  '保存时保留当前 TTL': 'Saving preserves the current TTL',
+  '仅显示部分内容；可在命令面板按范围或游标继续读取':
+    'Partial preview. Use range or cursor commands to read more.',
+  '扫描结果首项为下一游标，第二项为当前批次内容':
+    'The first item is the next cursor; the second contains this batch.',
+  'TTL（秒，-1 表示永不过期）': 'TTL (seconds, -1 for no expiry)',
+  '设置 TTL': 'Set TTL',
+  '选择一个键查看内容，或使用命令创建数据':
+    'Select a key to inspect it, or use a command to create data',
+  '删除 Redis 键？': 'Delete Redis key?',
+  '将删除当前键及其全部内容。':
+    'This deletes the current key and all its contents.',
+  '每次执行一条命令，支持引号和转义；写入命令会立即生效':
+    'Run one command at a time. Quotes and escapes are supported. Writes take effect immediately.',
+  '执行中…': 'Running…',
+  长度: 'Length',
+  'Redis 值有未保存的修改': 'The Redis value has unsaved changes',
+  'Redis 数据库索引': 'Redis database index',
+  '放弃未保存的修改？': 'Discard unsaved changes?',
   '常见只读检查自动执行，修改和未识别操作询问':
     'Run common read-only checks automatically; ask for changes and unrecognized operations',
   复制目标: 'Copy target',

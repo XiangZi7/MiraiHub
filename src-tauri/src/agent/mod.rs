@@ -266,6 +266,13 @@ async fn bind(app: &AppHandle, target: &Target) -> AppResult<(String, u64)> {
                 revision,
             ))
         }
+        "redis" => {
+            let (config, revision) = app
+                .state::<crate::redis_db::RedisManager>()
+                .agent_config(&target.session_id, &target.database)
+                .await?;
+            Ok((format!("{}@{}:{} / DB {}", config.username.trim(), config.host.trim(), config.port, config.database), revision))
+        }
         _ => Err(AppError::invalid_input("AI 仅支持已连接的 SSH 或数据库")),
     }
 }
@@ -359,6 +366,31 @@ async fn execute(app: &AppHandle, run: &Run, cell: &Cell, action: &Action) -> Ap
                 AppError::internal("SQL 超时，已请求取消；此前语句可能已提交，请核对结果")
             })??;
             serde_json::to_value(execution).unwrap_or(Value::Null)
+        }
+        Action::RedisScan { .. } | Action::RedisInspect { .. } | Action::RedisCommand { .. } => {
+            let (config, revision) = app
+                .state::<crate::redis_db::RedisManager>()
+                .agent_config(&run.target.session_id, &run.target.database)
+                .await?;
+            if revision != run.revision {
+                return Err(AppError::invalid_input("数据库已切换"));
+            }
+            let isolated = crate::redis_db::RedisManager::default();
+            let session = isolated.connect(config).await?;
+            let result = async {
+                validate_target(app, run).await?;
+                run.check(cell)?;
+                let value = match action {
+                    Action::RedisScan { cursor, pattern } => serde_json::to_value(isolated.scan(&session.session_id, cursor, pattern).await?),
+                    Action::RedisInspect { key } => serde_json::to_value(isolated.inspect(&session.session_id, key).await?),
+                    Action::RedisCommand { command, .. } => serde_json::to_value(isolated.execute(&session.session_id, command).await?),
+                    _ => unreachable!(),
+                };
+                value.map_err(|error| AppError::internal(error.to_string()))
+            };
+            let result = tokio::time::timeout(Duration::from_secs(20), result).await;
+            isolated.disconnect(&session.session_id).await;
+            result.map_err(|_| AppError::internal("Redis 操作超时；写入可能已生效，请核对结果"))??
         }
     };
     Ok(clip(&output.to_string(), 16384))
@@ -521,7 +553,11 @@ pub async fn ai_start(
                 .kind
         )
     } else {
-        "Linux read-only probes".into()
+        if target.kind == "redis" {
+            "Redis; use redis_scan and redis_inspect for bounded reads, propose_redis for exact commands. SCAN cursors and key ids must be preserved exactly. No SQL; the database is fixed for this turn.".into()
+        } else {
+            "Linux read-only probes".into()
+        }
     };
     let run_id = id();
     let scope = history::scope(&app, &target).await?;

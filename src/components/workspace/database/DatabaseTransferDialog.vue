@@ -14,7 +14,7 @@ import AppDialog from '@/components/ui/AppDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { toast } from '@/composables/useToast'
 import type { SavedConnection } from '@/types/connection'
-import { isDatabaseConnection } from '@/types/connection'
+import { isSqlConnection } from '@/types/connection'
 
 const { t } = useI18n()
 
@@ -50,7 +50,7 @@ const title = computed(() =>
 const databaseName = computed(() => {
   if (props.databaseName) return props.databaseName
   const connection = props.connection
-  return connection && isDatabaseConnection(connection)
+  return connection && isSqlConnection(connection)
     ? connection.settings.database || connection.name
     : (connection?.name ?? 'database')
 })

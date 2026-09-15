@@ -80,7 +80,10 @@ export const useConnectionsStore = defineStore('connections', () => {
   /** 数据库连接 */
   const databaseConnections = computed(() =>
     state.items.filter(
-      item => item.kind === 'mysql' || item.kind === 'postgresql'
+      item =>
+        item.kind === 'mysql' ||
+        item.kind === 'postgresql' ||
+        item.kind === 'redis'
     )
   )
 

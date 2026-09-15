@@ -8,13 +8,15 @@
 import type { SshAuthMethod, SshConfig } from '@/types/ssh'
 import type {
   DatabaseConfig,
+  DatabaseConnectionConfig,
+  DatabaseConnectionKind,
   DatabaseKind,
   DatabaseSslMode,
 } from '@/types/database'
 import { settingNumber, settingsSnapshot } from '@/composables/useSettings'
 
 /** 连接协议。SSH 与数据库共用一套存储，靠这个字段分流 */
-export type ConnectionKind = 'ssh' | 'local' | DatabaseKind
+export type ConnectionKind = 'ssh' | 'local' | DatabaseConnectionKind
 
 export type ConnectionTagColor =
   'red' | 'orange' | 'amber' | 'green' | 'cyan' | 'blue' | 'violet' | 'gray'
@@ -134,6 +136,19 @@ export function isSshConnection(
 export function isDatabaseConnection(
   connection: SavedConnection
 ): connection is SavedConnection & {
+  kind: DatabaseConnectionKind
+  settings: DatabaseConnectionSettings
+} {
+  return (
+    connection.kind === 'mysql' ||
+    connection.kind === 'postgresql' ||
+    connection.kind === 'redis'
+  )
+}
+
+export function isSqlConnection(
+  connection: SavedConnection
+): connection is SavedConnection & {
   kind: DatabaseKind
   settings: DatabaseConnectionSettings
 } {
@@ -175,6 +190,18 @@ export function toDatabaseConfig(
   connection: SavedConnection,
   passwordOverride?: string
 ): DatabaseConfig {
+  if (!isSqlConnection(connection))
+    throw new Error(`连接 ${connection.name} 不是 SQL 数据库类型`)
+  return {
+    ...toDatabaseConnectionConfig(connection, passwordOverride),
+    kind: connection.kind,
+  }
+}
+
+export function toDatabaseConnectionConfig(
+  connection: SavedConnection,
+  passwordOverride?: string
+): DatabaseConnectionConfig {
   if (!isDatabaseConnection(connection))
     throw new Error(`连接 ${connection.name} 不是数据库类型`)
 
@@ -200,9 +227,11 @@ export function endpointOf(connection: SavedConnection): string {
   if (isLocalConnection(connection))
     return connection.settings.workingDirectory || '本机'
 
-  return `${connection.username}@${connection.host}:${connection.port}`
+  return `${connection.username ? `${connection.username}@` : ''}${connection.host}:${connection.port}`
 }
 
 export function groupKindOf(kind: ConnectionKind): ConnectionGroupKind {
-  return kind === 'mysql' || kind === 'postgresql' ? 'database' : 'ssh'
+  return kind === 'mysql' || kind === 'postgresql' || kind === 'redis'
+    ? 'database'
+    : 'ssh'
 }

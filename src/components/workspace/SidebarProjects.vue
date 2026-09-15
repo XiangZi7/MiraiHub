@@ -140,7 +140,8 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         ? [
             {
               id: 'new-database-query',
-              label: t('新建查询'),
+              label:
+                connection.kind === 'redis' ? t('Redis 命令') : t('新建查询'),
               icon: 'lucide:square-terminal',
               iconTone: 'blue' as const,
             },
@@ -149,7 +150,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       { id: 'edit', label: t('编辑连接'), icon: 'lucide:pencil' },
       // 克隆整条配置（含认证方式与启动命令），不是把连接信息拷到剪贴板。
       { id: 'duplicate', label: t('克隆连接'), icon: 'lucide:copy-plus' },
-      ...(database
+      ...(database && connection.kind !== 'redis'
         ? [
             {
               id: 'database-transfer',

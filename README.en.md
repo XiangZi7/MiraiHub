@@ -32,7 +32,7 @@ MiraiHub is a desktop workspace built with **Tauri 2 + Rust + Vue 3**. It brings
 | :-: | --- | --- |
 | 🖥️ | **SSH & local terminals** | Multiple connection tabs, password / key auth, split terminals, terminal search, saved commands, and startup presets |
 | 📁 | **Remote files** | Browse, drag-and-drop upload, and download over SFTP with a unified transfer center; edit remote text files with save previews and conflict checks |
-| 🗄️ | **Database workspace** | MySQL / PostgreSQL; object tree, data browsing and editing, table designer, SQL editor, query history, import / export |
+| 🗄️ | **Database workspace** | MySQL / PostgreSQL: object tree, data editing, table designer, SQL and import / export; Redis: key scanning, value previews and editing, TTL and command console |
 | 📈 | **Server monitoring** | CPU, memory, disk, network, and uptime collected over SSH, no agent to install on the server |
 | 🤖 | **AI Agent** | Chat inside SSH and database workspaces with model profiles, attachments, tool calling, and history; choose per-action approval, auto read-only, or full access |
 | 🛠️ | **Server operations** | Local port forwarding, batch commands, SSH key management, connection groups and tags, encrypted backup and restore |

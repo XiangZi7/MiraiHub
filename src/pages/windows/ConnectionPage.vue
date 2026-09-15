@@ -19,7 +19,7 @@ const props = withDefaults(
 )
 const isDatabase = computed(() => props.kind === 'database')
 const isLocal = computed(() => props.kind === 'local')
-const databaseKind = shallowRef<'mysql' | 'postgresql'>('mysql')
+const databaseKind = shallowRef<'mysql' | 'postgresql' | 'redis'>('mysql')
 const title = computed(() =>
   props.connectionId
     ? isDatabase.value
