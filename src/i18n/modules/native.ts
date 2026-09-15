@@ -1,5 +1,16 @@
 /** Application-owned native messages. Service responses, SQL, and shell output stay verbatim. */
 export const en = {
+  'Redis 扫描参数无效': 'Invalid Redis scan arguments',
+  'Redis 键标识无效': 'Invalid Redis key identifier',
+  'Redis 操作超时；写入可能已生效，请核对结果':
+    'Redis operation timed out. Writes may have taken effect; check the result.',
+  '扫描 Redis 键': 'Scan Redis keys',
+  '读取 Redis 键': 'Read Redis key',
+  '执行 Redis 命令': 'Run Redis command',
+  '扫描当前 Redis 数据库中的一批键':
+    'Scan one batch of keys in the current Redis database',
+  '读取 Redis 键类型、TTL 和部分内容':
+    'Read Redis key type, TTL and a bounded value preview',
   'Redis 连接已断开，请重新连接':
     'Redis connection closed. Reconnect to continue.',
   'Redis 数据库索引必须是非负整数':

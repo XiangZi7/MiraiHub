@@ -15,42 +15,54 @@ fn step(args: &[&str], response: &str) -> Step {
 }
 
 async fn server(steps: Vec<Step>) -> (RedisConfig, tokio::task::JoinHandle<()>) {
+    servers(vec![steps]).await
+}
+
+async fn servers(connections: Vec<Vec<Step>>) -> (RedisConfig, tokio::task::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let task = tokio::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
-        let (read, mut write) = stream.into_split();
-        let mut reader = BufReader::new(read);
-        let mut expected = steps.into_iter();
-        loop {
-            let mut line = String::new();
-            if reader.read_line(&mut line).await.unwrap() == 0 {
-                break;
-            }
-            assert!(line.starts_with('*'));
-            let count: usize = line[1..].trim().parse().unwrap();
-            let mut args = Vec::new();
-            for _ in 0..count {
-                line.clear();
-                reader.read_line(&mut line).await.unwrap();
-                let length: usize = line[1..].trim().parse().unwrap();
-                let mut arg = vec![0; length];
-                reader.read_exact(&mut arg).await.unwrap();
-                let mut crlf = [0; 2];
-                reader.read_exact(&mut crlf).await.unwrap();
-                assert_eq!(crlf, *b"\r\n");
-                args.push(arg);
-            }
-            // redis-rs 上报库版本不属于用户命令，兼容其握手流水线。
-            if args[0] == b"CLIENT" {
-                write.write_all(b"+OK\r\n").await.unwrap();
-                continue;
-            }
-            let (wanted, response) = expected.next().expect("unexpected command");
-            assert_eq!(args, wanted);
-            write.write_all(&response).await.unwrap();
+        let mut tasks = Vec::new();
+        for steps in connections {
+            let (stream, _) = listener.accept().await.unwrap();
+            tasks.push(tokio::spawn(async move {
+                let (read, mut write) = stream.into_split();
+                let mut reader = BufReader::new(read);
+                let mut expected = steps.into_iter();
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).await.unwrap() == 0 {
+                        break;
+                    }
+                    assert!(line.starts_with('*'));
+                    let count: usize = line[1..].trim().parse().unwrap();
+                    let mut args = Vec::new();
+                    for _ in 0..count {
+                        line.clear();
+                        reader.read_line(&mut line).await.unwrap();
+                        let length: usize = line[1..].trim().parse().unwrap();
+                        let mut arg = vec![0; length];
+                        reader.read_exact(&mut arg).await.unwrap();
+                        let mut crlf = [0; 2];
+                        reader.read_exact(&mut crlf).await.unwrap();
+                        assert_eq!(crlf, *b"\r\n");
+                        args.push(arg);
+                    }
+                    // redis-rs 上报库版本不属于用户命令，兼容其握手流水线。
+                    if args[0] == b"CLIENT" {
+                        write.write_all(b"+OK\r\n").await.unwrap();
+                        continue;
+                    }
+                    let (wanted, response) = expected.next().expect("unexpected command");
+                    assert_eq!(args, wanted);
+                    write.write_all(&response).await.unwrap();
+                }
+                assert!(expected.next().is_none(), "not all commands were sent");
+            }));
         }
-        assert!(expected.next().is_none(), "not all commands were sent");
+        for task in tasks {
+            task.await.unwrap();
+        }
     });
     (
         RedisConfig {
@@ -67,6 +79,54 @@ async fn server(steps: Vec<Step>) -> (RedisConfig, tokio::task::JoinHandle<()>) 
         },
         task,
     )
+}
+
+#[tokio::test]
+async fn agent_snapshots_bind_database_and_invalidate_after_switch_or_disconnect() {
+    let (config, task) = servers(vec![
+        vec![
+            step(&["PING"], "+PONG\r\n"),
+            step(&["SELECT", "9"], "-ERR invalid DB\r\n"),
+            step(&["SELECT", "2"], "+OK\r\n"),
+            step(&["SELECT", "0"], "+OK\r\n"),
+            step(&["SELECT", "2"], "+OK\r\n"),
+        ],
+        vec![
+            step(&["SELECT", "2"], "+OK\r\n"),
+            step(&["PING"], "+PONG\r\n"),
+            step(&["GET", "key"], "$5\r\nhello\r\n"),
+        ],
+    ])
+    .await;
+    let manual = RedisManager::default();
+    let session = manual.connect(config).await.unwrap();
+    let id = &session.session_id;
+    assert_eq!(manual.agent_config(id, "0").await.unwrap().1, 0);
+    assert!(manual.use_database(id, "9").await.is_err());
+    assert_eq!(manual.agent_config(id, "0").await.unwrap().1, 0);
+    manual.use_database(id, "2").await.unwrap();
+    assert!(manual.agent_config(id, "0").await.is_err());
+    let (snapshot, revision) = manual.agent_config(id, "2").await.unwrap();
+    assert_eq!(snapshot.database, "2");
+    assert_eq!(snapshot.timeout_secs, 10);
+    let isolated = RedisManager::default();
+    let agent = isolated.connect(snapshot).await.unwrap();
+    manual.use_database(id, "0").await.unwrap();
+    // 独立连接不跟随手动工作区切库。
+    assert_eq!(
+        isolated
+            .execute(&agent.session_id, "GET key")
+            .await
+            .unwrap()
+            .value,
+        "hello"
+    );
+    manual.use_database(id, "2").await.unwrap();
+    assert!(manual.agent_config(id, "2").await.unwrap().1 > revision);
+    manual.disconnect(id).await;
+    assert!(manual.agent_config(id, "2").await.is_err());
+    isolated.disconnect(&agent.session_id).await;
+    task.await.unwrap();
 }
 
 #[tokio::test]

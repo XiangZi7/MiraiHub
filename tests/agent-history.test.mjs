@@ -348,6 +348,35 @@ test('loading blocks send and changing targets ignores stale history and approva
   app.unmount()
 })
 
+test('Redis conversations bind kind and DB, and switching DB cancels pending approvals', async () => {
+  const { app, state, target } = fixture()
+  target.value = { kind: 'redis', sessionId: 'redis-one', database: '0' }
+  await flush()
+  await state.send('扫描键', [], 'auto')
+  assert.deepEqual(mock.starts.at(-1).target, target.value)
+  const conversation = state.run.value.conversationId
+  const id = pendingApproval(state, Date.now() + 60000)
+  target.value = { ...target.value, database: '2' }
+  await flush()
+  assert.ok(mock.forgotten.includes(id))
+  assert.equal(mock.responses.length, 0)
+  assert.equal(state.awaitingApproval.value, false)
+  assert.equal(state.run.value, null)
+  assert.equal(state.conversations.value.length, 0)
+  await state.send('查看 DB 2', [], 'ask')
+  assert.equal(mock.starts.at(-1).target.database, '2')
+  assert.equal(mock.starts.at(-1).approvalMode, 'ask')
+  target.value = { ...target.value, database: '0' }
+  await flush()
+  assert.ok(state.conversations.value.some(item => item.id === conversation))
+  await state.selectConversation(conversation)
+  assert.equal(state.run.value.approval, null)
+  target.value = { ...target.value, kind: 'database' }
+  await flush()
+  assert.equal(state.conversations.value.length, 0)
+  app.unmount()
+})
+
 test('deleting removes the saved transcript and historical snapshots cannot approve old work', async () => {
   const { app, state } = fixture()
   await flush()

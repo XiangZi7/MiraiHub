@@ -26,8 +26,8 @@ impl ApprovalMode {
     pub fn instruction(self) -> &'static str {
         match self {
             Self::Ask => "The user selected Ask: every tool call, including fixed read-only probes and metadata, requires single-use human approval.",
-            Self::Auto => "The user selected Auto: fixed probes, common read-only diagnostics and simple SQL metadata checks run automatically. Prefer simple bounded commands, for example command -v pm2 && pm2 --version, ls -lah, ps aux, df -h, systemctl status NAME --no-pager, journalctl -u NAME -n 100 --no-pager, and tail -n 100 /var/log/FILE. Mutations, unknown commands/flags, arbitrary SQL, sensitive file reads, redirects and shell substitutions require single-use human approval. Do not split or disguise an operation to bypass approval; the backend classifies the exact command, not your explanation.",
-            Self::Full => "The user selected Full access for this turn on the current connection: the provided tools, including custom shell and SQL, run without a separate approval. Stay within the user's requested task and the bound target. Do not ask the user to approve tools or claim success without a tool result.",
+            Self::Auto => "The user selected Auto: fixed probes, common read-only diagnostics and simple SQL metadata checks, Redis key scans and bounded key previews run automatically. All custom Redis commands require single-use human approval in Auto mode. Prefer simple bounded commands, for example command -v pm2 && pm2 --version, ls -lah, ps aux, df -h, systemctl status NAME --no-pager, journalctl -u NAME -n 100 --no-pager, and tail -n 100 /var/log/FILE. Mutations, unknown commands/flags, arbitrary SQL, sensitive file reads, redirects and shell substitutions require single-use human approval. Do not split or disguise an operation to bypass approval; the backend classifies the exact command, not your explanation.",
+            Self::Full => "The user selected Full access for this turn on the current connection: the provided tools, including custom shell, SQL and Redis commands, run without a separate approval. Stay within the user's requested task and the bound target. Do not ask the user to approve tools or claim success without a tool result.",
         }
     }
 }
@@ -169,12 +169,19 @@ pub fn classify(kind: &str, name: &str, args: &str) -> AppResult<Action> {
             if a.cursor.parse::<u64>().is_err() || a.pattern.len() > 4096 {
                 return Err(AppError::invalid_input("Redis 扫描参数无效"));
             }
-            Ok(Action::RedisScan { cursor: a.cursor, pattern: a.pattern })
+            Ok(Action::RedisScan {
+                cursor: a.cursor,
+                pattern: a.pattern,
+            })
         }
         ("redis", "redis_inspect") => {
             let a: RedisInspect = parse(args)?;
             use base64::Engine;
-            if a.key.len() > 8192 || base64::engine::general_purpose::STANDARD.decode(&a.key).is_err() {
+            if a.key.len() > 8192
+                || base64::engine::general_purpose::STANDARD
+                    .decode(&a.key)
+                    .is_err()
+            {
                 return Err(AppError::invalid_input("Redis 键标识无效"));
             }
             Ok(Action::RedisInspect { key: a.key })
@@ -184,7 +191,10 @@ pub fn classify(kind: &str, name: &str, args: &str) -> AppResult<Action> {
             bounded(&a.command, 8192)?;
             bounded(&a.reason, 2000)?;
             crate::redis_db::validate_agent_command(&a.command)?;
-            Ok(Action::RedisCommand { command: a.command, reason: a.reason })
+            Ok(Action::RedisCommand {
+                command: a.command,
+                reason: a.reason,
+            })
         }
         _ => Err(AppError::invalid_input(
             "未知工具或工具与当前连接类型不匹配，已阻止执行",
@@ -227,6 +237,79 @@ pub fn definitions(kind: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn redis_tools_preserve_exact_arguments_and_enforce_approval_modes() {
+        for (name, args, custom) in [
+            (
+                "redis_scan",
+                json!({"cursor":"18446744073709551615","pattern":"user:*"}),
+                false,
+            ),
+            ("redis_inspect", json!({"key":"YQBi"}), false),
+            ("redis_inspect", json!({"key":""}), false),
+            (
+                "propose_redis",
+                json!({"command":"SET 'key name' 'value' EX 60","reason":"write a key"}),
+                true,
+            ),
+            (
+                "propose_redis",
+                json!({"command":"EVAL 'return redis.call(\"DEL\", KEYS[1])' 1 key","reason":"read-only"}),
+                true,
+            ),
+        ] {
+            let action = classify("redis", name, &args.to_string()).unwrap();
+            assert!(ApprovalMode::Ask.requires_approval(&action));
+            assert_eq!(ApprovalMode::Auto.requires_approval(&action), custom);
+            assert!(!ApprovalMode::Full.requires_approval(&action));
+            if custom {
+                assert_eq!(
+                    action.approval_details().0,
+                    args["command"].as_str().unwrap()
+                );
+            }
+            assert!(classify("database", name, &args.to_string()).is_err());
+            assert!(classify("ssh", name, &args.to_string()).is_err());
+        }
+        for (name, args) in [
+            (
+                "redis_scan",
+                json!({"cursor":"18446744073709551616","pattern":"*"}),
+            ),
+            (
+                "redis_scan",
+                json!({"cursor":"0","pattern":"*","command":"FLUSHDB"}),
+            ),
+            ("redis_inspect", json!({"key":"not base64"})),
+            ("propose_sql", json!({"sql":"SELECT 1","reason":"test"})),
+            ("propose_shell", json!({"command":"id","reason":"test"})),
+        ] {
+            assert!(classify("redis", name, &args.to_string()).is_err());
+        }
+        for command in [
+            "SELECT 2",
+            "AUTH secret",
+            "HELLO 3",
+            "MULTI",
+            "SUBSCRIBE channel",
+            "CLIENT REPLY OFF",
+        ] {
+            assert!(classify(
+                "redis",
+                "propose_redis",
+                &json!({"command":command,"reason":"read-only"}).to_string()
+            )
+            .is_err());
+        }
+        let names = definitions("redis")
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["function"]["name"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["redis_scan", "redis_inspect", "propose_redis"]);
+        assert_eq!(definitions("unknown"), json!([]));
+    }
     #[test]
     fn approval_modes_cover_every_action_and_unknown_modes_fail_closed() {
         let actions = [

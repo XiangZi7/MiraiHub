@@ -13,15 +13,11 @@
     </script>
     <script type="module">
       import { createApp, h, reactive } from 'vue'
-      import { i18n } from '/src/i18n/index.ts'
-      import { pinia } from '/src/stores'
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
       import { addCollection } from '@iconify/vue'
       import icons from 'virtual:mirai-icons'
-      import RedisView from '/src/components/workspace/RedisView.vue'
-      import DatabaseConnectionForm from '/src/components/connection/DatabaseConnectionForm.vue'
       import '/src/assets/styles/main.css'
       addCollection(icons)
-      i18n.global.locale.value = 'zh-CN'
       const state = reactive({
         database: '0',
         value: '{"name":"MiraiHub","enabled":true}',
@@ -41,63 +37,155 @@
         database: state.database,
         endpoint: '127.0.0.1:6379',
       })
-      window.__TAURI_INTERNALS__.invoke = async (command, args = {}) => {
-        state.calls.push(command)
-        if (command === 'redis_connect') return session()
-        if (
-          command === 'redis_disconnect' ||
-          command === 'redis_test_connection'
-        )
-          return
-        if (command === 'redis_use_database') {
-          state.database = args.database
-          return session()
-        }
-        if (command === 'redis_scan')
-          return {
-            cursor: '0',
-            keys:
-              state.database === '0'
-                ? keys.filter(
-                    key =>
-                      args.pattern === '*' ||
-                      key.name.startsWith(args.pattern.replace('*', ''))
-                  )
-                : [],
+      let run
+      mockWindows('main')
+      mockIPC(
+        async (command, args = {}) => {
+          state.calls.push({ command, args })
+          if (command === 'ai_get_config')
+            return {
+              activeId: 'preview',
+              profiles: [
+                {
+                  id: 'preview',
+                  name: 'Preview AI',
+                  model: 'Mock model',
+                  apiFormat: 'openai',
+                  enabled: true,
+                  baseUrl: 'https://example.invalid/v1',
+                  hasApiKey: true,
+                },
+              ],
+            }
+          if (command === 'ai_list_conversations') return []
+          if (command === 'ai_start') {
+            if (
+              args.target.kind !== 'redis' ||
+              args.target.database !== state.database
+            )
+              throw new Error('Incorrect AI target')
+            run = {
+              id: 'preview-run',
+              conversationId: 'preview-chat',
+              target: 'Development Redis / DB ' + state.database,
+              model: 'Mock model',
+              provider: 'https://example.invalid/v1',
+              status: 'running',
+              approval: null,
+              entries: [{ role: 'user', text: args.prompt }],
+            }
+            return structuredClone(run)
           }
-        if (command === 'redis_inspect')
-          return {
-            key: keys.find(key => key.id === args.key),
-            keyType: 'string',
-            ttlMs: state.ttl,
-            length: state.value.length,
-            value: state.value,
-            editable: true,
-            truncated: false,
+          if (command === 'ai_step') {
+            if (run.entries.at(-1)?.text === '演示审批') {
+              run.status = 'approval'
+              run.approval = {
+                id: 'preview-approval',
+                command: 'EXPIRE user:1001 60',
+                reason: '将 user:1001 的过期时间设置为 60 秒（模拟数据）。',
+                label: '执行 Redis 命令',
+                expiresAt: Date.now() + 600000,
+              }
+            } else {
+              run.status = 'completed'
+              run.entries.push({
+                role: 'assistant',
+                text:
+                  '当前目标是 **Redis / DB ' +
+                  state.database +
+                  '**。已扫描到 ' +
+                  keys.length +
+                  ' 个键（模拟工具结果）。',
+              })
+            }
+            return structuredClone(run)
           }
-        if (command === 'redis_save_string') {
-          state.value = args.value
-          return
-        }
-        if (command === 'redis_expire_key') {
-          state.ttl = args.ttlSecs === -1 ? -1 : args.ttlSecs * 1000
-          return
-        }
-        if (command === 'redis_execute')
-          return {
-            value: args.command.toUpperCase() === 'PING' ? 'PONG' : 'OK',
-            elapsedMs: 2,
-            truncated: false,
+          if (command === 'ai_send') {
+            run.status = 'running'
+            run.entries.push({ role: 'user', text: args.prompt })
+            return structuredClone(run)
           }
-        if (command === 'redis_delete_key') {
-          keys.splice(
-            keys.findIndex(key => key.id === args.key),
-            1
+          if (command === 'ai_respond') {
+            if (args.approve) state.ttl = 60000
+            run.approval = null
+            run.status = args.approve ? 'running' : 'cancelled'
+            run.entries.push({
+              role: 'audit',
+              text: args.approve ? '已设置模拟 TTL' : '已拒绝操作',
+            })
+            return structuredClone(run)
+          }
+          if (command === 'ai_cancel' || command === 'ai_forget') {
+            if (run) {
+              run.status = 'cancelled'
+              run.approval = null
+            }
+            return
+          }
+          if (command === 'redis_connect') return session()
+          if (
+            command === 'redis_disconnect' ||
+            command === 'redis_test_connection'
           )
-          return
-        }
-        throw new Error(`Unexpected preview command: ${command}`)
-      }
+            return
+          if (command === 'redis_use_database') {
+            state.database = args.database
+            return session()
+          }
+          if (command === 'redis_scan')
+            return {
+              cursor: '0',
+              keys:
+                state.database === '0'
+                  ? keys.filter(
+                      key =>
+                        args.pattern === '*' ||
+                        key.name.startsWith(args.pattern.replace('*', ''))
+                    )
+                  : [],
+            }
+          if (command === 'redis_inspect')
+            return {
+              key: keys.find(key => key.id === args.key),
+              keyType: 'string',
+              ttlMs: state.ttl,
+              length: state.value.length,
+              value: state.value,
+              editable: true,
+              truncated: false,
+            }
+          if (command === 'redis_save_string') {
+            state.value = args.value
+            return
+          }
+          if (command === 'redis_expire_key') {
+            state.ttl = args.ttlSecs === -1 ? -1 : args.ttlSecs * 1000
+            return
+          }
+          if (command === 'redis_execute')
+            return {
+              value: args.command.toUpperCase() === 'PING' ? 'PONG' : 'OK',
+              elapsedMs: 2,
+              truncated: false,
+            }
+          if (command === 'redis_delete_key') {
+            keys.splice(
+              keys.findIndex(key => key.id === args.key),
+              1
+            )
+            return
+          }
+          throw new Error(`Unexpected preview command: ${command}`)
+        },
+        { shouldMockEvents: true }
+      )
+      const { i18n } = await import('/src/i18n/index.ts')
+      const { pinia } = await import('/src/stores')
+      const { default: RedisView } =
+        await import('/src/components/workspace/RedisView.vue')
+      const { default: DatabaseConnectionForm } =
+        await import('/src/components/connection/DatabaseConnectionForm.vue')
+      i18n.global.locale.value = 'zh-CN'
       const connection = {
         id: 'redis-preview',
         name: 'Development Redis',
@@ -117,7 +205,10 @@
         render: () =>
           h(
             'div',
-            { class: 'h-screen flex flex-col', style: 'min-width:600px' },
+            {
+              class: 'h-screen flex flex-col gap-2 p-3',
+              style: 'min-width:600px',
+            },
             [
               h(
                 'div',

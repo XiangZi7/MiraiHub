@@ -215,7 +215,9 @@ impl RedisManager {
             return Err(AppError::not_found("Redis 连接已断开，请重新连接"));
         }
         if session.info.database != database {
-            return Err(AppError::invalid_input("活动数据库已改变，请重新发起 AI 请求"));
+            return Err(AppError::invalid_input(
+                "活动数据库已改变，请重新发起 AI 请求",
+            ));
         }
         let mut config = session.config.clone();
         config.database = session.info.database.clone();

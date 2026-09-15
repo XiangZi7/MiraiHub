@@ -109,7 +109,9 @@ onBeforeUnmount(() => {
     :aria-valuemin="min"
     :aria-valuemax="max"
     :aria-valuenow="Math.round(ratio)"
-    :aria-valuetext="valueText || t('SQL 编辑器占 {value0}%', { value0: Math.round(ratio) })"
+    :aria-valuetext="
+      valueText || t('SQL 编辑器占 {value0}%', { value0: Math.round(ratio) })
+    "
     :class="['query-resize-handle', dragging && 'is-dragging']"
     :title="t('拖动调整高度；双击恢复默认')"
     @dblclick="reset"

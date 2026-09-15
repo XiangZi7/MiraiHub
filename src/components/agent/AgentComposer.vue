@@ -44,8 +44,8 @@ const placeholder = computed(() =>
     : props.isRedis
       ? t('询问 Redis 键、TTL，或描述要执行的命令…')
       : props.isDatabase
-      ? t('询问数据库，或描述要完成的操作…')
-      : t('描述问题，或让我帮你执行任务…')
+        ? t('询问数据库，或描述要完成的操作…')
+        : t('描述问题，或让我帮你执行任务…')
 )
 function keydown(event: KeyboardEvent): void {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {

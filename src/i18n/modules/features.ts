@@ -1,5 +1,28 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  键值: 'Key value',
+  值: 'Value',
+  '调整 AI 面板宽度': 'Resize AI panel',
+  键: 'Keys',
+  只读预览: 'Read-only preview',
+  'Redis 键浏览器': 'Redis key browser',
+  '打开 Redis 命令': 'Open Redis commands',
+  刷新键列表: 'Refresh keys',
+  刷新键内容: 'Refresh key value',
+  '执行 Redis 命令（Ctrl+Enter）': 'Run Redis command (Ctrl+Enter)',
+  '调整 Redis 编辑器和结果区高度': 'Resize Redis editor and results',
+  'Redis 编辑器占 {value0}%': 'Redis editor occupies {value0}%',
+  运行命令以查看结果: 'Run a command to view results',
+  '扫描当前 Redis 数据库的键': 'Scan keys in the current Redis database',
+  '检查 Redis 键的类型和 TTL': 'Check Redis key types and TTL',
+  '帮我编写 Redis 命令': 'Help me write Redis commands',
+  '分析 Redis 内存使用情况': 'Analyze Redis memory usage',
+  扫描键并查看内容: 'Scan keys and preview values',
+  检查键类型与过期时间: 'Check key types and expiration',
+  '编写和执行 Redis 命令': 'Write and run Redis commands',
+  '分析 Redis 状态与内存使用': 'Analyze Redis status and memory usage',
+  '询问 Redis 键、TTL，或描述要执行的命令…':
+    'Ask about Redis keys, TTL, or commands to run…',
   'Redis 命令': 'Redis command',
   请填写连接名称和主机: 'Enter a connection name and host',
   'Redis 数据库索引必须是非负整数':
