@@ -478,7 +478,6 @@ function runContextAction(action: string): void {
               <DatabaseConnectionIcon
                 v-if="isDatabaseConnection(node)"
                 :kind="node.kind"
-                class="mt-0.5 self-start"
               />
               <StatusDot
                 v-else
