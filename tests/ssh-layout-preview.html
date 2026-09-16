@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>SSH workspace layout preview</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      mockWindows('main')
+      let sequence = 0
+      mockIPC(
+        (command, args) => {
+          if (command === 'ssh_connect') return 'preview-' + ++sequence
+          if (command === 'ssh_system_stats')
+            return {
+              hostname: 'debian',
+              os: 'Debian GNU/Linux 13',
+              kernel: '6.12',
+              arch: 'x86_64',
+              uptimeSecs: 90061,
+              onlineUsers: 1,
+              cpu: {
+                usage: 6,
+                cores: 8,
+                model: 'AMD EPYC',
+                load: [0.42, 0.2, 0.1],
+              },
+              memory: {
+                usedKb: 20342374,
+                totalKb: 32820428,
+                swapTotalKb: 0,
+                swapUsedKb: 0,
+              },
+              disk: { usedKb: 111149056, totalKb: 209715200 },
+              network: { rxBytesPerSec: 156160, txBytesPerSec: 552448 },
+            }
+          if (command === 'ssh_list_directory')
+            return { path: args.path || '/root', entries: [] }
+          if (command === 'ai_get_config')
+            return {
+              activeId: 'preview',
+              profiles: [
+                {
+                  id: 'preview',
+                  name: 'Preview',
+                  model: 'preview-model',
+                  enabled: true,
+                  baseUrl: 'https://example.invalid',
+                },
+              ],
+            }
+          if (command === 'ai_list_conversations') return []
+          if (command === 'settings_load') return {}
+        },
+        { shouldMockEvents: true }
+      )
+      const [
+        { createApp, h, ref },
+        { createPinia },
+        { i18n },
+        { addCollection },
+        { default: icons },
+        { MIRAI_ICONS },
+        { default: databaseIcons },
+        { default: Workspace },
+        { default: Sidebar },
+      ] = await Promise.all([
+        import('vue'),
+        import('pinia'),
+        import('/src/i18n/index.ts'),
+        import('@iconify/vue'),
+        import('virtual:mirai-icons'),
+        import('/src/constants/icons.ts'),
+        import('/src/constants/database-icons.json'),
+        import('/src/components/workspace/SshTerminalWorkspace.vue'),
+        import('/src/components/workspace/SidebarProjects.vue'),
+      ])
+      await import('/src/assets/styles/main.css')
+      addCollection(icons)
+      addCollection(MIRAI_ICONS)
+      addCollection(databaseIcons)
+      i18n.global.locale.value = 'zh-CN'
+      const config = {
+        host: '10.2.0.252',
+        port: 22,
+        username: 'root',
+        auth: { type: 'password', password: '' },
+        timeoutSecs: 10,
+        keepaliveSecs: 30,
+      }
+      const items = ['mysql', 'redis', 'postgresql'].map((kind, index) => ({
+        id: kind,
+        kind,
+        name:
+          kind === 'mysql'
+            ? '生产数据库'
+            : kind === 'redis'
+              ? '缓存服务'
+              : '分析数据库',
+        host: '10.2.0.252',
+        port: [3306, 6379, 5432][index],
+        username: 'root',
+        tags: [],
+        tagColor: 'gray',
+        settings: {},
+        group: '',
+        createdAt: 1,
+        lastUsedAt: 1,
+      }))
+      const active = ref(true)
+      createApp({
+        setup() {
+          return () =>
+            h(
+              'div',
+              {
+                style:
+                  'height:100vh;display:flex;padding:8px;gap:10px;background:var(--color-canvas)',
+              },
+              [
+                h('aside', { style: 'width:205px;flex-shrink:0' }, [
+                  h(Sidebar, {
+                    label: 'Databases',
+                    kind: 'database',
+                    groups: [
+                      {
+                        id: 'preview',
+                        name: 'Ungrouped',
+                        virtual: true,
+                        items,
+                      },
+                    ],
+                    loaded: true,
+                    connectedIds: new Set(['redis']),
+                    openIds: new Set(['redis']),
+                  }),
+                ]),
+                h(Workspace, {
+                  config,
+                  connectionId: 'ssh',
+                  title: '我的服务器',
+                  active: active.value,
+                }),
+              ]
+            )
+        },
+      })
+        .use(createPinia())
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

@@ -19,6 +19,8 @@ export interface TabItem {
   label: string
   /** 左侧图标（与 dot 二选一） */
   icon?: string
+  /** 图标尺寸，产品图标可适当放大以便辨认。 */
+  iconSize?: number
   /** 左侧状态点色调 */
   dot?: 'accent' | 'success' | 'amber' | 'txt-3'
   /** 激活下划线颜色；连接标签可跟随用户选择的标签色。 */
@@ -179,7 +181,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       <AppIcon
         v-else-if="tab.icon"
         :name="tab.icon"
-        :size="13"
+        :size="tab.iconSize ?? 13"
       />
       <span class="whitespace-nowrap">{{ tab.label }}</span>
 
@@ -240,7 +242,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
         <AppIcon
           v-else-if="draggedTab.icon"
           :name="draggedTab.icon"
-          :size="13"
+          :size="draggedTab.iconSize ?? 13"
         />
         <span>{{ draggedTab.label }}</span>
       </div>

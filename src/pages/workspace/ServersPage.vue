@@ -1,12 +1,8 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
-import { computed, nextTick, useTemplateRef } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useWorkspaceStore } from '@/stores/workspace'
-import {
-  MACHINE_MIN_WIDTH,
-  useWorkspaceLayoutStore,
-} from '@/stores/workspace-layout'
+import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { registerWorkspaceController } from '@/composables/useWorkspaceControllers'
 import { useWorkspaceStatus } from '@/composables/useWorkspaceStatus'
@@ -15,20 +11,14 @@ import {
   toSshConfig,
   type LocalConnectionSettings,
 } from '@/types/connection'
-import { openConnectionWindow } from '@/utils/window'
-import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
-import MachinePanel from '@/components/workspace/MachinePanel.vue'
 import LocalTerminalPanel from '@/components/workspace/LocalTerminalPanel.vue'
 import TerminalPanel from '@/components/workspace/TerminalPanel.vue'
 import SshTerminalWorkspace from '@/components/workspace/SshTerminalWorkspace.vue'
 
-const { t } = useI18n()
 const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
-const { machineWidth, machineOpen, machineView, machineMaxWidth } = storeToRefs(
-  useWorkspaceLayoutStore()
-)
+const { machineOpen, machineView } = storeToRefs(useWorkspaceLayoutStore())
 const { activeNav } = useWorkspaceNavigation()
 const sshWorkspaces =
   useTemplateRef<Array<InstanceType<typeof SshTerminalWorkspace>>>(
@@ -38,8 +28,6 @@ const localTerminals =
   useTemplateRef<Array<InstanceType<typeof LocalTerminalPanel>>>(
     'localTerminals'
   )
-const machinePanel =
-  useTemplateRef<InstanceType<typeof MachinePanel>>('machinePanel')
 const handleSshStatus = useWorkspaceStatus()
 const sshTabViews = computed(() =>
   openTabs
@@ -49,6 +37,7 @@ const sshTabViews = computed(() =>
 
       return {
         id: tab.id,
+        connection: tab.connection,
         title: tab.connection.name,
         config: toSshConfig(tab.connection),
         terminalType:
@@ -73,11 +62,6 @@ const localTabViews = computed(() =>
   })
 )
 
-/** 当前标签按主视图收窄，避免把数据库连接传进机器面板，反之亦然 */
-const activeSshTab = computed(() =>
-  activeTab.value?.connection.kind === 'ssh' ? activeTab.value : undefined
-)
-
 const activeTerminalTab = computed(() => {
   const tab = activeTab.value
   return tab &&
@@ -90,8 +74,9 @@ async function action(id: string, action: string): Promise<void> {
   if (action === 'files' || action === 'upload') {
     machineOpen.value = true
     machineView.value = 'files'
-    await nextTick()
-    if (action === 'upload') await machinePanel.value?.upload()
+    if (action === 'upload') {
+      for (const view of sshWorkspaces.value ?? []) await view.uploadFor(id)
+    }
     return
   }
   for (const view of [
@@ -106,13 +91,6 @@ async function action(id: string, action: string): Promise<void> {
     else if (action === 'focus') view.focusFor(id)
   }
 }
-async function runWorkspaceAction(actionName: string): Promise<void> {
-  if (actionName === 'database') {
-    openConnectionWindow('database')
-    return
-  }
-  if (activeSshTab.value) await action(activeSshTab.value.id, actionName)
-}
 registerWorkspaceController('servers', { action })
 </script>
 <template>
@@ -122,6 +100,7 @@ registerWorkspaceController('servers', { action })
       v-for="tab in sshTabViews"
       ref="sshWorkspaces"
       :connection-id="tab.id"
+      :connection="tab.connection"
       :active="activeId === tab.id && activeNav === 'servers'"
       v-show="activeId === tab.id"
       :key="tab.id"
@@ -151,53 +130,5 @@ registerWorkspaceController('servers', { action })
       v-if="!activeTerminalTab"
       key="empty-terminal"
     />
-
-    <Transition name="machine-panel">
-      <div
-        v-if="machineOpen && Boolean(activeSshTab)"
-        class="machine-panel-shell"
-        :style="{ width: `${machineWidth + 10}px` }"
-      >
-        <AppResizeHandle
-          v-model="machineWidth"
-          pane-side="right"
-          :min="MACHINE_MIN_WIDTH"
-          :max="machineMaxWidth"
-          :label="t('调整机器面板宽度')"
-        />
-
-        <MachinePanel
-          ref="machinePanel"
-          @action="runWorkspaceAction"
-          v-model:view="machineView"
-          :connection="activeSshTab?.connection"
-          :session-id="activeSshTab?.sessionId ?? ''"
-          :width="machineWidth"
-          @close="machineOpen = false"
-        />
-      </div>
-    </Transition>
   </div>
 </template>
-
-<style scoped>
-.machine-panel-shell {
-  display: flex;
-  min-height: 0;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-.machine-panel-enter-active,
-.machine-panel-leave-active {
-  transition:
-    width var(--motion-panel),
-    opacity var(--motion-panel),
-    transform var(--motion-panel);
-}
-.machine-panel-enter-from,
-.machine-panel-leave-to {
-  width: 0 !important;
-  opacity: 0;
-  transform: translateX(12px);
-}
-</style>

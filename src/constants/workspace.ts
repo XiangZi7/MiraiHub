@@ -17,8 +17,8 @@ export const NAV_ITEMS: NavItem<NavId>[] = [
 
 /** 机器详情面板的视图切换 */
 export const MACHINE_VIEWS: NavItem<MachineViewId>[] = [
-  { id: 'overview', label: 'Overview', icon: 'lucide:gauge' },
   { id: 'files', label: 'Files', icon: 'mirai:folder' },
+  { id: 'agent', label: 'AI Agent', icon: 'lucide:bot' },
 ]
 
 /** 快捷操作 */

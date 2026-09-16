@@ -32,6 +32,7 @@ const props = withDefaults(
     title?: string
     active?: boolean
     split?: boolean
+    embedded?: boolean
   }>(),
   { active: true, split: false }
 )
@@ -228,7 +229,7 @@ watch(
 <template>
   <section
     class="agent-panel"
-    :class="isDatabase && 'database-agent'"
+    :class="{ 'database-agent': isDatabase, 'embedded-agent': embedded }"
     aria-label="AI Agent"
   >
     <header class="agent-header">
@@ -240,9 +241,14 @@ watch(
         :title="title"
         >{{ title || (isDatabase ? t('Database') : t('Server')) }}</span
       >
-      <span class="agent-tab">AI Agent <span class="beta">BETA</span></span>
+      <span
+        v-if="!embedded"
+        class="agent-tab"
+        >AI Agent <span class="beta">BETA</span></span
+      >
       <div class="flex-1" />
       <IconButton
+        v-if="!embedded"
         icon="lucide:columns-2"
         :size="14"
         :title="split ? t('退出 AI 分屏') : t('在旁边分屏显示')"
@@ -283,6 +289,7 @@ watch(
         @refresh="refreshHistory()"
       />
       <IconButton
+        v-if="!embedded"
         icon="lucide:x"
         :size="14"
         :title="t('关闭 AI Agent')"
@@ -576,6 +583,10 @@ watch(
 }
 .database-agent {
   --agent-color: #74d696;
+}
+.embedded-agent {
+  border: 0;
+  border-radius: 0;
 }
 .agent-header {
   display: flex;

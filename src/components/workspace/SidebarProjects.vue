@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, reactive, toRefs, useTemplateRef, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
 import ConnectionTagBadge from '@/components/connection/ConnectionTagBadge.vue'
+import DatabaseConnectionIcon from '@/components/connection/DatabaseConnectionIcon.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppCollapse from '@/components/ui/AppCollapse.vue'
@@ -474,7 +475,13 @@ function runContextAction(action: string): void {
               @contextmenu.prevent.stop="openConnectionMenu($event, node)"
               @pointerdown="groupDrag.start($event, node, group)"
             >
+              <DatabaseConnectionIcon
+                v-if="isDatabaseConnection(node)"
+                :kind="node.kind"
+                class="mt-0.5 self-start"
+              />
               <StatusDot
+                v-else
                 :tone="toneOf(node)"
                 :size="6"
                 :glow="toneOf(node) !== 'txt-3'"

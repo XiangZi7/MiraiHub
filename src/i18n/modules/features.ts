@@ -1,5 +1,10 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  服务器指标: 'Server metrics',
+  指标暂不可用: 'Metrics unavailable',
+  '正在采集指标…': 'Collecting metrics…',
+  下载速率: 'Download rate',
+  上传速率: 'Upload rate',
   键值: 'Key value',
   值: 'Value',
   '调整 AI 面板宽度': 'Resize AI panel',

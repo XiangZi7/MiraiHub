@@ -89,12 +89,13 @@ function fixture() {
     nextSibling: child =>
       child.parent?.children[child.parent.children.indexOf(child) + 1] ?? null,
   })
+  const enabled = ref(true)
   const session = ref('a'),
     shown = ref(true)
   let result
   const Stats = {
     setup() {
-      result = useSystemStats(session)
+      result = useSystemStats(session, enabled)
       return () => h('div')
     },
   }
@@ -104,7 +105,7 @@ function fixture() {
       h(KeepAlive, null, { default: () => h(shown.value ? Stats : Other) }),
   })
   app.mount(node('root'))
-  return { result, session, shown, app }
+  return { result, session, shown, enabled, app }
 }
 
 test('cached and hidden pages stop polling; resuming preserves history; unmount cancels timers', async t => {
@@ -140,6 +141,29 @@ test('cached and hidden pages stop polling; resuming preserves history; unmount 
   t.mock.timers.tick(20000)
   await flush()
   assert.equal(calls.length, 3)
+})
+
+test('inactive SSH tabs pause polling and retain the last snapshot when resumed', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const f = fixture()
+  t.after(() => f.app.unmount())
+  calls[0].resolve(snapshot)
+  await flush()
+  f.enabled.value = false
+  await flush()
+  t.mock.timers.tick(20000)
+  await flush()
+  assert.equal(calls.length, 1)
+  assert.equal(f.result.stats.value.cpu.usage, 25)
+  f.enabled.value = true
+  await flush()
+  assert.equal(calls.length, 2)
+  calls[1].resolve({ ...snapshot, cpu: { usage: 30 } })
+  await flush()
+  assert.deepEqual(f.result.history.value.cpu, [25, 30])
+  f.session.value = ''
+  await flush()
+  assert.equal(f.result.stats.value, null)
 })
 
 test('stale failures cannot overwrite a new session, and visibility churn never duplicates in-flight requests', async t => {

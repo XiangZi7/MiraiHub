@@ -22,7 +22,7 @@ export const useWorkspaceLayoutStore = defineStore('workspace-layout', () => {
     sidebarCollapsed: false,
     machineWidth: defaultMachineWidth,
     machineOpen: true,
-    machineView: 'overview' as MachineViewId,
+    machineView: 'files' as MachineViewId,
   })
   const machineMaxWidth = computed(() =>
     Math.max(

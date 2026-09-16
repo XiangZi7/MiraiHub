@@ -27,7 +27,7 @@ const POLL_INTERVAL = 5000
 /** 折线图保留的采样点数。44 个点约 3.5 分钟，够看出趋势又不至于挤成一团 */
 const HISTORY_SIZE = 44
 
-export function useSystemStats(sessionId: Ref<string>) {
+export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>) {
   // 响应式状态
   const state = reactive({
     // 最近一次采集结果，未采集时为 null
@@ -52,7 +52,10 @@ export function useSystemStats(sessionId: Ref<string>) {
   // 同时只阻止同一代请求重入，不妨碍切换服务器后立刻采新机器。
   const visible = useDocumentVisibility()
   const active = shallowRef(true)
-  const polling = computed(() => active.value && visible.value === 'visible')
+  const polling = computed(
+    () =>
+      active.value && visible.value === 'visible' && (enabled?.value ?? true)
+  )
   let generation = 0
   const inflightSessions = new Set<string>()
   let inflightGeneration = -1

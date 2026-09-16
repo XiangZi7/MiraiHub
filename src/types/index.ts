@@ -2,7 +2,7 @@
 export type NavId = 'servers' | 'databases' | 'ssh-keys' | 'recent'
 
 /** 机器详情面板的视图 id */
-export type MachineViewId = 'overview' | 'files'
+export type MachineViewId = 'files' | 'agent'
 
 /**
  * 导航项。侧栏与机器面板共用这个结构，各自把 Id 收窄成自己的字面量联合，

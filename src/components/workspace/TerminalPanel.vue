@@ -51,6 +51,11 @@ const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string]
 }>()
 
+defineSlots<{
+  metrics(): any
+  actions(): any
+}>()
+
 const containerRef = useTemplateRef<HTMLElement>('terminal')
 const terminalAreaRef = useTemplateRef<HTMLElement>('terminalArea')
 
@@ -373,7 +378,12 @@ defineExpose({
     <div
       class="border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
     >
-      <span :class="['flex items-center gap-1.5 text-[11px]', statusMeta.tone]">
+      <span
+        :class="[
+          'flex shrink-0 items-center gap-1.5 text-[11px]',
+          statusMeta.tone,
+        ]"
+      >
         <StatusDot
           :tone="statusMeta.dot"
           :size="6"
@@ -383,19 +393,23 @@ defineExpose({
       </span>
 
       <span
-        class="border-line bg-card text-txt-2 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+        class="border-line bg-card text-txt-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium"
       >
         SSH
       </span>
 
       <span
-        class="text-txt-2 truncate text-[11px]"
-        :title="sessionId || undefined"
+        class="text-txt-2 max-w-36 shrink-0 truncate text-[11px]"
+        :title="
+          config
+            ? `${config.username}@${config.host}:${config.port}`
+            : undefined
+        "
       >
         {{ endpoint }}
       </span>
 
-      <div class="flex-1" />
+      <slot name="metrics"><div class="flex-1" /></slot>
 
       <TerminalActions
         :terminal="term"
@@ -405,7 +419,8 @@ defineExpose({
         @split="emit('split')"
         @reconnect="reconnect"
         @disconnect="disconnectSession"
-      />
+        ><slot name="actions"
+      /></TerminalActions>
     </div>
 
     <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染 -->

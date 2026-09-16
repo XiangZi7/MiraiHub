@@ -1,32 +1,24 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-
-import {
-  computed,
-  defineAsyncComponent,
-  watch,
-  nextTick,
-  reactive,
-  shallowRef,
-  toRefs,
-  useTemplateRef,
-} from 'vue'
+import { nextTick, reactive, toRefs, useTemplateRef, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
+import type { SavedConnection } from '@/types/connection'
+import {
+  MACHINE_MIN_WIDTH,
+  useWorkspaceLayoutStore,
+} from '@/stores/workspace-layout'
 import TerminalPanel from './TerminalPanel.vue'
-import AppIcon from '@/components/ui/AppIcon.vue'
+import MachinePanel from './MachinePanel.vue'
+import ServerStatusBar from './ServerStatusBar.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
-import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
 
 const { t } = useI18n()
-
-const AiAgentPanel = defineAsyncComponent(
-  () => import('@/components/agent/AiAgentPanel.vue')
-)
-
 const props = withDefaults(
   defineProps<{
     connectionId?: string
+    connection?: SavedConnection
     config: SshConfig
     title?: string
     terminalType?: string
@@ -38,48 +30,48 @@ const props = withDefaults(
 const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string]
 }>()
-const split = shallowRef(false)
-// AI 始终绑定主终端的会话；切换连接后不复用旧会话审批。
-const state = reactive({ aiOpen: false, aiSplit: false, sessionId: '' })
-const { aiOpen, aiSplit } = toRefs(state)
-const agentContainer = useTemplateRef<HTMLElement>('agentContainer')
-const {
-  width: agentWidth,
-  min: agentMin,
-  max: agentMax,
-  style: agentStyle,
-} = useAgentPaneWidth(agentContainer, 'ssh')
-const aiVisited = shallowRef(false)
-watch(
-  aiOpen,
-  open => {
-    if (open) aiVisited.value = true
-  },
-  { flush: 'sync' }
+const { machineWidth, machineOpen, machineView, machineMaxWidth } = storeToRefs(
+  useWorkspaceLayoutStore()
 )
-const target = computed(() => ({
-  kind: 'ssh' as const,
-  sessionId: state.sessionId,
-  database: '',
-}))
+// 响应式状态
+const state = reactive({
+  // 是否打开独立的第二个 SSH 终端
+  split: false,
+  // 主终端会话，Agent 和服务器指标始终绑定这个会话
+  sessionId: '',
+  // 侧面板首次访问后保留挂载，收起时不丢失 Agent 草稿
+  machineVisited: false,
+})
+const { split, sessionId, machineVisited } = toRefs(state)
 const primary = useTemplateRef<InstanceType<typeof TerminalPanel>>('primary')
 const secondary =
   useTemplateRef<InstanceType<typeof TerminalPanel>>('secondary')
+const machinePanel =
+  useTemplateRef<InstanceType<typeof MachinePanel>>('machinePanel')
+watch(
+  () => props.active && machineOpen.value,
+  open => {
+    if (open) state.machineVisited = true
+  },
+  { immediate: true }
+)
+
 function statusChanged(status: SshSessionStatus, sessionId: string): void {
   state.sessionId = status === 'connected' ? sessionId : ''
   emit('status', status, sessionId)
 }
-function splitAgent(): void {
-  state.aiSplit = !(state.aiOpen && state.aiSplit)
-  state.aiOpen = true
+function toggleAgent(): void {
+  if (machineOpen.value && machineView.value === 'agent')
+    machineOpen.value = false
+  else {
+    machineView.value = 'agent'
+    machineOpen.value = true
+  }
 }
-function openAgent(): void {
-  state.aiSplit = true
-  state.aiOpen = true
-}
-function showTerminal(): void {
-  state.aiOpen = false
-  void nextTick(() => primary.value?.focus())
+async function toggleSplit(): Promise<void> {
+  state.split = !state.split
+  await nextTick()
+  primary.value?.focus()
 }
 defineExpose({
   reconnectFor: async (id: string) => {
@@ -93,156 +85,95 @@ defineExpose({
     await secondary.value?.disconnect()
   },
   focusFor: (id: string) => {
-    if (props.connectionId === id) {
-      showTerminal()
-      primary.value?.focus()
-    }
+    if (props.connectionId === id) primary.value?.focus()
   },
   splitFor: async (id: string) => {
+    if (props.connectionId === id) await toggleSplit()
+  },
+  uploadFor: async (id: string) => {
     if (props.connectionId !== id) return
-    split.value = !split.value
+    machineOpen.value = true
+    machineView.value = 'files'
     await nextTick()
-    primary.value?.focus()
+    await machinePanel.value?.upload()
   },
 })
 </script>
 
 <template>
-  <div class="ssh-agent-workspace">
-    <div class="workspace-tabs">
-      <button
-        type="button"
-        :class="(!aiOpen || aiSplit) && 'selected'"
-        @click="showTerminal"
+  <div class="ssh-workspace">
+    <div class="terminal-stack">
+      <TerminalPanel
+        ref="primary"
+        :config="config"
+        :title="title"
+        :terminal-type="terminalType"
+        :startup-command="startupCommand"
+        :split="split"
+        @split="toggleSplit"
+        @status="statusChanged"
       >
-        <AppIcon
-          name="lucide:terminal"
-          :size="13"
-        />SSH
-      </button>
-      <button
-        type="button"
-        :class="aiOpen && 'selected'"
-        @click="openAgent"
-      >
-        <AppIcon
-          name="lucide:bot"
-          :size="14"
-        />AI Agent
-        <span class="beta">BETA</span>
-      </button>
-      <div class="flex-1" />
-      <IconButton
-        icon="lucide:rows-2"
-        :size="14"
-        :title="t('新建或关闭第二个 SSH 终端')"
-        :class="split && 'text-accent'"
-        @click="split = !split"
-      />
-      <IconButton
-        icon="lucide:columns-2"
-        :size="14"
-        :title="t('AI Agent 分屏')"
-        :class="aiOpen && aiSplit && 'text-accent'"
-        @click="splitAgent"
-      />
+        <template #metrics>
+          <ServerStatusBar
+            :session-id="sessionId"
+            :active="active"
+          />
+        </template>
+        <template #actions>
+          <IconButton
+            icon="lucide:columns-2"
+            :size="14"
+            :title="t('AI Agent 分屏')"
+            :class="machineOpen && machineView === 'agent' && 'text-accent'"
+            :aria-pressed="machineOpen && machineView === 'agent'"
+            @click="toggleAgent"
+          />
+        </template>
+      </TerminalPanel>
+      <Transition name="terminal-split">
+        <TerminalPanel
+          ref="secondary"
+          v-if="split"
+          :config="config"
+          :title="t('{value0} · 分屏', { value0: title || config.host })"
+          :terminal-type="terminalType"
+          split
+          @split="toggleSplit"
+        />
+      </Transition>
     </div>
     <div
-      ref="agentContainer"
-      class="workspace-content"
+      v-if="machineVisited"
+      v-show="machineOpen"
+      class="machine-panel-shell"
     >
-      <div
-        v-show="!aiOpen || aiSplit"
-        class="terminal-stack"
-      >
-        <TerminalPanel
-          ref="primary"
-          :config="config"
-          :title="title"
-          :terminal-type="terminalType"
-          :startup-command="startupCommand"
-          :split="aiOpen && aiSplit"
-          @split="splitAgent"
-          @status="statusChanged"
-        />
-        <Transition name="terminal-split">
-          <TerminalPanel
-            ref="secondary"
-            v-if="split"
-            :config="config"
-            :title="t('{value0} · 分屏', { value0: title || config.host })"
-            :terminal-type="terminalType"
-            split
-            @split="split = false"
-          />
-        </Transition>
-      </div>
       <AppResizeHandle
-        v-if="aiOpen && aiSplit"
-        v-model="agentWidth"
+        v-model="machineWidth"
         pane-side="right"
-        :min="agentMin"
-        :max="agentMax"
-        :label="t('调整 SSH AI Agent 宽度')"
+        :min="MACHINE_MIN_WIDTH"
+        :max="machineMaxWidth"
+        :label="t('调整机器面板宽度')"
       />
-      <AiAgentPanel
-        v-if="aiVisited"
-        v-show="aiOpen"
-        :target="target"
+      <MachinePanel
+        ref="machinePanel"
+        v-model:view="machineView"
+        :connection="connection"
         :title="title || config.host"
-        :active="active && aiOpen"
-        :split="aiSplit"
-        :style="aiSplit ? agentStyle : undefined"
-        @split="splitAgent"
-        @close="showTerminal"
+        :session-id="sessionId"
+        :active="active && machineOpen"
+        :width="machineWidth"
+        @close="machineOpen = false"
       />
     </div>
   </div>
 </template>
+
 <style scoped>
-.ssh-agent-workspace {
+.ssh-workspace {
   display: flex;
-  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
-  gap: 6px;
-}
-.workspace-tabs {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 32px;
-  flex-shrink: 0;
-  padding: 0 8px;
-}
-.workspace-tabs > button:not([title]) {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--color-txt-3);
-  height: 32px;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-}
-.workspace-tabs > button.selected {
-  color: var(--color-txt);
-  border-bottom-color: var(--color-accent);
-}
-.beta {
-  font-size: 8px;
-  color: #9ac3ff;
-  background: #8aaaff15;
-  padding: 1px 3px;
-  border-radius: 3px;
-}
-.workspace-content {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  container-type: inline-size;
 }
 .terminal-stack {
   display: flex;
@@ -251,6 +182,12 @@ defineExpose({
   min-width: 0;
   min-height: 0;
   gap: 8px;
+}
+.machine-panel-shell {
+  display: flex;
+  min-height: 0;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 .terminal-split-enter-active,
 .terminal-split-leave-active {

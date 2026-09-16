@@ -11,6 +11,7 @@ import '@fontsource-variable/jetbrains-mono'
 
 import '@/assets/styles/main.css'
 import { MIRAI_ICONS } from '@/constants/icons'
+import databaseIcons from '@/constants/database-icons.json'
 import { startSettingsRuntime } from '@/utils/settings-runtime'
 import { appReady, windowReady, IS_TAURI } from '@/utils/window'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -26,6 +27,8 @@ import { startMainToastReceiver } from '@/composables/useToast'
 addCollection(lucideIcons as IconifyJSON)
 // 自绘补充集：实心文件/文件夹 + Windows 窗口控制符号
 addCollection(MIRAI_ICONS)
+// Iconify logos 原版彩色数据库图标，按需收录并保持离线可用。
+addCollection(databaseIcons as IconifyJSON)
 
 // Tauri 里窗口是透明的，交给系统 acrylic 打底；
 // 浏览器预览时没有系统效果，保留 CSS 兜底桌面背景

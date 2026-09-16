@@ -268,12 +268,15 @@ function insertCommand(command: string): void {
     />
     <IconButton
       v-if="!local"
-      :icon="split ? 'lucide:rows-2' : 'lucide:columns-2'"
+      icon="lucide:rows-2"
       :size="14"
       :title="split ? t('关闭分屏') : t('分屏（独立 SSH 会话）')"
       :disabled="!available"
+      :class="split && 'text-accent'"
+      :aria-pressed="Boolean(split)"
       @click="emit('split')"
     />
+    <slot />
     <IconButton
       icon="lucide:copy"
       :size="14"

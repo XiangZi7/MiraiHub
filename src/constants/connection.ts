@@ -1,4 +1,15 @@
 import type { ConnectionTagColor, LocalShellKind } from '@/types/connection'
+import type { DatabaseConnectionKind } from '@/types/database'
+
+/** 侧栏和连接标签统一使用 Iconify 原版彩色产品图标。 */
+export const DATABASE_CONNECTION_ICONS: Record<
+  DatabaseConnectionKind,
+  { name: string; label: string }
+> = {
+  mysql: { name: 'logos:mysql-icon', label: 'MySQL' },
+  redis: { name: 'logos:redis', label: 'Redis' },
+  postgresql: { name: 'logos:postgresql', label: 'PostgreSQL' },
+}
 
 export interface ConnectionTagColorOption {
   id: ConnectionTagColor

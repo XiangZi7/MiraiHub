@@ -8,6 +8,8 @@ import type { ContextMenuItem } from '@/types/context-menu'
 import { copyText } from '@/utils/clipboard'
 import { openConnectionWindow } from '@/utils/window'
 import { toast } from '@/composables/useToast'
+import { isDatabaseConnection } from '@/types/connection'
+import { DATABASE_CONNECTION_ICONS } from '@/constants/connection'
 
 const { t } = useI18n()
 defineOptions({ inheritAttrs: false })
@@ -28,12 +30,19 @@ const items = computed<TabItem[]>(() =>
   props.tabs.map(tab => ({
     id: tab.id,
     label: tab.connection.name,
-    dot:
-      tab.status === 'connected'
-        ? 'success'
-        : tab.status === 'connecting'
-          ? 'amber'
-          : 'txt-3',
+    ...(isDatabaseConnection(tab.connection)
+      ? {
+          icon: DATABASE_CONNECTION_ICONS[tab.connection.kind].name,
+          iconSize: 18,
+        }
+      : {
+          dot:
+            tab.status === 'connected'
+              ? ('success' as const)
+              : tab.status === 'connecting'
+                ? ('amber' as const)
+                : ('txt-3' as const),
+        }),
     closable: true,
   }))
 )
