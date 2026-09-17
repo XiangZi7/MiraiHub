@@ -18,8 +18,8 @@ export default {
   待发送附件: 'Pending attachments',
   移除附件: 'Remove attachment',
   上传文件: 'Upload files',
-  '上传文件：文本、日志、代码，每个最多 64 KB':
-    'Upload text, logs or code, up to 64 KB per file',
+  '上传文件：文本、日志、代码、表格（Excel/CSV 等），每个最多 1 GB':
+    'Upload text, logs, code, or spreadsheets (Excel/CSV), up to 1 GB per file',
   '正在读取附件…': 'Reading attachments…',
   '附件内容将在发送时交给所选模型，并保存到此聊天。':
     'Attachments are sent to the selected model when you send and saved in this chat.',

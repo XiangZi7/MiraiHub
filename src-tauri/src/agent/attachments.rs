@@ -1,8 +1,14 @@
-//! User-selected text attachments. File paths and filesystem access never cross this boundary.
+//! User-selected file attachments (text or Office containers parsed into text).
+//! File paths and filesystem access never cross this boundary.
 use super::Entry;
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
+/// Upper bound for a single attachment's textual size (~1 GB below).
+pub const MAX_FILE_BYTES: usize = 1_000_000_000;
+/// Upper bound for the combined textual size of a message's attachments (~1 GB below).
+pub const MAX_TOTAL_BYTES: usize = 1_000_000_000;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -38,20 +44,20 @@ pub(super) fn prepare(prompt: &str, attachments: Vec<Attachment>) -> AppResult<(
             return Err(AppError::invalid_input("附件文件名无效"));
         }
         if file.content.trim().is_empty()
-            || file.content.len() > 64_000
+            || file.content.len() > MAX_FILE_BYTES
             || file
                 .content
                 .chars()
                 .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
         {
             return Err(AppError::invalid_input(
-                "附件必须是非空的 UTF-8 文本，单个文件不能超过 64 KB",
+                "附件必须是非空的 UTF-8 文本，单个文件不能超过 1 GB",
             ));
         }
         total += file.content.len();
     }
-    if total > 128_000 {
-        return Err(AppError::invalid_input("附件总大小不能超过 128 KB"));
+    if total > MAX_TOTAL_BYTES {
+        return Err(AppError::invalid_input("附件总大小不能超过 1 GB"));
     }
     let text = if prompt.trim().is_empty() {
         "请分析上传的文件。"
@@ -116,14 +122,17 @@ mod tests {
         for name in ["", "../x", "C:\\secret", "bad\nname"] {
             assert!(prepare("分析", vec![file(name, "a")]).is_err());
         }
-        for content in ["".into(), "  ".into(), "a\0b".into(), "文".repeat(21334)] {
+        for content in ["".into(), "  ".into(), "a\0b".into()] {
             assert!(prepare("分析", vec![file("a.txt", &content)]).is_err());
         }
+        // ~64 KB now passes (the old 64 KB/128 KB caps were lifted to 1 GB).
+        assert!(prepare("分析", vec![file("a", &"文".repeat(21334))]).is_ok());
         assert!(prepare(
             "分析",
             vec![file("a", &"a".repeat(64000)), file("b", &"b".repeat(64000))]
         )
         .is_ok());
+        // Two files that together exceed the old 128 KB total are now accepted.
         assert!(prepare(
             "分析",
             vec![
@@ -132,6 +141,9 @@ mod tests {
                 file("c", "c")
             ]
         )
-        .is_err());
+        .is_ok());
+        // Per-file cap is enforced via the exported constant.
+        assert!(MAX_FILE_BYTES == 1_000_000_000);
+        assert!(MAX_TOTAL_BYTES == 1_000_000_000);
     }
 }

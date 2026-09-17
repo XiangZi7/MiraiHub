@@ -30,7 +30,7 @@ const classes = computed(() =>
     'app-input min-w-0 outline-none disabled:pointer-events-none disabled:opacity-45',
     props.variant === 'default'
       ? 'w-full border border-line bg-panel px-2.5 text-xs text-txt placeholder:text-txt-4 focus:border-violet/65 focus:ring-3 focus:ring-violet/12'
-      : 'h-7 w-full min-w-36 border border-transparent bg-transparent px-2.5 text-inherit placeholder:italic placeholder:text-txt-4 focus:border-violet/40 focus:bg-card focus:ring-1 focus:ring-inset focus:ring-violet/45',
+      : 'h-7 w-full border border-transparent bg-transparent px-2.5 text-inherit placeholder:italic placeholder:text-txt-4 focus:border-violet/40 focus:bg-card focus:ring-1 focus:ring-inset focus:ring-violet/45',
     props.variant === 'default' &&
       (props.size === 'sm' ? 'h-7 rounded-md text-[10.5px]' : 'h-8 rounded-lg'),
     props.monospace && 'font-mono'

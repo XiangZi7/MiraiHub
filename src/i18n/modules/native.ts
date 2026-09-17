@@ -153,8 +153,8 @@ export const en = {
     'Chat history file does not match the conversation ID',
   '请输入不超过 16000 字节的消息，或添加文本附件':
     'Enter a message up to 16000 bytes or attach a text file',
-  '附件必须是非空的 UTF-8 文本，单个文件不能超过 64 KB':
-    'Attachments must contain non-empty UTF-8 text, up to 64 KB per file',
+  '附件必须是非空的 UTF-8 文本，单个文件不能超过 1 GB':
+    'Attachments must contain non-empty UTF-8 text, up to 1 GB per file',
   无法读取附件: 'Could not read attachment',
   '请先在设置 → AI Agent 中启用并填写模型':
     'Enable and configure a model in Settings → AI Agent first',

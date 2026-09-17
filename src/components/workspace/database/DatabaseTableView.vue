@@ -4,11 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppColumnResizeHandle from '@/components/ui/AppColumnResizeHandle.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import { useDatabaseColumnWidths } from '@/composables/useDatabaseColumnWidths'
 import { toast } from '@/composables/useToast'
 import type {
   CellValue,
@@ -122,6 +124,10 @@ const gridColumns = computed(() =>
         dataType: column.dataType,
       }))
 )
+// 列宽跟着这张表走，切换表或重开连接后仍然保留。
+const columnScope = computed(() => `table:${props.object.identity}`)
+const { resized, widthOf, beginResize, autoFit, keyboardResize, resetWidths } =
+  useDatabaseColumnWidths(columnScope)
 const filterNeedsValue = computed(
   () => !['isNull', 'notNull'].includes(filterDraft.operator)
 )
@@ -463,6 +469,13 @@ watch(
         {{ t('无主键 · 只读行') }}
       </span>
       <IconButton
+        v-if="resized && state.activePanel === 'data'"
+        icon="lucide:unfold-horizontal"
+        :size="13"
+        :title="t('恢复自动列宽')"
+        @click="resetWidths"
+      />
+      <IconButton
         icon="lucide:rotate-cw"
         :size="13"
         :title="t('刷新当前对象')"
@@ -596,8 +609,25 @@ watch(
             </div>
             <table
               v-if="state.page"
-              class="w-full border-collapse text-left font-mono text-[11px]"
+              :class="
+                cn(
+                  'w-full border-collapse text-left font-mono text-[11px]',
+                  resized && 'table-fixed'
+                )
+              "
             >
+              <colgroup v-if="resized">
+                <col style="width: 36px" />
+                <col
+                  v-if="canInsert"
+                  style="width: 32px"
+                />
+                <col
+                  v-for="(column, columnIndex) in gridColumns"
+                  :key="`${column.name}:${columnIndex}`"
+                  :style="{ width: `${widthOf(column.name)}px` }"
+                />
+              </colgroup>
               <thead class="bg-panel sticky top-0 z-10">
                 <tr class="text-txt-3">
                   <th
@@ -612,24 +642,38 @@ watch(
                   <th
                     v-for="(column, columnIndex) in gridColumns"
                     :key="`${column.name}:${columnIndex}`"
-                    class="border-line-soft hover:bg-hover min-w-36 cursor-pointer border-r border-b px-2.5 py-1.5 font-medium select-none"
+                    :data-column="column.name"
+                    :class="
+                      cn(
+                        'border-line-soft hover:bg-hover relative cursor-pointer border-r border-b px-2.5 py-1.5 font-medium select-none',
+                        !resized && 'min-w-36'
+                      )
+                    "
                     :title="t('按 {value0} 排序', { value0: column.name })"
                     @click="toggleSort(column.name)"
                   >
-                    <span>{{ column.name }}</span>
-                    <AppIcon
-                      v-if="state.sort?.column === column.name"
-                      :name="
-                        state.sort?.descending
-                          ? 'lucide:arrow-down'
-                          : 'lucide:arrow-up'
-                      "
-                      :size="10"
-                      class="text-violet ml-1 inline"
+                    <span class="block truncate">
+                      <span>{{ column.name }}</span>
+                      <AppIcon
+                        v-if="state.sort?.column === column.name"
+                        :name="
+                          state.sort?.descending
+                            ? 'lucide:arrow-down'
+                            : 'lucide:arrow-up'
+                        "
+                        :size="10"
+                        class="text-violet ml-1 inline"
+                      />
+                      <span class="text-txt-4 ml-1.5 text-[9px] font-normal">{{
+                        column.dataType
+                      }}</span>
+                    </span>
+                    <AppColumnResizeHandle
+                      :label="t('调整“{value0}”列宽', { value0: column.name })"
+                      @pointerdown="beginResize(column.name, $event)"
+                      @dblclick="autoFit(column.name, $event)"
+                      @keydown="keyboardResize(column.name, $event)"
                     />
-                    <span class="text-txt-4 ml-1.5 text-[9px] font-normal">{{
-                      column.dataType
-                    }}</span>
                   </th>
                 </tr>
               </thead>
@@ -676,7 +720,7 @@ watch(
                     :key="columnIndex"
                     :class="
                       cn(
-                        'group/cell border-line-soft relative border-r border-b p-0 last:border-r-0',
+                        'group/cell border-line-soft relative overflow-hidden border-r border-b p-0 last:border-r-0',
                         edits.has(cellKey(rowIndex, columnIndex)) &&
                           'bg-violet/8'
                       )
@@ -708,12 +752,22 @@ watch(
                     </template>
                     <span
                       v-else-if="row[columnIndex] === null"
-                      class="text-txt-4 block h-7 min-w-36 px-2.5 py-1.5 italic"
+                      :class="
+                        cn(
+                          'text-txt-4 block h-7 px-2.5 py-1.5 italic',
+                          !resized && 'min-w-36'
+                        )
+                      "
                       >NULL</span
                     >
                     <span
                       v-else
-                      class="block h-7 max-w-80 min-w-36 truncate px-2.5 py-1.5"
+                      :class="
+                        cn(
+                          'block h-7 truncate px-2.5 py-1.5',
+                          !resized && 'max-w-80 min-w-36'
+                        )
+                      "
                       :title="row[columnIndex] ?? ''"
                       >{{ row[columnIndex] }}</span
                     >

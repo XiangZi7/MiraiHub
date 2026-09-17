@@ -3,7 +3,7 @@ import { translateNativeMessage } from '@/i18n/native'
 import { computed, nextTick, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AgentApprovalMode, AgentDraftAttachment } from '@/types/agent'
-import { AGENT_FILE_ACCEPT } from '@/utils/agent-attachments'
+import { AGENT_FILE_ACCEPT, bytesToSize } from '@/utils/agent-attachments'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AgentProfileSelect from './AgentProfileSelect.vue'
@@ -99,7 +99,7 @@ watch(
               >{{ file.name }}</span
             >
             <span class="attachment-size"
-              >{{ (file.size / 1000).toFixed(1) }} KB</span
+              >{{ bytesToSize(file.size) }}</span
             >
           </div>
           <IconButton
@@ -137,7 +137,7 @@ watch(
         <IconButton
           :icon="reading ? 'lucide:loader-circle' : 'lucide:plus'"
           :size="17"
-          :title="t('上传文件：文本、日志、代码，每个最多 64 KB')"
+          :title="t('上传文件：文本、日志、代码、表格（Excel/CSV 等），每个最多 1 GB')"
           :aria-label="t('上传文件')"
           :disabled="disabled || reading"
           class="upload-button"

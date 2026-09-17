@@ -173,7 +173,7 @@ export const en = {
   未设置模型: 'No model set',
   '（已停用）': ' (disabled)',
   '每条消息最多添加 4 个文件': 'Attach up to 4 files per message',
-  '附件总大小不能超过 128 KB': 'Attachments cannot exceed 128 KB in total',
+  '附件总大小不能超过 1 GB': 'Attachments cannot exceed 1 GB in total',
   附件文件名无效: 'Invalid attachment filename',
   图片: 'Image',
   代码: 'Code',
@@ -459,6 +459,7 @@ export const en = {
   '按 Ctrl+Enter 或点击执行按钮运行 SQL':
     'Press Ctrl+Enter or click Run to execute SQL',
   结果已截断: 'Results truncated',
+  恢复自动列宽: 'Reset column widths',
   '复制为 CSV': 'Copy as CSV',
   '导出 CSV': 'Export CSV',
   '导出 JSON': 'Export JSON',
@@ -1040,13 +1041,16 @@ export const en = {
   '{value0}定义已复制': '{value0} definition copied',
   '{value0}已重命名为“{value1}”': '{value0} renamed to “{value1}”',
   '{value0}“{value1}”已删除': '{value0} “{value1}” deleted',
-  '{value0}：单个文件不能超过 64 KB':
-    '{value0}: each file must be 64 KB or smaller',
+  '{value0}：单个文件不能超过 1 GB':
+    '{value0}: each file must be 1 GB or smaller',
   '{value0}：文件为空': '{value0}: file is empty',
   '{value0}：请选择 UTF-8 文本、日志或代码文件':
     '{value0}: select a UTF-8 text, log, or code file',
   '{value0}：请选择非空的文本文件，不支持二进制文件':
     '{value0}: select a non-empty text file; binary files are not supported',
+  '{value0}：无法解析该文件，请转换为 CSV/文本后重试':
+    '{value0}: could not parse this file; convert it to CSV/text and retry',
+  无法从该文件中提取文本内容: 'Could not extract text from this file',
   '上移 {value0}': 'Move {value0} up',
   '下移 {value0}': 'Move {value0} down',
   '下载 {value0}': 'Download {value0}',
@@ -1109,6 +1113,7 @@ export const en = {
   '应用到本批次后续 {value0} 个项目的同名冲突':
     'Apply to name conflicts in the next {value0} items in this batch',
   '按 {value0} 排序': 'Sort by {value0}',
+  '调整“{value0}”列宽': 'Resize column “{value0}”',
   '数据库“{value0}”已创建': 'Database “{value0}” created',
   '数据库“{value0}”已删除': 'Database “{value0}” deleted',
   '数据库已重命名为“{value0}”': 'Database renamed to “{value0}”',

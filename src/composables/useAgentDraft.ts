@@ -49,7 +49,7 @@ export function useAgentDraft(
         combined.reduce((sum, file) => sum + file.size, 0) >
         AGENT_MAX_ATTACHMENT_BYTES
       )
-        throw new Error(i18n.global.t('附件总大小不能超过 128 KB'))
+        throw new Error(i18n.global.t('附件总大小不能超过 1 GB'))
       state.attachments = combined
     } catch (error) {
       if (token === readVersion)

@@ -3,8 +3,13 @@ import { useI18n } from 'vue-i18n'
 
 import { computed, shallowRef, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppColumnResizeHandle from '@/components/ui/AppColumnResizeHandle.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import {
+  columnsScope,
+  useDatabaseColumnWidths,
+} from '@/composables/useDatabaseColumnWidths'
 import type { DatabaseExecution } from '@/types/database'
 import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
@@ -28,6 +33,16 @@ const rowCountLabel = computed(() => {
     return `${result.value.rowsAffected} affected`
   return `${result.value.rows.length}${result.value.truncated ? '+' : ''} rows`
 })
+
+// 形状相同的结果集（同一批列名）共用一套列宽，重跑查询后仍然保留。
+const columnScope = computed(() =>
+  columnsScope(
+    'query',
+    (result.value?.columns ?? []).map(column => column.name)
+  )
+)
+const { resized, widthOf, beginResize, autoFit, keyboardResize, resetWidths } =
+  useDatabaseColumnWidths(columnScope)
 
 watch(
   () => props.execution,
@@ -223,8 +238,21 @@ async function copyResult(): Promise<void> {
       </div>
       <table
         v-else
-        class="w-full border-collapse text-left font-mono text-[11.5px]"
+        :class="
+          cn(
+            'w-full border-collapse text-left font-mono text-[11.5px]',
+            resized && 'table-fixed'
+          )
+        "
       >
+        <colgroup v-if="resized">
+          <col style="width: 40px" />
+          <col
+            v-for="(column, index) in result.columns"
+            :key="`${column.name}:${index}`"
+            :style="{ width: `${widthOf(column.name)}px` }"
+          />
+        </colgroup>
         <thead class="bg-panel sticky top-0 z-10">
           <tr class="text-txt-3">
             <th
@@ -235,13 +263,27 @@ async function copyResult(): Promise<void> {
             <th
               v-for="(column, index) in result.columns"
               :key="`${column.name}:${index}`"
-              class="border-line-soft min-w-28 border-r border-b px-3 py-1.5 font-medium last:border-r-0"
+              :data-column="column.name"
+              :class="
+                cn(
+                  'border-line-soft relative border-r border-b px-3 py-1.5 font-medium last:border-r-0',
+                  !resized && 'min-w-28'
+                )
+              "
               :title="column.dataType"
             >
-              <span>{{ column.name }}</span>
-              <span class="text-txt-4 ml-1.5 text-[9px] font-normal">{{
-                column.dataType
-              }}</span>
+              <span class="block truncate">
+                <span>{{ column.name }}</span>
+                <span class="text-txt-4 ml-1.5 text-[9px] font-normal">{{
+                  column.dataType
+                }}</span>
+              </span>
+              <AppColumnResizeHandle
+                :label="t('调整“{value0}”列宽', { value0: column.name })"
+                @pointerdown="beginResize(column.name, $event)"
+                @dblclick="autoFit(column.name, $event)"
+                @keydown="keyboardResize(column.name, $event)"
+              />
             </th>
           </tr>
         </thead>
@@ -259,7 +301,12 @@ async function copyResult(): Promise<void> {
             <td
               v-for="(value, columnIndex) in row"
               :key="columnIndex"
-              class="border-line-soft max-w-96 border-r border-b px-3 py-1.5 last:border-r-0"
+              :class="
+                cn(
+                  'border-line-soft overflow-hidden border-r border-b px-3 py-1.5 last:border-r-0',
+                  !resized && 'max-w-96'
+                )
+              "
               :title="value ?? 'NULL'"
             >
               <span
@@ -299,6 +346,13 @@ async function copyResult(): Promise<void> {
         v-if="result?.columns.length"
         class="mr-2 flex items-center gap-0.5"
       >
+        <IconButton
+          v-if="resized"
+          icon="lucide:unfold-horizontal"
+          :size="11"
+          :title="t('恢复自动列宽')"
+          @click="resetWidths"
+        />
         <IconButton
           icon="lucide:copy"
           :size="11"
