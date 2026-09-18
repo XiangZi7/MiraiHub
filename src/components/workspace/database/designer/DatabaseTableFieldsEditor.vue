@@ -89,7 +89,7 @@ function removeColumn(id: string): void {
   )
 }
 
-/** 把某列从一个索引移动到另一个索引（拖拽与上下按钮共用）。 */
+/** 把某列从一个索引移动到另一个索引（拖拽回传）。 */
 function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
   const target = Math.max(0, Math.min(toIndex, props.modelValue.length - 1))
   if (fromIndex < 0 || fromIndex === target) return
@@ -98,10 +98,6 @@ function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
   if (!column) return
   columns.splice(target, 0, column)
   emit('update:modelValue', columns)
-}
-
-function moveColumn(index: number, direction: -1 | 1): void {
-  moveColumnFromIndex(index, index + direction)
 }
 </script>
 
@@ -124,11 +120,14 @@ function moveColumn(index: number, direction: -1 | 1): void {
       </AppButton>
     </div>
 
-    <div class="designer-table-wrap scroll-thin">
+    <div
+      ref="tableWrap"
+      class="designer-table-wrap scroll-thin"
+    >
       <table class="designer-table min-w-[1120px]">
         <thead>
           <tr>
-            <th class="w-16">{{ t('排序') }}</th>
+            <th class="w-10">{{ t('排序') }}</th>
             <th class="min-w-36">{{ t('字段名') }}</th>
             <th class="min-w-38">{{ t('类型') }}</th>
             <th class="w-24">{{ t('长度/精度') }}</th>
@@ -149,7 +148,7 @@ function moveColumn(index: number, direction: -1 | 1): void {
         </thead>
         <tbody>
           <tr
-            v-for="(column, index) in modelValue"
+            v-for="column in modelValue"
             :key="column.id"
             :data-reorderable-tab-id="column.id"
             :class="
@@ -166,32 +165,16 @@ function moveColumn(index: number, direction: -1 | 1): void {
             @pointerdown="reorder.start($event, column.id)"
           >
             <td>
-              <div class="flex items-center justify-center gap-0.5">
+              <div class="flex items-center justify-center">
                 <span
                   class="field-grip"
                   :title="t('拖动排序')"
                 >
                   <AppIcon
                     name="lucide:grip-vertical"
-                    :size="11"
+                    :size="12"
                   />
                 </span>
-                <IconButton
-                  icon="lucide:chevron-up"
-                  :size="11"
-                  class="size-6"
-                  :title="t('上移')"
-                  :disabled="index === 0"
-                  @click="moveColumn(index, -1)"
-                />
-                <IconButton
-                  icon="lucide:chevron-down"
-                  :size="11"
-                  class="size-6"
-                  :title="t('下移')"
-                  :disabled="index === modelValue.length - 1"
-                  @click="moveColumn(index, 1)"
-                />
               </div>
             </td>
             <td>
@@ -344,13 +327,49 @@ function moveColumn(index: number, direction: -1 | 1): void {
         :style="reorder.dragStyle.value"
         aria-hidden="true"
       >
-        <AppIcon
-          name="lucide:grip-vertical"
-          :size="12"
-          class="text-accent shrink-0"
-        />
-        <span class="min-w-0 truncate">{{ draggedColumn.name }}</span>
-        <span class="text-txt-4 shrink-0">{{ draggedColumn.dataType }}</span>
+        <span class="field-ghost-grip">
+          <AppIcon
+            name="lucide:grip-vertical"
+            :size="11"
+          />
+        </span>
+        <span class="field-ghost-cell field-ghost-mono">
+          {{ draggedColumn.name }}
+        </span>
+        <span class="field-ghost-cell field-ghost-mono">
+          {{ draggedColumn.dataType
+          }}{{ draggedColumn.length ? `(${draggedColumn.length})` : '' }}
+        </span>
+        <span
+          v-if="draggedColumn.primaryKey"
+          class="field-ghost-badge"
+        >
+          PK
+        </span>
+        <span
+          v-if="draggedColumn.unique"
+          class="field-ghost-badge"
+        >
+          UQ
+        </span>
+        <span
+          v-if="draggedColumn.autoIncrement"
+          class="field-ghost-badge"
+        >
+          AI
+        </span>
+        <span
+          v-if="draggedColumn.defaultValue"
+          class="field-ghost-cell field-ghost-mono"
+        >
+          {{ draggedColumn.defaultValue }}
+        </span>
+        <span
+          v-if="draggedColumn.comment"
+          class="field-ghost-cell"
+        >
+          {{ draggedColumn.comment }}
+        </span>
       </div>
     </Teleport>
   </section>
@@ -419,9 +438,9 @@ function moveColumn(index: number, direction: -1 | 1): void {
   color: var(--color-txt-2);
 }
 .designer-table tr:hover td {
-  background: color-mix(in oklch, var(--color-hover) 72%, transparent);
+  background-color: color-mix(in oklch, var(--color-hover) 72%, transparent);
 }
-/* 行内拖拽排序：行本身不选中文字，第一个单元格承担落点指示器 */
+/* 行内拖拽排序：行本身不选中文字，落点指示线画在单元格背景上 */
 .designer-table tbody tr {
   user-select: none;
 }
@@ -431,8 +450,8 @@ function moveColumn(index: number, direction: -1 | 1): void {
 .field-grip {
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 22px;
+  width: 16px;
+  height: 24px;
   color: var(--color-txt-4);
   cursor: grab;
   touch-action: none;
@@ -444,45 +463,78 @@ function moveColumn(index: number, direction: -1 | 1): void {
   cursor: grabbing;
 }
 .designer-table tr.field-dragging td {
+  background-color: color-mix(in oklch, var(--color-hover) 72%, transparent);
   opacity: 0.42;
 }
-/* 落点指示器：与标签栏同款的紫色光条 */
-.designer-table tr.field-drop-before td:first-child::before,
-.designer-table tr.field-drop-after td:first-child::after {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  border-radius: 999px;
-  background: var(--color-violet);
-  box-shadow: 0 0 9px color-mix(in oklch, var(--color-violet) 55%, transparent);
-  content: '';
+/* 落点指示线：与标签栏同款的紫色线条，横贯整行标出插入位置 */
+.designer-table tr.field-drop-before td {
+  background-image: linear-gradient(
+    var(--color-violet),
+    var(--color-violet)
+  );
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  background-size: 100% 2px;
 }
-.designer-table tr.field-drop-before td:first-child::before {
-  left: 0;
+.designer-table tr.field-drop-after td {
+  background-image: linear-gradient(
+    var(--color-violet),
+    var(--color-violet)
+  );
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 100% 2px;
 }
-.designer-table tr.field-drop-after td:first-child::after {
-  right: 0;
-}
-/* 拖拽幽灵：与标签栏 / 侧栏连接的拖拽样式一致 */
+/* 拖拽幽灵：整行被拖起来的样式 —— 行形浮条跟随指针，配色与表格行一致 */
 .field-drag-ghost {
   position: fixed;
   z-index: 200;
   display: flex;
-  max-width: 260px;
+  max-width: 620px;
   pointer-events: none;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
   border: 1px solid
     color-mix(in oklch, var(--color-violet) 48%, var(--color-line));
-  border-radius: 7px;
-  background: var(--color-panel);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-card) 88%, transparent);
+  /* 浮层玻璃与其余 popover 统一：模糊 + 提饱和透出背景 */
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  backdrop-filter: blur(24px) saturate(165%);
   box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
-  padding: 7px 10px;
+  padding: 6px 12px 6px 6px;
   color: var(--color-txt);
-  font-size: 11.5px;
+  font-size: 11px;
   line-height: 1;
   transform: translateY(-50%);
   white-space: nowrap;
+}
+.field-ghost-grip {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  color: var(--color-accent);
+}
+.field-ghost-cell {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  color: var(--color-txt-2);
+}
+.field-ghost-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.field-ghost-badge {
+  flex-shrink: 0;
+  border: 1px solid
+    color-mix(in oklch, var(--color-violet) 40%, var(--color-line));
+  border-radius: 4px;
+  padding: 2px 4px;
+  color: var(--color-accent);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
 }
 </style>

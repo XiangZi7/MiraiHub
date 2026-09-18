@@ -347,7 +347,7 @@ watch(
           >
             <label
               v-if="showSearch"
-              class="app-select-search border-line-soft bg-card sticky top-0 z-10 mb-1 flex h-8 items-center gap-2 rounded-md border px-2"
+              class="app-select-search border-line-soft sticky top-0 z-10 mb-1 flex h-8 items-center gap-2 rounded-md border px-2"
             >
               <AppIcon
                 name="lucide:search"
@@ -472,6 +472,13 @@ watch(
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* 搜索框 sticky 悬在选项上：补上玻璃模糊，滚动的选项透出磨砂质感而不是直接穿透 */
+.app-select-search {
+  background-color: color-mix(in oklch, var(--color-panel) 92%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  backdrop-filter: blur(24px) saturate(165%);
 }
 
 .app-select-option {

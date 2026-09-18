@@ -45,6 +45,7 @@ const emit = defineEmits<{
   created: [schema: string, name: string]
   applied: [schema: string, name: string]
   query: [sql: string]
+  dirty: [dirty: boolean]
 }>()
 
 const editing = computed(() => Boolean(props.editTable))
@@ -389,6 +390,28 @@ const hasChanges = computed(() => {
   if (!editing.value) return validation.value.valid
   return computedAlterSql() != null
 })
+
+/** 关闭标签的未保存提示只认真正的修改：
+    新建模式与初始骨架对比（忽略自动生成的列 id），未编辑不提示。 */
+function draftSnapshot(value: TableDesignerDraft): string {
+  return JSON.stringify({
+    schema: value.schema,
+    name: value.name,
+    comment: value.comment,
+    engine: value.engine,
+    charset: value.charset,
+    autoIncrement: value.autoIncrement,
+    indexes: value.indexes,
+    foreignKeys: value.foreignKeys,
+    columns: value.columns.map(column => ({ ...column, id: '' })),
+  })
+}
+const initialDraftSnapshot = draftSnapshot(defaultDraft(props.schema))
+const dirty = computed(() => {
+  if (editing.value) return hasChanges.value
+  return draftSnapshot(draft) !== initialDraftSnapshot
+})
+watch(dirty, value => emit('dirty', value))
 </script>
 
 <template>

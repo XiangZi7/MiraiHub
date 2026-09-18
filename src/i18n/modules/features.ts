@@ -1053,8 +1053,6 @@ export const en = {
   '名称 Z → A': 'Name Z → A',
   主机地址: 'Host address',
   最近使用: 'Recently used',
-  上移: 'Move up',
-  下移: 'Move down',
   拖动排序: 'Drag to reorder',
   '{value0} 不受支持': '{value0} is not supported',
   '{value0} 无效': 'Invalid {value0}',

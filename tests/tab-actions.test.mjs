@@ -82,7 +82,13 @@ function queryFixture() {
       sql: 'SELECT 3',
       savedQueryId: 'gone',
     },
-    { id: 'designer', label: 'New table', kind: 'table-designer' },
+    { id: 'designer', label: 'New table', kind: 'table-designer', dirty: true },
+    {
+      id: 'clean-designer',
+      label: 'Untouched table',
+      kind: 'table-designer',
+      dirty: false,
+    },
     { id: 'object', label: 'Table data', kind: 'object' },
   ])
   const events = []
@@ -99,10 +105,12 @@ function queryFixture() {
   return { tabs, events, actions }
 }
 
-test('空查询、自动保存查询与对象可直接关闭，临时 SQL 和建表草稿需要确认', () => {
+test('空查询、自动保存查询、对象与未编辑建表标签可直接关闭，临时 SQL 和有修改的建表草稿需要确认', () => {
   const { events, actions } = queryFixture()
-  actions.requestClose(['empty', 'saved', 'object'])
-  assert.deepEqual(events, [['close', ['empty', 'saved', 'object']]])
+  actions.requestClose(['empty', 'saved', 'object', 'clean-designer'])
+  assert.deepEqual(events, [
+    ['close', ['empty', 'saved', 'clean-designer', 'object']],
+  ])
   for (const id of ['draft', 'deleted', 'designer']) {
     actions.requestClose([id])
     assert.deepEqual(actions.state.pendingIds, [id])

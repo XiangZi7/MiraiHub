@@ -663,6 +663,9 @@ function runContextAction(action: string): void {
     color-mix(in oklch, var(--color-violet) 48%, var(--color-line));
   border-radius: 7px;
   background: var(--color-panel);
+  /* 浮层玻璃与其余 popover 统一：模糊 + 提饱和透出背景 */
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  backdrop-filter: blur(24px) saturate(165%);
   box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
   padding: 7px 10px;
   color: var(--color-txt);

@@ -325,6 +325,12 @@ const designerTabs = computed(() =>
     (tab): tab is TableDesignerTab => tab.kind === 'table-designer'
   )
 )
+/* 建表标签的未保存状态：设计器有真正修改（草稿或 ALTER 差异）才提示。 */
+const dirtyDesignerIds = reactive(new Set<string>())
+function setDesignerDirty(id: string, dirty: boolean): void {
+  if (dirty) dirtyDesignerIds.add(id)
+  else dirtyDesignerIds.delete(id)
+}
 const activeSql = computed({
   get: () => activeQuery.value?.sql ?? '',
   set: (value: string) => {
@@ -520,12 +526,15 @@ defineExpose({
   disconnectFor: async (id: string) => {
     if (props.connection?.id === id) await disconnect()
   },
-  closeWarningFor: (ids: string[]) =>
-    props.connection &&
-    ids.includes(props.connection.id) &&
-    designerTabs.value.length
-      ? `${props.connection.name}: ${t('database.unsavedTableDrafts', { count: designerTabs.value.length })}`
-      : '',
+  closeWarningFor: (ids: string[]) => {
+    if (!props.connection || !ids.includes(props.connection.id)) return ''
+    const dirtyTabs = designerTabs.value.filter(tab =>
+      dirtyDesignerIds.has(tab.id)
+    )
+    return dirtyTabs.length
+      ? `${props.connection.name}: ${t('database.unsavedTableDrafts', { count: dirtyTabs.length })}`
+      : ''
+  },
 })
 
 async function refreshAll(): Promise<void> {
@@ -558,12 +567,18 @@ function closeTab(id: string): void {
 }
 function closeQueryTabs(ids: string[]): void {
   const closing = new Set(ids)
+  for (const id of closing) dirtyDesignerIds.delete(id)
   const next = activeAfterTabClose(queryState.tabs, queryState.activeId, ids)
   queryState.tabs = queryState.tabs.filter(tab => !closing.has(tab.id))
   queryState.activeId = next
 }
 const queryTabActions = useDatabaseTabActions({
-  tabs: () => queryState.tabs,
+  tabs: () =>
+    queryState.tabs.map(tab => ({
+      ...tab,
+      dirty:
+        tab.kind === 'table-designer' && dirtyDesignerIds.has(tab.id),
+    })),
   close: closeQueryTabs,
   hasSavedQuery: id => savedQueries.value.some(query => query.id === id),
   save: id => saveQueryTab(id),
@@ -1494,6 +1509,7 @@ watch(
             @applied="
               (schema, name) => handleTableApplied(tab.id, schema, name)
             "
+            @dirty="value => setDesignerDirty(tab.id, value)"
           />
         </template>
       </div>

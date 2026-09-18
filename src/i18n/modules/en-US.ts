@@ -384,7 +384,7 @@ export default {
   '每个文件夹内同时上传的文件数量，新上传任务生效':
     'Number of files uploaded at once in each folder; applies to new tasks',
   '1（串行）': '1 (sequential)',
-  '4（默认）': '4 (default)',
+  '12（默认）': '12 (default)',
   '传输缓冲区大小（KB）': 'Transfer buffer size (KB)',
   '更大的缓冲区能提升大文件吞吐，部分服务器不支持超过 256 KB 的数据包':
     'Larger buffers improve throughput. Some servers do not support packets larger than 256 KB.',
