@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -9,8 +9,20 @@ import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import { toast } from '@/composables/useToast'
 import type { DatabaseKind, DatabaseObject } from '@/types/database'
-import type { TableDesignerDraft } from '@/types/database-designer'
-import { buildCreateTableSql, validateTableDraft } from '@/utils/database-ddl'
+import type { DatabaseTableDetail } from '@/types/database'
+import type {
+  TableDesignerDraft,
+  TableDesignerIndex,
+  ReferentialAction,
+} from '@/types/database-designer'
+import {
+  buildAlterTableSql,
+  buildCreateTableSql,
+  columnTypes,
+  normalizeDataTypeLabel,
+  parseStoredType,
+  validateTableDraft,
+} from '@/utils/database-ddl'
 import { copyText } from '@/utils/clipboard'
 import DatabaseTableFieldsEditor from './designer/DatabaseTableFieldsEditor.vue'
 import DatabaseTableForeignKeysEditor from './designer/DatabaseTableForeignKeysEditor.vue'
@@ -18,53 +30,91 @@ import DatabaseTableIndexesEditor from './designer/DatabaseTableIndexesEditor.vu
 
 const { t } = useI18n()
 
-type DesignerPanel = 'columns' | 'indexes' | 'foreignKeys' | 'sql'
+type DesignerPanel = 'columns' | 'indexes' | 'foreignKeys' | 'options' | 'sql'
 
 const props = defineProps<{
   sessionId: string
   databaseKind: DatabaseKind
   schema: string
   objects: readonly DatabaseObject[]
+  /** 编辑模式：要设计的现有表；不传为新建表。 */
+  editTable?: { schema: string, name: string } | null
 }>()
 
 const emit = defineEmits<{
   created: [schema: string, name: string]
+  applied: [schema: string, name: string]
   query: [sql: string]
 }>()
 
-const draft = reactive<TableDesignerDraft>({
-  schema: props.schema,
-  name: 'new_table',
-  comment: '',
-  engine: 'InnoDB',
-  charset: 'utf8mb4',
-  columns: [
-    {
-      id: `column-${Date.now()}`,
-      name: 'id',
-      dataType: 'BIGINT',
-      length: '',
-      nullable: false,
-      primaryKey: true,
-      unique: false,
-      unsigned: props.databaseKind === 'mysql',
-      autoIncrement: true,
-      defaultValue: '',
-      comment: t('主键'),
-    },
-  ],
-  indexes: [],
-  foreignKeys: [],
-})
+const editing = computed(() => Boolean(props.editTable))
+const currentDetail = shallowRef<DatabaseTableDetail | null>(null)
+const loadingDetail = ref(false)
+const extraTypes = ref<string[]>([])
+
+function defaultDraft(schema: string): TableDesignerDraft {
+  return {
+    schema,
+    name: 'new_table',
+    comment: '',
+    engine: 'InnoDB',
+    charset: 'utf8mb4',
+    autoIncrement: null,
+    columns: [
+      {
+        id: `column-${Date.now()}`,
+        name: 'id',
+        dataType: 'BIGINT',
+        length: '',
+        nullable: false,
+        primaryKey: true,
+        unique: false,
+        unsigned: props.databaseKind === 'mysql',
+        autoIncrement: true,
+        defaultValue: '',
+        comment: t('主键'),
+      },
+    ],
+    indexes: [],
+    foreignKeys: [],
+  }
+}
+
+const draft = reactive<TableDesignerDraft>(defaultDraft(props.schema))
 const activePanel = ref<DesignerPanel>('columns')
 const creating = ref(false)
+const applying = ref(false)
 const referencedColumns = reactive<Record<string, string[]>>({})
 const loadingReference = ref('')
 
 const validation = computed(() =>
-  validateTableDraft({ kind: props.databaseKind, draft })
+  validateTableDraft({ kind: props.databaseKind, draft, extraTypes: extraTypes.value })
 )
+
+function computedAlterSql(): string | null {
+  const current = currentDetail.value
+  if (!editing.value || !current || !validation.value.valid) return null
+  try {
+    return buildAlterTableSql({
+      kind: props.databaseKind,
+      current,
+      draft,
+      extraTypes: extraTypes.value,
+    })
+  } catch {
+    return null
+  }
+}
+
 const sqlPreview = computed(() => {
+  if (editing.value) {
+    if (!currentDetail.value) return t('-- 正在读取表结构…')
+    if (!validation.value.valid)
+      return t('-- 完成必填配置后将在这里生成 ALTER TABLE SQL')
+    return (
+      computedAlterSql() || `-- ${t('没有需要保存的修改')}`
+    )
+  }
   try {
     return buildCreateTableSql({ kind: props.databaseKind, draft })
   } catch {
@@ -94,6 +144,12 @@ const panelItems = computed(() => [
     count: draft.foreignKeys.length,
   },
   {
+    id: 'options' as const,
+    label: t('选项'),
+    icon: 'lucide:settings-2',
+    count: null,
+  },
+  {
     id: 'sql' as const,
     label: t('SQL 预览'),
     icon: 'lucide:code-2',
@@ -108,6 +164,127 @@ const charsetOptions = ['utf8mb4', 'utf8', 'latin1', 'ascii'].map(value => ({
   value,
   label: value,
 }))
+
+const autoIncrementInput = computed({
+  get: () => (draft.autoIncrement == null ? '' : String(draft.autoIncrement)),
+  set: (value: string) => {
+    const trimmed = value.trim()
+    draft.autoIncrement = trimmed === '' ? null : Number(trimmed)
+  },
+})
+const hasAutoIncrementColumn = computed(() =>
+  draft.columns.some(column => column.autoIncrement)
+)
+
+function currentAutoIncrementLabel(): string {
+  const current = currentDetail.value?.options?.autoIncrement
+  return current == null ? '—' : String(current)
+}
+
+async function loadEditTarget(): Promise<void> {
+  const target = props.editTable
+  if (!props.sessionId || !target) {
+    currentDetail.value = null
+    return
+  }
+  loadingDetail.value = true
+  try {
+    const detail = await database.tableDetail(
+      props.sessionId,
+      target.schema,
+      target.name,
+      'table'
+    )
+    currentDetail.value = detail
+    hydrateFromDetail(detail)
+  } catch (cause) {
+    toast.error({
+      title: t('读取表结构失败'),
+      description: database.errorMessage(cause),
+    })
+  } finally {
+    loadingDetail.value = false
+  }
+}
+
+/** 把现有表结构映射进草稿：无法表示的索引/外键不进草稿，差异生成会保持原样。 */
+function hydrateFromDetail(detail: DatabaseTableDetail): void {
+  const kind = props.databaseKind
+  const extra = new Set<string>()
+  for (const column of detail.columns) {
+    const label = normalizeDataTypeLabel(column.dataType, kind)
+    if (!columnTypes(kind).includes(label as never)) extra.add(label)
+  }
+  extraTypes.value = [...extra]
+
+  const indexes: TableDesignerIndex[] = []
+  for (const index of detail.indexes) {
+    if (index.primary) continue
+    const representable = index.columns.every(columnName =>
+      detail.columns.some(
+        column => columnName.toLowerCase() === column.name.toLowerCase()
+      )
+    )
+    if (!representable || index.subPart != null) continue
+    indexes.push({
+      id: `index-${index.name}-${indexes.length}`,
+      name: index.name,
+      kind: index.unique ? 'unique' : 'index',
+      method: 'btree',
+      columns: [...index.columns],
+    })
+  }
+
+  const foreignKeys = detail.foreignKeys
+    .filter(foreignKey => foreignKey.columns.length === 1)
+    .map((foreignKey, index) => ({
+      id: `fk-${foreignKey.name}-${index}`,
+      name: foreignKey.name,
+      column: foreignKey.columns[0] ?? '',
+      referencedSchema: foreignKey.referencedSchema,
+      referencedTable: foreignKey.referencedTable,
+      referencedColumn: foreignKey.referencedColumns[0] ?? '',
+      onDelete: (foreignKey.deleteRule || 'NO ACTION') as ReferentialAction,
+      onUpdate: (foreignKey.updateRule || 'NO ACTION') as ReferentialAction,
+    }))
+
+  draft.schema = detail.schema
+  draft.name = detail.name
+  draft.comment = detail.options?.comment ?? ''
+  draft.engine = detail.options?.engine ?? 'InnoDB'
+  draft.charset = detail.options?.charset ?? 'utf8mb4'
+  draft.autoIncrement = detail.options?.autoIncrement ?? null
+  draft.columns = detail.columns.map((column, index) => {
+    const parsed = parseStoredType(column.dataType, kind)
+    return {
+      id: `column-${Date.now()}-${index}`,
+      name: column.name,
+      dataType: normalizeDataTypeLabel(column.dataType, kind),
+      length: parsed.length,
+      nullable: column.nullable,
+      primaryKey: column.primaryKey,
+      // 编辑时唯一约束统一走索引管理，避免 MySQL MODIFY 无法移除内联唯一索引。
+      unique: false,
+      unsigned: parsed.unsigned,
+      autoIncrement: column.autoIncrement,
+      defaultValue: column.defaultValue ?? '',
+      comment: column.comment ?? '',
+    }
+  })
+  draft.indexes = indexes
+  draft.foreignKeys = foreignKeys
+}
+
+onMounted(() => {
+  void loadEditTarget()
+})
+
+watch(
+  () => props.editTable,
+  () => {
+    void loadEditTarget()
+  }
+)
 
 async function inspectReference(schema: string, table: string): Promise<void> {
   const key = `${schema}.${table}`
@@ -131,13 +308,13 @@ async function inspectReference(schema: string, table: string): Promise<void> {
 }
 
 async function copySql(): Promise<void> {
-  if (!validation.value.valid) return
+  if (!hasChanges.value) return
   await copyText(sqlPreview.value)
-  toast.success(t('建表 SQL 已复制'))
+  toast.success(editing.value ? t('修改 SQL 已复制') : t('建表 SQL 已复制'))
 }
 
 function openSqlQuery(): void {
-  if (!validation.value.valid) return
+  if (!hasChanges.value) return
   emit('query', sqlPreview.value)
 }
 
@@ -165,6 +342,53 @@ async function createTable(): Promise<void> {
     creating.value = false
   }
 }
+
+async function applyChanges(): Promise<void> {
+  const current = currentDetail.value
+  if (!current) return
+  if (!validation.value.valid) {
+    toast.warning(validation.value.errors[0] ?? t('请完善建表配置'))
+    return
+  }
+  const alterSql = computedAlterSql()
+  // PostgreSQL 的自增计数走专用接口（identity 列校验在 Rust 侧）。
+  const pgAutoIncrement =
+    props.databaseKind === 'postgresql' &&
+    draft.autoIncrement != null &&
+    draft.autoIncrement !== current.options?.autoIncrement
+      ? draft.autoIncrement
+      : null
+  if (!alterSql && pgAutoIncrement == null) {
+    toast.info(t('没有需要保存的修改'))
+    return
+  }
+  applying.value = true
+  try {
+    if (alterSql) {
+      const execution = await database.execute(props.sessionId, alterSql, 1)
+      const failed = execution.statements.find(statement => statement.error)
+      if (failed?.error) throw new Error(failed.error)
+    }
+    if (pgAutoIncrement != null) {
+      await database.alterTableOptions(props.sessionId, draft.schema, draft.name, {
+        autoIncrement: pgAutoIncrement,
+      })
+    }
+    emit('applied', draft.schema, draft.name)
+  } catch (cause) {
+    toast.error({
+      title: t('保存表结构修改失败'),
+      description: database.errorMessage(cause),
+    })
+  } finally {
+    applying.value = false
+  }
+}
+
+const hasChanges = computed(() => {
+  if (!editing.value) return validation.value.valid
+  return computedAlterSql() != null
+})
 </script>
 
 <template>
@@ -177,8 +401,11 @@ async function createTable(): Promise<void> {
             :size="17"
         /></span>
         <div>
-          <h2>{{ t('新建数据表') }}</h2>
-          <p>
+          <h2>{{ editing ? t('设计表') : t('新建数据表') }}</h2>
+          <p v-if="editing">
+            {{ draft.schema }} · <span class="text-txt-2">{{ draft.name }}</span>
+          </p>
+          <p v-else>
             {{
               databaseKind === 'mysql' ? t('MySQL 数据库') : 'PostgreSQL Schema'
             }}
@@ -190,7 +417,7 @@ async function createTable(): Promise<void> {
         <AppButton
           size="sm"
           class="h-7"
-          :disabled="!validation.valid"
+          :disabled="!hasChanges"
           @click="openSqlQuery"
           ><AppIcon
             name="lucide:square-terminal"
@@ -199,6 +426,7 @@ async function createTable(): Promise<void> {
           {{ t('在查询中打开') }}
         </AppButton>
         <AppButton
+          v-if="!editing"
           variant="primary"
           size="sm"
           class="h-7"
@@ -209,6 +437,19 @@ async function createTable(): Promise<void> {
             :size="12"
             :class="creating && 'animate-spin'"
           />{{ creating ? t('正在创建…') : t('创建表') }}</AppButton
+        >
+        <AppButton
+          v-else
+          variant="primary"
+          size="sm"
+          class="h-7"
+          :disabled="applying || !hasChanges"
+          @click="applyChanges"
+          ><AppIcon
+            :name="applying ? 'lucide:loader-circle' : 'lucide:check'"
+            :size="12"
+            :class="applying && 'animate-spin'"
+          />{{ applying ? t('正在保存…') : t('保存修改') }}</AppButton
         >
       </div>
     </header>
@@ -297,50 +538,122 @@ async function createTable(): Promise<void> {
     </nav>
 
     <main class="designer-body">
-      <DatabaseTableFieldsEditor
-        v-show="activePanel === 'columns'"
-        v-model="draft.columns"
-        :database-kind="databaseKind"
-      />
-      <DatabaseTableIndexesEditor
-        v-show="activePanel === 'indexes'"
-        v-model="draft.indexes"
-        :columns="draft.columns"
-        :database-kind="databaseKind"
-      />
-      <DatabaseTableForeignKeysEditor
-        v-show="activePanel === 'foreignKeys'"
-        v-model="draft.foreignKeys"
-        :columns="draft.columns"
-        :schema="draft.schema"
-        :tables="tableObjects"
-        :referenced-columns="referencedColumns"
-        :loading-reference="loadingReference"
-        @inspect-table="inspectReference"
-      />
-      <section
-        v-show="activePanel === 'sql'"
-        class="sql-panel"
+      <div
+        v-if="loadingDetail"
+        class="text-txt-3 flex items-center gap-2 p-6 text-[11px]"
       >
-        <div class="sql-heading">
-          <div>
-            <h3>{{ t('SQL 预览') }}</h3>
-            <p>{{ t('根据当前配置实时生成，可复制或转到查询页继续编辑。') }}</p>
+        <AppIcon
+          name="lucide:loader-circle"
+          :size="13"
+          class="animate-spin"
+        />
+        {{ t('正在读取表结构…') }}
+      </div>
+      <template v-else>
+        <DatabaseTableFieldsEditor
+          v-show="activePanel === 'columns'"
+          v-model="draft.columns"
+          :database-kind="databaseKind"
+          :extra-types="extraTypes"
+        />
+        <DatabaseTableIndexesEditor
+          v-show="activePanel === 'indexes'"
+          v-model="draft.indexes"
+          :columns="draft.columns"
+          :database-kind="databaseKind"
+        />
+        <DatabaseTableForeignKeysEditor
+          v-show="activePanel === 'foreignKeys'"
+          v-model="draft.foreignKeys"
+          :columns="draft.columns"
+          :schema="draft.schema"
+          :tables="tableObjects"
+          :referenced-columns="referencedColumns"
+          :loading-reference="loadingReference"
+          @inspect-table="inspectReference"
+        />
+        <section
+          v-show="activePanel === 'options'"
+          class="options-panel"
+        >
+          <div class="options-heading">
+            <div>
+              <h3>{{ t('表选项') }}</h3>
+              <p>{{ t('修改自增计数器等表级选项，随“保存修改”一起应用。') }}</p>
+            </div>
           </div>
-          <AppButton
-            size="sm"
-            class="h-7"
-            :disabled="!validation.valid"
-            @click="copySql"
-            ><AppIcon
-              name="lucide:copy"
-              :size="11"
-            />
-            {{ t('复制 SQL') }}
-          </AppButton>
-        </div>
-        <pre class="sql-preview scroll-thin"><code>{{ sqlPreview }}</code></pre>
-      </section>
+          <div class="options-grid">
+            <template v-if="databaseKind === 'mysql'">
+              <label class="field-label">
+                <span>{{ t('自增值（AUTO_INCREMENT）') }}</span>
+                <AppInput
+                  v-model="autoIncrementInput"
+                  size="sm"
+                  monospace
+                  autocomplete="off"
+                  inputmode="numeric"
+                  :placeholder="t('当前值 {value0}，留空表示不修改', { value0: currentAutoIncrementLabel() })"
+                  :aria-label="t('自增值')"
+              /></label>
+              <p class="options-hint">
+                {{
+                  hasAutoIncrementColumn
+                    ? t('下一个插入行将从这个值开始递增。')
+                    : t('表当前没有自增字段；先在字段页勾选自增后，这里才会生效。')
+                }}
+              </p>
+            </template>
+            <template v-else>
+              <label class="field-label">
+                <span>{{ t('自增值（RESTART WITH）') }}</span>
+                <AppInput
+                  v-model="autoIncrementInput"
+                  size="sm"
+                  monospace
+                  autocomplete="off"
+                  inputmode="numeric"
+                  :placeholder="t('当前值 {value0}，留空表示不修改', { value0: currentAutoIncrementLabel() })"
+                  :aria-label="t('自增值')"
+              /></label>
+              <p class="options-hint">
+                {{ t('只对 identity 自增列生效；serial 序列列保存时会提示改用 ALTER SEQUENCE。') }}
+              </p>
+            </template>
+            <p class="options-note">
+              {{ t('存储引擎、字符集与表备注在上方常规区域修改。') }}
+            </p>
+          </div>
+        </section>
+        <section
+          v-show="activePanel === 'sql'"
+          class="sql-panel"
+        >
+          <div class="sql-heading">
+            <div>
+              <h3>{{ editing ? t('ALTER TABLE 预览') : t('SQL 预览') }}</h3>
+              <p>
+                {{
+                  editing
+                    ? t('与当前表结构对比实时生成，可复制或转到查询页继续编辑。')
+                    : t('根据当前配置实时生成，可复制或转到查询页继续编辑。')
+                }}
+              </p>
+            </div>
+            <AppButton
+              size="sm"
+              class="h-7"
+              :disabled="!hasChanges"
+              @click="copySql"
+              ><AppIcon
+                name="lucide:copy"
+                :size="11"
+              />
+              {{ t('复制 SQL') }}
+            </AppButton>
+          </div>
+          <pre class="sql-preview scroll-thin"><code>{{ sqlPreview }}</code></pre>
+        </section>
+      </template>
     </main>
 
     <footer class="designer-footer">
@@ -507,6 +820,47 @@ async function createTable(): Promise<void> {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+.options-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+}
+.options-heading {
+  display: flex;
+  min-height: 58px;
+  flex: none;
+  align-items: center;
+  border-bottom: 1px solid var(--color-line-soft);
+  padding: 9px 12px;
+}
+.options-heading h3 {
+  color: var(--color-txt);
+  font-size: 12px;
+  font-weight: 600;
+}
+.options-heading p {
+  margin-top: 2px;
+  color: var(--color-txt-4);
+  font-size: 9.5px;
+}
+.options-grid {
+  display: grid;
+  max-width: 560px;
+  gap: 10px;
+  padding: 14px 12px;
+}
+.options-hint,
+.options-note {
+  margin: 0;
+  color: var(--color-txt-4);
+  font-size: 9.5px;
+  line-height: 1.6;
+}
+.options-note {
+  grid-column: 1 / -1;
 }
 .sql-panel {
   display: flex;

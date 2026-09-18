@@ -23,6 +23,8 @@ const emit = defineEmits<{
   copy: [object: DatabaseObject]
   rename: [object: DatabaseObject]
   remove: [object: DatabaseObject]
+  design: [object: DatabaseObject]
+  truncate: [object: DatabaseObject]
   refresh: []
 }>()
 
@@ -54,16 +56,28 @@ const items = computed<ContextMenuItem[]>(() => {
       icon: 'lucide:square-terminal',
     },
     {
+      id: 'design-object',
+      label: t('设计表'),
+      icon: 'lucide:table-properties',
+      disabled: object.kind !== 'table',
+    },
+    {
       id: 'structure-object',
       label: t('查看结构'),
       icon: 'lucide:columns-3',
       disabled: !relation,
     },
     {
+      id: 'truncate-object',
+      label: t('清空表数据…'),
+      icon: 'lucide:eraser',
+      disabled: object.kind !== 'table',
+      separatorBefore: true,
+    },
+    {
       id: 'copy-object',
       label: t('复制限定名称'),
       icon: 'lucide:copy',
-      separatorBefore: true,
     },
     { id: 'rename-object', label: t('重命名…'), icon: 'lucide:pencil' },
     { id: 'refresh', label: t('刷新对象树'), icon: 'lucide:rotate-cw' },
@@ -83,13 +97,17 @@ function select(id: string): void {
   if (!object) return
   if (id === 'open-object') emit('open', object)
   else if (id === 'query-object') emit('query', object)
+  else if (id === 'design-object' && object.kind === 'table')
+    emit('design', object)
   else if (
     id === 'structure-object' &&
     (object.kind === 'table' || object.kind === 'view')
   ) {
     emit('inspect', object)
     emit('open', object, 'columns')
-  } else if (id === 'copy-object') emit('copy', object)
+  } else if (id === 'truncate-object' && object.kind === 'table')
+    emit('truncate', object)
+  else if (id === 'copy-object') emit('copy', object)
   else if (id === 'rename-object') emit('rename', object)
   else if (id === 'remove-object') emit('remove', object)
   else if (id === 'refresh') emit('refresh')

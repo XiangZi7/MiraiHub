@@ -30,7 +30,7 @@ fn mysql_metadata_text(row: &MySqlRow, column: &'static str) -> DatabaseResult<S
     })
 }
 
-fn mysql_optional_metadata_text(
+pub(crate) fn mysql_optional_metadata_text(
     row: &MySqlRow,
     column: &'static str,
 ) -> DatabaseResult<Option<String>> {
@@ -433,6 +433,13 @@ pub async fn table_detail(
     let ddl = build_ddl(pool, schema, name, kind, &columns)
         .await
         .unwrap_or_default();
+    let options = if kind == DatabaseObjectKind::Table {
+        super::table_ops::read_table_options(pool, schema, name)
+            .await
+            .unwrap_or(None)
+    } else {
+        None
+    };
 
     Ok(DatabaseTableDetail {
         schema: schema.to_owned(),
@@ -444,6 +451,7 @@ pub async fn table_detail(
         primary_key,
         row_estimate,
         ddl,
+        options,
     })
 }
 
@@ -669,8 +677,9 @@ async fn list_indexes(
     schema: &str,
     name: &str,
 ) -> DatabaseResult<Vec<DatabaseIndex>> {
-    // (索引名, 唯一, 主键) -> 按序号排列的列名
-    let mut grouped: BTreeMap<(String, bool, bool), Vec<(i64, String)>> = BTreeMap::new();
+    // (索引名, 唯一, 主键) -> 按序号排列的 (列名, 前缀长度)
+    let mut grouped: BTreeMap<(String, bool, bool), Vec<(i64, String, Option<i64>)>> =
+        BTreeMap::new();
 
     match pool {
         DatabasePool::Mysql(pool) => {
@@ -679,7 +688,8 @@ async fn list_indexes(
                 SELECT INDEX_NAME,
                        CAST(NON_UNIQUE AS SIGNED) AS NON_UNIQUE,
                        CAST(SEQ_IN_INDEX AS SIGNED) AS SEQ_IN_INDEX,
-                       COLUMN_NAME
+                       COLUMN_NAME,
+                       CAST(SUB_PART AS SIGNED) AS SUB_PART
                 FROM information_schema.statistics
                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
                 ORDER BY INDEX_NAME, SEQ_IN_INDEX
@@ -697,10 +707,13 @@ async fn list_indexes(
                 let primary = index_name == "PRIMARY";
                 let sequence = row.try_get::<i64, _>("SEQ_IN_INDEX").unwrap_or(0);
                 let column = mysql_optional_metadata_text(&row, "COLUMN_NAME")?;
+                let sub_part = row
+                    .try_get::<Option<i64>, _>("SUB_PART")
+                    .unwrap_or(None);
                 grouped
                     .entry((index_name, unique, primary))
                     .or_default()
-                    .push((sequence, column.unwrap_or_default()));
+                    .push((sequence, column.unwrap_or_default(), sub_part));
             }
         }
         DatabasePool::Postgresql(pool) => {
@@ -735,7 +748,7 @@ async fn list_indexes(
                 grouped
                     .entry((index_name, unique, primary))
                     .or_default()
-                    .push((sequence, column.unwrap_or_default()));
+                    .push((sequence, column.unwrap_or_default(), None));
             }
         }
     }
@@ -743,12 +756,16 @@ async fn list_indexes(
     Ok(grouped
         .into_iter()
         .map(|((name, unique, primary), mut columns)| {
-            columns.sort_by_key(|(sequence, _)| *sequence);
+            columns.sort_by_key(|(sequence, _, _)| *sequence);
+            let sub_part = columns
+                .iter()
+                .find_map(|(_, _, sub_part)| *sub_part);
             DatabaseIndex {
                 name,
-                columns: columns.into_iter().map(|(_, column)| column).collect(),
+                columns: columns.into_iter().map(|(_, column, _)| column).collect(),
                 unique,
                 primary,
+                sub_part,
             }
         })
         .collect())
@@ -759,19 +776,25 @@ async fn list_foreign_keys(
     schema: &str,
     name: &str,
 ) -> DatabaseResult<Vec<DatabaseForeignKey>> {
-    // 约束名 -> (序号, 本列, 目标 schema, 目标表, 目标列)
-    let mut grouped: BTreeMap<String, Vec<(i64, String, String, String, String)>> = BTreeMap::new();
+    // 约束名 -> (序号, 本列, 目标 schema, 目标表, 目标列, 更新规则, 删除规则)
+    let mut grouped: BTreeMap<String, Vec<(i64, String, String, String, String, String, String)>> =
+        BTreeMap::new();
 
     match pool {
         DatabasePool::Mysql(pool) => {
             let rows = sqlx::query(
                 r#"
-                SELECT CONSTRAINT_NAME, COLUMN_NAME,
-                       REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME,
-                       CAST(ORDINAL_POSITION AS SIGNED) AS ORDINAL_POSITION
-                FROM information_schema.key_column_usage
-                WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL
-                ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION
+                SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                       kcu.REFERENCED_TABLE_SCHEMA, kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+                       CAST(kcu.ORDINAL_POSITION AS SIGNED) AS ORDINAL_POSITION,
+                       COALESCE(rc.UPDATE_RULE, '') AS UPDATE_RULE,
+                       COALESCE(rc.DELETE_RULE, '') AS DELETE_RULE
+                FROM information_schema.key_column_usage kcu
+                LEFT JOIN information_schema.referential_constraints rc
+                  ON rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+                 AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+                ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
                 "#,
             )
             .bind(schema)
@@ -791,12 +814,18 @@ async fn list_foreign_keys(
                 let referenced_column =
                     mysql_optional_metadata_text(&row, "REFERENCED_COLUMN_NAME")?
                         .unwrap_or_default();
+                let update_rule = mysql_optional_metadata_text(&row, "UPDATE_RULE")?
+                    .unwrap_or_default();
+                let delete_rule = mysql_optional_metadata_text(&row, "DELETE_RULE")?
+                    .unwrap_or_default();
                 grouped.entry(constraint).or_default().push((
                     row.try_get::<i64, _>("ORDINAL_POSITION").unwrap_or(0),
                     column,
                     referenced_schema,
                     referenced_table,
                     referenced_column,
+                    update_rule,
+                    delete_rule,
                 ));
             }
         }
@@ -808,7 +837,23 @@ async fn list_foreign_keys(
                        a.attname AS column_name,
                        fn.nspname AS referenced_schema,
                        fc.relname AS referenced_table,
-                       fa.attname AS referenced_column
+                       fa.attname AS referenced_column,
+                       CASE con.confupdtype
+                         WHEN 'a' THEN 'NO ACTION'
+                         WHEN 'r' THEN 'RESTRICT'
+                         WHEN 'c' THEN 'CASCADE'
+                         WHEN 'n' THEN 'SET NULL'
+                         WHEN 'd' THEN 'SET DEFAULT'
+                         ELSE 'NO ACTION'
+                       END AS update_rule,
+                       CASE con.confdeltype
+                         WHEN 'a' THEN 'NO ACTION'
+                         WHEN 'r' THEN 'RESTRICT'
+                         WHEN 'c' THEN 'CASCADE'
+                         WHEN 'n' THEN 'SET NULL'
+                         WHEN 'd' THEN 'SET DEFAULT'
+                         ELSE 'NO ACTION'
+                       END AS delete_rule
                 FROM pg_constraint con
                 JOIN pg_class c ON c.oid = con.conrelid
                 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -838,6 +883,8 @@ async fn list_foreign_keys(
                         row.try_get("referenced_schema").unwrap_or_default(),
                         row.try_get("referenced_table").unwrap_or_default(),
                         row.try_get("referenced_column").unwrap_or_default(),
+                        row.try_get("update_rule").unwrap_or_default(),
+                        row.try_get("delete_rule").unwrap_or_default(),
                     ));
             }
         }
@@ -853,7 +900,15 @@ async fn list_foreign_keys(
                 .unwrap_or_default();
             let referenced_table = parts
                 .first()
-                .map(|(_, _, _, table, _)| table.clone())
+                .map(|(_, _, _, table, ..)| table.clone())
+                .unwrap_or_default();
+            let update_rule = parts
+                .first()
+                .map(|(_, _, _, _, _, rule, _)| rule.clone())
+                .unwrap_or_default();
+            let delete_rule = parts
+                .first()
+                .map(|(_, _, _, _, _, _, rule)| rule.clone())
                 .unwrap_or_default();
             DatabaseForeignKey {
                 name,
@@ -861,6 +916,8 @@ async fn list_foreign_keys(
                 referenced_schema,
                 referenced_table,
                 referenced_columns: parts.into_iter().map(|(.., column)| column).collect(),
+                update_rule,
+                delete_rule,
             }
         })
         .collect())

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import { useTabReorder } from '@/composables/useTabReorder'
+import { cn } from '@/utils/cn'
 import type { DatabaseKind } from '@/types/database'
 import type { TableDesignerColumn } from '@/types/database-designer'
 import { columnTypes } from '@/utils/database-ddl'
@@ -17,15 +19,35 @@ const { t } = useI18n()
 const props = defineProps<{
   modelValue: TableDesignerColumn[]
   databaseKind: DatabaseKind
+  /** 编辑模式下当前表已有的非标准类型（如 ENUM），合并进类型下拉框。 */
+  extraTypes?: readonly string[]
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [columns: TableDesignerColumn[]]
 }>()
 
-const typeOptions = computed(() =>
-  columnTypes(props.databaseKind).map(value => ({ value, label: value }))
+const tableWrap = useTemplateRef<HTMLElement>('tableWrap')
+const reorder = useTabReorder({
+  tabs: () => props.modelValue,
+  container: () => tableWrap.value,
+  onReorder: moveColumnFromIndex,
+})
+const draggedColumn = computed(() =>
+  props.modelValue.find(column => column.id === reorder.draggedId.value)
 )
+
+const typeOptions = computed(() => {
+  const base = columnTypes(props.databaseKind).map(value => ({
+    value,
+    label: value,
+  }))
+  const known = new Set(base.map(option => option.value))
+  const extra = (props.extraTypes ?? [])
+    .filter(value => !known.has(value))
+    .map(value => ({ value, label: value }))
+  return [...base, ...extra]
+})
 
 function newId(): string {
   return `column-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -67,14 +89,19 @@ function removeColumn(id: string): void {
   )
 }
 
-function moveColumn(index: number, direction: -1 | 1): void {
-  const target = index + direction
-  if (target < 0 || target >= props.modelValue.length) return
+/** 把某列从一个索引移动到另一个索引（拖拽与上下按钮共用）。 */
+function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
+  const target = Math.max(0, Math.min(toIndex, props.modelValue.length - 1))
+  if (fromIndex < 0 || fromIndex === target) return
   const columns = [...props.modelValue]
-  const [column] = columns.splice(index, 1)
+  const [column] = columns.splice(fromIndex, 1)
   if (!column) return
   columns.splice(target, 0, column)
   emit('update:modelValue', columns)
+}
+
+function moveColumn(index: number, direction: -1 | 1): void {
+  moveColumnFromIndex(index, index + direction)
 }
 </script>
 
@@ -124,9 +151,31 @@ function moveColumn(index: number, direction: -1 | 1): void {
           <tr
             v-for="(column, index) in modelValue"
             :key="column.id"
+            :data-reorderable-tab-id="column.id"
+            :class="
+              cn(
+                reorder.draggedId.value === column.id && 'field-dragging',
+                reorder.targetId.value === column.id &&
+                  reorder.targetPosition.value === 'before' &&
+                  'field-drop-before',
+                reorder.targetId.value === column.id &&
+                  reorder.targetPosition.value === 'after' &&
+                  'field-drop-after'
+              )
+            "
+            @pointerdown="reorder.start($event, column.id)"
           >
             <td>
-              <div class="flex justify-center gap-0.5">
+              <div class="flex items-center justify-center gap-0.5">
+                <span
+                  class="field-grip"
+                  :title="t('拖动排序')"
+                >
+                  <AppIcon
+                    name="lucide:grip-vertical"
+                    :size="11"
+                  />
+                </span>
                 <IconButton
                   icon="lucide:chevron-up"
                   :size="11"
@@ -287,6 +336,23 @@ function moveColumn(index: number, direction: -1 | 1): void {
         </tbody>
       </table>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="reorder.dragging.value && draggedColumn"
+        class="field-drag-ghost"
+        :style="reorder.dragStyle.value"
+        aria-hidden="true"
+      >
+        <AppIcon
+          name="lucide:grip-vertical"
+          :size="12"
+          class="text-accent shrink-0"
+        />
+        <span class="min-w-0 truncate">{{ draggedColumn.name }}</span>
+        <span class="text-txt-4 shrink-0">{{ draggedColumn.dataType }}</span>
+      </div>
+    </Teleport>
   </section>
 </template>
 
@@ -354,5 +420,69 @@ function moveColumn(index: number, direction: -1 | 1): void {
 }
 .designer-table tr:hover td {
   background: color-mix(in oklch, var(--color-hover) 72%, transparent);
+}
+/* 行内拖拽排序：行本身不选中文字，第一个单元格承担落点指示器 */
+.designer-table tbody tr {
+  user-select: none;
+}
+.designer-table tbody td:first-child {
+  position: relative;
+}
+.field-grip {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 22px;
+  color: var(--color-txt-4);
+  cursor: grab;
+  touch-action: none;
+}
+.field-grip:hover {
+  color: var(--color-txt-2);
+}
+.designer-table tbody tr:active .field-grip {
+  cursor: grabbing;
+}
+.designer-table tr.field-dragging td {
+  opacity: 0.42;
+}
+/* 落点指示器：与标签栏同款的紫色光条 */
+.designer-table tr.field-drop-before td:first-child::before,
+.designer-table tr.field-drop-after td:first-child::after {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--color-violet);
+  box-shadow: 0 0 9px color-mix(in oklch, var(--color-violet) 55%, transparent);
+  content: '';
+}
+.designer-table tr.field-drop-before td:first-child::before {
+  left: 0;
+}
+.designer-table tr.field-drop-after td:first-child::after {
+  right: 0;
+}
+/* 拖拽幽灵：与标签栏 / 侧栏连接的拖拽样式一致 */
+.field-drag-ghost {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  max-width: 260px;
+  pointer-events: none;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid
+    color-mix(in oklch, var(--color-violet) 48%, var(--color-line));
+  border-radius: 7px;
+  background: var(--color-panel);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
+  padding: 7px 10px;
+  color: var(--color-txt);
+  font-size: 11.5px;
+  line-height: 1;
+  transform: translateY(-50%);
+  white-space: nowrap;
 }
 </style>

@@ -122,7 +122,7 @@ mod tests {
         for name in ["", "../x", "C:\\secret", "bad\nname"] {
             assert!(prepare("分析", vec![file(name, "a")]).is_err());
         }
-        for content in ["".into(), "  ".into(), "a\0b".into()] {
+        for content in ["".to_owned(), "  ".to_owned(), "a\0b".to_owned()] {
             assert!(prepare("分析", vec![file("a.txt", &content)]).is_err());
         }
         // ~64 KB now passes (the old 64 KB/128 KB caps were lifted to 1 GB).

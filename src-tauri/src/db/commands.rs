@@ -11,11 +11,13 @@ use super::metadata;
 use super::models::{
     DatabaseColumn, DatabaseConfig, DatabaseExecution, DatabaseExportResult, DatabaseImportResult,
     DatabaseObject, DatabaseObjectKind, DatabaseRoutineDetail, DatabaseRowPage, DatabaseSession,
-    DatabaseTableDetail, MutationRequest, MutationResult, RowPageRequest,
+    DatabaseTableDetail, DatabaseTableOptions, MutationRequest, MutationResult, RowPageRequest,
+    TableAlterOptions,
 };
 use super::mutation;
 use super::object_ops;
 use super::query::{self, DEFAULT_RESULT_ROWS};
+use super::table_ops;
 use super::transfer;
 
 #[tauri::command]
@@ -183,6 +185,40 @@ pub async fn db_drop_object(
 ) -> AppResult<()> {
     let pool = manager.pool(&session_id).await?;
     Ok(object_ops::drop_object(&pool, &schema, &name, kind, &identity).await?)
+}
+
+#[tauri::command]
+pub async fn db_table_options(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    schema: String,
+    name: String,
+) -> AppResult<Option<DatabaseTableOptions>> {
+    let pool = manager.pool(&session_id).await?;
+    Ok(table_ops::read_table_options(&pool, &schema, &name).await?)
+}
+
+#[tauri::command]
+pub async fn db_alter_table_options(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    schema: String,
+    name: String,
+    options: TableAlterOptions,
+) -> AppResult<Vec<String>> {
+    let pool = manager.pool(&session_id).await?;
+    Ok(table_ops::alter_table_options(&pool, &schema, &name, &options).await?)
+}
+
+#[tauri::command]
+pub async fn db_truncate_table(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    schema: String,
+    name: String,
+) -> AppResult<()> {
+    let pool = manager.pool(&session_id).await?;
+    Ok(table_ops::truncate_table(&pool, &schema, &name).await?)
 }
 
 #[tauri::command]

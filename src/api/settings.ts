@@ -44,6 +44,10 @@ export function loadSettings(): SettingsValues {
     defaults.windowBackgroundOpacity
   )
   defaults.language = normalizeLanguage(defaults.language)
+  // 上传并发上限从 8 提到 12（v2.0.13）：'4' 是旧默认值，视为未配置并提升到新默认，
+  // 已手动调过的其他值保持不变。
+  if (defaults.folderUploadConcurrency === '4')
+    defaults.folderUploadConcurrency = '12'
   return normalizeSkinSettings(defaults)
 }
 

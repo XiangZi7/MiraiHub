@@ -119,6 +119,13 @@ export function useTabReorder<T extends ReorderableTab>(
   function start(event: PointerEvent, id: string): void {
     if (event.button !== 0 || !event.isPrimary) return
     if ((event.target as HTMLElement).closest('[data-tab-action]')) return
+    // 表单控件与按钮内的拖拽是文本选择或原生交互，不应触发排序（字段编辑器等复用方）。
+    if (
+      (event.target as HTMLElement).closest(
+        'input, textarea, select, button, label'
+      )
+    )
+      return
 
     activePointerId = event.pointerId
     startX = event.clientX

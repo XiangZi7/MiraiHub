@@ -244,6 +244,9 @@ function focusout(event: FocusEvent): void {
   border: 1px solid var(--color-line-strong);
   border-radius: 6px;
   background: var(--color-panel);
+  /* 浮层玻璃与其余 popover（Toast、菜单）统一：模糊 + 提饱和透出背景 */
+  -webkit-backdrop-filter: blur(30px) saturate(175%);
+  backdrop-filter: blur(30px) saturate(175%);
   box-shadow: var(--shadow-pop);
 }
 .ai-model-menu li {

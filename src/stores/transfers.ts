@@ -261,10 +261,10 @@ export const useTransfersStore = defineStore('transfers', () => {
               overwrite: options.overwrite ?? false,
               bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
               concurrency: Math.min(
-                8,
+                12,
                 Math.max(
                   1,
-                  Math.floor(settingNumber('folderUploadConcurrency', 4))
+                  Math.floor(settingNumber('folderUploadConcurrency', 12))
                 )
               ),
             })

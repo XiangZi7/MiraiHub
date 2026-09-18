@@ -13,6 +13,7 @@ mod mutation;
 mod object_ops;
 pub(crate) mod query;
 mod sql;
+mod table_ops;
 mod transfer;
 
 pub use manager::DatabaseManager;

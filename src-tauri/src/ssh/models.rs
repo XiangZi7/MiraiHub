@@ -149,7 +149,7 @@ pub struct UploadFileRequest {
 }
 
 fn default_upload_concurrency() -> usize {
-    4
+    12
 }
 
 #[derive(Debug, Clone, Deserialize)]

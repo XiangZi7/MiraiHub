@@ -119,6 +119,9 @@ pub struct DatabaseIndex {
     pub columns: Vec<String>,
     pub unique: bool,
     pub primary: bool,
+    /// 前缀索引的长度（如 name(10) 的 10）；非前缀索引为 None。
+    #[serde(default)]
+    pub sub_part: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,6 +132,33 @@ pub struct DatabaseForeignKey {
     pub referenced_schema: String,
     pub referenced_table: String,
     pub referenced_columns: Vec<String>,
+    /// ON UPDATE / ON DELETE 规则；读不出来时为空字符串。
+    #[serde(default)]
+    pub update_rule: String,
+    #[serde(default)]
+    pub delete_rule: String,
+}
+
+/// 表的当前选项。engine/charset/collation 只有 MySQL 有；auto_increment 是计数器当前值。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseTableOptions {
+    pub engine: Option<String>,
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    pub comment: Option<String>,
+    pub auto_increment: Option<i64>,
+}
+
+/// 一次表选项改动。None 表示不修改该选项；引擎/字符集在 Rust 侧按方言校验。
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableAlterOptions {
+    pub engine: Option<String>,
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    pub comment: Option<String>,
+    pub auto_increment: Option<i64>,
 }
 
 /// 一张表/视图的完整结构，对象树展开与结构面板共用。
@@ -145,6 +175,8 @@ pub struct DatabaseTableDetail {
     pub primary_key: Vec<String>,
     pub row_estimate: Option<i64>,
     pub ddl: String,
+    /// 表的当前选项（引擎/字符集/备注/自增计数器），视图与读不出来时为 None。
+    pub options: Option<DatabaseTableOptions>,
 }
 
 #[derive(Debug, Clone, Serialize)]

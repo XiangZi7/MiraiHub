@@ -23,6 +23,8 @@ const emit = defineEmits<{
   copy: [object: DatabaseObject]
   renameObject: [object: DatabaseObject]
   removeObject: [object: DatabaseObject]
+  designObject: [object: DatabaseObject]
+  truncateObject: [object: DatabaseObject]
   refresh: []
 }>()
 
@@ -185,6 +187,8 @@ watch([() => props.objects, () => props.loading], () => {
       @copy="emit('copy', $event)"
       @rename="emit('renameObject', $event)"
       @remove="emit('removeObject', $event)"
+      @design="emit('designObject', $event)"
+      @truncate="emit('truncateObject', $event)"
       @refresh="emit('refresh')"
     />
   </section>

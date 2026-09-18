@@ -509,6 +509,46 @@ export const en = {
   '根据当前配置实时生成，可复制或转到查询页继续编辑。':
     'Generated live from the current configuration. Copy it or continue editing in a query tab.',
   '复制 SQL': 'Copy SQL',
+  设计表: 'Design table',
+  '清空表数据…': 'Clear table data…',
+  '清空表数据？': 'Clear table data?',
+  '将清空 {value0} 的全部数据并重置自增计数器（TRUNCATE）。表结构保持不变，此操作无法撤销，请确认已有备份。':
+    'This will clear all data in {value0} and reset the auto-increment counter (TRUNCATE). The table structure is kept. This cannot be undone, make sure you have a backup.',
+  '表“{value0}”已清空，自增计数器已重置':
+    'Table “{value0}” cleared and auto-increment counter reset',
+  清空表数据失败: 'Could not clear table data',
+  '表“{value0}”的修改已保存': 'Changes to table “{value0}” saved',
+  '-- 正在读取表结构…': '-- Loading table structure…',
+  '正在读取表结构…': 'Loading table structure…',
+  '-- 完成必填配置后将在这里生成 ALTER TABLE SQL':
+    '-- Complete the required configuration to generate the ALTER TABLE SQL here',
+  没有需要保存的修改: 'No changes to save',
+  '正在保存…': 'Saving…',
+  保存修改: 'Save changes',
+  保存表结构修改失败: 'Could not save table changes',
+  '修改 SQL 已复制': 'ALTER TABLE SQL copied',
+  选项: 'Options',
+  表选项: 'Table options',
+  '修改自增计数器等表级选项，随“保存修改”一起应用。':
+    'Edit table-level options such as the auto-increment counter; they are applied together with “Save changes”.',
+  '自增值（AUTO_INCREMENT）': 'Auto-increment value (AUTO_INCREMENT)',
+  '自增值（RESTART WITH）': 'Auto-increment value (RESTART WITH)',
+  自增值: 'Auto-increment value',
+  '当前值 {value0}，留空表示不修改':
+    'Current value {value0}; leave empty to keep unchanged',
+  '下一个插入行将从这个值开始递增。':
+    'The next inserted row will continue counting from this value.',
+  '表当前没有自增字段；先在字段页勾选自增后，这里才会生效。':
+    'This table has no auto-increment column; tick it on the columns tab first for this to take effect.',
+  '只对 identity 自增列生效；serial 序列列保存时会提示改用 ALTER SEQUENCE。':
+    'Only applies to identity columns; saving a serial-backed column will ask you to use ALTER SEQUENCE instead.',
+  '存储引擎、字符集与表备注在上方常规区域修改。':
+    'Storage engine, character set and table comment are edited in the general area above.',
+  'ALTER TABLE 预览': 'ALTER TABLE preview',
+  '与当前表结构对比实时生成，可复制或转到查询页继续编辑。':
+    'Generated live from the diff with the current table. Copy it or continue editing in a query tab.',
+  '自增值必须是不小于 1 的整数':
+    'Auto-increment value must be an integer of at least 1',
   当前数据库的表: 'Tables in current database',
   '正在加载表列表…': 'Loading tables…',
   '表列表加载失败，请重试': 'Could not load tables. Try again.',
@@ -1015,6 +1055,7 @@ export const en = {
   最近使用: 'Recently used',
   上移: 'Move up',
   下移: 'Move down',
+  拖动排序: 'Drag to reorder',
   '{value0} 不受支持': '{value0} is not supported',
   '{value0} 无效': 'Invalid {value0}',
   '{value0} 无效或数量过多': 'Invalid or too many {value0}',

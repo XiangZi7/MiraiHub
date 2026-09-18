@@ -62,6 +62,8 @@ export interface DatabaseIndex {
   columns: string[]
   unique: boolean
   primary: boolean
+  /** 前缀索引长度（如 name(10) 的 10）；非前缀索引为 null。 */
+  subPart: number | null
 }
 
 export interface DatabaseForeignKey {
@@ -70,6 +72,26 @@ export interface DatabaseForeignKey {
   referencedSchema: string
   referencedTable: string
   referencedColumns: string[]
+  /** ON UPDATE / ON DELETE 规则；读不出来时为空字符串。 */
+  updateRule: string
+  deleteRule: string
+}
+
+export interface DatabaseTableOptions {
+  engine: string | null
+  charset: string | null
+  collation: string | null
+  comment: string | null
+  /** 自增计数器当前值；PostgreSQL / 读不出来时为 null。 */
+  autoIncrement: number | null
+}
+
+export interface TableAlterOptions {
+  engine?: string
+  charset?: string
+  collation?: string
+  comment?: string
+  autoIncrement?: number
 }
 
 export interface DatabaseTableDetail {
@@ -82,6 +104,7 @@ export interface DatabaseTableDetail {
   primaryKey: string[]
   rowEstimate: number | null
   ddl: string
+  options: DatabaseTableOptions | null
 }
 
 export interface DatabaseRoutineParameter {

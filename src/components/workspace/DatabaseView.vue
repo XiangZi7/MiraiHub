@@ -87,6 +87,8 @@ interface ObjectTab extends TabItem {
 interface TableDesignerTab extends TabItem {
   kind: 'table-designer'
   schema: string
+  /** 编辑模式：要设计的现有表；null 为新建表。 */
+  editTarget: { schema: string, name: string } | null
 }
 
 type WorkspaceTab = QueryTab | ObjectTab | TableDesignerTab
@@ -220,7 +222,9 @@ const deleteDialog = reactive({
   database: '',
   object: null as DatabaseObject | null,
   savedQuery: null as SavedDatabaseQuery | null,
+  truncateTarget: null as DatabaseObject | null,
 })
+
 
 // 响应式状态
 const state = reactive({
@@ -466,17 +470,24 @@ const nameDialogConfirmLabel = computed(() => {
 const deleteTitle = computed(() =>
   deleteDialog.savedQuery
     ? t('删除已保存查询？')
-    : deleteDialog.object
-      ? t('删除{value0}？', {
-          value0: objectKindLabel(deleteDialog.object.kind),
-        })
-      : t('删除数据库？')
+    : deleteDialog.truncateTarget
+      ? t('清空表数据？')
+      : deleteDialog.object
+        ? t('删除{value0}？', {
+            value0: objectKindLabel(deleteDialog.object.kind),
+          })
+        : t('删除数据库？')
 )
 const deleteDescription = computed(() => {
   if (deleteDialog.savedQuery)
     return t(
       '将删除查询“{value0}”。已经打开的标签会转为临时草稿，SQL 内容不会丢失。',
       { value0: deleteDialog.savedQuery.name }
+    )
+  if (deleteDialog.truncateTarget)
+    return t(
+      '将清空 {value0} 的全部数据并重置自增计数器（TRUNCATE）。表结构保持不变，此操作无法撤销，请确认已有备份。',
+      { value0: qualifiedName(deleteDialog.truncateTarget) }
     )
   if (deleteDialog.object)
     return t('将永久删除 {value0}。此操作无法撤销，请确认已有备份。', {
@@ -777,17 +788,25 @@ function createObjectTemplate(schema: string, kind: DatabaseObjectKind): void {
   }
 }
 
-function openTableDesigner(schema: string): void {
+function openTableDesigner(
+  schema: string,
+  editTarget: { schema: string, name: string } | null = null
+): void {
   const id = `table-designer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   queryState.tabs.push({
     id,
-    label: t('新建表'),
+    label: editTarget ? t('设计表') : t('新建表'),
     icon: 'lucide:table-properties',
     closable: true,
     kind: 'table-designer',
     schema,
+    editTarget,
   })
   queryState.activeId = id
+}
+
+function openTableDesignerForObject(object: DatabaseObject): void {
+  openTableDesigner(object.schema, { schema: object.schema, name: object.name })
 }
 
 async function handleTableCreated(
@@ -809,6 +828,30 @@ async function handleTableCreated(
       ? t('表“{value0}”已创建并打开', { value0: name })
       : t('表“{value0}.{value1}”已创建', { value0: schema, value1: name })
   )
+}
+
+async function handleTableApplied(
+  tabId: string,
+  schema: string,
+  name: string
+): Promise<void> {
+  // 表可能被改名或移动 schema，同步设计器标签，让它重新加载新结构。
+  const designerTab = queryState.tabs.find(tab => tab.id === tabId)
+  if (designerTab?.kind === 'table-designer') {
+    designerTab.schema = schema
+    designerTab.editTarget = { schema, name }
+  }
+  await refreshObjects()
+  for (const tab of queryState.tabs) {
+    if (
+      tab.kind === 'object' &&
+      tab.object.kind === 'table' &&
+      tab.object.schema === schema &&
+      tab.object.name === name
+    )
+      tab.panelNonce += 1
+  }
+  toast.success(t('表“{value0}”的修改已保存', { value0: name }))
 }
 
 function openObject(
@@ -948,6 +991,7 @@ function requestDeleteDatabase(name: string): void {
   deleteDialog.database = name
   deleteDialog.object = null
   deleteDialog.savedQuery = null
+  deleteDialog.truncateTarget = null
   deleteDialog.open = true
 }
 
@@ -955,6 +999,15 @@ function requestDeleteObject(object: DatabaseObject): void {
   deleteDialog.database = ''
   deleteDialog.object = object
   deleteDialog.savedQuery = null
+  deleteDialog.truncateTarget = null
+  deleteDialog.open = true
+}
+
+function requestTruncateTable(object: DatabaseObject): void {
+  deleteDialog.database = ''
+  deleteDialog.object = null
+  deleteDialog.savedQuery = null
+  deleteDialog.truncateTarget = object
   deleteDialog.open = true
 }
 
@@ -962,10 +1015,30 @@ function requestDeleteSavedQuery(query: SavedDatabaseQuery): void {
   deleteDialog.database = ''
   deleteDialog.object = null
   deleteDialog.savedQuery = query
+  deleteDialog.truncateTarget = null
   deleteDialog.open = true
 }
 
 async function confirmDelete(): Promise<void> {
+  const truncateTarget = deleteDialog.truncateTarget
+  if (truncateTarget) {
+    deleteDialog.open = false
+    deleteDialog.truncateTarget = null
+    if (!sessionId.value) return
+    try {
+      await database.truncateTable(sessionId.value, truncateTarget.schema, truncateTarget.name)
+      toast.success(
+        t('表“{value0}”已清空，自增计数器已重置', { value0: truncateTarget.name })
+      )
+      await refreshObjects()
+    } catch (cause) {
+      toast.error({
+        title: t('清空表数据失败'),
+        description: database.errorMessage(cause),
+      })
+    }
+    return
+  }
   const targetSavedQuery = deleteDialog.savedQuery
   if (targetSavedQuery) {
     removeSavedQuery(targetSavedQuery.id)
@@ -1184,6 +1257,8 @@ watch(
       @remove-database="requestDeleteDatabase"
       @rename-object="showNameDialog('rename-object', $event)"
       @remove-object="requestDeleteObject"
+      @design-object="openTableDesignerForObject"
+      @truncate-object="requestTruncateTable"
     />
     <AppResizeHandle
       v-show="!agentOpen || agentSplit"
@@ -1285,7 +1360,7 @@ watch(
               v-else-if="activeDesigner"
               class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
               >{{ activeDesigner.schema }}.<span class="text-txt-2">
-                {{ t('新建表') }}
+                {{ activeDesigner.editTarget?.name ?? t('新建表') }}
               </span></span
             >
             <span
@@ -1360,6 +1435,8 @@ watch(
             @copy="copyObjectName"
             @rename-object="showNameDialog('rename-object', $event)"
             @remove-object="requestDeleteObject"
+            @design-object="openTableDesignerForObject"
+            @truncate-object="requestTruncateTable"
             @refresh="refreshAll"
           />
           <div
@@ -1409,9 +1486,13 @@ watch(
             :database-kind="databaseKind"
             :schema="tab.schema"
             :objects="objects"
+            :edit-table="tab.editTarget"
             @query="openQuery"
             @created="
               (schema, name) => handleTableCreated(tab.id, schema, name)
+            "
+            @applied="
+              (schema, name) => handleTableApplied(tab.id, schema, name)
             "
           />
         </template>

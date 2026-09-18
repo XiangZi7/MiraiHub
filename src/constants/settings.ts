@@ -382,8 +382,9 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             options: [
               { value: '1', label: '1（串行）' },
               { value: '2', label: '2' },
-              { value: '4', label: '4（默认）' },
+              { value: '4', label: '4' },
               { value: '8', label: '8' },
+              { value: '12', label: '12（默认）' },
             ],
           },
           {

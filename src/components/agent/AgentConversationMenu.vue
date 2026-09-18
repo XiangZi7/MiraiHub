@@ -449,6 +449,9 @@ useEventListener(
   height: 8px;
   transform: translateX(-50%) rotate(45deg);
   background: var(--color-panel);
+  /* 箭头浮在菜单玻璃外，补上同款模糊，浏览器里与菜单的玻璃质感一致 */
+  -webkit-backdrop-filter: blur(28px) saturate(175%);
+  backdrop-filter: blur(28px) saturate(175%);
   border-top: 1px solid var(--color-line-strong);
   border-left: 1px solid var(--color-line-strong);
 }

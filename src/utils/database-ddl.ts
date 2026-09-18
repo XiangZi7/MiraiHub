@@ -1,10 +1,17 @@
 import { i18n } from '@/i18n'
 import type {
   TableDesignerColumn,
+  TableDesignerDraft,
+  TableDesignerForeignKey,
   TableDesignerOptions,
   TableDesignerValidation,
 } from '@/types/database-designer'
-import type { DatabaseKind } from '@/types/database'
+import type {
+  DatabaseColumn,
+  DatabaseForeignKey,
+  DatabaseKind,
+  DatabaseTableDetail,
+} from '@/types/database'
 
 export const MYSQL_COLUMN_TYPES = [
   'BIGINT',
@@ -68,13 +75,22 @@ export function columnTypes(kind: DatabaseKind): readonly string[] {
 export function validateTableDraft({
   kind,
   draft,
+  extraTypes,
 }: TableDesignerOptions): TableDesignerValidation {
   const errors: string[] = []
   if (!draft.schema.trim())
     errors.push(i18n.global.t('数据库或 Schema 不能为空'))
   if (!draft.name.trim()) errors.push(i18n.global.t('表名不能为空'))
   if (!draft.columns.length) errors.push(i18n.global.t('至少需要一个字段'))
+  if (
+    draft.autoIncrement != null &&
+    (!Number.isInteger(draft.autoIncrement) || draft.autoIncrement < 1)
+  )
+    errors.push(i18n.global.t('自增值必须是不小于 1 的整数'))
 
+  const knownTypes = new Set(
+    (extraTypes ?? []).map(value => value.trim().toLowerCase())
+  )
   const names = new Set<string>()
   let autoIncrementCount = 0
   for (const [index, column] of draft.columns.entries()) {
@@ -82,6 +98,7 @@ export function validateTableDraft({
       column.name.trim() ||
       i18n.global.t('第 {value0} 个字段', { value0: index + 1 })
     const normalized = column.name.trim().toLocaleLowerCase()
+    const knownType = knownTypes.has(column.dataType.trim().toLowerCase())
     if (!column.name.trim())
       errors.push(
         i18n.global.t('第 {value0} 个字段缺少名称', { value0: index + 1 })
@@ -90,11 +107,15 @@ export function validateTableDraft({
       errors.push(i18n.global.t('字段“{value0}”重复', { value0: column.name }))
     else names.add(normalized)
 
-    if (!columnTypes(kind).includes(column.dataType as never))
+    if (!columnTypes(kind).includes(column.dataType as never) && !knownType)
       errors.push(
         i18n.global.t('字段“{value0}”的数据类型不受支持', { value0: label })
       )
-    if (column.length && !/^\d+(?:\s*,\s*\d+)?$/u.test(column.length))
+    if (
+      column.length &&
+      !knownType &&
+      !/^\d+(?:\s*,\s*\d+)?$/u.test(column.length)
+    )
       errors.push(
         i18n.global.t('字段“{value0}”的长度或精度格式不正确', { value0: label })
       )
@@ -297,4 +318,429 @@ function safeOption(value: string): string {
   if (!/^[A-Za-z0-9_]+$/u.test(value))
     throw new Error(i18n.global.t('存储引擎或字符集不合法'))
   return value
+}
+
+// ---------------------------------------------------------------------------
+// 编辑表：结构差异 → ALTER TABLE
+// ---------------------------------------------------------------------------
+
+export interface TableAlterSpec {
+  kind: DatabaseKind
+  /** 当前表结构（db_table_detail 返回）。 */
+  current: DatabaseTableDetail
+  /** 编辑后的草稿。 */
+  draft: TableDesignerDraft
+  /** 当前表已有的非标准类型，与 validateTableDraft 的 extraTypes 一致。 */
+  extraTypes?: readonly string[]
+}
+
+interface ParsedType {
+  base: string
+  length: string
+  unsigned: boolean
+}
+
+const PG_TYPE_ALIASES: Record<string, string> = {
+  'character varying': 'varchar',
+  character: 'char',
+  bpchar: 'char',
+  'timestamp with time zone': 'timestamptz',
+  'timestamp without time zone': 'timestamp',
+  'time with time zone': 'timetz',
+  'time without time zone': 'time',
+  int2: 'smallint',
+  int4: 'integer',
+  int8: 'bigint',
+  int: 'integer',
+  bool: 'boolean',
+  decimal: 'numeric',
+  float4: 'real',
+  float8: 'double precision',
+}
+
+/** 解析 information_schema / pg_catalog 的完整列类型。 */
+export function parseStoredType(
+  fullType: string,
+  kind: DatabaseKind
+): ParsedType {
+  if (kind === 'mysql') {
+    // "bigint(20) unsigned zerofill" / "varchar(255)" / "decimal(10,2)" / "int"
+    const withoutZerofill = fullType.replace(/\s*zerofill/giu, '').trim()
+    const unsigned = /\s+unsigned$/iu.test(withoutZerofill)
+    const core = withoutZerofill.replace(/\s+unsigned$/iu, '').trim()
+    const match = /^([^()]+?)(?:\s*\(([^()]*)\))?$/u.exec(core)
+    return {
+      base: (match?.[1] ?? core).trim().toLowerCase(),
+      length: (match?.[2] ?? '').trim(),
+      unsigned,
+    }
+  }
+  // PostgreSQL: "character varying(255)" / "timestamp with time zone" / "integer"
+  const trimmed = fullType.trim()
+  const match = /^([^()]+?)(?:\s*\(([^()]*)\))?$/u.exec(trimmed)
+  const raw = (match?.[1] ?? trimmed).trim().toLowerCase()
+  return {
+    base: PG_TYPE_ALIASES[raw] ?? raw,
+    length: (match?.[2] ?? '').trim(),
+    unsigned: false,
+  }
+}
+
+/** 把存储类型解析成设计器里显示的类型标签（大写、别名归一）。 */
+export function normalizeDataTypeLabel(
+  fullType: string,
+  kind: DatabaseKind
+): string {
+  return parseStoredType(fullType, kind).base.toUpperCase()
+}
+
+function draftTypeParsed(column: TableDesignerColumn): ParsedType {
+  return {
+    base: column.dataType.trim().toLowerCase(),
+    length: column.length.trim(),
+    unsigned: column.unsigned,
+  }
+}
+
+function normalizeDefault(value: string | null): string {
+  if (value == null) return ''
+  let normalized = value.trim().toLowerCase()
+  if (/^null$/u.test(normalized)) return ''
+  normalized = normalized.replaceAll('`', '').replaceAll('"', '')
+  if (normalized.endsWith('()')) normalized = normalized.slice(0, -2)
+  return normalized
+}
+
+/** 两边都有值的长度直接比；草稿为空视为未改，避免 MySQL int(11) 显示宽度噪声。 */
+function typeChanged(current: ParsedType, draft: ParsedType): boolean {
+  if (current.base !== draft.base) return true
+  if (current.unsigned !== draft.unsigned) return true
+  return Boolean(draft.length) && draft.length !== current.length
+}
+
+function sameColumns(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  const sortedLeft = [...left].sort()
+  const sortedRight = [...right].sort()
+  return sortedLeft.every((value, index) => value === sortedRight[index])
+}
+
+function foreignKeyChanged(
+  current: DatabaseForeignKey,
+  draft: TableDesignerForeignKey
+): boolean {
+  return (
+    current.columns.length !== 1 ||
+    (current.columns[0] ?? '').toLowerCase() !==
+      draft.column.trim().toLowerCase() ||
+    current.referencedSchema.trim().toLowerCase() !==
+      draft.referencedSchema.trim().toLowerCase() ||
+    current.referencedTable.trim().toLowerCase() !==
+      draft.referencedTable.trim().toLowerCase() ||
+    (current.referencedColumns[0] ?? '').trim().toLowerCase() !==
+      draft.referencedColumn.trim().toLowerCase() ||
+    (current.deleteRule || 'NO ACTION') !== draft.onDelete ||
+    (current.updateRule || 'NO ACTION') !== draft.onUpdate
+  )
+}
+
+/**
+ * 生成把表结构从 current 改成 draft 的 SQL。
+ *
+ * 所有结构改动都作用于旧限定名，改名/换 schema 的语句放在最后；
+ * 没有任何差异时返回空字符串，由调用方决定提示。
+ */
+export function buildAlterTableSql({
+  kind,
+  current,
+  draft,
+  extraTypes,
+}: TableAlterSpec): string {
+  const validation = validateTableDraft({ kind, draft, extraTypes })
+  if (!validation.valid) throw new Error(validation.errors[0])
+
+  const target = qualifiedName(current.schema, current.name, kind)
+  const statements: string[] = []
+  const mainClauses: string[] = []
+  const pgStatements: string[] = []
+
+  const realColumnNames = new Set(
+    current.columns.map(column => column.name.toLowerCase())
+  )
+  const currentColumns = new Map(
+    current.columns.map(column => [column.name.toLowerCase(), column])
+  )
+  const draftColumns = new Map(
+    draft.columns.map(column => [column.name.toLowerCase(), column])
+  )
+
+  // 外键：先 DROP（改列前必须先解除引用），再 ADD。
+  // 因变化被 DROP 的外键要在下面重建，所以记录下来避免 ADD 循环跳过。
+  const droppedForeignKeyNames = new Set<string>()
+  for (const foreignKey of current.foreignKeys) {
+    const draftForeignKey = draft.foreignKeys.find(
+      item => item.name.toLowerCase() === foreignKey.name.toLowerCase()
+    )
+    if (draftForeignKey) {
+      if (!foreignKeyChanged(foreignKey, draftForeignKey)) continue
+    } else if (foreignKey.columns.length > 1) {
+      // 复合外键在编辑器里无法表示，保持原样不删。
+      continue
+    } else if (
+      !foreignKey.columns.every(column =>
+        realColumnNames.has(column.toLowerCase())
+      )
+    ) {
+      continue
+    }
+    droppedForeignKeyNames.add(foreignKey.name.toLowerCase())
+    if (kind === 'mysql')
+      mainClauses.push(
+        `DROP FOREIGN KEY ${quoteIdentifier(foreignKey.name, kind)}`
+      )
+    else
+      pgStatements.push(
+        `ALTER TABLE ${target} DROP CONSTRAINT ${quoteIdentifier(foreignKey.name, kind)}`
+      )
+  }
+
+  // 索引：主键单独处理；无法表示的索引（表达式、前缀）保持原样不删。
+  const draftIndexNames = new Set(
+    draft.indexes.map(item => item.name.toLowerCase())
+  )
+  const droppedIndexNames = new Set<string>()
+  for (const index of current.indexes) {
+    if (index.primary) continue
+    if (draftIndexNames.has(index.name.toLowerCase())) continue
+    if (
+      !index.columns.every(column =>
+        realColumnNames.has(column.toLowerCase())
+      )
+    )
+      continue
+    if (index.subPart != null) continue
+    droppedIndexNames.add(index.name.toLowerCase())
+    if (kind === 'mysql')
+      mainClauses.push(`DROP INDEX ${quoteIdentifier(index.name, kind)}`)
+    else
+      pgStatements.push(
+        `DROP INDEX ${qualifiedName(current.schema, index.name, kind)}`
+      )
+  }
+
+  // 主键差异（集合比较，列顺序不影响判定）。
+  const currentPrimaryKey = current.primaryKey.map(column =>
+    column.toLowerCase()
+  )
+  const draftPrimaryKey = draft.columns
+    .filter(column => column.primaryKey)
+    .map(column => column.name.toLowerCase())
+  const primaryKeyChanged =
+    currentPrimaryKey.length > 0 || draftPrimaryKey.length > 0
+      ? !sameColumns(currentPrimaryKey, draftPrimaryKey)
+      : false
+  if (primaryKeyChanged) {
+    if (currentPrimaryKey.length) {
+      if (kind === 'mysql') {
+        mainClauses.push('DROP PRIMARY KEY')
+      } else {
+        const primaryIndex = current.indexes.find(index => index.primary)
+        if (primaryIndex)
+          pgStatements.push(
+            `ALTER TABLE ${target} DROP CONSTRAINT ${quoteIdentifier(primaryIndex.name, kind)}`
+          )
+      }
+    }
+    if (draftPrimaryKey.length) {
+      const columns = draftPrimaryKey
+        .map(column => quoteIdentifier(column, kind))
+        .join(', ')
+      if (kind === 'mysql') mainClauses.push(`ADD PRIMARY KEY (${columns})`)
+      else pgStatements.push(`ALTER TABLE ${target} ADD PRIMARY KEY (${columns})`)
+    }
+  }
+
+  // 字段差异。
+  for (const [key, currentColumn] of currentColumns) {
+    const draftColumn = draftColumns.get(key)
+    if (!draftColumn) {
+      if (kind === 'mysql')
+        mainClauses.push(
+          `DROP COLUMN ${quoteIdentifier(currentColumn.name, kind)}`
+        )
+      else
+        pgStatements.push(
+          `ALTER TABLE ${target} DROP COLUMN ${quoteIdentifier(currentColumn.name, kind)}`
+        )
+      continue
+    }
+    const currentType = parseStoredType(currentColumn.dataType, kind)
+    const draftType = draftTypeParsed(draftColumn)
+    if (
+      typeChanged(currentType, draftType) ||
+      currentColumn.nullable !== draftColumn.nullable ||
+      currentColumn.autoIncrement !== draftColumn.autoIncrement ||
+      (currentColumn.comment ?? '') !== draftColumn.comment ||
+      normalizeDefault(currentColumn.defaultValue) !==
+        normalizeDefault(draftColumn.defaultValue || null)
+    ) {
+      if (kind === 'mysql') {
+        mainClauses.push(`MODIFY COLUMN ${renderColumn(draftColumn, kind).trim()}`)
+      } else {
+        pgStatements.push(
+          ...postgresqlColumnAlter(target, currentColumn, draftColumn)
+        )
+      }
+    }
+  }
+  for (const [key, draftColumn] of draftColumns) {
+    if (currentColumns.has(key)) continue
+    const definition = renderColumn(draftColumn, kind).trim()
+    if (kind === 'mysql') mainClauses.push(`ADD COLUMN ${definition}`)
+    else pgStatements.push(`ALTER TABLE ${target} ADD COLUMN ${definition}`)
+  }
+
+  // 新增索引。因变化被 DROP 的索引已在上面重建，这里只补真正新增的。
+  for (const index of draft.indexes) {
+    if (
+      current.indexes.some(
+        item =>
+          item.name.toLowerCase() === index.name.toLowerCase() &&
+          !item.primary &&
+          !droppedIndexNames.has(index.name.toLowerCase())
+      )
+    )
+      continue
+    const columns = index.columns
+      .map(column => quoteIdentifier(column, kind))
+      .join(', ')
+    if (kind === 'mysql') {
+      const prefix =
+        index.kind === 'unique'
+          ? 'UNIQUE INDEX'
+          : index.kind === 'fulltext'
+            ? 'FULLTEXT INDEX'
+            : 'INDEX'
+      const method =
+        index.kind === 'fulltext' ? '' : ` USING ${index.method.toUpperCase()}`
+      mainClauses.push(
+        `ADD ${prefix} ${quoteIdentifier(index.name, kind)} (${columns})${method}`
+      )
+    } else {
+      const unique = index.kind === 'unique' ? 'UNIQUE ' : ''
+      pgStatements.push(
+        `CREATE ${unique}INDEX ${quoteIdentifier(index.name, kind)} ON ${target} USING ${index.method} (${columns})`
+      )
+    }
+  }
+
+  // 新增外键。因变化被 DROP 的外键已在上面重建，这里只补真正新增的。
+  for (const foreignKey of draft.foreignKeys) {
+    if (
+      current.foreignKeys.some(
+        item =>
+          item.name.toLowerCase() === foreignKey.name.toLowerCase() &&
+          !droppedForeignKeyNames.has(foreignKey.name.toLowerCase())
+      )
+    )
+      continue
+    const constraint = `CONSTRAINT ${quoteIdentifier(foreignKey.name, kind)} FOREIGN KEY (${quoteIdentifier(foreignKey.column, kind)}) REFERENCES ${qualifiedName(foreignKey.referencedSchema, foreignKey.referencedTable, kind)} (${quoteIdentifier(foreignKey.referencedColumn, kind)}) ON DELETE ${foreignKey.onDelete} ON UPDATE ${foreignKey.onUpdate}`
+    if (kind === 'mysql') mainClauses.push(`ADD ${constraint}`)
+    else pgStatements.push(`ALTER TABLE ${target} ADD ${constraint}`)
+  }
+
+  // 表选项（MySQL 合并进主 ALTER；PostgreSQL 走 COMMENT ON）。
+  if (kind === 'mysql' && current.options) {
+    if (draft.engine && draft.engine !== current.options.engine)
+      mainClauses.push(`ENGINE=${safeOption(draft.engine)}`)
+    if (draft.charset && draft.charset !== current.options.charset)
+      mainClauses.push(`DEFAULT CHARSET=${safeOption(draft.charset)}`)
+    if ((draft.comment ?? '') !== (current.options.comment ?? ''))
+      mainClauses.push(`COMMENT=${quoteLiteral(draft.comment ?? '', kind)}`)
+    if (
+      draft.autoIncrement != null &&
+      draft.autoIncrement !== current.options.autoIncrement
+    )
+      mainClauses.push(`AUTO_INCREMENT=${draft.autoIncrement}`)
+  } else if (kind === 'postgresql' && current.options) {
+    if ((draft.comment ?? '') !== (current.options.comment ?? ''))
+      pgStatements.push(
+        `COMMENT ON TABLE ${target} IS ${quoteLiteral(draft.comment ?? '', kind)}`
+      )
+  }
+
+  if (kind === 'mysql') {
+    if (mainClauses.length)
+      statements.push(`ALTER TABLE ${target} ${mainClauses.join(', ')}`)
+  } else {
+    statements.push(...pgStatements)
+  }
+
+  // 改名 / 换 schema 放在最后。
+  const schemaChanged = draft.schema.trim() !== current.schema
+  const nameChanged = draft.name.trim() !== current.name
+  if (kind === 'mysql') {
+    if (schemaChanged || nameChanged)
+      statements.push(
+        `RENAME TABLE ${target} TO ${qualifiedName(draft.schema, draft.name, kind)}`
+      )
+  } else {
+    let renamedFrom = target
+    if (schemaChanged) {
+      statements.push(
+        `ALTER TABLE ${target} SET SCHEMA ${quoteIdentifier(draft.schema, kind)}`
+      )
+      renamedFrom = qualifiedName(draft.schema, current.name, kind)
+    }
+    if (nameChanged)
+      statements.push(
+        `ALTER TABLE ${renamedFrom} RENAME TO ${quoteIdentifier(draft.name, kind)}`
+      )
+  }
+
+  return statements.join('\n\n')
+}
+
+function postgresqlColumnAlter(
+  target: string,
+  current: DatabaseColumn,
+  draft: TableDesignerColumn
+): string[] {
+  const statements: string[] = []
+  const column = quoteIdentifier(draft.name, 'postgresql')
+  const currentType = parseStoredType(current.dataType, 'postgresql')
+  const draftType = draftTypeParsed(draft)
+
+  if (typeChanged(currentType, draftType)) {
+    const length = draft.length ? `(${draft.length.replace(/\s+/gu, '')})` : ''
+    statements.push(
+      `ALTER TABLE ${target} ALTER COLUMN ${column} TYPE ${draft.dataType}${length}`
+    )
+  }
+  if (current.nullable !== draft.nullable) {
+    statements.push(
+      `ALTER TABLE ${target} ALTER COLUMN ${column} ${draft.nullable ? 'DROP NOT NULL' : 'SET NOT NULL'}`
+    )
+  }
+  if (
+    normalizeDefault(current.defaultValue) !==
+    normalizeDefault(draft.defaultValue || null)
+  ) {
+    statements.push(
+      draft.defaultValue && !draft.autoIncrement
+        ? `ALTER TABLE ${target} ALTER COLUMN ${column} SET DEFAULT ${draft.defaultValue}`
+        : `ALTER TABLE ${target} ALTER COLUMN ${column} DROP DEFAULT`
+    )
+  }
+  if (current.autoIncrement !== draft.autoIncrement) {
+    statements.push(
+      `ALTER TABLE ${target} ALTER COLUMN ${column} ${draft.autoIncrement ? 'ADD GENERATED BY DEFAULT AS IDENTITY' : 'DROP IDENTITY'}`
+    )
+  }
+  if ((current.comment ?? '') !== draft.comment) {
+    statements.push(
+      `COMMENT ON COLUMN ${target}.${column} IS ${quoteLiteral(draft.comment, 'postgresql')}`
+    )
+  }
+  return statements
 }

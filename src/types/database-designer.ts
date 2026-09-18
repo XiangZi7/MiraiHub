@@ -2,7 +2,11 @@ import type { DatabaseKind } from './database'
 
 export type TableIndexKind = 'index' | 'unique' | 'fulltext'
 export type ReferentialAction =
-  'NO ACTION' | 'RESTRICT' | 'CASCADE' | 'SET NULL'
+  | 'NO ACTION'
+  | 'RESTRICT'
+  | 'CASCADE'
+  | 'SET NULL'
+  | 'SET DEFAULT'
 
 export interface TableDesignerColumn {
   id: string
@@ -43,6 +47,8 @@ export interface TableDesignerDraft {
   comment: string
   engine: string
   charset: string
+  /** MySQL 表选项的自增计数器；null 表示不修改（新建表时也没有）。 */
+  autoIncrement: number | null
   columns: TableDesignerColumn[]
   indexes: TableDesignerIndex[]
   foreignKeys: TableDesignerForeignKey[]
@@ -56,4 +62,6 @@ export interface TableDesignerValidation {
 export interface TableDesignerOptions {
   kind: DatabaseKind
   draft: TableDesignerDraft
+  /** 编辑模式下当前表已有的非标准类型（如 ENUM），跳过类型与长度校验。 */
+  extraTypes?: readonly string[]
 }

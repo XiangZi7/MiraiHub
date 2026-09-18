@@ -46,7 +46,7 @@ export const DEFAULT_SETTINGS = {
   maxDatabaseConnections: '10',
   sqlExecutionTimeout: '300',
   maxFileTransfers: '3',
-  folderUploadConcurrency: '4',
+  folderUploadConcurrency: '12',
   transferBufferSizeKb: '128',
 
   terminalShell: 'powershell',

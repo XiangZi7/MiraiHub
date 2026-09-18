@@ -19,7 +19,7 @@ pub struct UploadPlan {
     pub total_bytes: u64,
 }
 
-/// 限制目录内并行上传数；出错后停止派发，等待已开始的文件完成清理。
+/// 限制目录内并行上传数（上限 12）；出错后停止派发，等待已开始的文件完成清理。
 pub async fn run_upload_jobs<I, F, Fut>(items: I, concurrency: usize, upload: F) -> SshResult<()>
 where
     I: IntoIterator,
@@ -28,7 +28,7 @@ where
 {
     let mut items = items.into_iter();
     let mut running = FuturesUnordered::new();
-    for item in items.by_ref().take(concurrency.clamp(1, 8)) {
+    for item in items.by_ref().take(concurrency.clamp(1, 12)) {
         running.push(upload(item));
     }
     let mut first_error = None;
@@ -294,5 +294,43 @@ mod concurrency_tests {
         run_upload_jobs(0..0, usize::MAX, |_| async { Ok(()) })
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrency_cap_allows_twelve_parallel_uploads() {
+        let gate = Arc::new(Semaphore::new(0));
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let (started, mut receiver) = mpsc::unbounded_channel();
+        let worker = {
+            let gate = gate.clone();
+            let active = active.clone();
+            let peak = peak.clone();
+            let started = started.clone();
+            tokio::spawn(async move {
+                run_upload_jobs(0..12, usize::MAX, |index| {
+                    let gate = gate.clone();
+                    let active = active.clone();
+                    let peak = peak.clone();
+                    let started = started.clone();
+                    async move {
+                        let count = active.fetch_add(1, Ordering::SeqCst) + 1;
+                        peak.fetch_max(count, Ordering::SeqCst);
+                        started.send(index).unwrap();
+                        gate.acquire().await.unwrap().forget();
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        Ok(())
+                    }
+                })
+                .await
+            })
+        };
+        for _ in 0..12 {
+            receiver.recv().await.unwrap();
+        }
+        assert_eq!(peak.load(Ordering::SeqCst), 12);
+        gate.add_permits(12);
+        worker.await.unwrap().unwrap();
+        assert_eq!(active.load(Ordering::SeqCst), 0);
     }
 }

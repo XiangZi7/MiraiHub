@@ -14,9 +14,11 @@ import type {
   DatabaseRowPage,
   DatabaseSession,
   DatabaseTableDetail,
+  DatabaseTableOptions,
   MutationRequest,
   MutationResult,
   RowPageRequest,
+  TableAlterOptions,
 } from '@/types/database'
 import { IS_TAURI } from '@/utils/window'
 import { settingNumber } from '@/composables/useSettings'
@@ -97,6 +99,43 @@ export async function tableDetail(
     name,
     kind,
   })
+}
+
+export async function tableOptions(
+  sessionId: string,
+  schema: string,
+  name: string
+): Promise<DatabaseTableOptions | null> {
+  ensureTauri()
+  return invoke<DatabaseTableOptions | null>('db_table_options', {
+    sessionId,
+    schema,
+    name,
+  })
+}
+
+export async function alterTableOptions(
+  sessionId: string,
+  schema: string,
+  name: string,
+  options: TableAlterOptions
+): Promise<string[]> {
+  ensureTauri()
+  return invoke<string[]>('db_alter_table_options', {
+    sessionId,
+    schema,
+    name,
+    options,
+  })
+}
+
+export async function truncateTable(
+  sessionId: string,
+  schema: string,
+  name: string
+): Promise<void> {
+  ensureTauri()
+  await invoke('db_truncate_table', { sessionId, schema, name })
 }
 
 export async function routineDetail(
