@@ -151,6 +151,7 @@ export const en = {
   复制对话与操作记录: 'Copy conversation and operation log',
   开始新对话: 'Start a new conversation',
   '关闭 AI Agent': 'Close AI Agent',
+  '打开 AI Agent': 'Open AI Agent',
   '正在加载聊天记录…': 'Loading chat history…',
   '协助查询、分析和管理数据库': 'Help query, analyze, and manage databases',
   协助诊断问题和管理服务器: 'Help diagnose problems and manage servers',

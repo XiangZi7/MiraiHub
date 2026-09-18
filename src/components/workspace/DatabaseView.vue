@@ -119,8 +119,9 @@ const {
   style: sidebarStyle,
 } = useDatabaseSidebarWidth(databaseContainer)
 
-// AI 布局与查询编辑器独立，审批始终绑定后端会话及活动库。
-const agentState = reactive({ agentOpen: false, agentSplit: false })
+// AI 面板从标签工具栏打开，默认停靠在工作区右侧；面板标题栏可切换为全宽显示或关闭。
+// 布局与查询编辑器独立，审批始终绑定后端会话及活动库。
+const agentState = reactive({ agentOpen: false, agentSplit: true })
 const { agentOpen, agentSplit } = toRefs(agentState)
 const agentContainer = useTemplateRef<HTMLElement>('agentContainer')
 const {
@@ -134,13 +135,16 @@ const agentTarget = computed(() => ({
   sessionId: connected.value ? sessionId.value : '',
   database: session.value?.database ?? '',
 }))
-function toggleAgentSplit(): void {
-  agentState.agentSplit = !(agentState.agentOpen && agentState.agentSplit)
-  agentState.agentOpen = true
-}
-function openAgent(): void {
+function toggleAgent(): void {
+  if (agentState.agentOpen) {
+    agentState.agentOpen = false
+    return
+  }
   agentState.agentSplit = true
   agentState.agentOpen = true
+}
+function toggleAgentSplit(): void {
+  agentState.agentSplit = !agentState.agentSplit
 }
 const connection = toRef(props, 'connection')
 const password = shallowRef('')
@@ -1191,279 +1195,245 @@ watch(
       overlay
     />
 
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div
+      ref="agentContainer"
+      class="flex min-h-0 min-w-0 flex-1"
+    >
       <div
-        class="border-line-soft flex h-9 shrink-0 items-center gap-3 border-b px-3"
-      >
-        <button
-          type="button"
-          class="h-full border-b-2 text-[11px]"
-          :class="
-            !agentOpen || agentSplit
-              ? 'border-accent text-txt'
-              : 'text-txt-3 border-transparent'
-          "
-          @click="agentOpen = false"
-        >
-          {{ t('Query') }}
-        </button>
-        <button
-          type="button"
-          class="flex h-full items-center gap-1.5 border-b-2 text-[11px]"
-          :class="
-            agentOpen
-              ? 'border-accent text-txt'
-              : 'text-txt-3 border-transparent'
-          "
-          @click="openAgent"
-        >
-          <AppIcon
-            name="lucide:bot"
-            :size="13"
-          />AI Agent
-          <span class="rounded bg-blue-400/10 px-1 text-[8px] text-blue-300"
-            >BETA</span
-          >
-        </button>
-        <div class="flex-1" />
-        <IconButton
-          icon="lucide:columns-2"
-          :size="14"
-          :title="t('AI Agent 分屏')"
-          :class="agentOpen && agentSplit && 'text-accent'"
-          @click="toggleAgentSplit"
-        />
-      </div>
-      <div
-        ref="agentContainer"
-        class="flex min-h-0 min-w-0 flex-1"
+        v-show="!agentOpen || agentSplit"
+        class="flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div
-          v-show="!agentOpen || agentSplit"
-          class="flex min-h-0 min-w-0 flex-1 flex-col"
+          class="database-tab-toolbar border-line-soft flex h-10 min-w-0 shrink-0 items-center gap-1.5 border-b px-2"
         >
-          <div
-            class="database-tab-toolbar border-line-soft flex h-10 min-w-0 shrink-0 items-center gap-1.5 border-b px-2"
-          >
-            <TabBar
-              v-model:active="queryState.activeId"
-              :tabs="queryState.tabs"
-              :context-items="queryTabActions.contextItems"
-              class="flex-1"
-              addable
-              @add="addQueryTab()"
-              @close="queryTabActions.requestClose([$event])"
-              @close-many="queryTabActions.requestClose"
-              @context-action="queryTabActions.action"
-              @reorder="reorderTabs"
-            />
-            <div
-              class="scroll-none flex h-full max-w-3/4 min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto"
-              role="group"
-              :aria-label="t('数据库工具栏')"
-            >
-              <IconButton
-                v-if="activeQuery"
-                :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'"
-                :size="12"
-                :class="[
-                  'bg-accent-deep hover:bg-accent size-6 text-white hover:text-white',
-                  queryLoading && '[&_svg]:animate-spin',
-                ]"
-                :title="t('执行选中内容或全部 SQL（Ctrl+Enter）')"
-                :disabled="!canRun"
-                @click="runQuery()"
-              />
-              <IconButton
-                :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
-                :size="13"
-                :title="connected ? t('断开连接') : t('重新连接')"
-                :disabled="status === 'connecting'"
-                @click="connected ? disconnect() : connect()"
-              />
-              <IconButton
-                v-if="activeQuery"
-                icon="lucide:history"
-                :size="13"
-                :title="t('查询历史')"
-                @click="showHistory"
-              />
-              <IconButton
-                v-if="activeQuery"
-                :icon="
-                  activeQuery.savedQueryId
-                    ? 'lucide:cloud-check'
-                    : 'lucide:save'
-                "
-                :size="13"
-                :title="
-                  activeQuery.savedQueryId
-                    ? t('立即保存查询（Ctrl+S）')
-                    : t('保存到 Queries（Ctrl+S）')
-                "
-                @click="saveActiveQuery"
-              />
-              <AppButton
-                v-if="queryLoading"
-                variant="danger"
-                size="sm"
-                class="h-6"
-                :title="t('取消当前查询')"
-                @click="cancelQuery"
-                ><AppIcon
-                  name="lucide:square"
-                  :size="10"
-                /><span> {{ t('停止') }} </span></AppButton
-              >
-              <span
-                v-if="activeObject"
-                class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
-                >{{ activeObject.object.schema }}.<span class="text-txt-2">{{
-                  activeObject.object.name
-                }}</span></span
-              >
-              <span
-                v-else-if="activeDesigner"
-                class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
-                >{{ activeDesigner.schema }}.<span class="text-txt-2">
-                  {{ t('新建表') }}
-                </span></span
-              >
-              <span
-                v-else-if="activeQuery?.savedQueryId"
-                class="database-toolbar-detail text-cyan flex shrink-0 items-center gap-1 text-[9.5px]"
-                ><AppIcon
-                  name="lucide:cloud-check"
-                  :size="10"
-                />
-                {{ t('自动保存') }}
-              </span>
-              <div
-                v-if="connected && databaseOptions.length"
-                class="database-toolbar-select w-40 shrink-0"
-              >
-                <AppSelect
-                  v-model="selectedDatabase"
-                  :label="t('活动数据库')"
-                  :options="databaseOptions"
-                  :disabled="databasesLoading || queryLoading"
-                  hide-label
-                  compact
-                  searchable
-                />
-              </div>
-              <span
-                class="database-toolbar-detail text-txt-3 max-w-32 truncate text-[11px]"
-                :title="
-                  session
-                    ? `${session.endpoint}\n${session.serverVersion}`
-                    : sessionId || connectionError
-                "
-                >{{
-                  connected
-                    ? `${databaseKind} · ${session?.serverVersion || databaseName}`
-                    : status === 'connecting'
-                      ? 'Connecting…'
-                      : 'Disconnected'
-                }}</span
-              >
-            </div>
-          </div>
-
-          <DatabaseConnectionState
-            v-if="!connected"
-            v-model:password="password"
-            :status="status"
-            :needs-password="needsPassword"
-            @connect="connect"
+          <TabBar
+            v-model:active="queryState.activeId"
+            :tabs="queryState.tabs"
+            :context-items="queryTabActions.contextItems"
+            class="flex-1"
+            addable
+            @add="addQueryTab()"
+            @close="queryTabActions.requestClose([$event])"
+            @close-many="queryTabActions.requestClose"
+            @context-action="queryTabActions.action"
+            @reorder="reorderTabs"
           />
-          <template v-else>
-            <DatabaseTableOverview
-              v-if="!activeTab"
-              :objects="objects"
-              :loading="objectsLoading"
-              :error="objectsError"
-              @open="openObject"
-              @inspect="inspectObject"
-              @query="createObjectQuery"
-              @copy="copyObjectName"
-              @rename-object="showNameDialog('rename-object', $event)"
-              @remove-object="requestDeleteObject"
-              @refresh="refreshAll"
+          <div
+            class="scroll-none flex h-full max-w-3/4 min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto"
+            role="group"
+            :aria-label="t('数据库工具栏')"
+          >
+            <IconButton
+              v-if="activeQuery"
+              :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'"
+              :size="12"
+              :class="[
+                'bg-accent-deep hover:bg-accent size-6 text-white hover:text-white',
+                queryLoading && '[&_svg]:animate-spin',
+              ]"
+              :title="t('执行选中内容或全部 SQL（Ctrl+Enter）')"
+              :disabled="!canRun"
+              @click="runQuery()"
             />
-            <div
-              v-show="Boolean(activeQuery)"
-              class="query-workspace"
-              :style="querySplitStyle"
+            <IconButton
+              :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
+              :size="13"
+              :title="connected ? t('断开连接') : t('重新连接')"
+              :disabled="status === 'connecting'"
+              @click="connected ? disconnect() : connect()"
+            />
+            <IconButton
+              v-if="activeQuery"
+              icon="lucide:history"
+              :size="13"
+              :title="t('查询历史')"
+              @click="showHistory"
+            />
+            <IconButton
+              v-if="activeQuery"
+              :icon="
+                activeQuery.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'
+              "
+              :size="13"
+              :title="
+                activeQuery.savedQueryId
+                  ? t('立即保存查询（Ctrl+S）')
+                  : t('保存到 Queries（Ctrl+S）')
+              "
+              @click="saveActiveQuery"
+            />
+            <AppButton
+              v-if="queryLoading"
+              variant="danger"
+              size="sm"
+              class="h-6"
+              :title="t('取消当前查询')"
+              @click="cancelQuery"
+              ><AppIcon
+                name="lucide:square"
+                :size="10"
+              /><span> {{ t('停止') }} </span></AppButton
             >
-              <SqlEditor
-                ref="editor"
-                v-model="activeSql"
-                :disabled="queryLoading"
-                :suggestions="sqlSuggestions"
-                @run="runQuery"
-                @save="saveActiveQuery"
+            <span
+              v-if="activeObject"
+              class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
+              >{{ activeObject.object.schema }}.<span class="text-txt-2">{{
+                activeObject.object.name
+              }}</span></span
+            >
+            <span
+              v-else-if="activeDesigner"
+              class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
+              >{{ activeDesigner.schema }}.<span class="text-txt-2">
+                {{ t('新建表') }}
+              </span></span
+            >
+            <span
+              v-else-if="activeQuery?.savedQueryId"
+              class="database-toolbar-detail text-cyan flex shrink-0 items-center gap-1 text-[9.5px]"
+              ><AppIcon
+                name="lucide:cloud-check"
+                :size="10"
               />
-              <DatabaseQueryResizeHandle v-model="queryEditorRatio" />
-              <DatabaseQueryResults
-                :execution="queryExecution"
-                :loading="queryLoading"
-                :error="queryError"
+              {{ t('自动保存') }}
+            </span>
+            <div
+              v-if="connected && databaseOptions.length"
+              class="database-toolbar-select w-40 shrink-0"
+            >
+              <AppSelect
+                v-model="selectedDatabase"
+                :label="t('活动数据库')"
+                :options="databaseOptions"
+                :disabled="databasesLoading || queryLoading"
+                hide-label
+                compact
+                searchable
               />
             </div>
-            <DatabaseTableView
-              v-for="tab in relationTabs"
-              v-show="queryState.activeId === tab.id"
-              :key="tab.id"
-              :session-id="sessionId"
-              :object="tab.object"
-              :initial-panel="tab.panel"
-              :panel-nonce="tab.panelNonce"
-              @query="openQuery"
-            />
-            <DatabaseRoutineView
-              v-for="tab in routineTabs"
-              v-show="queryState.activeId === tab.id"
-              :key="tab.id"
-              :session-id="sessionId"
-              :database-kind="databaseKind"
-              :object="tab.object"
-              @query="openQuery"
-            />
-            <DatabaseTableDesigner
-              v-for="tab in designerTabs"
-              v-show="queryState.activeId === tab.id"
-              :key="tab.id"
-              :session-id="sessionId"
-              :database-kind="databaseKind"
-              :schema="tab.schema"
-              :objects="objects"
-              @query="openQuery"
-              @created="
-                (schema, name) => handleTableCreated(tab.id, schema, name)
+            <span
+              class="database-toolbar-detail text-txt-3 max-w-32 truncate text-[11px]"
+              :title="
+                session
+                  ? `${session.endpoint}\n${session.serverVersion}`
+                  : sessionId || connectionError
               "
-            />
-          </template>
+              >{{
+                connected
+                  ? `${databaseKind} · ${session?.serverVersion || databaseName}`
+                  : status === 'connecting'
+                    ? 'Connecting…'
+                    : 'Disconnected'
+              }}</span
+            >
+          </div>
+          <span
+            class="bg-line-soft mx-0.5 h-4 w-px shrink-0"
+            aria-hidden="true"
+          />
+          <IconButton
+            icon="lucide:bot"
+            :size="14"
+            :title="agentOpen ? t('关闭 AI Agent') : t('打开 AI Agent')"
+            :aria-pressed="agentOpen"
+            :class="agentOpen && 'text-accent'"
+            @click="toggleAgent"
+          />
         </div>
-        <AppResizeHandle
-          v-if="agentOpen && agentSplit"
-          v-model="agentWidth"
-          pane-side="right"
-          :min="agentMin"
-          :max="agentMax"
-          :label="t('调整数据库 AI Agent 宽度')"
+
+        <DatabaseConnectionState
+          v-if="!connected"
+          v-model:password="password"
+          :status="status"
+          :needs-password="needsPassword"
+          @connect="connect"
         />
-        <AiAgentPanel
-          v-show="agentOpen"
-          :target="agentTarget"
-          :title="databaseName"
-          :active="active !== false && agentOpen"
-          :split="agentSplit"
-          :style="agentSplit ? agentStyle : undefined"
-          @split="toggleAgentSplit"
-          @close="agentOpen = false"
-        />
+        <template v-else>
+          <DatabaseTableOverview
+            v-if="!activeTab"
+            :objects="objects"
+            :loading="objectsLoading"
+            :error="objectsError"
+            @open="openObject"
+            @inspect="inspectObject"
+            @query="createObjectQuery"
+            @copy="copyObjectName"
+            @rename-object="showNameDialog('rename-object', $event)"
+            @remove-object="requestDeleteObject"
+            @refresh="refreshAll"
+          />
+          <div
+            v-show="Boolean(activeQuery)"
+            class="query-workspace"
+            :style="querySplitStyle"
+          >
+            <SqlEditor
+              ref="editor"
+              v-model="activeSql"
+              :disabled="queryLoading"
+              :suggestions="sqlSuggestions"
+              @run="runQuery"
+              @save="saveActiveQuery"
+            />
+            <DatabaseQueryResizeHandle v-model="queryEditorRatio" />
+            <DatabaseQueryResults
+              :execution="queryExecution"
+              :loading="queryLoading"
+              :error="queryError"
+            />
+          </div>
+          <DatabaseTableView
+            v-for="tab in relationTabs"
+            v-show="queryState.activeId === tab.id"
+            :key="tab.id"
+            :session-id="sessionId"
+            :object="tab.object"
+            :initial-panel="tab.panel"
+            :panel-nonce="tab.panelNonce"
+            @query="openQuery"
+          />
+          <DatabaseRoutineView
+            v-for="tab in routineTabs"
+            v-show="queryState.activeId === tab.id"
+            :key="tab.id"
+            :session-id="sessionId"
+            :database-kind="databaseKind"
+            :object="tab.object"
+            @query="openQuery"
+          />
+          <DatabaseTableDesigner
+            v-for="tab in designerTabs"
+            v-show="queryState.activeId === tab.id"
+            :key="tab.id"
+            :session-id="sessionId"
+            :database-kind="databaseKind"
+            :schema="tab.schema"
+            :objects="objects"
+            @query="openQuery"
+            @created="
+              (schema, name) => handleTableCreated(tab.id, schema, name)
+            "
+          />
+        </template>
       </div>
+      <AppResizeHandle
+        v-if="agentOpen && agentSplit"
+        v-model="agentWidth"
+        pane-side="right"
+        :min="agentMin"
+        :max="agentMax"
+        :label="t('调整数据库 AI Agent 宽度')"
+      />
+      <AiAgentPanel
+        v-show="agentOpen"
+        :target="agentTarget"
+        :title="databaseName"
+        :active="active !== false && agentOpen"
+        :split="agentSplit"
+        :style="agentSplit ? agentStyle : undefined"
+        @split="toggleAgentSplit"
+        @close="agentOpen = false"
+      />
     </div>
 
     <AppContextMenu
