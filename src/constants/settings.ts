@@ -376,7 +376,8 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           {
             key: 'folderUploadConcurrency',
             label: '文件夹上传并发数',
-            description: '每个文件夹内同时上传的文件数量，新上传任务生效',
+            description:
+              '每个文件夹内同时上传的文件数量，新上传任务生效；大量小文件时越高越快',
             control: 'select',
             size: 'md',
             options: [
@@ -385,6 +386,9 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
               { value: '4', label: '4' },
               { value: '8', label: '8' },
               { value: '12', label: '12（默认）' },
+              { value: '16', label: '16' },
+              { value: '24', label: '24' },
+              { value: '32', label: '32' },
             ],
           },
           {

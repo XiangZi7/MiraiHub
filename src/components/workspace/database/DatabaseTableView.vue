@@ -1,19 +1,32 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, onMounted, reactive, shallowRef, watch } from 'vue'
+import * as columnTagsApi from '@/api/column-tags'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppColumnResizeHandle from '@/components/ui/AppColumnResizeHandle.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
+import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import {
+  columnTagsMessage,
+  SAMPLE_VALUE_LIMIT,
+  SAMPLE_VALUE_MAX_LENGTH,
+  startColumnTagsReceiver,
+  tagsVisible,
+  toggleTagsVisible,
+  useDatabaseColumnTags,
+} from '@/composables/useDatabaseColumnTags'
 import { useDatabaseColumnWidths } from '@/composables/useDatabaseColumnWidths'
 import { toast } from '@/composables/useToast'
+import type { ContextMenuItem } from '@/types/context-menu'
 import type {
   CellValue,
+  ColumnTagConfig,
   DatabaseObject,
   DatabaseRowPage,
   DatabaseTableDetail,
@@ -24,6 +37,9 @@ import type {
 } from '@/types/database'
 import { copyText as copyClipboardText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
+import { IS_TAURI } from '@/utils/window'
+import DatabaseColumnTagDialog from './DatabaseColumnTagDialog.vue'
+import DatabaseDataRow from './DatabaseDataRow.vue'
 
 const { t } = useI18n()
 
@@ -128,6 +144,20 @@ const gridColumns = computed(() =>
 const columnScope = computed(() => `table:${props.object.identity}`)
 const { resized, widthOf, beginResize, autoFit, keyboardResize, resetWidths } =
   useDatabaseColumnWidths(columnScope)
+// 列的标签化显示规则也跟着这张表走。
+const {
+  tags: columnTagConfigs,
+  lookups: columnTagLookups,
+  hasAny: hasColumnTags,
+  hasTags: columnHasTags,
+  configOf: columnTagConfig,
+  setTags: setColumnTags,
+} = useDatabaseColumnTags(columnScope)
+const columnMenu = reactive({ open: false, x: 0, y: 0, column: '' })
+/** 浏览器预览时的页内标签设置浮层；桌面版改用 Rust 创建的原生子窗口。 */
+const tagDialog = reactive({ open: false, column: '' })
+/** 正在编辑的单元格。表格平时只渲染文本，点击后才挂输入框。 */
+const editing = shallowRef<{ row: number; column: number } | null>(null)
 const filterNeedsValue = computed(
   () => !['isNull', 'notNull'].includes(filterDraft.operator)
 )
@@ -145,10 +175,153 @@ const estimatedCount = computed(
 const pendingMutationCount = computed(() => buildMutations().length)
 const deleteCount = computed(() => deletedRows.size)
 
+const columnMenuItems = computed<ContextMenuItem[]>(() => {
+  const tagged = columnHasTags(columnMenu.column)
+  return [
+    {
+      id: 'tags',
+      label: tagged ? t('编辑标签…') : t('标签化显示…'),
+      icon: 'lucide:tag',
+      iconTone: 'violet',
+    },
+    ...(tagged
+      ? [
+          {
+            id: 'clear-tags',
+            label: t('取消标签化'),
+            icon: 'lucide:tag-x',
+          },
+        ]
+      : []),
+    {
+      id: 'copy-name',
+      label: t('复制列名'),
+      icon: 'lucide:copy',
+      separatorBefore: true,
+    },
+  ]
+})
+
+const tagDialogInitial = computed<ColumnTagConfig | null>(() =>
+  tagDialog.open ? columnTagConfig(tagDialog.column) : null
+)
+const tagDialogSamples = computed(() =>
+  tagDialog.open ? sampleValuesOf(tagDialog.column) : []
+)
+/** 隐藏标签样式时不把规则交给行组件，整表按原值渲染。 */
+const visibleTagConfigs = computed(() =>
+  tagsVisible.value ? columnTagConfigs.value : null
+)
+const visibleTagLookups = computed(() =>
+  tagsVisible.value ? columnTagLookups.value : null
+)
+
+function openColumnMenu(event: MouseEvent, column: string): void {
+  columnMenu.column = column
+  columnMenu.x = event.clientX
+  columnMenu.y = event.clientY
+  columnMenu.open = true
+}
+
+async function handleColumnAction(id: string): Promise<void> {
+  const column = columnMenu.column
+  if (!column) return
+  if (id === 'tags') {
+    await openTagSettings(column)
+  } else if (id === 'clear-tags') {
+    setColumnTags(column, null)
+    toast.success(columnTagsMessage(column, null))
+  } else if (id === 'copy-name') {
+    await copyText(column)
+  }
+}
+
+/** 桌面版打开 Rust 创建的原生设置窗口，结果由主窗口统一接收；浏览器预览用页内浮层。 */
+async function openTagSettings(column: string): Promise<void> {
+  if (!IS_TAURI) {
+    tagDialog.column = column
+    tagDialog.open = true
+    return
+  }
+  try {
+    await columnTagsApi.openColumnTagsWindow({
+      scope: columnScope.value,
+      column,
+      initial: columnTagConfig(column),
+      sampleValues: sampleValuesOf(column),
+    })
+  } catch (error) {
+    toast.error({
+      title: t('无法打开标签设置窗口'),
+      description: columnTagsApi.errorMessage(error),
+    })
+  }
+}
+
+function saveColumnTags(config: ColumnTagConfig | null): void {
+  const column = tagDialog.column
+  tagDialog.open = false
+  if (!column) return
+  toast.success(columnTagsMessage(column, setColumnTags(column, config)))
+}
+
+/** 当前页里某列出现过的非空短值，按出现顺序去重，供“从当前页取值”使用。 */
+function sampleValuesOf(column: string): string[] {
+  const index = gridColumns.value.findIndex(item => item.name === column)
+  if (index < 0 || !state.page) return []
+  const seen = new Set<string>()
+  for (const row of state.page.rows) {
+    const value = row[index]
+    if (!value || value.length > SAMPLE_VALUE_MAX_LENGTH) continue
+    seen.add(value)
+    if (seen.size >= SAMPLE_VALUE_LIMIT) break
+  }
+  return [...seen]
+}
+
+function startEdit(rowIndex: number, columnIndex: number): void {
+  editing.value = { row: rowIndex, column: columnIndex }
+}
+
+function commitEdit(
+  rowIndex: number,
+  columnIndex: number,
+  value: string
+): void {
+  setCellValue(rowIndex, columnIndex, value)
+  const current = editing.value
+  if (current?.row === rowIndex && current.column === columnIndex)
+    editing.value = null
+}
+
+function cancelEdit(): void {
+  editing.value = null
+}
+
+/** Tab / Shift+Tab：编辑焦点移到相邻单元格，行尾折到下一行，跳过已标记删除的行。 */
+function moveEdit(rowIndex: number, columnIndex: number, delta: 1 | -1): void {
+  const columns = gridColumns.value.length
+  const rows = state.page?.rows.length ?? 0
+  let row = rowIndex
+  let column = columnIndex + delta
+  if (column >= columns) {
+    row += 1
+    column = 0
+  } else if (column < 0) {
+    row -= 1
+    column = columns - 1
+  }
+  while (row >= 0 && row < rows && deletedRows.has(row)) row += delta
+  editing.value = row >= 0 && row < rows && column >= 0 ? { row, column } : null
+}
+
+onMounted(startColumnTagsReceiver)
+
 function clearChanges(): void {
   edits.clear()
   deletedRows.clear()
   insertedRows.splice(0)
+  editing.value = null
 }
 
 async function loadDetailAndRows(): Promise<void> {
@@ -279,13 +452,6 @@ async function calculateCount(): Promise<void> {
 
 function cellKey(rowIndex: number, columnIndex: number): string {
   return `${rowIndex}:${columnIndex}`
-}
-
-function cellValue(rowIndex: number, columnIndex: number): string | null {
-  const key = cellKey(rowIndex, columnIndex)
-  return edits.has(key)
-    ? (edits.get(key) ?? null)
-    : (state.page?.rows[rowIndex]?.[columnIndex] ?? null)
 }
 
 function setCellValue(
@@ -469,6 +635,17 @@ watch(
         {{ t('无主键 · 只读行') }}
       </span>
       <IconButton
+        v-if="hasColumnTags && state.activePanel === 'data'"
+        :icon="tagsVisible ? 'lucide:tags' : 'lucide:eye-off'"
+        :size="13"
+        :class="tagsVisible ? 'text-violet' : undefined"
+        :title="
+          tagsVisible ? t('隐藏标签化样式，显示原值') : t('显示标签化样式')
+        "
+        :aria-pressed="tagsVisible"
+        @click="toggleTagsVisible"
+      />
+      <IconButton
         v-if="resized && state.activePanel === 'data'"
         icon="lucide:unfold-horizontal"
         :size="13"
@@ -651,6 +828,7 @@ watch(
                     "
                     :title="t('按 {value0} 排序', { value0: column.name })"
                     @click="toggleSort(column.name)"
+                    @contextmenu.prevent="openColumnMenu($event, column.name)"
                   >
                     <span class="block truncate">
                       <span>{{ column.name }}</span>
@@ -663,6 +841,18 @@ watch(
                         "
                         :size="10"
                         class="text-violet ml-1 inline"
+                      />
+                      <AppIcon
+                        v-if="columnHasTags(column.name)"
+                        name="lucide:tag"
+                        :size="10"
+                        :class="
+                          cn(
+                            'ml-1 inline',
+                            tagsVisible ? 'text-violet' : 'text-txt-4'
+                          )
+                        "
+                        :title="t('已启用标签化显示，右键可修改')"
                       />
                       <span class="text-txt-4 ml-1.5 text-[9px] font-normal">{{
                         column.dataType
@@ -678,101 +868,31 @@ watch(
                 </tr>
               </thead>
               <tbody>
-                <tr
+                <DatabaseDataRow
                   v-for="(row, rowIndex) in state.page.rows"
                   :key="rowIndex"
-                  :class="
-                    cn(
-                      'text-txt-2 hover:bg-hover',
-                      deletedRows.has(rowIndex) &&
-                        'bg-danger/7 line-through opacity-55'
-                    )
+                  :row="row"
+                  :row-index="rowIndex"
+                  :number="state.offset + rowIndex + 1"
+                  :columns="gridColumns"
+                  :can-insert="canInsert"
+                  :can-edit="canEditExisting"
+                  :deleted="deletedRows.has(rowIndex)"
+                  :edits="edits"
+                  :editing-column="
+                    editing?.row === rowIndex ? editing.column : null
                   "
-                >
-                  <td
-                    class="border-line-soft text-txt-4 border-r border-b px-1.5 py-1 text-right"
-                  >
-                    {{ state.offset + rowIndex + 1 }}
-                  </td>
-                  <td
-                    v-if="canInsert"
-                    class="border-line-soft border-r border-b p-0.5 text-center"
-                  >
-                    <IconButton
-                      v-if="canEditExisting"
-                      :icon="
-                        deletedRows.has(rowIndex)
-                          ? 'lucide:undo-2'
-                          : 'lucide:trash-2'
-                      "
-                      :size="11"
-                      class="text-txt-4 hover:text-danger size-6"
-                      :title="
-                        deletedRows.has(rowIndex)
-                          ? t('撤销删除')
-                          : t('标记删除')
-                      "
-                      @click="toggleDelete(rowIndex)"
-                    />
-                  </td>
-                  <td
-                    v-for="(_, columnIndex) in gridColumns"
-                    :key="columnIndex"
-                    :class="
-                      cn(
-                        'group/cell border-line-soft relative overflow-hidden border-r border-b p-0 last:border-r-0',
-                        edits.has(cellKey(rowIndex, columnIndex)) &&
-                          'bg-violet/8'
-                      )
-                    "
-                  >
-                    <template
-                      v-if="canEditExisting && !deletedRows.has(rowIndex)"
-                    >
-                      <AppInput
-                        :model-value="cellValue(rowIndex, columnIndex) ?? ''"
-                        variant="cell"
-                        monospace
-                        :placeholder="
-                          cellValue(rowIndex, columnIndex) === null
-                            ? 'NULL'
-                            : ''
-                        "
-                        @update:model-value="
-                          setCellValue(rowIndex, columnIndex, $event)
-                        "
-                      />
-                      <!-- <AppButton
-                        variant="bare"
-                        class="bg-raised text-txt-4 hover:text-violet absolute top-1/2 right-1 hidden -translate-y-1/2 rounded px-1 text-[9px] group-focus-within/cell:block"
-                        title="设为 NULL"
-                        @click="setCellValue(rowIndex, columnIndex, null)"
-                        >NULL</AppButton
-                      > -->
-                    </template>
-                    <span
-                      v-else-if="row[columnIndex] === null"
-                      :class="
-                        cn(
-                          'text-txt-4 block h-7 px-2.5 py-1.5 italic',
-                          !resized && 'min-w-36'
-                        )
-                      "
-                      >NULL</span
-                    >
-                    <span
-                      v-else
-                      :class="
-                        cn(
-                          'block h-7 truncate px-2.5 py-1.5',
-                          !resized && 'max-w-80 min-w-36'
-                        )
-                      "
-                      :title="row[columnIndex] ?? ''"
-                      >{{ row[columnIndex] }}</span
-                    >
-                  </td>
-                </tr>
+                  :resized="resized"
+                  :tags="visibleTagConfigs"
+                  :tag-lookups="visibleTagLookups"
+                  @edit="startEdit(rowIndex, $event)"
+                  @commit="
+                    (column, value) => commitEdit(rowIndex, column, value)
+                  "
+                  @cancel="cancelEdit"
+                  @move="(column, delta) => moveEdit(rowIndex, column, delta)"
+                  @toggle-delete="toggleDelete(rowIndex)"
+                />
 
                 <tr
                   v-for="(_, rowIndex) in insertedRows"
@@ -1154,6 +1274,23 @@ watch(
       :danger="deleteCount > 0"
       @close="confirmOpen = false"
       @confirm="commitChanges"
+    />
+    <AppContextMenu
+      :open="columnMenu.open"
+      :x="columnMenu.x"
+      :y="columnMenu.y"
+      :items="columnMenuItems"
+      :label="columnMenu.column"
+      @close="columnMenu.open = false"
+      @select="handleColumnAction"
+    />
+    <DatabaseColumnTagDialog
+      :open="tagDialog.open"
+      :column="tagDialog.column"
+      :initial="tagDialogInitial"
+      :sample-values="tagDialogSamples"
+      @close="tagDialog.open = false"
+      @submit="saveColumnTags"
     />
   </section>
 </template>

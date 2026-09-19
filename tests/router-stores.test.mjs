@@ -98,6 +98,14 @@ test("兼容 Rust 子窗口 query，原生 label 的窗口身份优先且不泄�
     resolveWindowEntry("?window=settings", "#/servers/a", "remote-editor-123"),
     { surface: "remote-editor", path: "/remote-editor" },
   );
+  assert.deepEqual(resolveWindowEntry("", "", "column-tags"), {
+    surface: "column-tags",
+    path: "/column-tags",
+  });
+  assert.deepEqual(resolveWindowEntry("?window=column-tags", ""), {
+    surface: "column-tags",
+    path: "/column-tags",
+  });
 });
 
 test("新建连接可携带预选分组，编辑已有连接时忽略分组参数", () => {

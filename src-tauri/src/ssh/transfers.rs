@@ -3,10 +3,15 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use tokio::sync::{Notify, RwLock};
 
 use super::error::{SshError, SshResult};
+
+/// 进度事件的最小间隔。每个数据块都推一次会让大文件传输被 IPC 序列化拖慢，
+/// 前端进度条也用不到更高的刷新率。
+const PROGRESS_REPORT_INTERVAL_MS: u64 = 40;
 
 pub struct TransferControl {
     paused: AtomicBool,
@@ -14,6 +19,8 @@ pub struct TransferControl {
     transferred: AtomicU64,
     total: AtomicU64,
     wake: Notify,
+    started: Instant,
+    last_report_ms: AtomicU64,
 }
 
 impl TransferControl {
@@ -24,7 +31,21 @@ impl TransferControl {
             transferred: AtomicU64::new(0),
             total: AtomicU64::new(total),
             wake: Notify::new(),
+            started: Instant::now(),
+            last_report_ms: AtomicU64::new(0),
         }
+    }
+
+    /// 距上次进度推送是否已超过节流间隔。返回 true 时同时记下本次推送时间。
+    pub fn should_report(&self) -> bool {
+        let now = self.started.elapsed().as_millis() as u64;
+        let last = self.last_report_ms.load(Ordering::Relaxed);
+        if now.saturating_sub(last) < PROGRESS_REPORT_INTERVAL_MS {
+            return false;
+        }
+        self.last_report_ms
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
     }
 
     pub async fn checkpoint(&self) -> SshResult<()> {

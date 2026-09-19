@@ -276,29 +276,67 @@ impl SshSession {
         })
     }
 
-    pub async fn is_closed(&self) -> bool { self.handle.lock().await.is_closed() }
+    pub async fn is_closed(&self) -> bool {
+        self.handle.lock().await.is_closed()
+    }
 
-    pub async fn forward_stream(&self, host: &str, port: u16, origin: std::net::SocketAddr) -> SshResult<russh::ChannelStream<Msg>> {
-        let channel = self.handle.lock().await.channel_open_direct_tcpip(host, port as u32, origin.ip().to_string(), origin.port() as u32).await?;
+    pub async fn forward_stream(
+        &self,
+        host: &str,
+        port: u16,
+        origin: std::net::SocketAddr,
+    ) -> SshResult<russh::ChannelStream<Msg>> {
+        let channel = self
+            .handle
+            .lock()
+            .await
+            .channel_open_direct_tcpip(
+                host,
+                port as u32,
+                origin.ip().to_string(),
+                origin.port() as u32,
+            )
+            .await?;
         Ok(channel.into_stream())
     }
 
     pub async fn open_raw_sftp(&self) -> SshResult<russh_sftp::client::RawSftpSession> {
         let channel = self.handle.lock().await.channel_open_session().await?;
         channel.request_subsystem(true, "sftp").await?;
-        Ok(russh_sftp::client::RawSftpSession::new(channel.into_stream()))
+        Ok(russh_sftp::client::RawSftpSession::new(
+            channel.into_stream(),
+        ))
     }
 
     /// 为一次文件操作打开独立的 SFTP 子系统通道。
     /// 每个传输使用独立通道，暂停大文件时不会挡住目录浏览或其他传输。
     pub async fn open_sftp(&self) -> SshResult<SftpSession> {
+        self.open_sftp_with(russh_sftp::client::Config::default())
+            .await
+    }
+
+    /// 供批量传输使用的 SFTP 通道：放宽单个请求的超时。
+    ///
+    /// 传输时同一通道上会排着几 MB 的数据，元数据请求（改名、关闭）要等前面的数据
+    /// 发完才能得到应答；默认 10 秒在慢链路上会误判超时。
+    /// 每个文件的在途写请求数保持默认 8 个（8 × 256 KB），正好填满 OpenSSH 的
+    /// 2 MB 通道窗口，再多只会堆在内存里排队。
+    pub async fn open_transfer_sftp(&self) -> SshResult<SftpSession> {
+        self.open_sftp_with(russh_sftp::client::Config {
+            request_timeout_secs: 120,
+            ..Default::default()
+        })
+        .await
+    }
+
+    async fn open_sftp_with(&self, config: russh_sftp::client::Config) -> SshResult<SftpSession> {
         let channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
         };
 
         channel.request_subsystem(true, "sftp").await?;
-        SftpSession::new(channel.into_stream())
+        SftpSession::new_with_config(channel.into_stream(), config)
             .await
             .map_err(|error| SshError::Sftp(error.to_string()))
     }

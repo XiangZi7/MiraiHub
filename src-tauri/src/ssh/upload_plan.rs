@@ -12,6 +12,8 @@ pub struct UploadEntry {
     pub local_path: PathBuf,
     pub remote_path: String,
     pub is_directory: bool,
+    /// 相对所选根路径的层级，根为 0。远端探测与建目录按层级分批并发。
+    pub depth: usize,
 }
 
 pub struct UploadPlan {
@@ -19,7 +21,11 @@ pub struct UploadPlan {
     pub total_bytes: u64,
 }
 
-/// 限制目录内并行上传数（上限 12）；出错后停止派发，等待已开始的文件完成清理。
+/// 目录内并行上传数的上限。小文件的耗时几乎全是往返延迟，并发越高越接近“秒传”；
+/// 再高就会被服务器的会话数与单通道窗口限制，收益不大。
+pub const MAX_UPLOAD_CONCURRENCY: usize = 32;
+
+/// 限制目录内并行上传数；出错后停止派发，等待已开始的文件完成清理。
 pub async fn run_upload_jobs<I, F, Fut>(items: I, concurrency: usize, upload: F) -> SshResult<()>
 where
     I: IntoIterator,
@@ -28,7 +34,10 @@ where
 {
     let mut items = items.into_iter();
     let mut running = FuturesUnordered::new();
-    for item in items.by_ref().take(concurrency.clamp(1, 12)) {
+    for item in items
+        .by_ref()
+        .take(concurrency.clamp(1, MAX_UPLOAD_CONCURRENCY))
+    {
         running.push(upload(item));
     }
     let mut first_error = None;
@@ -59,8 +68,8 @@ pub async fn build_upload_plan(
         entries: Vec::new(),
         total_bytes: 0,
     };
-    let mut pending = vec![(local_path.to_path_buf(), remote_path.to_owned())];
-    while let Some((local_path, remote_path)) = pending.pop() {
+    let mut pending = vec![(local_path.to_path_buf(), remote_path.to_owned(), 0_usize)];
+    while let Some((local_path, remote_path, depth)) = pending.pop() {
         control.checkpoint().await?;
         // 不跟随符号链接，避免目录循环或把所选目录以外的内容一起上传。
         let metadata = tokio::fs::symlink_metadata(&local_path).await?;
@@ -81,6 +90,7 @@ pub async fn build_upload_plan(
                 pending.push((
                     child.path(),
                     format!("{}/{name}", remote_path.trim_end_matches('/')),
+                    depth + 1,
                 ));
             }
         } else {
@@ -90,6 +100,7 @@ pub async fn build_upload_plan(
             local_path,
             remote_path,
             is_directory: metadata.is_dir(),
+            depth,
         });
     }
     Ok(plan)

@@ -64,6 +64,7 @@ pub async fn window_ready(window: WebviewWindow, material: String) -> AppResult<
     let label = window.label();
     if label != "settings"
         && label != "connection"
+        && label != super::column_tags::WINDOW
         && !label.starts_with(super::remote_editor::PREFIX)
     {
         return Err(crate::error::AppError::invalid_input("不是子窗口"));

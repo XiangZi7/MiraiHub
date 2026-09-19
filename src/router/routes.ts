@@ -70,6 +70,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { surface: 'remote-editor', title: '远端文件编辑' },
   },
   {
+    path: '/column-tags',
+    name: 'column-tags',
+    component: () => import('@/pages/windows/ColumnTagsPage.vue'),
+    meta: { surface: 'column-tags', title: '标签化显示' },
+  },
+  {
     path: '/splash',
     name: 'splash',
     component: () => import('@/pages/windows/SplashPage.vue'),

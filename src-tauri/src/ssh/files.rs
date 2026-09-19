@@ -2,9 +2,13 @@
 //!
 //! 列目录沿用 `ls -lA`，上传、下载与变更操作走独立 SFTP 通道。
 
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+use futures_util::{stream, StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
+use russh_sftp::protocol::StatusCode;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -15,11 +19,25 @@ use super::models::{DownloadFileRequest, UploadFileRequest};
 use super::session::SshSession;
 use super::shell::quote;
 use super::transfers::{TransferControl, TransferManager};
-use super::upload_plan::{build_upload_plan, run_upload_jobs};
+use super::upload_plan::{build_upload_plan, run_upload_jobs, UploadEntry};
 
 fn transfer_buffer_size(size_kb: usize) -> usize {
     size_kb.clamp(32, 256) * 1024
 }
+
+/// 上传时本地一次读取的字节数。SFTP 数据包由 russh-sftp 按服务器上限自动切分并流水线发送，
+/// 本地读得更大只会减少磁盘往返，不会产生超限的数据包。
+fn upload_buffer_size(size_kb: usize) -> usize {
+    transfer_buffer_size(size_kb) * 4
+}
+
+/// 上传前探测与建目录时并行发起的元数据请求数。
+const METADATA_CONCURRENCY: usize = 32;
+/// 单个上传任务最多使用的 SFTP 通道数。
+///
+/// 服务器按通道分配流控窗口（OpenSSH 默认 2 MB），一条通道的吞吐被“窗口 ÷ 往返延迟”封顶；
+/// 多开几条通道能把带宽叠加起来。上限取 4 是为了给交互式 shell 与其他传输留出会话数。
+const MAX_UPLOAD_CHANNELS: usize = 4;
 
 /// 目录项类型。前端据此选图标，也决定双击是进目录还是打开文件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,87 +180,212 @@ pub async fn upload_file(
         let total = plan.total_bytes;
         control.set_total(total);
         control.checkpoint().await?;
-        let sftp = session.open_sftp().await?;
+        let mut sessions = vec![session.open_transfer_sftp().await?];
         let result: SshResult<()> = async {
             emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
-            // 先检查整棵目录的冲突，避免类型不匹配时已经覆盖前面的文件。
-            for entry in &plan.entries {
-                control.checkpoint().await?;
-                if sftp
-                    .try_exists(&entry.remote_path)
-                    .await
-                    .map_err(sftp_error)?
-                {
-                    if !request.overwrite {
-                        return Err(SshError::RemoteFileExists(entry.remote_path.clone()));
-                    }
-                    let destination = sftp
-                        .symlink_metadata(&entry.remote_path)
-                        .await
-                        .map_err(sftp_error)?;
-                    if (entry.is_directory && !destination.is_dir())
-                        || (!entry.is_directory && !destination.is_regular())
-                    {
-                        return Err(SshError::InvalidInput(format!(
-                            "远端同名路径类型不同，无法合并或覆盖：{}",
-                            entry.remote_path
-                        )));
-                    }
-                }
-            }
-            // 父目录按计划顺序创建，文件随后使用同一 SFTP 会话并行上传。
-            for entry in &plan.entries {
-                control.checkpoint().await?;
-                if entry.is_directory {
-                    if sftp
-                        .try_exists(&entry.remote_path)
-                        .await
-                        .map_err(sftp_error)?
-                    {
-                        let destination = sftp
-                            .symlink_metadata(&entry.remote_path)
-                            .await
-                            .map_err(sftp_error)?;
-                        if !destination.is_dir() {
-                            return Err(SshError::InvalidInput(format!(
-                                "远端同名路径不是目录：{}",
-                                entry.remote_path
-                            )));
-                        }
-                    } else {
-                        sftp.create_dir(&entry.remote_path)
-                            .await
-                            .map_err(sftp_error)?;
-                    }
-                }
-            }
-            let upload_sftp = &sftp;
-            let upload_control = control.as_ref();
-            let file_entries: Vec<_> = plan
+            // 先摸清整棵目录树在远端的存在情况：既是冲突检查（类型不匹配时不能
+            // 覆盖前面的文件），也让后面的建目录与上传都省掉逐个探测的往返。
+            let existing =
+                find_existing_paths(&sessions[0], &plan.entries, request.overwrite, &control)
+                    .await?;
+            create_directories(&sessions[0], &plan.entries, &existing, &control).await?;
+
+            let files: Vec<(UploadEntry, bool)> = plan
                 .entries
                 .into_iter()
                 .filter(|entry| !entry.is_directory)
+                .map(|entry| {
+                    let exists = existing.contains(normalize_path(&entry.remote_path));
+                    (entry, exists)
+                })
                 .collect();
-            run_upload_jobs(file_entries, request.concurrency, |entry| async move {
+            open_extra_channels(session, &mut sessions, request.concurrency, files.len()).await;
+
+            let sessions = &sessions;
+            let next_channel = AtomicUsize::new(0);
+            let next_channel = &next_channel;
+            let upload_control = control.as_ref();
+            run_upload_jobs(files, request.concurrency, |(entry, exists)| async move {
                 upload_control.checkpoint().await?;
+                let sftp = &sessions[next_channel.fetch_add(1, Ordering::Relaxed) % sessions.len()];
                 let file_request = UploadFileRequest {
                     local_path: entry.local_path.to_string_lossy().into_owned(),
                     remote_path: entry.remote_path.clone(),
                     ..request.clone()
                 };
-                upload_inner(app, upload_sftp, &file_request, upload_control, total).await
+                upload_inner(app, sftp, &file_request, upload_control, total, exists).await
             })
             .await?;
             control.checkpoint().await?;
             Ok(())
         }
         .await;
-        let _ = sftp.close().await;
+        for sftp in &sessions {
+            let _ = sftp.close().await;
+        }
         result
     }
     .await;
     transfers.finish(&request.task_id).await;
     result.map(|()| request.remote_path.clone())
+}
+
+fn is_missing(error: &russh_sftp::client::error::Error) -> bool {
+    matches!(
+        error,
+        russh_sftp::client::error::Error::Status(status)
+            if status.status_code == StatusCode::NoSuchFile
+    )
+}
+
+/// 去掉末尾斜杠，让“/a/b/”与“/a/b”指向同一个远端路径。
+fn normalize_path(path: &str) -> &str {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/"
+    } else {
+        trimmed
+    }
+}
+
+fn parent_path(path: &str) -> &str {
+    match normalize_path(path).rsplit_once('/') {
+        Some(("", _)) => "/",
+        Some((parent, _)) => parent,
+        None => ".",
+    }
+}
+
+/// 找出计划里在远端已经存在的路径，并校验类型是否与本地一致。
+///
+/// 按层级逐层探测，同一层并发发起；父目录不存在的子树根本不用问。
+/// 最常见的“上传一个新目录”只需要一次往返。
+async fn find_existing_paths(
+    sftp: &SftpSession,
+    entries: &[UploadEntry],
+    overwrite: bool,
+    control: &TransferControl,
+) -> SshResult<HashSet<String>> {
+    let mut existing: HashSet<String> = HashSet::new();
+    let max_depth = entries.iter().map(|entry| entry.depth).max().unwrap_or(0);
+    for depth in 0..=max_depth {
+        control.checkpoint().await?;
+        let candidates: Vec<&UploadEntry> = entries
+            .iter()
+            .filter(|entry| entry.depth == depth)
+            .filter(|entry| depth == 0 || existing.contains(parent_path(&entry.remote_path)))
+            .collect();
+        if candidates.is_empty() {
+            break;
+        }
+        // 用显式循环收集 future，而不是闭包 map：闭包参数是引用时，tauri 命令的
+        // Send 检查会把闭包推成高阶生命周期签名而编译失败。
+        let mut probes = Vec::with_capacity(candidates.len());
+        for entry in candidates {
+            probes.push(probe_entry(sftp, entry, overwrite));
+        }
+        let found: Vec<Option<String>> = stream::iter(probes)
+            .buffer_unordered(METADATA_CONCURRENCY)
+            .try_collect()
+            .await?;
+        existing.extend(found.into_iter().flatten());
+    }
+    Ok(existing)
+}
+
+/// 探测单个计划项：返回远端已存在的规范路径，不存在则为 None。
+async fn probe_entry(
+    sftp: &SftpSession,
+    entry: &UploadEntry,
+    overwrite: bool,
+) -> SshResult<Option<String>> {
+    match sftp.symlink_metadata(&entry.remote_path).await {
+        Ok(destination) => {
+            if !overwrite {
+                return Err(SshError::RemoteFileExists(entry.remote_path.clone()));
+            }
+            if (entry.is_directory && !destination.is_dir())
+                || (!entry.is_directory && !destination.is_regular())
+            {
+                return Err(SshError::InvalidInput(format!(
+                    "远端同名路径类型不同，无法合并或覆盖：{}",
+                    entry.remote_path
+                )));
+            }
+            Ok(Some(normalize_path(&entry.remote_path).to_owned()))
+        }
+        Err(error) if is_missing(&error) => Ok(None),
+        Err(error) => Err(sftp_error(error)),
+    }
+}
+
+/// 创建远端缺失的目录：父目录一层建完再建下一层，同层并发。
+async fn create_directories(
+    sftp: &SftpSession,
+    entries: &[UploadEntry],
+    existing: &HashSet<String>,
+    control: &TransferControl,
+) -> SshResult<()> {
+    let mut levels: BTreeMap<usize, Vec<&UploadEntry>> = BTreeMap::new();
+    for entry in entries {
+        if entry.is_directory && !existing.contains(normalize_path(&entry.remote_path)) {
+            levels.entry(entry.depth).or_default().push(entry);
+        }
+    }
+    for level in levels.into_values() {
+        control.checkpoint().await?;
+        let mut jobs = Vec::with_capacity(level.len());
+        for entry in level {
+            jobs.push(ensure_directory(sftp, entry));
+        }
+        stream::iter(jobs)
+            .buffer_unordered(METADATA_CONCURRENCY)
+            .try_collect::<Vec<()>>()
+            .await?;
+    }
+    Ok(())
+}
+
+async fn ensure_directory(sftp: &SftpSession, entry: &UploadEntry) -> SshResult<()> {
+    match sftp.create_dir(&entry.remote_path).await {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            // 其他并行任务可能刚建好同名目录；确认是目录就继续。
+            match sftp.symlink_metadata(&entry.remote_path).await {
+                Ok(destination) if destination.is_dir() => Ok(()),
+                _ => Err(sftp_error(error)),
+            }
+        }
+    }
+}
+
+/// 单个任务使用的 SFTP 通道数：文件少时不必多开，每条通道至少分到 3 个并发文件。
+fn upload_channel_count(concurrency: usize, file_count: usize) -> usize {
+    let by_concurrency = concurrency.clamp(1, MAX_UPLOAD_CHANNELS * 3) / 3;
+    let by_files = file_count.div_ceil(3);
+    by_concurrency.min(by_files).clamp(1, MAX_UPLOAD_CHANNELS)
+}
+
+/// 补开额外的 SFTP 通道。开不出来（例如服务器 MaxSessions 已满）就用已有的继续，不算失败。
+async fn open_extra_channels(
+    session: &SshSession,
+    sessions: &mut Vec<SftpSession>,
+    concurrency: usize,
+    file_count: usize,
+) {
+    let wanted = upload_channel_count(concurrency, file_count);
+    while sessions.len() < wanted {
+        match session.open_transfer_sftp().await {
+            Ok(sftp) => sessions.push(sftp),
+            Err(error) => {
+                log::warn!(
+                    "额外 SFTP 通道打开失败，继续使用 {} 条通道上传：{error}",
+                    sessions.len()
+                );
+                break;
+            }
+        }
+    }
 }
 
 async fn upload_inner(
@@ -251,25 +394,14 @@ async fn upload_inner(
     request: &UploadFileRequest,
     control: &TransferControl,
     total: u64,
+    destination_exists: bool,
 ) -> SshResult<()> {
-    if sftp
-        .try_exists(&request.remote_path)
-        .await
-        .map_err(sftp_error)?
-        && !request.overwrite
-    {
-        return Err(SshError::RemoteFileExists(request.remote_path.clone()));
-    }
-
+    // 直接以截断方式创建临时文件，不必先探测残留；同一任务 ID 的残留会被覆盖掉。
     let temp_path = remote_temp_path(&request.remote_path, &request.task_id);
-    if sftp.try_exists(&temp_path).await.map_err(sftp_error)? {
-        let _ = sftp.remove_file(&temp_path).await;
-    }
-
     let mut source = tokio::fs::File::open(&request.local_path).await?;
     let mut target = sftp.create(&temp_path).await.map_err(sftp_error)?;
     let result: SshResult<()> = async {
-        let mut buffer = vec![0_u8; transfer_buffer_size(request.buffer_size_kb)];
+        let mut buffer = vec![0_u8; upload_buffer_size(request.buffer_size_kb)];
 
         loop {
             control.checkpoint().await?;
@@ -279,54 +411,41 @@ async fn upload_inner(
             }
             target.write_all(&buffer[..read]).await?;
             let transferred = control.add_transferred(read as u64);
-            emit_transfer(
-                app,
-                TransferEvent::progress(&request.task_id, transferred, total),
-            );
+            if control.should_report() {
+                emit_transfer(
+                    app,
+                    TransferEvent::progress(&request.task_id, transferred, total),
+                );
+            }
         }
 
-        target.flush().await?;
+        // 不调用 flush：它会在支持 fsync 扩展的服务器上逐文件落盘，
+        // 大量小文件时每个文件都多等一次磁盘同步。shutdown 会等所有写入确认后再关闭句柄。
         target.shutdown().await?;
         control.checkpoint().await?;
 
-        let destination_exists = sftp
-            .try_exists(&request.remote_path)
-            .await
-            .map_err(sftp_error)?;
         if destination_exists {
+            replace_existing_file(sftp, request, &temp_path).await?;
+        } else if let Err(error) = sftp.rename(&temp_path, &request.remote_path).await {
+            // 探测之后目标才出现（其他程序刚写入）：按覆盖设置决定是替换还是报错。
+            let appeared = sftp
+                .try_exists(&request.remote_path)
+                .await
+                .map_err(sftp_error)?;
+            if !appeared {
+                return Err(sftp_error(error));
+            }
             if !request.overwrite {
                 return Err(SshError::RemoteFileExists(request.remote_path.clone()));
             }
-
-            let destination = sftp
-                .symlink_metadata(&request.remote_path)
-                .await
-                .map_err(sftp_error)?;
-            if !destination.is_regular() {
-                return Err(SshError::InvalidInput(format!(
-                    "同名路径不是普通文件，不能用文件覆盖：{}",
-                    request.remote_path
-                )));
-            }
-
-            // 先把旧文件挪成备份，落位失败时还能还原，避免覆盖过程中丢掉两边数据。
-            let backup_path = remote_backup_path(&request.remote_path, &request.task_id);
-            if sftp.try_exists(&backup_path).await.map_err(sftp_error)? {
-                let _ = sftp.remove_file(&backup_path).await;
-            }
-            sftp.rename(&request.remote_path, &backup_path)
-                .await
-                .map_err(sftp_error)?;
-            if let Err(error) = sftp.rename(&temp_path, &request.remote_path).await {
-                let _ = sftp.rename(&backup_path, &request.remote_path).await;
-                return Err(sftp_error(error));
-            }
-            let _ = sftp.remove_file(&backup_path).await;
-        } else {
-            sftp.rename(&temp_path, &request.remote_path)
-                .await
-                .map_err(sftp_error)?;
+            replace_existing_file(sftp, request, &temp_path).await?;
         }
+        // 每个文件完成时都推一次进度，让小文件的进度条不被节流吞掉。
+        let (transferred, _) = control.progress();
+        emit_transfer(
+            app,
+            TransferEvent::progress(&request.task_id, transferred, total),
+        );
         Ok(())
     }
     .await;
@@ -336,6 +455,37 @@ async fn upload_inner(
         let _ = sftp.remove_file(&temp_path).await;
     }
     result
+}
+
+/// 用已经写好的临时文件替换远端同名文件。
+/// 先把旧文件挪成备份，落位失败时还能还原，避免覆盖过程中丢掉两边数据。
+async fn replace_existing_file(
+    sftp: &SftpSession,
+    request: &UploadFileRequest,
+    temp_path: &str,
+) -> SshResult<()> {
+    let destination = sftp
+        .symlink_metadata(&request.remote_path)
+        .await
+        .map_err(sftp_error)?;
+    if !destination.is_regular() {
+        return Err(SshError::InvalidInput(format!(
+            "同名路径不是普通文件，不能用文件覆盖：{}",
+            request.remote_path
+        )));
+    }
+
+    let backup_path = remote_backup_path(&request.remote_path, &request.task_id);
+    let _ = sftp.remove_file(&backup_path).await;
+    sftp.rename(&request.remote_path, &backup_path)
+        .await
+        .map_err(sftp_error)?;
+    if let Err(error) = sftp.rename(temp_path, &request.remote_path).await {
+        let _ = sftp.rename(&backup_path, &request.remote_path).await;
+        return Err(sftp_error(error));
+    }
+    let _ = sftp.remove_file(&backup_path).await;
+    Ok(())
 }
 
 /// 下载远端文件。local_path 为空时写入系统临时目录，供“双击打开”使用。
@@ -412,10 +562,12 @@ async fn download_inner(
             target.write_all(&buffer[..read]).await?;
             transferred += read as u64;
             control.set_transferred(transferred);
-            emit_transfer(
-                app,
-                TransferEvent::progress(&request.task_id, transferred, total),
-            );
+            if control.should_report() {
+                emit_transfer(
+                    app,
+                    TransferEvent::progress(&request.task_id, transferred, total),
+                );
+            }
         }
 
         target.flush().await?;
@@ -816,5 +968,23 @@ mod tests {
     #[test]
     fn task_id_cannot_escape_temporary_path() {
         assert_eq!(safe_task_id("../../bad:id"), "badid");
+    }
+
+    #[test]
+    fn parent_path_handles_root_and_trailing_slash() {
+        assert_eq!(parent_path("/var/www/app.js"), "/var/www");
+        assert_eq!(parent_path("/var/www/"), "/var");
+        assert_eq!(parent_path("/etc"), "/");
+        assert_eq!(normalize_path("/uploads/"), "/uploads");
+        assert_eq!(normalize_path("/"), "/");
+    }
+
+    #[test]
+    fn channel_count_scales_with_files_and_concurrency() {
+        assert_eq!(upload_channel_count(12, 1), 1);
+        assert_eq!(upload_channel_count(12, 4), 2);
+        assert_eq!(upload_channel_count(12, 100), 4);
+        assert_eq!(upload_channel_count(1, 100), 1);
+        assert_eq!(upload_channel_count(32, 1000), 4);
     }
 }

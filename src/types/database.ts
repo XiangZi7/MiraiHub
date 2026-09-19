@@ -1,5 +1,7 @@
 /** 与 Rust `db/models.rs` 对齐的数据库 IPC 类型。 */
 
+import type { ConnectionTagColor } from './connection'
+
 export type DatabaseKind = 'mysql' | 'postgresql'
 /** 工作台连接协议；SQL 方言仍限定为 DatabaseKind。 */
 export type DatabaseConnectionKind = DatabaseKind | 'redis'
@@ -236,4 +238,20 @@ export interface DatabaseHistoryEntry {
   database: string
   sql: string
   executedAt: number
+}
+
+/** 表格列的“标签化显示”：把某些单元格值渲染成带颜色的标签，只影响显示，不改数据。 */
+export type ColumnTagStyle = 'badge' | 'dot'
+
+export interface ColumnTagRule {
+  /** 与单元格文本精确匹配的值。 */
+  value: string
+  /** 标签上显示的文字；为空时显示原值。 */
+  label: string
+  color: ConnectionTagColor
+}
+
+export interface ColumnTagConfig {
+  style: ColumnTagStyle
+  rules: ColumnTagRule[]
 }

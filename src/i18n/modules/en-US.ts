@@ -381,8 +381,8 @@ export default {
     'Upload selected or dropped files concurrently and queue the rest. Uploads and downloads share this limit.',
   '3（默认）': '3 (default)',
   文件夹上传并发数: 'Concurrent files per folder',
-  '每个文件夹内同时上传的文件数量，新上传任务生效':
-    'Number of files uploaded at once in each folder; applies to new tasks',
+  '每个文件夹内同时上传的文件数量，新上传任务生效；大量小文件时越高越快':
+    'Number of files uploaded at once in each folder; applies to new tasks. Higher is faster for many small files',
   '1（串行）': '1 (sequential)',
   '12（默认）': '12 (default)',
   '传输缓冲区大小（KB）': 'Transfer buffer size (KB)',
@@ -581,4 +581,56 @@ export default {
     'Enter whole numbers: 1–128 model requests, 64–4000 KB of context, and 16–2048 messages.',
   'settings.shortcutLabel':
     '{label}: currently {shortcut}. Press a new shortcut to change it.',
+  '标签化显示…': 'Show as tags…',
+  '编辑标签…': 'Edit tags…',
+  取消标签化: 'Remove tags',
+  复制列名: 'Copy column name',
+  '已取消“{value0}”的标签化显示': 'Tags removed from “{value0}”',
+  '已为“{value0}”设置 {value1} 条标签规则':
+    'Saved {value1} tag rules for “{value0}”',
+  '已启用标签化显示，右键可修改':
+    'Shown as tags; right-click the header to change',
+  点击编辑原值: 'Click to edit the raw value',
+  '标签化显示：{value0}': 'Show as tags: {value0}',
+  '把匹配的单元格值显示为彩色标签，只改变显示，不会修改数据。':
+    'Matching cell values are rendered as colored tags. This only changes the display, not the data.',
+  标签样式: 'Tag style',
+  徽章: 'Badge',
+  '带底色的标签，适合方法、分类':
+    'Filled label, good for methods or categories',
+  圆点: 'Dot',
+  '彩色圆点加原文，适合状态码':
+    'Colored dot with the raw text, good for status codes',
+  取值规则: 'Value rules',
+  '单元格文本与“值”完全一致时显示为标签':
+    'A cell is shown as a tag when its text exactly matches “Value”',
+  把当前页出现过的值加入规则: 'Add the values found on this page as rules',
+  从当前页取值: 'Use values from this page',
+  添加规则: 'Add rule',
+  显示文字: 'Label',
+  颜色: 'Color',
+  预览: 'Preview',
+  '如 200、POST': 'e.g. 200, POST',
+  留空显示原值: 'Leave empty to show the value',
+  移除规则: 'Remove rule',
+  '还没有规则，先添加一条或从当前页取值':
+    'No rules yet. Add one or use values from this page',
+  标签化显示: 'Show as tags',
+  无法打开标签设置窗口: 'Could not open the tag settings window',
+  '正在读取列信息…': 'Loading column…',
+  '隐藏标签化样式，显示原值': 'Hide tags and show raw values',
+  显示标签化样式: 'Show tags',
+  怎么用: 'How it works',
+  范例: 'Examples',
+  点击填入这组规则: 'Click to add these rules',
+  启用: 'Enabled',
+  '启用 / 禁用': 'Enabled / Disabled',
+  'HTTP 方法': 'HTTP method',
+  'HTTP 状态码': 'HTTP status',
+  '值：单元格里的原始文本，需完全一致（区分大小写），例如 200、POST、1':
+    'Value: the raw cell text, matched exactly (case-sensitive), e.g. 200, POST, 1',
+  '显示文字：标签上展示的文字，留空则显示原值，例如把 1 显示为“启用”':
+    'Label: the text shown on the tag; leave empty to show the value, e.g. show 1 as “Enabled”',
+  '颜色：同一列可给不同值配不同颜色，未匹配的值仍按原样显示':
+    'Color: each value in a column can have its own color; unmatched values stay as they are',
 } satisfies Record<string, string>

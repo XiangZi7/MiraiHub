@@ -42,7 +42,7 @@ fn window_effect_for_version(major: u32, build: u32) -> Effect {
 }
 
 #[cfg(windows)]
-fn windows_window_effects() -> tauri::utils::config::WindowEffectsConfig {
+pub(super) fn windows_window_effects() -> tauri::utils::config::WindowEffectsConfig {
     EffectsBuilder::new()
         .effect(windows_window_effect())
         .build()
@@ -315,7 +315,10 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
 pub fn show_child_window(window: &WebviewWindow) -> AppResult<()> {
     window.show().map_err(to_app_error)?;
     window.set_focus().map_err(to_app_error)?;
-    if matches!(window.label(), SETTINGS_WINDOW | CONNECTION_WINDOW) {
+    if matches!(
+        window.label(),
+        SETTINGS_WINDOW | CONNECTION_WINDOW | super::column_tags::WINDOW
+    ) {
         if let Some(main) = window.app_handle().get_webview_window("main") {
             main.set_enabled(false).map_err(to_app_error)?;
         }
@@ -323,7 +326,7 @@ pub fn show_child_window(window: &WebviewWindow) -> AppResult<()> {
     Ok(())
 }
 
-fn to_app_error(err: tauri::Error) -> AppError {
+pub(super) fn to_app_error(err: tauri::Error) -> AppError {
     AppError::internal(err.to_string())
 }
 

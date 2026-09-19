@@ -1,10 +1,35 @@
 import type { NavId } from '@/types'
 
 export type WindowSurface =
-  'workspace' | 'settings' | 'connection' | 'remote-editor' | 'splash'
+  | 'workspace'
+  | 'settings'
+  | 'connection'
+  | 'remote-editor'
+  | 'splash'
+  | 'column-tags'
 export interface WindowEntry {
   surface: WindowSurface
   path: string
+}
+
+/** 由 Rust 用固定 label 创建的子窗口。 */
+const NATIVE_SURFACES: readonly WindowSurface[] = [
+  'settings',
+  'connection',
+  'splash',
+  'column-tags',
+]
+/** 可以通过 `?window=` 或 hash 路径请求的子窗口。 */
+const REQUESTABLE_SURFACES: readonly WindowSurface[] = [
+  ...NATIVE_SURFACES,
+  'remote-editor',
+]
+
+function surfaceOf(
+  candidates: readonly WindowSurface[],
+  value: string
+): WindowSurface | undefined {
+  return candidates.find(surface => surface === value)
 }
 
 export function isWorkspaceNav(value: unknown): value is NavId {
@@ -23,14 +48,8 @@ export function resolveWindowEntry(
   const surface: WindowSurface = nativeLabel
     ? nativeLabel.startsWith('remote-editor-')
       ? 'remote-editor'
-      : ['settings', 'connection', 'splash'].includes(nativeLabel)
-        ? (nativeLabel as WindowSurface)
-        : 'workspace'
-    : ['settings', 'connection', 'remote-editor', 'splash'].includes(
-          requested ?? ''
-        )
-      ? (requested as WindowSurface)
-      : 'workspace'
+      : (surfaceOf(NATIVE_SURFACES, nativeLabel) ?? 'workspace')
+    : (surfaceOf(REQUESTABLE_SURFACES, requested ?? '') ?? 'workspace')
   if (surface === 'connection') {
     const kind = ['ssh', 'local', 'database'].includes(query.get('type') ?? '')
       ? query.get('type')!
