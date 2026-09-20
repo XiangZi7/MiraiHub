@@ -1,5 +1,16 @@
 @import 'tailwindcss';
 
+/* 等宽字体只内置 latin 子集：变体包没有分子集的 css 入口，整包引入会把
+   cyrillic / greek / vietnamese / latin-ext 五份 woff2 一起塞进安装包。 */
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
 /* ==========================================================================
    设计令牌 —— 所有值自动映射为 CSS 变量与 Tailwind 工具类
    例：--color-card → bg-card / text-card / border-card

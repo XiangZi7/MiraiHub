@@ -3,11 +3,12 @@ import { addCollection, type IconifyJSON } from '@iconify/vue'
 import lucideIcons from 'virtual:mirai-icons'
 import App from './App.vue'
 
-// 离线字体：打包进产物，断网也能正常渲染
-import '@fontsource/inter/400.css'
-import '@fontsource/inter/500.css'
-import '@fontsource/inter/600.css'
-import '@fontsource-variable/jetbrains-mono'
+// 离线字体：打包进产物，断网也能正常渲染。
+// 只取 latin 子集 —— 完整包会把 cyrillic / greek / vietnamese / latin-ext
+// 的 woff 与 woff2 全塞进安装包，而界面只有中英文，非拉丁字符本就走系统字体。
+import '@fontsource/inter/latin-400.css'
+import '@fontsource/inter/latin-500.css'
+import '@fontsource/inter/latin-600.css'
 
 import '@/assets/styles/main.css'
 import { MIRAI_ICONS } from '@/constants/icons'

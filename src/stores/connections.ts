@@ -90,7 +90,8 @@ export const useConnectionsStore = defineStore('connections', () => {
   /**
    * 按分组名聚合，用于侧栏项目树。
    *
-   * 未分组的连接归到"Ungrouped"而不是丢掉 —— 新建时不填分组是常态。
+   * 未分组的连接归到 loose 桶而不是丢掉 —— 新建时不填分组是常态。
+   * 该桶在侧栏不画文件夹，里面的连接直接平铺到顶层。
    */
   function groupBy(
     connections: SavedConnection[],
@@ -122,6 +123,7 @@ export const useConnectionsStore = defineStore('connections', () => {
           createdAt: item.createdAt,
           items: [item],
           virtual: true,
+          ...(groupName ? {} : { loose: true }),
         })
       }
     }

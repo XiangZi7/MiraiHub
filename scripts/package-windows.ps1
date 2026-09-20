@@ -15,10 +15,15 @@ try {
     $buildDir = Join-Path $projectDir 'src-tauri/target/release'
     $appExe = Join-Path $buildDir 'miraihub.exe'
     $installer = Join-Path $buildDir "bundle/nsis/MiraiHub_${version}_x64-setup.exe"
+    # 皮肤目录由 tauri-build 从 src-tauri/skins 复制到 exe 旁边（bundle.resources）。
+    $skinsDir = Join-Path $buildDir 'skins'
     foreach ($file in @($appExe, $installer)) {
         if (!(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
             throw "Missing build output: $file"
         }
+    }
+    if (!(Test-Path -LiteralPath $skinsDir -PathType Container)) {
+        throw "Missing build output: $skinsDir"
     }
     # Refuse stale binaries from a different version in a local build/cache.
     $binaryVersion = (Get-Item -LiteralPath $appExe).VersionInfo.ProductVersion
@@ -33,8 +38,9 @@ try {
     $zipName = "MiraiHub_${version}_windows_x64_portable.zip"
     Copy-Item -LiteralPath $installer -Destination (Join-Path $outputDir $setupName)
 
-    # Only the executable is archived; never include local connection data, keys or source files.
-    Compress-Archive -LiteralPath $appExe -DestinationPath (Join-Path $outputDir $zipName) -CompressionLevel Optimal
+    # Only the executable and the skins folder are archived; never include local connection data, keys or source files.
+    # 便携版解压后 miraihub.exe 旁边就是 skins/，与安装版的目录布局一致。
+    Compress-Archive -LiteralPath $appExe, $skinsDir -DestinationPath (Join-Path $outputDir $zipName) -CompressionLevel Optimal
     $manifest = [ordered]@{
         name = 'MiraiHub'
         version = $version

@@ -494,20 +494,15 @@ export const en = {
   请完善建表配置: 'Complete the table configuration',
   创建数据表失败: 'Could not create table',
   建表配置: 'Table configuration',
-  新建数据表: 'New table',
-  'MySQL 数据库': 'MySQL database',
   在查询中打开: 'Open in query',
   '正在创建…': 'Creating…',
   创建表: 'Create table',
   表名: 'Table name',
-  '数据库 / Schema': 'Database / Schema',
   '数据库或 Schema': 'Database or schema',
   存储引擎: 'Storage engine',
   字符集: 'Character set',
   表备注: 'Table comment',
   '可选，用于说明表的用途': "Optional description of the table's purpose",
-  '根据当前配置实时生成，可复制或转到查询页继续编辑。':
-    'Generated live from the current configuration. Copy it or continue editing in a query tab.',
   '复制 SQL': 'Copy SQL',
   设计表: 'Design table',
   '清空表数据…': 'Clear table data…',
@@ -528,9 +523,6 @@ export const en = {
   保存表结构修改失败: 'Could not save table changes',
   '修改 SQL 已复制': 'ALTER TABLE SQL copied',
   选项: 'Options',
-  表选项: 'Table options',
-  '修改自增计数器等表级选项，随“保存修改”一起应用。':
-    'Edit table-level options such as the auto-increment counter; they are applied together with “Save changes”.',
   '自增值（AUTO_INCREMENT）': 'Auto-increment value (AUTO_INCREMENT)',
   '自增值（RESTART WITH）': 'Auto-increment value (RESTART WITH)',
   自增值: 'Auto-increment value',
@@ -542,11 +534,6 @@ export const en = {
     'This table has no auto-increment column; tick it on the columns tab first for this to take effect.',
   '只对 identity 自增列生效；serial 序列列保存时会提示改用 ALTER SEQUENCE。':
     'Only applies to identity columns; saving a serial-backed column will ask you to use ALTER SEQUENCE instead.',
-  '存储引擎、字符集与表备注在上方常规区域修改。':
-    'Storage engine, character set and table comment are edited in the general area above.',
-  'ALTER TABLE 预览': 'ALTER TABLE preview',
-  '与当前表结构对比实时生成，可复制或转到查询页继续编辑。':
-    'Generated live from the diff with the current table. Copy it or continue editing in a query tab.',
   '自增值必须是不小于 1 的整数':
     'Auto-increment value must be an integer of at least 1',
   当前数据库的表: 'Tables in current database',
@@ -888,8 +875,6 @@ export const en = {
   允许为空: 'Nullable',
   全文索引: 'Full-text index',
   '全文索引当前只支持 MySQL': 'Full-text indexes currently support MySQL only',
-  '关联已有表，并配置更新、删除时的参照行为。':
-    'Reference an existing table and configure update and delete actions.',
   '关闭后只导出表、索引、约束、视图和例程结构。':
     'When off, only table, index, constraint, view, and routine definitions are exported.',
   '关闭未保存的标签？': 'Close unsaved tabs?',
@@ -911,11 +896,8 @@ export const en = {
   '在导出文件中加入表、视图、存储过程和函数的 DROP 语句。':
     'Include DROP statements for tables, views, procedures, and functions in the export.',
   复制为新查询标签: 'Copy to new query tab',
-  外键约束: 'Foreign key constraints',
   字段备注: 'Column comment',
-  字段定义: 'Column definitions',
   字段类型: 'Column type',
-  字段说明: 'Column description',
   存储引擎或字符集不合法: 'Invalid storage engine or character set',
   对象: 'Object',
   '导入 SQL 文件': 'Import SQL file',
@@ -937,8 +919,6 @@ export const en = {
   提交改动: 'Commit changes',
   操作失败: 'Operation failed',
   操作已完成: 'Operation completed',
-  '支持普通、唯一和 MySQL 全文索引，可组合多个字段。':
-    'Supports regular, unique, and MySQL full-text indexes with multiple columns.',
   数据库导出失败: 'Database export failed',
   数据库导出完成: 'Database export complete',
   数据库尚未连接: 'Database is not connected',
@@ -974,7 +954,6 @@ export const en = {
     'Index columns (click to select in index order)',
   索引方法: 'Index method',
   索引类型: 'Index type',
-  索引配置: 'Index configuration',
   约束名: 'Constraint name',
   自动保存: 'Auto-save',
   自动递增: 'Auto increment',
@@ -998,11 +977,8 @@ export const en = {
   还没有查询历史: 'No query history yet',
   '选择 SQL 导出位置': 'Select SQL export location',
   '选择要导入的 SQL 文件': 'Select SQL file to import',
-  '配置字段类型、长度、主键、默认值与自动递增。':
-    'Configure column types, lengths, primary keys, defaults, and auto increment.',
   重命名数据库: 'Rename database',
   重命名查询: 'Rename query',
-  '长度/精度': 'Length / Precision',
   长度或精度: 'Length or precision',
   默认值表达式: 'Default expression',
   新建数据库连接: 'New database connection',

@@ -178,8 +178,8 @@ async function upload(event: Event): Promise<void> {
     <template
       v-if="
         values.skinBackground !== 'none' &&
-        (values.skinBase === 'kuriyama-mirai' ||
-          values.skinTheme === 'kuriyama-mirai' ||
+        (values.skinBase !== 'default' ||
+          values.skinTheme !== 'default' ||
           values.skinBackground === 'custom')
       "
     >

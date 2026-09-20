@@ -2,7 +2,6 @@
 import { useI18n } from 'vue-i18n'
 
 import { computed, useTemplateRef } from 'vue'
-import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -99,51 +98,40 @@ function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
   columns.splice(target, 0, column)
   emit('update:modelValue', columns)
 }
+
+// 「添加字段」按钮住在设计器工具条上，不在本面板里。
+defineExpose({ add: addColumn })
 </script>
 
 <template>
   <section class="designer-section">
-    <div class="designer-section-heading">
-      <div>
-        <h3>{{ t('字段定义') }}</h3>
-        <p>{{ t('配置字段类型、长度、主键、默认值与自动递增。') }}</p>
-      </div>
-      <AppButton
-        size="sm"
-        @click="addColumn"
-      >
-        <AppIcon
-          name="lucide:plus"
-          :size="11"
-        />
-        {{ t('添加字段') }}
-      </AppButton>
-    </div>
-
     <div
       ref="tableWrap"
       class="designer-table-wrap scroll-thin"
     >
-      <table class="designer-table min-w-[1120px]">
+      <table class="designer-table min-w-[960px]">
         <thead>
           <tr>
-            <th class="w-10">{{ t('排序') }}</th>
+            <th
+              class="w-8"
+              :aria-label="t('排序')"
+            />
             <th class="min-w-36">{{ t('字段名') }}</th>
-            <th class="min-w-38">{{ t('类型') }}</th>
-            <th class="w-24">{{ t('长度/精度') }}</th>
-            <th class="w-14">{{ t('可空') }}</th>
-            <th class="w-14">{{ t('主键') }}</th>
-            <th class="w-14">{{ t('唯一') }}</th>
+            <th class="min-w-36">{{ t('类型') }}</th>
+            <th class="w-20">{{ t('长度') }}</th>
+            <th class="w-12">{{ t('可空') }}</th>
+            <th class="w-12">{{ t('主键') }}</th>
+            <th class="w-12">{{ t('唯一') }}</th>
             <th
               v-if="databaseKind === 'mysql'"
-              class="w-16"
+              class="w-14"
             >
               {{ t('无符号') }}
             </th>
-            <th class="w-16">{{ t('自增') }}</th>
-            <th class="min-w-40">{{ t('默认值') }}</th>
-            <th class="min-w-44">{{ t('备注') }}</th>
-            <th class="w-10" />
+            <th class="w-12">{{ t('自增') }}</th>
+            <th class="min-w-36">{{ t('默认值') }}</th>
+            <th class="min-w-40">{{ t('备注') }}</th>
+            <th class="w-8" />
           </tr>
         </thead>
         <tbody>
@@ -203,7 +191,7 @@ function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
                 :model-value="column.length"
                 variant="cell"
                 monospace
-                placeholder="255 / 10,2"
+                placeholder="255"
                 :aria-label="t('长度或精度')"
                 @update:model-value="
                   updateColumn(column.id, { length: $event })
@@ -279,7 +267,7 @@ function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
                 :model-value="column.defaultValue"
                 variant="cell"
                 monospace
-                placeholder="NULL / CURRENT_TIMESTAMP"
+                placeholder="NULL"
                 :aria-label="t('默认值表达式')"
                 :disabled="column.autoIncrement"
                 @update:model-value="
@@ -291,7 +279,6 @@ function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
               <AppInput
                 :model-value="column.comment"
                 variant="cell"
-                :placeholder="t('字段说明')"
                 :aria-label="t('字段备注')"
                 @update:model-value="
                   updateColumn(column.id, { comment: $event })
@@ -382,31 +369,11 @@ function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
   flex: 1;
   flex-direction: column;
 }
-.designer-section-heading {
-  display: flex;
-  min-height: 58px;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 9px 12px;
-}
-.designer-section-heading h3 {
-  color: var(--color-txt);
-  font-size: 12px;
-  font-weight: 600;
-}
-.designer-section-heading p {
-  margin-top: 2px;
-  color: var(--color-txt-4);
-  font-size: 9.5px;
-}
 .designer-table-wrap {
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: 10px;
+  padding: 8px;
 }
 .designer-table {
   width: 100%;
@@ -431,10 +398,10 @@ function moveColumnFromIndex(fromIndex: number, toIndex: number): void {
   text-align: left;
 }
 .designer-table td {
-  height: 36px;
+  height: 32px;
   border-right: 1px solid var(--color-line-soft);
   border-bottom: 1px solid var(--color-line-soft);
-  padding: 3px;
+  padding: 2px;
   color: var(--color-txt-2);
 }
 .designer-table tr:hover td {

@@ -7,21 +7,20 @@ import {
   readSkinColors,
   type SkinColorKey,
 } from '@/utils/skin-colors'
-import type { SkinSettings } from '@/utils/skin'
+import { usesLightScheme, type SkinSettings } from '@/utils/skin'
 
 const { t } = useI18n()
 
 const props = defineProps<{ values: SkinSettings }>()
 const emit = defineEmits<{ update: [patch: Partial<SkinSettings>] }>()
 const colors = computed(() => readSkinColors(props.values.skinCustomColors))
-const fields = computed(() =>
-  SKIN_COLOR_FIELDS.map(field => ({
+const fields = computed(() => {
+  const light = usesLightScheme(props.values)
+  return SKIN_COLOR_FIELDS.map(field => ({
     ...field,
-    value:
-      colors.value[field.key] ??
-      (props.values.skinBase === 'kuriyama-mirai' ? field.light : field.dark),
+    value: colors.value[field.key] ?? (light ? field.light : field.dark),
   }))
-)
+})
 
 function updateColor(key: SkinColorKey, event: Event): void {
   emit('update', {

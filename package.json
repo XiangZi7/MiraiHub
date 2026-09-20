@@ -14,6 +14,8 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "vite",
+    "typecheck": "vue-tsc --noEmit",
+    "build:app": "vite build",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",

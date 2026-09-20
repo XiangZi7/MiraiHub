@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
 import { applySkin } from '@/utils/skin-runtime'
+import { loadSkinRegistry, skinRegistry } from '@/utils/skin-registry'
 import { loadSettings } from '@/api/settings'
 import { subscribeSkinPreview } from '@/api/skin-preview'
 import type { SkinSettings } from '@/utils/skin'
@@ -33,6 +34,8 @@ export function startSettingsRuntime(
     })
     import.meta.hot?.dispose(stop)
   }
+  // 皮肤文件在安装目录里，读完再应用一次；在此之前先按默认样式渲染。
+  void loadSkinRegistry()
 
   watch(
     () =>
@@ -54,6 +57,7 @@ export function startSettingsRuntime(
 
   watch(
     () => [
+      skinRegistry.version,
       settings.skinTheme,
       settings.skinLibrary,
       settings.skinBase,

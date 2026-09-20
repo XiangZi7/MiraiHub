@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import {
+  computed,
+  onMounted,
+  reactive,
+  ref,
+  shallowRef,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -165,6 +173,36 @@ const charsetOptions = ['utf8mb4', 'utf8', 'latin1', 'ascii'].map(value => ({
   value,
   label: value,
 }))
+
+const fieldsEditor =
+  useTemplateRef<InstanceType<typeof DatabaseTableFieldsEditor>>('fieldsEditor')
+const indexesEditor =
+  useTemplateRef<InstanceType<typeof DatabaseTableIndexesEditor>>('indexesEditor')
+const foreignKeysEditor = useTemplateRef<
+  InstanceType<typeof DatabaseTableForeignKeysEditor>
+>('foreignKeysEditor')
+
+/**
+ * 「添加」按钮跟着当前面板走。
+ *
+ * 之前每个面板各自顶着一行标题 + 说明 + 添加按钮，切到字段页要先划过
+ * 头部、常规属性、面板切换、面板标题四行才见到数据；合并到工具条上省掉一行。
+ */
+const addAction = computed(() => {
+  switch (activePanel.value) {
+    case 'columns':
+      return { label: t('添加字段'), run: () => fieldsEditor.value?.add() }
+    case 'indexes':
+      return { label: t('添加索引'), run: () => indexesEditor.value?.add() }
+    case 'foreignKeys':
+      return {
+        label: t('添加外键'),
+        run: () => foreignKeysEditor.value?.add(),
+      }
+    default:
+      return null
+  }
+})
 
 const autoIncrementInput = computed({
   get: () => (draft.autoIncrement == null ? '' : String(draft.autoIncrement)),
@@ -416,27 +454,120 @@ watch(dirty, value => emit('dirty', value))
 
 <template>
   <div class="table-designer">
-    <header class="designer-header">
-      <div class="title-group">
-        <span class="title-icon"
-          ><AppIcon
-            name="lucide:table-properties"
-            :size="17"
-        /></span>
-        <div>
-          <h2>{{ editing ? t('设计表') : t('新建数据表') }}</h2>
-          <p v-if="editing">
-            {{ draft.schema }} · <span class="text-txt-2">{{ draft.name }}</span>
-          </p>
-          <p v-else>
-            {{
-              databaseKind === 'mysql' ? t('MySQL 数据库') : 'PostgreSQL Schema'
-            }}
-            · {{ schema }}
-          </p>
+    <!-- 常规属性一行放下：标签横排在输入框前，标题交给标签页显示 -->
+    <section
+      class="general-bar"
+      :aria-label="t('建表配置')"
+    >
+      <label class="general-field table-name">
+        <span>{{ t('表名') }}</span>
+        <AppInput
+          v-model="draft.name"
+          size="sm"
+          monospace
+          autocomplete="off"
+          spellcheck="false"
+          :aria-label="t('表名')"
+        />
+      </label>
+      <label class="general-field schema-field">
+        <span>{{ databaseKind === 'mysql' ? t('Database') : 'Schema' }}</span>
+        <AppInput
+          v-model="draft.schema"
+          size="sm"
+          monospace
+          autocomplete="off"
+          spellcheck="false"
+          :aria-label="t('数据库或 Schema')"
+        />
+      </label>
+      <template v-if="databaseKind === 'mysql'">
+        <div class="general-field select-field">
+          <span>{{ t('存储引擎') }}</span>
+          <div class="select-box">
+            <AppSelect
+              v-model="draft.engine"
+              :label="t('存储引擎')"
+              :options="engineOptions"
+              hide-label
+              compact
+            />
+          </div>
         </div>
-      </div>
-      <div class="header-actions">
+        <div class="general-field select-field">
+          <span>{{ t('字符集') }}</span>
+          <div class="select-box">
+            <AppSelect
+              v-model="draft.charset"
+              :label="t('字符集')"
+              :options="charsetOptions"
+              hide-label
+              compact
+            />
+          </div>
+        </div>
+      </template>
+      <label class="general-field comment-field">
+        <span>{{ t('表备注') }}</span>
+        <AppInput
+          v-model="draft.comment"
+          size="sm"
+          :placeholder="t('可选，用于说明表的用途')"
+          :aria-label="t('表备注')"
+        />
+      </label>
+    </section>
+
+    <!-- 面板切换与操作同一行：添加按钮跟着面板走，保存固定在右侧 -->
+    <div class="designer-toolbar">
+      <nav
+        class="designer-tabs"
+        :aria-label="t('建表配置')"
+      >
+        <AppButton
+          v-for="item in panelItems"
+          :key="item.id"
+          variant="bare"
+          :class="[
+            'designer-tab',
+            activePanel === item.id && 'designer-tab-active',
+          ]"
+          @click="activePanel = item.id"
+        >
+          <AppIcon
+            :name="item.icon"
+            :size="12"
+          /><span>{{ item.label }}</span
+          ><span
+            v-if="item.count !== null"
+            class="tab-count"
+            >{{ item.count }}</span
+          >
+        </AppButton>
+      </nav>
+      <div class="designer-actions">
+        <AppButton
+          v-if="addAction"
+          size="sm"
+          class="h-7"
+          :disabled="loadingDetail"
+          @click="addAction.run()"
+          ><AppIcon
+            name="lucide:plus"
+            :size="11"
+          />{{ addAction.label }}</AppButton
+        >
+        <AppButton
+          v-if="activePanel === 'sql'"
+          size="sm"
+          class="h-7"
+          :disabled="!hasChanges"
+          @click="copySql"
+          ><AppIcon
+            name="lucide:copy"
+            :size="11"
+          />{{ t('复制 SQL') }}</AppButton
+        >
         <AppButton
           size="sm"
           class="h-7"
@@ -445,9 +576,8 @@ watch(dirty, value => emit('dirty', value))
           ><AppIcon
             name="lucide:square-terminal"
             :size="11"
-          />
-          {{ t('在查询中打开') }}
-        </AppButton>
+          />{{ t('在查询中打开') }}</AppButton
+        >
         <AppButton
           v-if="!editing"
           variant="primary"
@@ -475,90 +605,7 @@ watch(dirty, value => emit('dirty', value))
           />{{ applying ? t('正在保存…') : t('保存修改') }}</AppButton
         >
       </div>
-    </header>
-
-    <section class="general-card">
-      <label class="field-label table-name">
-        {{ t('表名') }}
-        <AppInput
-          v-model="draft.name"
-          size="sm"
-          monospace
-          autocomplete="off"
-          spellcheck="false"
-          :aria-label="t('表名')"
-      /></label>
-      <label class="field-label">
-        {{ t('数据库 / Schema') }}
-        <AppInput
-          v-model="draft.schema"
-          size="sm"
-          monospace
-          autocomplete="off"
-          spellcheck="false"
-          :aria-label="t('数据库或 Schema')"
-      /></label>
-      <div
-        v-if="databaseKind === 'mysql'"
-        class="field-label"
-      >
-        <span> {{ t('存储引擎') }} </span
-        ><AppSelect
-          v-model="draft.engine"
-          :label="t('存储引擎')"
-          :options="engineOptions"
-          hide-label
-          compact
-        />
-      </div>
-      <div
-        v-if="databaseKind === 'mysql'"
-        class="field-label"
-      >
-        <span> {{ t('字符集') }} </span
-        ><AppSelect
-          v-model="draft.charset"
-          :label="t('字符集')"
-          :options="charsetOptions"
-          hide-label
-          compact
-        />
-      </div>
-      <label class="field-label comment-field">
-        {{ t('表备注') }}
-        <AppInput
-          v-model="draft.comment"
-          size="sm"
-          :placeholder="t('可选，用于说明表的用途')"
-          :aria-label="t('表备注')"
-      /></label>
-    </section>
-
-    <nav
-      class="designer-tabs"
-      :aria-label="t('建表配置')"
-    >
-      <AppButton
-        v-for="item in panelItems"
-        :key="item.id"
-        variant="bare"
-        :class="[
-          'designer-tab',
-          activePanel === item.id && 'designer-tab-active',
-        ]"
-        @click="activePanel = item.id"
-      >
-        <AppIcon
-          :name="item.icon"
-          :size="12"
-        /><span>{{ item.label }}</span
-        ><span
-          v-if="item.count !== null"
-          class="tab-count"
-          >{{ item.count }}</span
-        >
-      </AppButton>
-    </nav>
+    </div>
 
     <main class="designer-body">
       <div
@@ -575,18 +622,21 @@ watch(dirty, value => emit('dirty', value))
       <template v-else>
         <DatabaseTableFieldsEditor
           v-show="activePanel === 'columns'"
+          ref="fieldsEditor"
           v-model="draft.columns"
           :database-kind="databaseKind"
           :extra-types="extraTypes"
         />
         <DatabaseTableIndexesEditor
           v-show="activePanel === 'indexes'"
+          ref="indexesEditor"
           v-model="draft.indexes"
           :columns="draft.columns"
           :database-kind="databaseKind"
         />
         <DatabaseTableForeignKeysEditor
           v-show="activePanel === 'foreignKeys'"
+          ref="foreignKeysEditor"
           v-model="draft.foreignKeys"
           :columns="draft.columns"
           :schema="draft.schema"
@@ -599,100 +649,44 @@ watch(dirty, value => emit('dirty', value))
           v-show="activePanel === 'options'"
           class="options-panel"
         >
-          <div class="options-heading">
-            <div>
-              <h3>{{ t('表选项') }}</h3>
-              <p>{{ t('修改自增计数器等表级选项，随“保存修改”一起应用。') }}</p>
-            </div>
-          </div>
-          <div class="options-grid">
-            <template v-if="databaseKind === 'mysql'">
-              <label class="field-label">
-                <span>{{ t('自增值（AUTO_INCREMENT）') }}</span>
-                <AppInput
-                  v-model="autoIncrementInput"
-                  size="sm"
-                  monospace
-                  autocomplete="off"
-                  inputmode="numeric"
-                  :placeholder="t('当前值 {value0}，留空表示不修改', { value0: currentAutoIncrementLabel() })"
-                  :aria-label="t('自增值')"
-              /></label>
-              <p class="options-hint">
-                {{
-                  hasAutoIncrementColumn
-                    ? t('下一个插入行将从这个值开始递增。')
-                    : t('表当前没有自增字段；先在字段页勾选自增后，这里才会生效。')
-                }}
-              </p>
-            </template>
-            <template v-else>
-              <label class="field-label">
-                <span>{{ t('自增值（RESTART WITH）') }}</span>
-                <AppInput
-                  v-model="autoIncrementInput"
-                  size="sm"
-                  monospace
-                  autocomplete="off"
-                  inputmode="numeric"
-                  :placeholder="t('当前值 {value0}，留空表示不修改', { value0: currentAutoIncrementLabel() })"
-                  :aria-label="t('自增值')"
-              /></label>
-              <p class="options-hint">
-                {{ t('只对 identity 自增列生效；serial 序列列保存时会提示改用 ALTER SEQUENCE。') }}
-              </p>
-            </template>
-            <p class="options-note">
-              {{ t('存储引擎、字符集与表备注在上方常规区域修改。') }}
-            </p>
-          </div>
-        </section>
-        <section
-          v-show="activePanel === 'sql'"
-          class="sql-panel"
-        >
-          <div class="sql-heading">
-            <div>
-              <h3>{{ editing ? t('ALTER TABLE 预览') : t('SQL 预览') }}</h3>
-              <p>
-                {{
-                  editing
-                    ? t('与当前表结构对比实时生成，可复制或转到查询页继续编辑。')
-                    : t('根据当前配置实时生成，可复制或转到查询页继续编辑。')
-                }}
-              </p>
-            </div>
-            <AppButton
+          <label class="option-field">
+            <span>{{
+              databaseKind === 'mysql'
+                ? t('自增值（AUTO_INCREMENT）')
+                : t('自增值（RESTART WITH）')
+            }}</span>
+            <AppInput
+              v-model="autoIncrementInput"
               size="sm"
-              class="h-7"
-              :disabled="!hasChanges"
-              @click="copySql"
-              ><AppIcon
-                name="lucide:copy"
-                :size="11"
-              />
-              {{ t('复制 SQL') }}
-            </AppButton>
-          </div>
-          <pre class="sql-preview scroll-thin"><code>{{ sqlPreview }}</code></pre>
+              monospace
+              autocomplete="off"
+              inputmode="numeric"
+              :placeholder="t('当前值 {value0}，留空表示不修改', { value0: currentAutoIncrementLabel() })"
+              :aria-label="t('自增值')"
+            />
+          </label>
+          <p class="options-hint">
+            {{
+              databaseKind !== 'mysql'
+                ? t('只对 identity 自增列生效；serial 序列列保存时会提示改用 ALTER SEQUENCE。')
+                : hasAutoIncrementColumn
+                  ? t('下一个插入行将从这个值开始递增。')
+                  : t('表当前没有自增字段；先在字段页勾选自增后，这里才会生效。')
+            }}
+          </p>
         </section>
+        <pre
+          v-show="activePanel === 'sql'"
+          class="sql-preview scroll-thin"
+        ><code>{{ sqlPreview }}</code></pre>
       </template>
     </main>
 
+    <!-- 底栏只在出错时说话；没问题就安静地报个数 -->
     <footer class="designer-footer">
       <div
-        v-if="validation.valid"
-        class="validation validation-ok"
-      >
-        <AppIcon
-          name="lucide:circle-check"
-          :size="12"
-        />
-        {{ t('database.validTable') }}
-      </div>
-      <div
-        v-else
-        class="validation validation-error"
+        v-if="!validation.valid"
+        class="validation-error"
         :title="validation.errors.join('\n')"
       >
         <AppIcon
@@ -726,79 +720,75 @@ watch(dirty, value => emit('dirty', value))
   overflow: hidden;
   background: var(--color-bg);
 }
-.designer-header {
+.general-bar {
   display: flex;
-  min-height: 62px;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 6px 14px;
   border-bottom: 1px solid var(--color-line-soft);
-  padding: 9px 14px;
-  background: color-mix(in oklch, var(--color-panel) 70%, transparent);
-  backdrop-filter: blur(18px) saturate(145%);
-}
-.title-group,
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-.title-icon {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border: 1px solid
-    color-mix(in oklch, var(--color-accent) 32%, var(--color-line));
-  border-radius: 9px;
-  background: color-mix(in oklch, var(--color-accent) 9%, transparent);
-  color: var(--color-accent);
-  box-shadow: inset 0 1px rgb(255 255 255 / 5%);
-}
-.title-group h2 {
-  color: var(--color-txt);
-  font-size: 13px;
-  font-weight: 600;
-}
-.title-group p {
-  margin-top: 2px;
-  color: var(--color-txt-4);
-  font-size: 9.5px;
-}
-.general-card {
-  display: grid;
-  flex: none;
-  grid-template-columns:
-    minmax(180px, 1.2fr) minmax(150px, 1fr)
-    120px 120px minmax(180px, 1.4fr);
-  gap: 8px;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 10px 12px;
+  padding: 6px 12px;
   background:
     linear-gradient(110deg, rgb(255 255 255 / 2.5%), transparent 45%),
     color-mix(in oklch, var(--color-card) 66%, transparent);
 }
-.field-label {
-  display: grid;
-  gap: 4px;
+.general-field {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.general-field > span {
+  flex: none;
   color: var(--color-txt-4);
   font-size: 9.5px;
+  white-space: nowrap;
 }
-.designer-tabs {
+.table-name {
+  flex: 1 1 170px;
+}
+.schema-field {
+  flex: 1 1 140px;
+}
+.select-field {
+  flex: none;
+}
+.select-box {
+  width: 104px;
+}
+.comment-field {
+  flex: 2 1 220px;
+}
+.designer-toolbar {
   display: flex;
   height: 36px;
   flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--color-line-soft);
+  padding: 0 8px 0 4px;
+  background: color-mix(in oklch, var(--color-panel) 54%, transparent);
+}
+.designer-tabs {
+  display: flex;
+  min-width: 0;
+  height: 100%;
   align-items: stretch;
   gap: 1px;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 0 10px;
-  background: color-mix(in oklch, var(--color-panel) 54%, transparent);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.designer-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
 }
 .designer-tab {
   position: relative;
   display: flex;
-  min-width: 82px;
+  flex: none;
   cursor: pointer;
   align-items: center;
   justify-content: center;
@@ -845,76 +835,29 @@ watch(dirty, value => emit('dirty', value))
   flex-direction: column;
 }
 .options-panel {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
+  display: grid;
+  max-width: 480px;
+  gap: 8px;
   overflow: auto;
+  padding: 14px 12px;
 }
-.options-heading {
-  display: flex;
-  min-height: 58px;
-  flex: none;
-  align-items: center;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 9px 12px;
-}
-.options-heading h3 {
-  color: var(--color-txt);
-  font-size: 12px;
-  font-weight: 600;
-}
-.options-heading p {
-  margin-top: 2px;
+.option-field {
+  display: grid;
+  gap: 4px;
   color: var(--color-txt-4);
   font-size: 9.5px;
 }
-.options-grid {
-  display: grid;
-  max-width: 560px;
-  gap: 10px;
-  padding: 14px 12px;
-}
-.options-hint,
-.options-note {
+.options-hint {
   margin: 0;
   color: var(--color-txt-4);
   font-size: 9.5px;
   line-height: 1.6;
 }
-.options-note {
-  grid-column: 1 / -1;
-}
-.sql-panel {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-}
-.sql-heading {
-  display: flex;
-  min-height: 58px;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 9px 12px;
-}
-.sql-heading h3 {
-  color: var(--color-txt);
-  font-size: 12px;
-  font-weight: 600;
-}
-.sql-heading p {
-  margin-top: 2px;
-  color: var(--color-txt-4);
-  font-size: 9.5px;
-}
 .sql-preview {
   min-height: 0;
   flex: 1;
   overflow: auto;
-  margin: 12px;
+  margin: 10px;
   border: 1px solid var(--color-line-soft);
   border-radius: 9px;
   background: color-mix(in oklch, var(--color-panel) 78%, transparent);
@@ -927,7 +870,7 @@ watch(dirty, value => emit('dirty', value))
 }
 .designer-footer {
   display: flex;
-  min-height: 34px;
+  min-height: 30px;
   flex: none;
   align-items: center;
   gap: 10px;
@@ -936,44 +879,20 @@ watch(dirty, value => emit('dirty', value))
   background: color-mix(in oklch, var(--color-panel) 70%, transparent);
   backdrop-filter: blur(14px);
 }
-.validation {
+.validation-error {
   display: flex;
   min-width: 0;
+  max-width: 60%;
   align-items: center;
   gap: 5px;
-  font-size: 9.5px;
-}
-.validation-ok {
-  color: var(--color-accent);
-}
-.validation-error {
-  max-width: 48%;
   overflow: hidden;
   color: var(--color-danger);
   font-size: 9.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-@media (max-width: 1100px) {
-  .general-card {
-    grid-template-columns: 1fr 1fr 100px 100px;
-  }
-  .comment-field {
-    grid-column: 1 / -1;
-  }
-}
 @media (max-width: 760px) {
-  .general-card {
-    grid-template-columns: 1fr 1fr;
-  }
-  .table-name,
-  .comment-field {
-    grid-column: 1 / -1;
-  }
-  .designer-header {
-    align-items: flex-start;
-  }
-  .header-actions .btn {
+  .designer-actions .btn:not(.btn-primary) {
     display: none;
   }
 }

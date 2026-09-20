@@ -2,7 +2,6 @@
 import { useI18n } from 'vue-i18n'
 
 import { computed } from 'vue'
-import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
@@ -129,26 +128,13 @@ function removeForeignKey(id: string): void {
     props.modelValue.filter(foreignKey => foreignKey.id !== id)
   )
 }
+
+// 「添加外键」按钮住在设计器工具条上，不在本面板里。
+defineExpose({ add: addForeignKey })
 </script>
 
 <template>
   <section class="designer-section">
-    <div class="designer-section-heading">
-      <div>
-        <h3>{{ t('外键约束') }}</h3>
-        <p>{{ t('关联已有表，并配置更新、删除时的参照行为。') }}</p>
-      </div>
-      <AppButton
-        size="sm"
-        @click="addForeignKey"
-        ><AppIcon
-          name="lucide:plus"
-          :size="11"
-        />
-        {{ t('添加外键') }}
-      </AppButton>
-    </div>
-
     <div class="foreign-key-list scroll-thin">
       <article
         v-for="foreignKey in modelValue"
@@ -306,22 +292,6 @@ function removeForeignKey(id: string): void {
   flex: 1;
   flex-direction: column;
 }
-.designer-section-heading {
-  display: flex;
-  min-height: 58px;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 9px 12px;
-}
-.designer-section-heading h3 {
-  color: var(--color-txt);
-  font-size: 12px;
-  font-weight: 600;
-}
-.designer-section-heading p,
 .field-label {
   margin-top: 2px;
   color: var(--color-txt-4);

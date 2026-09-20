@@ -3,6 +3,7 @@
 pub mod column_tags;
 pub mod commands;
 pub mod locale;
+pub mod skins;
 pub mod window;
 
 pub mod remote_editor;

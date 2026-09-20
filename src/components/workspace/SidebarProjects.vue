@@ -97,10 +97,18 @@ const sort = computed<ConnectionSort>({
 const visibleGroups = computed(() =>
   connectionList(props.groups, state.keyword, sort.value)
 )
+/** 搜索命中的连接总数，展示在搜索框右侧 */
+const matchCount = computed(() =>
+  visibleGroups.value.reduce((total, group) => total + group.items.length, 0)
+)
+/** 未分组桶直接平铺，没有折叠态，不参与"全部展开 / 折叠" */
+const collapsibleGroups = computed(() =>
+  props.groups.filter(group => !group.loose)
+)
 const allExpanded = computed(
   () =>
-    props.groups.length > 0 &&
-    props.groups.every(group => state.collapsed[group.id] === false)
+    collapsibleGroups.value.length > 0 &&
+    collapsibleGroups.value.every(group => state.collapsed[group.id] === false)
 )
 watch(listKind, () => {
   state.keyword = ''
@@ -113,7 +121,8 @@ watch(
   }
 )
 function setAllExpanded(expanded: boolean): void {
-  for (const group of props.groups) state.collapsed[group.id] = !expanded
+  for (const group of collapsibleGroups.value)
+    state.collapsed[group.id] = !expanded
 }
 watch(
   () => props.activeId,
@@ -151,6 +160,16 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       { id: 'edit', label: t('编辑连接'), icon: 'lucide:pencil' },
       // 克隆整条配置（含认证方式与启动命令），不是把连接信息拷到剪贴板。
       { id: 'duplicate', label: t('克隆连接'), icon: 'lucide:copy-plus' },
+      // 拖拽之外的第二条路：不必瞄准列表空白也能把连接放回顶层。
+      ...(connection.group.trim()
+        ? [
+            {
+              id: 'ungroup',
+              label: t('移出分组'),
+              icon: 'lucide:folder-minus',
+            } satisfies ContextMenuItem,
+          ]
+        : []),
       ...(database && connection.kind !== 'redis'
         ? [
             {
@@ -254,11 +273,7 @@ const groupDrag = useConnectionGroupDrag({
   groups: () => props.groups,
   onDrop(connectionId, group) {
     state.collapsed[group.id] = false
-    emit(
-      'move',
-      connectionId,
-      group.id === `ungrouped-${group.kind}` ? '' : group.name
-    )
+    emit('move', connectionId, group.loose ? '' : group.name)
   },
 })
 const groupList = useTemplateRef<HTMLElement>('groupList')
@@ -349,6 +364,7 @@ function runContextAction(action: string): void {
       emit('newDatabaseQuery', connection)
     else if (action === 'edit') emit('edit', connection)
     else if (action === 'duplicate') emit('duplicate', connection)
+    else if (action === 'ungroup') emit('move', connection.id, '')
     else if (action === 'export-database') emit('exportDatabase', connection)
     else if (action === 'import-database') emit('importDatabase', connection)
     else if (action === 'delete') emit('remove', connection)
@@ -379,6 +395,7 @@ function runContextAction(action: string): void {
       :label="label"
       :expanded="allExpanded"
       :transferable="listKind === 'ssh'"
+      :match-count="matchCount"
       @create-group="state.creatingGroup = true"
       @toggle-all="setAllExpanded(!allExpanded)"
       @transfer="emit('transferSsh')"
@@ -393,7 +410,11 @@ function runContextAction(action: string): void {
 
     <div
       ref="groupList"
-      class="space-y-0.5"
+      :class="[
+        'sidebar-group-list space-y-0.5',
+        groupDrag.rootActive.value && 'sidebar-group-list-drop',
+      ]"
+      :data-connection-root-drop="listKind"
     >
       <div
         v-for="group in visibleGroups"
@@ -401,56 +422,61 @@ function runContextAction(action: string): void {
         :data-connection-group-id="group.id"
         :class="[
           'sidebar-group',
-          groupDrag.targetGroupId.value === group.id && 'sidebar-group-drop',
+          !group.loose &&
+            groupDrag.targetGroupId.value === group.id &&
+            'sidebar-group-drop',
           groupReorder.draggedGroupId.value === group.id &&
             'sidebar-group-dragging',
           groupReorder.targetGroupId.value === group.id &&
             `sidebar-group-drop-${groupReorder.targetPosition.value}`,
         ]"
       >
-        <SidebarGroupEditor
-          v-if="state.editingGroupId === group.id"
-          :initial-value="group.name"
-          @submit="renameGroup(group.id, $event)"
-          @cancel="state.editingGroupId = ''"
-        />
-
-        <button
-          v-else
-          type="button"
-          class="nav-item sidebar-group-draggable w-full"
-          :data-reorderable-connection-group-id="group.id"
-          :data-connection-group-kind="group.kind"
-          :aria-expanded="isExpanded(group.id)"
-          aria-haspopup="menu"
-          aria-keyshortcuts="Shift+F10"
-          @click="toggleGroup(group.id)"
-          @contextmenu.prevent.stop="openGroupMenu($event, group)"
-          @keydown="handleGroupKeydown($event, group)"
-          @pointerdown="groupReorder.start($event, group)"
-        >
-          <AppIcon
-            name="lucide:chevron-right"
-            :size="13"
-            :class="
-              cn(
-                'text-txt-4 transition-transform duration-150 motion-reduce:transition-none',
-                isExpanded(group.id) && 'rotate-90'
-              )
-            "
+        <!-- 未分组不画文件夹：里面的连接直接平铺在顶层 -->
+        <template v-if="!group.loose">
+          <SidebarGroupEditor
+            v-if="state.editingGroupId === group.id"
+            :initial-value="group.name"
+            @submit="renameGroup(group.id, $event)"
+            @cancel="state.editingGroupId = ''"
           />
-          <AppIcon
-            name="lucide:folder"
-            :size="13"
-            class="text-txt-3"
-          />
-          <span class="flex-1 truncate text-left">{{ group.name }}</span>
-          <span class="text-txt-4 shrink-0 text-[10px]">{{
-            group.items.length
-          }}</span>
-        </button>
 
-        <AppCollapse :open="isExpanded(group.id)">
+          <button
+            v-else
+            type="button"
+            class="nav-item sidebar-group-draggable w-full"
+            :data-reorderable-connection-group-id="group.id"
+            :data-connection-group-kind="group.kind"
+            :aria-expanded="isExpanded(group.id)"
+            aria-haspopup="menu"
+            aria-keyshortcuts="Shift+F10"
+            @click="toggleGroup(group.id)"
+            @contextmenu.prevent.stop="openGroupMenu($event, group)"
+            @keydown="handleGroupKeydown($event, group)"
+            @pointerdown="groupReorder.start($event, group)"
+          >
+            <AppIcon
+              name="lucide:chevron-right"
+              :size="13"
+              :class="
+                cn(
+                  'text-txt-4 transition-transform duration-150 motion-reduce:transition-none',
+                  isExpanded(group.id) && 'rotate-90'
+                )
+              "
+            />
+            <AppIcon
+              name="lucide:folder"
+              :size="13"
+              class="text-txt-3"
+            />
+            <span class="flex-1 truncate text-left">{{ group.name }}</span>
+            <span class="text-txt-4 shrink-0 text-[10px]">{{
+              group.items.length
+            }}</span>
+          </button>
+        </template>
+
+        <AppCollapse :open="group.loose || isExpanded(group.id)">
           <div class="space-y-0.5">
             <button
               v-for="node in group.items"
@@ -458,7 +484,8 @@ function runContextAction(action: string): void {
               type="button"
               :class="
                 cn(
-                  'connection-node w-full pl-7',
+                  'connection-node w-full',
+                  group.loose ? 'pl-2.5' : 'pl-7',
                   'connection-node-draggable',
                   groupDrag.draggedConnectionId.value === node.id &&
                     'connection-node-dragging',
@@ -576,6 +603,22 @@ function runContextAction(action: string): void {
 </template>
 
 <style scoped>
+/* 列表底部留一段空白，拖连接"出分组"时总有地方可以落下 */
+.sidebar-group-list {
+  position: relative;
+  min-height: 72px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.sidebar-group-list-drop {
+  border-color: color-mix(in oklch, var(--color-violet) 52%, transparent);
+  background: color-mix(in oklch, var(--color-violet) 7%, transparent);
+}
+
 .sidebar-group {
   position: relative;
   border-radius: 6px;
@@ -702,7 +745,8 @@ function runContextAction(action: string): void {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-group {
+  .sidebar-group,
+  .sidebar-group-list {
     transition: none;
   }
 }

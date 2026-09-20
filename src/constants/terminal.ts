@@ -38,7 +38,7 @@ export const TERMINAL_THEME: ITheme = {
   brightWhite: '#f0f0f2',
 }
 
-const MIRAI_TERMINAL_THEME: ITheme = {
+const LIGHT_TERMINAL_THEME: ITheme = {
   ...TERMINAL_THEME,
   foreground: '#664654',
   cursor: '#c93478',
@@ -64,9 +64,9 @@ const MIRAI_TERMINAL_THEME: ITheme = {
 
 /** Resolve CSS tokens to sRGB for xterm's canvas, including custom CSS colors. */
 export function currentTerminalTheme(): ITheme {
-  const mirai = document.documentElement.dataset.skinStyle === 'mirai'
+  const light = document.documentElement.dataset.skinScheme === 'light'
   return {
-    ...(mirai ? MIRAI_TERMINAL_THEME : TERMINAL_THEME),
+    ...(light ? LIGHT_TERMINAL_THEME : TERMINAL_THEME),
     foreground: rgba('var(--color-term-fg)', 1),
     cursor: rgba('var(--color-accent)', 1),
     green: rgba('var(--color-term-green)', 1),

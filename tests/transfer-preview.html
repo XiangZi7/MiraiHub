@@ -13,8 +13,11 @@
       import { createPinia } from 'pinia'
       import TransferCenter from '/src/components/workspace/TransferCenter.vue'
       import { useTransfersStore } from '/src/stores/transfers'
-      import lightSkin from '/src/assets/styles/skins/kuriyama-mirai.css?raw'
       import '/src/assets/styles/main.css'
+      // 浅色皮肤样式来自皮肤目录（dev server 把 src-tauri/skins 挂在 /skins）。
+      const lightSkin = await (
+        await fetch('/skins/kuriyama-mirai/skin.css')
+      ).text()
       const historyKey = 'miraihub:file-transfer-history'
       const savedHistory = localStorage.getItem(historyKey)
       localStorage.removeItem(historyKey)

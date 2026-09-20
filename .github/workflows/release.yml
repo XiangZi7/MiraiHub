@@ -82,6 +82,10 @@ jobs:
       - name: Test frontend utilities and release version logic
         run: pnpm test
 
+      # 打包链路（beforeBuildCommand）只跑 vite build，类型检查在这里单独把关。
+      - name: Type-check frontend
+        run: pnpm typecheck
+
       - name: Test Rust backend
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
 

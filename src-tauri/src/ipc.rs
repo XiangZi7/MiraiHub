@@ -69,6 +69,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         platform::commands::set_minimize_to_tray,
         platform::commands::set_launch_at_startup,
         platform::commands::launch_at_startup_enabled,
+        platform::skins::skin_directory,
+        platform::skins::open_skin_directory,
         // ---------- SSH：会话 ----------
         ssh::commands::ssh_connect,
         ssh::commands::ssh_disconnect,

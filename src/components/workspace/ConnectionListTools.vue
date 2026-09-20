@@ -9,10 +9,10 @@ import {
   useId,
   useTemplateRef,
 } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
-import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
 import {
   CONNECTION_SORT_OPTIONS,
   type ConnectionSort,
@@ -20,15 +20,22 @@ import {
 
 const { t } = useI18n()
 
-defineProps<{ label: string; expanded: boolean; transferable?: boolean }>()
+defineProps<{
+  label: string
+  expanded: boolean
+  transferable?: boolean
+  /** 当前关键词命中的连接数，仅搜索时显示 */
+  matchCount?: number
+}>()
 const keyword = defineModel<string>('keyword', { required: true })
 const sort = defineModel<ConnectionSort>('sort', { required: true })
 const emit = defineEmits<{ createGroup: []; toggleAll: []; transfer: [] }>()
+const root = useTemplateRef<HTMLElement>('root')
 const searchInput = useTemplateRef<HTMLInputElement>('searchInput')
 const searchId = useId()
 // 响应式状态
 const state = reactive({
-  // 搜索浮层是否显示
+  // 搜索行是否展开
   searchOpen: false,
   // 排序菜单是否显示
   open: false,
@@ -38,6 +45,12 @@ const state = reactive({
   y: 0,
 })
 const { open, x, y, searchOpen } = toRefs(state)
+/**
+ * 关闭即清空。
+ *
+ * 留着关键词收起搜索行，列表会保持被过滤的样子却没有任何可见线索，
+ * 用户只会以为连接丢了。
+ */
 function closeSearch(): void {
   state.searchOpen = false
   keyword.value = ''
@@ -51,6 +64,10 @@ async function toggleSearch(): Promise<void> {
   await nextTick()
   searchInput.value?.focus()
 }
+// 展开后工具行整行被输入框占据，点侧栏其它位置即退出搜索。
+onClickOutside(root, () => {
+  if (state.searchOpen) closeSearch()
+})
 const options = computed(() =>
   CONNECTION_SORT_OPTIONS.map(option => ({
     id: option.value,
@@ -71,52 +88,54 @@ function selectSort(id: string): void {
 </script>
 
 <template>
-  <div class="relative mt-5 mb-2">
-    <div class="mb-2 flex items-center gap-0.5">
-      <p class="group-label min-w-0 flex-1 truncate">{{ label }}</p>
-      <IconButton
-        icon="lucide:search"
-        :size="13"
-        :title="searchOpen ? t('取消搜索') : t('搜索连接')"
-        :aria-expanded="searchOpen"
-        :aria-controls="searchId"
-        :class="{ 'bg-hover text-txt': searchOpen }"
-        @click="toggleSearch"
-      />
-      <IconButton
-        icon="lucide:arrow-down-up"
-        :size="13"
-        :title="t('排序连接')"
-        @click="showSort"
-      />
-      <IconButton
-        v-if="transferable"
-        icon="lucide:arrow-left-right"
-        :size="13"
-        :title="t('导入 / 导出 SSH 配置')"
-        @click="emit('transfer')"
-      />
-      <IconButton
-        :icon="expanded ? 'lucide:chevrons-up' : 'lucide:chevrons-down'"
-        :size="13"
-        :title="expanded ? t('全部折叠') : t('全部展开')"
-        @click="emit('toggleAll')"
-      />
-      <IconButton
-        icon="lucide:folder-plus"
-        :size="13"
-        :title="t('新建分组')"
-        @click="emit('createGroup')"
-      />
-    </div>
-    <div
-      v-if="searchOpen"
-      :id="searchId"
-      class="search-popover"
-      @keydown.esc.stop.prevent="closeSearch"
-    >
-      <AppMenuSurface />
-      <label class="field flex items-center gap-1.5">
+  <div
+    ref="root"
+    class="mt-5 mb-2"
+  >
+    <div class="mb-2 flex min-h-8 items-center gap-0.5">
+      <template v-if="!searchOpen">
+        <p class="group-label min-w-0 flex-1 truncate">{{ label }}</p>
+        <IconButton
+          icon="lucide:search"
+          :size="13"
+          :title="t('搜索连接')"
+          :aria-expanded="searchOpen"
+          :aria-controls="searchId"
+          @click="toggleSearch"
+        />
+        <IconButton
+          icon="lucide:arrow-down-up"
+          :size="13"
+          :title="t('排序连接')"
+          @click="showSort"
+        />
+        <IconButton
+          v-if="transferable"
+          icon="lucide:arrow-left-right"
+          :size="13"
+          :title="t('导入 / 导出 SSH 配置')"
+          @click="emit('transfer')"
+        />
+        <IconButton
+          :icon="expanded ? 'lucide:chevrons-up' : 'lucide:chevrons-down'"
+          :size="13"
+          :title="expanded ? t('全部折叠') : t('全部展开')"
+          @click="emit('toggleAll')"
+        />
+        <IconButton
+          icon="lucide:folder-plus"
+          :size="13"
+          :title="t('新建分组')"
+          @click="emit('createGroup')"
+        />
+      </template>
+
+      <label
+        v-else
+        :id="searchId"
+        class="field search-field w-full"
+        @keydown.esc.stop.prevent="closeSearch"
+      >
         <AppIcon
           name="lucide:search"
           :size="13"
@@ -125,11 +144,31 @@ function selectSort(id: string): void {
         <input
           ref="searchInput"
           v-model="keyword"
-          type="search"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
           :aria-label="t('搜索连接')"
           :placeholder="t('搜索名称、地址、分组…')"
           class="min-w-0 flex-1"
         />
+        <span
+          v-if="keyword.trim()"
+          class="search-count"
+          role="status"
+          >{{ matchCount ?? 0 }}</span
+        >
+        <button
+          type="button"
+          class="search-clear"
+          :title="t('取消搜索')"
+          :aria-label="t('取消搜索')"
+          @click="closeSearch"
+        >
+          <AppIcon
+            name="lucide:x"
+            :size="12"
+          />
+        </button>
       </label>
     </div>
     <AppContextMenu
@@ -145,16 +184,63 @@ function selectSort(id: string): void {
 </template>
 
 <style scoped>
-.search-popover {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0;
-  right: 0;
-  z-index: 40;
-  padding: 6px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 8px;
-  isolation: isolate;
-  box-shadow: var(--shadow-pop);
+.search-field {
+  gap: 6px;
+  padding-right: 4px;
+  animation: search-reveal var(--motion-panel) ease;
+}
+
+.search-field:focus-within {
+  border-color: color-mix(in oklch, var(--color-violet) 55%, var(--color-line));
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-violet) 16%, transparent);
+}
+
+.search-count {
+  flex-shrink: 0;
+  color: var(--color-txt-4);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.search-clear {
+  display: flex;
+  height: 18px;
+  width: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--color-txt-4);
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.search-clear:hover,
+.search-clear:focus-visible {
+  background: var(--color-hover);
+  color: var(--color-txt);
+}
+
+@keyframes search-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-field {
+    animation: none;
+  }
+  .search-clear {
+    transition: none;
+  }
 }
 </style>

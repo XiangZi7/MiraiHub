@@ -1,6 +1,7 @@
 import { i18n } from '@/i18n'
 import { DEFAULT_SETTINGS, type SettingsValues } from '@/types/settings'
 import { readSkinColors } from './skin-colors'
+import { builtinSkin, isBuiltinSkinId } from './skin-registry'
 
 export type SkinSettings = Pick<
   SettingsValues,
@@ -29,9 +30,14 @@ export interface CustomSkin {
   values: SkinAppearance
 }
 
+/** 基础主题只能是 default 或皮肤目录里的某个 id。 */
+function normalizeBase(base: string): string {
+  return isBuiltinSkinId(base) ? base : 'default'
+}
+
 export function skinPreset(base = 'default'): SkinAppearance {
   return {
-    skinBase: base === 'kuriyama-mirai' ? base : 'default',
+    skinBase: normalizeBase(base),
     skinStyle: 'builtin',
     skinCustomCss: '',
     skinCustomColors: '{}',
@@ -87,13 +93,7 @@ export function resolveSkinSettings(settings: SkinSettings): SkinSettings {
   )
   return custom
     ? { ...settings, ...custom.values }
-    : {
-        ...settings,
-        skinBase:
-          settings.skinTheme === 'kuriyama-mirai'
-            ? 'kuriyama-mirai'
-            : 'default',
-      }
+    : { ...settings, skinBase: normalizeBase(settings.skinTheme) }
 }
 
 export function createCustomSkin(
@@ -125,8 +125,7 @@ function normalizeAppearance<T extends SkinAppearance>(settings: T): T {
   normalized.skinCustomColors = JSON.stringify(
     readSkinColors(settings.skinCustomColors)
   )
-  if (!['default', 'kuriyama-mirai'].includes(normalized.skinBase))
-    normalized.skinBase = 'default'
+  normalized.skinBase = normalizeBase(normalized.skinBase)
   if (!['builtin', 'default', 'custom'].includes(normalized.skinStyle))
     normalized.skinStyle = 'builtin'
   if (!['theme', 'custom', 'none'].includes(normalized.skinBackground))
@@ -170,17 +169,24 @@ export function normalizeSkinSettings<T extends SkinSettings>(settings: T): T {
   }))
   normalized.skinLibrary = JSON.stringify(library)
   if (
-    !['default', 'kuriyama-mirai'].includes(normalized.skinTheme) &&
+    !isBuiltinSkinId(normalized.skinTheme) &&
     !library.some(item => item.id === normalized.skinTheme)
   )
     normalized.skinTheme = 'default'
   return normalized
 }
 
-export function usesMiraiStyle(settings: SkinSettings): boolean {
+/** 当前生效的是否为某套内置皮肤自带的样式（而不是项目默认深色样式）。 */
+export function usesBuiltinStyle(settings: SkinSettings): boolean {
   const resolved = resolveSkinSettings(settings)
+  return resolved.skinBase !== 'default' && resolved.skinStyle !== 'default'
+}
+
+/** 当前皮肤是否按浅色处理：终端配色、取色器默认值都据此切换。 */
+export function usesLightScheme(settings: SkinSettings): boolean {
   return (
-    resolved.skinBase === 'kuriyama-mirai' && resolved.skinStyle !== 'default'
+    usesBuiltinStyle(settings) &&
+    builtinSkin(resolveSkinSettings(settings).skinBase)?.colorScheme === 'light'
   )
 }
 

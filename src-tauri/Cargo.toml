@@ -20,7 +20,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+# protocol-asset：让 WebView 通过 asset:// 直接读取安装目录里的皮肤图片与样式。
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-log = "2"
 serde = { version = "1", features = ["derive"] }
@@ -86,3 +87,22 @@ windows-version = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
+
+# 发布构建：在"编译别变慢"的前提下把二进制压下去，安装包解压也跟着快。
+# fat LTO + codegen-units=1 还能再小一圈，但编译时间大约翻倍，不划算。
+[profile.release]
+lto = "thin"
+codegen-units = 16
+# 符号表对已发布的版本没有用；这一项是纯收益，几 MB 起步。
+strip = "symbols"
+# 代码里没有 catch_unwind，去掉 unwind 表既省体积也省编译时间。
+# 注意：cargo test 走 dev profile，不受影响。
+panic = "abort"
+
+[profile.dev]
+# 行号级调试信息足够定位问题，完整 debuginfo 让每次链接都变慢。
+debug = 1
+
+# 依赖只编一次，换来开发期 SSH / 数据库操作的正常速度。
+[profile.dev.package."*"]
+opt-level = 2

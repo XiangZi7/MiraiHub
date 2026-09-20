@@ -1,15 +1,14 @@
 import { shallowReactive } from 'vue'
 import { skinColorsCss } from './skin-colors'
-import miraiBackground from '@/assets/skins/kuriyama-mirai.png'
-import miraiCss from '@/assets/styles/skins/kuriyama-mirai.css?raw'
+import { builtinSkin } from './skin-registry'
 import {
   normalizeSkinSettings,
   resolveSkinSettings,
-  usesMiraiStyle,
+  usesBuiltinStyle,
+  usesLightScheme,
   type SkinSettings,
 } from './skin'
 
-export { miraiBackground, miraiCss }
 export const SKIN_CHANGE_EVENT = 'miraihub:skin-applied'
 export const skinRuntime = shallowReactive({
   background: '',
@@ -28,13 +27,13 @@ export function skinBackground(settings: SkinSettings): string {
   settings = resolveSkinSettings(settings)
   if (settings.skinBackground === 'none') return ''
   if (settings.skinBackground === 'custom') return settings.skinBackgroundImage
-  return settings.skinBase === 'kuriyama-mirai' ? miraiBackground : ''
+  return builtinSkin(settings.skinBase)?.background ?? ''
 }
 
 export function skinCss(settings: SkinSettings, includeCustom = true): string {
   settings = resolveSkinSettings(settings)
   return [
-    usesMiraiStyle(settings) ? miraiCss : '',
+    usesBuiltinStyle(settings) ? (builtinSkin(settings.skinBase)?.css ?? '') : '',
     includeCustom && settings.skinStyle === 'custom'
       ? settings.skinCustomCss
       : '',
@@ -83,14 +82,15 @@ export function applySkin(
       style.id = 'miraihub-skin'
       document.head.append(style)
     }
-    const nextStyle = usesMiraiStyle(settings) ? 'mirai' : 'default'
+    // 终端配色只关心明暗：浅色皮肤换一套适合浅底的 ANSI 色。
+    const nextScheme = usesLightScheme(settings) ? 'light' : 'dark'
     const colorsChanged =
       style.textContent !== css ||
       root.dataset.skin !== settings.skinTheme ||
-      root.dataset.skinStyle !== nextStyle
+      root.dataset.skinScheme !== nextScheme
     if (style.textContent !== css) style.textContent = css
     root.dataset.skin = settings.skinTheme
-    root.dataset.skinStyle = nextStyle
+    root.dataset.skinScheme = nextScheme
     skinRuntime.background = background
     skinRuntime.opacity = Number(settings.skinBackgroundOpacity) / 100
     skinRuntime.blur = Number(settings.skinBackgroundBlur)

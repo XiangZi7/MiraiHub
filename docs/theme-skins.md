@@ -18,7 +18,7 @@
 
 取色器将已修改的颜色保存在所属卡片的 `skinCustomColors` 中，只接受六个已知字段和六位十六进制颜色。未修改的字段继承基础主题。旧版保存的 `skinCustomCss` 仍可渲染，但设置页不再提供 CSS 编辑入口；「重置全部颜色」同时清除旧版 CSS。
 
-内置样式位于 `src/assets/styles/skins/kuriyama-mirai.css`，原始背景素材位于 `src/assets/skins/kuriyama-mirai.png`。全部颜色变量可在 `src/assets/styles/main.css` 查看。
+内置皮肤放在安装目录的 `skins/<id>/` 文件夹（源码位于 `src-tauri/skins/`，随安装包与便携版一起发布）。每套皮肤是一个子目录，目录名即皮肤 id，包含 `skin.json`（名称、说明、图片与样式表文件名）、`skin.css`（覆盖 `:root` 颜色变量）和背景图。用户直接修改这些文件，再在设置页点「重新加载皮肤」即可生效；「打开皮肤文件夹」会在资源管理器中定位该目录。全部颜色变量可在 `src/assets/styles/main.css` 查看。
 
 主题切换使用淡入淡出，左菜单、连接分组、SSH 机器面板和第二个 SSH 终端带展开/收起过渡。「外观 → 减少动画效果」及系统减少动态效果设置均会关闭动画。拖动分隔条调整宽度时不添加延迟。
 

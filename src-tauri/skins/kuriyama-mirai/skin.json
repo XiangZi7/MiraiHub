@@ -1,0 +1,9 @@
+{
+  "name": "Kuriyama Mirai",
+  "description": "《境界的彼方》限定主题",
+  "caption": "栗山未来 · 桜",
+  "quote": "「不愉快です。」",
+  "colorScheme": "light",
+  "background": "background.png",
+  "stylesheet": "skin.css"
+}

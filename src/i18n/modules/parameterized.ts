@@ -144,6 +144,7 @@ const entries = {
   'Initialization Command': ['初始化命令', 'Initialization Command'],
   'Default Theme': ['默认主题', 'Default Theme'],
   'MiraiHub Original': ['MiraiHub 原版', 'MiraiHub Original'],
+  'skin.baseColors': ['{name} 配色', '{name} colors'],
   Views: ['视图', 'Views'],
   'Stored Procedures': ['存储过程', 'Stored Procedures'],
   Functions: ['函数', 'Functions'],
@@ -228,10 +229,6 @@ const entries = {
   'common.rows': ['{count} 行', '{count} rows'],
   'database.statements': ['共 {count} 条语句', '{count} statements'],
   'database.page': ['第 {page} 页', 'Page {page}'],
-  'database.validTable': [
-    '配置有效，可创建数据表',
-    'Configuration is valid; ready to create the table',
-  ],
   'database.moreErrors': ['，另有 {count} 项', ', plus {count} more'],
   'database.tableCounts': [
     '{columns} 字段 · {indexes} 索引 · {keys} 外键',

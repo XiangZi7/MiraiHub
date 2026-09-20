@@ -4,15 +4,28 @@ import { dataModule, sourceLoader } from './helpers/source-module.mjs'
 
 const load = sourceLoader({
   '@/utils/window': dataModule('export const IS_TAURI = false'),
-  '@/assets/skins/kuriyama-mirai.png': dataModule(
-    'export default "/mirai.png"'
-  ),
-  '@/assets/styles/skins/kuriyama-mirai.css?raw': dataModule(
-    'export default ":root { --color-accent: #c93478; }"'
-  ),
+  // 皮肤目录在安装包里；测试不读磁盘，直接手动登记一套内置皮肤。
+  '@/api/skins': dataModule(`
+    export const BUILTIN_SKIN_IDS = ['kuriyama-mirai']
+    export const skinDirectory = async () => ({ root: '/skins', skins: [] })
+    export const skinFileUrl = (folder, file) => folder.path + '/' + file
+    export const openSkinDirectory = async () => {}
+  `),
 })
 const { DEFAULT_SETTINGS } = await load('src/types/settings.ts')
 const { readSkinColors, skinColorsCss } = await load('src/utils/skin-colors.ts')
+const { registerBuiltinSkin, skinRegistry } = await load(
+  'src/utils/skin-registry.ts'
+)
+registerBuiltinSkin({
+  id: 'kuriyama-mirai',
+  name: 'Kuriyama Mirai',
+  colorScheme: 'light',
+  background: '/mirai.png',
+  css: ':root { --color-accent: #c93478; }',
+})
+// 目录"读取完成"后，未知的皮肤 id 才会回退到默认主题。
+skinRegistry.loaded = true
 
 const {
   normalizeSkinSettings,

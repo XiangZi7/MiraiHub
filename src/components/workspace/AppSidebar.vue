@@ -159,7 +159,7 @@ async function moveConnection(
     toast.success(
       groupName
         ? t('连接已移动到“{value0}”', { value0: groupName })
-        : t('连接已移到 Ungrouped')
+        : t('连接已移出分组')
     )
   } catch (error) {
     toast.error({

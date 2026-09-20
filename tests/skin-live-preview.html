@@ -71,6 +71,8 @@
         }
       }
       let frame
+      // 内置皮肤卡片按目录 id 标记，不再依赖固定的 class 名。
+      const miraiCard = doc => doc.querySelector('[data-skin="kuriyama-mirai"]')
       async function closeFrame() {
         if (!frame) return
         frame.contentWindow.dispatchEvent(new Event('miraihub:settings-hidden'))
@@ -87,7 +89,7 @@
           'width:1000px;height:600px;max-width:100%;border:1px solid var(--color-line);margin-top:20px'
         document.getElementById('settings-frame').append(frame)
         await until(
-          () => frame.contentDocument?.querySelector('.mirai-card'),
+          () => frame.contentDocument && miraiCard(frame.contentDocument),
           '设置未挂载'
         )
         return frame.contentDocument
@@ -101,7 +103,7 @@
         '切换和调节参数同步主窗口，预览期间已保存值不变',
         async () => {
           const doc = await openSettings()
-          doc.querySelector('.mirai-card').click()
+          doc.querySelector('[data-skin="kuriyama-mirai"]').click()
           await until(
             () => document.documentElement.dataset.skin === 'kuriyama-mirai',
             '主窗口未同步皮肤'
@@ -167,7 +169,7 @@
                 .getAttribute('aria-pressed') === 'true',
               '重开保留了未确认皮肤'
             )
-            doc.querySelector('.mirai-card').click()
+            doc.querySelector('[data-skin="kuriyama-mirai"]').click()
             await until(() => skinRuntime.background, '主窗口未预览')
             if (action === 'Esc')
               frame.contentWindow.dispatchEvent(
@@ -191,7 +193,7 @@
         )
       await check('快速切换后立即取消，不会被迟到预览覆盖', async () => {
         const doc = await openSettings()
-        doc.querySelector('.mirai-card').click()
+        doc.querySelector('[data-skin="kuriyama-mirai"]').click()
         button(doc, '取消').click()
         await wait(200)
         assert(
@@ -203,7 +205,7 @@
         '保存后关闭保留新皮肤，再次预览取消回到新保存值',
         async () => {
           let doc = await openSettings()
-          doc.querySelector('.mirai-card').click()
+          doc.querySelector('[data-skin="kuriyama-mirai"]').click()
           button(doc, '保存设置').click()
           await until(
             () =>

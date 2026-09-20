@@ -10,7 +10,16 @@ import IconButton from '@/components/ui/IconButton.vue'
 import ThemePreview from './ThemePreview.vue'
 import ThemeCustomization from './ThemeCustomization.vue'
 import { DEFAULT_SETTINGS } from '@/types/settings'
-import { miraiBackground, skinBackground } from '@/utils/skin-runtime'
+import { skinBackground } from '@/utils/skin-runtime'
+import {
+  builtinSkin,
+  builtinSkins,
+  loadSkinRegistry,
+  skinRegistry,
+} from '@/utils/skin-registry'
+import { openSkinDirectory } from '@/api/skins'
+import { toast } from '@/composables/useToast'
+import { IS_TAURI } from '@/utils/window'
 import {
   createCustomSkin,
   readSkinLibrary,
@@ -30,15 +39,19 @@ const selected = computed(() =>
   library.value.find(item => item.id === props.values.skinTheme)
 )
 const effective = computed(() => resolveSkinSettings(props.values))
+// 目录重新读取后 version 递增，卡片跟着刷新。
+const builtin = computed(() => (skinRegistry.version, builtinSkins()))
 const cards = useTemplateRef<HTMLElement>('cards')
 const { arrivedState, measure } = useScroll(cards)
 const themeName = computed(() =>
   selected.value
     ? selected.value.name || t('未命名皮肤')
-    : props.values.skinTheme === 'kuriyama-mirai'
-      ? 'Kuriyama Mirai'
-      : t('Default Theme')
+    : (builtinSkin(props.values.skinTheme)?.name ?? t('Default Theme'))
 )
+const baseOptions = computed(() => [
+  { value: 'default', label: t('Default Theme') },
+  ...builtin.value.map(skin => ({ value: skin.id, label: skin.name })),
+])
 
 function selectTheme(id: string): void {
   if (props.values.skinTheme === id) return
@@ -103,6 +116,30 @@ function cardBackground(item: CustomSkin): string {
     skinTheme: item.values.skinBase,
   })
 }
+function customSubtitle(item: CustomSkin): string {
+  if (item.values.skinStyle === 'custom') return t('自定义配色')
+  if (item.values.skinStyle === 'default' || item.values.skinBase === 'default')
+    return t('项目默认样式')
+  return t('skin.baseColors', {
+    name: builtinSkin(item.values.skinBase)?.name ?? item.values.skinBase,
+  })
+}
+async function openFolder(): Promise<void> {
+  try {
+    await openSkinDirectory(
+      builtinSkin(props.values.skinTheme) ? props.values.skinTheme : undefined
+    )
+  } catch (error) {
+    toast.error({
+      title: t('打开皮肤文件夹失败'),
+      description: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+async function reloadSkins(): Promise<void> {
+  await loadSkinRegistry(true)
+  toast.success(t('皮肤已重新加载'))
+}
 function scrollCards(direction: number): void {
   cards.value?.scrollBy({
     left: direction * 252,
@@ -133,7 +170,7 @@ function wheelCards(event: WheelEvent): void {
   if (element.scrollLeft !== before) event.preventDefault()
 }
 watch(
-  () => [props.values.skinTheme, library.value.length],
+  () => [props.values.skinTheme, library.value.length, builtin.value.length],
   async () => {
     await nextTick()
     const element = cards.value
@@ -165,6 +202,18 @@ watch(
           <p>{{ t('选择你喜欢的主题皮肤') }}</p>
         </div>
         <div class="gallery-actions">
+          <IconButton
+            v-if="IS_TAURI"
+            icon="lucide:folder-open"
+            :title="t('打开皮肤文件夹')"
+            @click="openFolder"
+          />
+          <IconButton
+            icon="lucide:refresh-cw"
+            :title="t('重新加载皮肤')"
+            :disabled="skinRegistry.loading"
+            @click="reloadSkins"
+          />
           <IconButton
             icon="lucide:chevron-left"
             :title="t('向左浏览皮肤')"
@@ -219,20 +268,37 @@ watch(
           /></span>
           <span class="card-caption"> {{ t('MiraiHub Original') }} </span>
         </button>
+        <!-- 内置皮肤来自安装目录的 skins 文件夹，名字和图片都在各自的 skin.json 里 -->
         <button
+          v-for="skin in builtin"
+          :key="skin.id"
           type="button"
-          class="theme-card mirai-card"
-          :aria-pressed="values.skinTheme === 'kuriyama-mirai'"
-          :style="{ backgroundImage: `url(${miraiBackground})` }"
-          @click="selectTheme('kuriyama-mirai')"
+          :class="[
+            'theme-card builtin-card',
+            skin.colorScheme === 'light'
+              ? 'builtin-card-light'
+              : 'builtin-card-dark',
+          ]"
+          :data-skin="skin.id"
+          :aria-pressed="values.skinTheme === skin.id"
+          :style="
+            skin.background
+              ? { backgroundImage: `url(${JSON.stringify(skin.background)})` }
+              : undefined
+          "
+          @click="selectTheme(skin.id)"
         >
           <span class="card-copy"
-            ><strong>Kuriyama Mirai</strong
-            ><small>{{ t('《境界的彼方》限定主题') }}</small
-            ><span class="mirai-quote">「不愉快です。」</span></span
+            ><strong>{{ skin.name }}</strong
+            ><small v-if="skin.description">{{ skin.description }}</small
+            ><span
+              v-if="skin.quote"
+              class="builtin-quote"
+              >{{ skin.quote }}</span
+            ></span
           >
           <span
-            v-if="values.skinTheme === 'kuriyama-mirai'"
+            v-if="values.skinTheme === skin.id"
             class="selected-mark"
             ><AppIcon
               name="lucide:check"
@@ -243,7 +309,7 @@ watch(
               name="lucide:flower-2"
               :size="11"
             />
-            {{ t('栗山未来 · 桜') }}</span
+            {{ skin.caption || t('内置皮肤') }}</span
           >
         </button>
         <button
@@ -261,14 +327,7 @@ watch(
         >
           <span class="card-copy"
             ><strong>{{ item.name || t('未命名皮肤') }}</strong
-            ><small>{{
-              item.values.skinStyle === 'custom'
-                ? t('自定义配色')
-                : item.values.skinStyle === 'default' ||
-                    item.values.skinBase === 'default'
-                  ? t('项目默认样式')
-                  : t('栗山未来配色')
-            }}</small></span
+            ><small>{{ customSubtitle(item) }}</small></span
           >
           <span
             v-if="values.skinTheme === item.id"
@@ -297,6 +356,12 @@ watch(
           ><small>{{ t('独立保存图片与样式') }}</small>
         </button>
       </div>
+      <p
+        v-if="IS_TAURI"
+        class="skins-hint"
+      >
+        {{ t('皮肤文件放在安装目录的 skins 文件夹，修改后点「重新加载皮肤」生效。') }}
+      </p>
       <div
         v-if="selected"
         class="custom-theme-details"
@@ -314,10 +379,7 @@ watch(
           :label="t('基础主题')"
           compact
           :model-value="effective.skinBase"
-          :options="[
-            { value: 'default', label: t('Default Theme') },
-            { value: 'kuriyama-mirai', label: 'Kuriyama Mirai' },
-          ]"
+          :options="baseOptions"
           @update:model-value="update({ skinBase: $event })"
         />
         <AppButton
@@ -438,18 +500,29 @@ h2 span {
   border: 0;
   border-radius: 0;
 }
-.mirai-card {
-  color: #a52c5b;
-  background-color: #fff0f5;
+.builtin-card {
   background-size: cover;
   background-position: 70% center;
 }
-.mirai-card::after {
+.builtin-card::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
+}
+.builtin-card-light {
+  color: #a52c5b;
+  background-color: #fff0f5;
+}
+.builtin-card-light::after {
   background: linear-gradient(90deg, #fff5f9a6, transparent 75%);
+}
+.builtin-card-dark {
+  color: #fff;
+  background-color: #27232f;
+}
+.builtin-card-dark::after {
+  background: linear-gradient(100deg, #121019c9, #12101928);
 }
 .card-copy {
   position: absolute;
@@ -472,7 +545,7 @@ h2 span {
   font-size: 9px;
   opacity: 0.75;
 }
-.mirai-quote {
+.builtin-quote {
   display: block;
   font-family: 'Yu Mincho', 'Microsoft YaHei', serif;
   margin-top: 11px;
@@ -501,6 +574,11 @@ h2 span {
   background: #cf4e88;
   border-radius: 50%;
   box-shadow: 0 2px 5px #a6407030;
+}
+.skins-hint {
+  margin-top: 10px;
+  color: var(--color-txt-4);
+  font-size: 9.5px;
 }
 .preview-section {
   margin-top: 28px;

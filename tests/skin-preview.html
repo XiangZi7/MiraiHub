@@ -19,13 +19,19 @@
       import ThemeSkinPanel from '/src/components/settings/ThemeSkinPanel.vue'
       import { resolveSkinSettings, readSkinLibrary } from '/src/utils/skin.ts'
       import { DEFAULT_SETTINGS } from '/src/types/settings.ts'
+      import { applySkin, skinRuntime } from '/src/utils/skin-runtime.ts'
       import {
-        applySkin,
-        skinRuntime,
-        miraiBackground,
-      } from '/src/utils/skin-runtime.ts'
+        builtinSkin,
+        loadSkinRegistry,
+      } from '/src/utils/skin-registry.ts'
       import { currentTerminalTheme } from '/src/constants/terminal.ts'
       import '/src/assets/styles/main.css'
+
+      // 内置皮肤从 /skins 目录读取（dev server 映射 src-tauri/skins）。
+      await loadSkinRegistry()
+      const miraiBackground = builtinSkin('kuriyama-mirai').background
+      const miraiCard = () =>
+        document.querySelector('[data-skin="kuriyama-mirai"]')
 
       addCollection(icons)
       const draft = reactive({
@@ -262,7 +268,7 @@
             draft.skinTheme === 'default' && !skinRuntime.background,
             '默认主题没有恢复'
           )
-          document.querySelector('.mirai-card').click()
+          miraiCard().click()
           await nextTick()
           assert(
             skinRuntime.background === miraiBackground &&
@@ -300,7 +306,7 @@
       await check(
         '在内置主题上传图片会新增卡片，删除只移除自定义卡片',
         async () => {
-          document.querySelector('.mirai-card').click()
+          miraiCard().click()
           await nextTick()
           const file = new File(
             [await (await fetch(miraiBackground)).blob()],

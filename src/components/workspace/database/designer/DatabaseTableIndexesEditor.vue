@@ -77,26 +77,13 @@ function removeIndex(id: string): void {
     props.modelValue.filter(index => index.id !== id)
   )
 }
+
+// 「添加索引」按钮住在设计器工具条上，不在本面板里。
+defineExpose({ add: addIndex })
 </script>
 
 <template>
   <section class="designer-section">
-    <div class="designer-section-heading">
-      <div>
-        <h3>{{ t('索引配置') }}</h3>
-        <p>{{ t('支持普通、唯一和 MySQL 全文索引，可组合多个字段。') }}</p>
-      </div>
-      <AppButton
-        size="sm"
-        @click="addIndex"
-        ><AppIcon
-          name="lucide:plus"
-          :size="11"
-        />
-        {{ t('添加索引') }}
-      </AppButton>
-    </div>
-
     <div class="index-list scroll-thin">
       <article
         v-for="index in modelValue"
@@ -215,22 +202,6 @@ function removeIndex(id: string): void {
   flex: 1;
   flex-direction: column;
 }
-.designer-section-heading {
-  display: flex;
-  min-height: 58px;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 9px 12px;
-}
-.designer-section-heading h3 {
-  color: var(--color-txt);
-  font-size: 12px;
-  font-weight: 600;
-}
-.designer-section-heading p,
 .field-label {
   margin-top: 2px;
   color: var(--color-txt-4);

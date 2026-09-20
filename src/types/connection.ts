@@ -50,6 +50,13 @@ export interface ConnectionGroupView extends ConnectionGroup {
   items: SavedConnection[]
   /** 未分组是运行时虚拟分组，仅排序位置单独持久化。 */
   virtual?: boolean
+  /**
+   * 这不是一个文件夹：里面的连接在侧栏直接平铺到顶层。
+   *
+   * 仅未分组桶带此标记 —— 用它判断比到处拼 `ungrouped-${kind}` 字符串安全，
+   * 移动连接时也据此决定写回的分组名是空串还是 name。
+   */
+  loose?: boolean
 }
 
 /** SSH 连接的专属配置 */

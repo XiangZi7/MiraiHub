@@ -29,6 +29,7 @@ const groups = [
     name: 'Ungrouped',
     kind: 'ssh',
     virtual: true,
+    loose: true,
     items: [item('c', 'Other', '127.0.0.1')],
   },
 ]
@@ -49,6 +50,15 @@ test('search matches groups, names, host, user and tags across multiple terms', 
     ['empty']
   )
   assert.deepEqual(connectionList(groups, '不存在', 'name-asc'), [])
+})
+
+test('the loose bucket never matches by its internal "Ungrouped" name', () => {
+  // 未分组桶在侧栏直接平铺，界面上没有 "Ungrouped" 这几个字可搜。
+  assert.deepEqual(connectionList(groups, 'ungrouped', 'name-asc'), [])
+  assert.deepEqual(
+    connectionList(groups, 'other', 'name-asc').map(group => group.id),
+    ['ungrouped']
+  )
 })
 
 test('sorts naturally within groups without changing the stored tree or dropping empty groups', () => {

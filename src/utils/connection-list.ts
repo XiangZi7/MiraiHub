@@ -33,7 +33,8 @@ export function connectionList(
       items: group.items
         .filter(item => {
           const text = [
-            group.name,
+            // 未分组桶的 "Ungrouped" 只是内部名，界面上并不显示。
+            group.loose ? '' : group.name,
             item.name,
             item.host,
             item.port,
@@ -51,7 +52,8 @@ export function connectionList(
       group =>
         !terms.length ||
         group.items.length ||
-        terms.every(term => group.name.toLocaleLowerCase().includes(term))
+        (!group.loose &&
+          terms.every(term => group.name.toLocaleLowerCase().includes(term)))
     )
 
   return visibleGroups
