@@ -9,7 +9,6 @@ import {
   useId,
   useTemplateRef,
 } from 'vue'
-import { onClickOutside } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
@@ -30,7 +29,6 @@ defineProps<{
 const keyword = defineModel<string>('keyword', { required: true })
 const sort = defineModel<ConnectionSort>('sort', { required: true })
 const emit = defineEmits<{ createGroup: []; toggleAll: []; transfer: [] }>()
-const root = useTemplateRef<HTMLElement>('root')
 const searchInput = useTemplateRef<HTMLInputElement>('searchInput')
 const searchId = useId()
 // 响应式状态
@@ -64,10 +62,7 @@ async function toggleSearch(): Promise<void> {
   await nextTick()
   searchInput.value?.focus()
 }
-// 展开后工具行整行被输入框占据，点侧栏其它位置即退出搜索。
-onClickOutside(root, () => {
-  if (state.searchOpen) closeSearch()
-})
+
 const options = computed(() =>
   CONNECTION_SORT_OPTIONS.map(option => ({
     id: option.value,
