@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n'
 
 import { nextTick, onMounted, shallowRef, useTemplateRef } from 'vue'
-import IconButton from '@/components/ui/IconButton.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const { t } = useI18n()
 
@@ -41,54 +41,49 @@ onMounted(
 
 <template>
   <form
-    class="sidebar-group-editor"
+    class="field field-inline w-full"
     @submit.prevent="submit"
+    @keydown.esc.stop.prevent="emit('cancel')"
   >
+    <AppIcon
+      name="lucide:folder-pen"
+      :size="13"
+      class="text-txt-4 shrink-0"
+    />
     <input
       ref="input"
       v-model="value"
+      type="text"
+      autocomplete="off"
+      spellcheck="false"
+      maxlength="64"
       :placeholder="placeholder"
       :aria-label="t('分组名称')"
-      maxlength="64"
-      @keydown.esc.prevent="emit('cancel')"
+      class="min-w-0 flex-1"
     />
-    <IconButton
-      icon="lucide:check"
-      :size="12"
+    <button
+      type="submit"
+      class="field-action"
+      :disabled="!value.trim()"
       :title="t('确认')"
-      @click="submit"
-    />
-    <IconButton
-      icon="lucide:x"
-      :size="12"
+      :aria-label="t('确认')"
+    >
+      <AppIcon
+        name="lucide:check"
+        :size="12"
+      />
+    </button>
+    <button
+      type="button"
+      class="field-action"
       :title="t('取消')"
+      :aria-label="t('取消')"
       @click="emit('cancel')"
-    />
+    >
+      <AppIcon
+        name="lucide:x"
+        :size="12"
+      />
+    </button>
   </form>
 </template>
-
-<style scoped>
-.sidebar-group-editor {
-  display: flex;
-  height: 32px;
-  align-items: center;
-  gap: 2px;
-  padding-left: 8px;
-}
-
-.sidebar-group-editor input {
-  min-width: 0;
-  height: 26px;
-  flex: 1;
-  border: 1px solid
-    color-mix(in oklch, var(--color-violet) 60%, var(--color-line));
-  border-radius: 5px;
-  background: color-mix(in oklch, var(--color-panel) 88%, transparent);
-  padding: 0 7px;
-  color: var(--color-txt);
-  font-size: 11px;
-  outline: none;
-  box-shadow: 0 0 0 3px
-    color-mix(in oklch, var(--color-violet) 10%, transparent);
-}
-</style>

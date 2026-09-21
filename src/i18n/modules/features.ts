@@ -262,6 +262,9 @@ export const en = {
   'Keep Alive 必须是 0–86400 秒之间的整数':
     'Keep Alive must be an integer between 0 and 86400 seconds',
   请先选择私钥文件: 'Select a private key file first',
+  请填写代理地址: 'Enter the proxy host',
+  '代理端口必须是 1–65535 之间的整数':
+    'Proxy port must be an integer between 1 and 65535',
   'SSH 连接成功': 'SSH connected',
   'SSH 连接失败': 'SSH connection failed',
   'SSH 连接已更新': 'SSH connection updated',

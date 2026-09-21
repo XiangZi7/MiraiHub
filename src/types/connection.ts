@@ -5,7 +5,7 @@
  * 在此之前这些都是各写各的常量，切换服务器只是换了个高亮。
  */
 
-import type { SshAuthMethod, SshConfig } from '@/types/ssh'
+import type { SshAuthMethod, SshConfig, SshProxyConfig } from '@/types/ssh'
 import type {
   DatabaseConfig,
   DatabaseConnectionConfig,
@@ -70,6 +70,13 @@ export interface SshConnectionSettings {
   terminalType: string
   /** 连上后自动执行的命令，空表示不执行 */
   startupCommand: string
+  /**
+   * 走代理连这台机器。省略表示直连。
+   *
+   * 可选而非必填：早于代理功能保存的连接没有这个字段，
+   * 读出来就是 undefined，正好等于"直连"，不需要迁移。
+   */
+  proxy?: SshProxyConfig
 }
 
 /** 数据库连接的专属配置 */
@@ -189,6 +196,7 @@ export function toSshConfig(connection: SavedConnection): SshConfig {
     timeoutSecs: settings.timeoutSecs,
     keepaliveSecs: settings.keepaliveSecs,
     verifyHostKey: settingsSnapshot().verifyHostKey,
+    proxy: settings.proxy,
   }
 }
 

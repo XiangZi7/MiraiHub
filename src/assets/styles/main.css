@@ -327,6 +327,53 @@
     @apply text-txt placeholder:text-txt-4 w-full bg-transparent text-xs outline-none;
   }
 
+  /*
+   * 内联输入：工具行、分组行原地变成输入框，不再另起一行。
+   *
+   * 另起一行会把下方列表整体顶下去，输入完又弹回来；原地展开只换内容不挪位置。
+   */
+  .field-inline {
+    gap: 6px;
+    padding-right: 4px;
+    animation: field-inline-reveal var(--motion-panel) ease;
+  }
+
+  .field-inline:focus-within {
+    border-color: color-mix(in oklch, var(--color-violet) 55%, var(--color-line));
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-violet) 16%, transparent);
+  }
+
+  /* 内联输入右侧的确认 / 清除按钮，比 IconButton 再小一号 */
+  .field-action {
+    @apply text-txt-4 hover:bg-hover hover:text-txt focus-visible:bg-hover focus-visible:text-txt flex size-[18px] shrink-0 cursor-pointer items-center justify-center rounded-[5px] outline-none transition-colors duration-150;
+  }
+
+  .field-action:disabled {
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  @keyframes field-inline-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .field-inline {
+      animation: none;
+    }
+
+    .field-action {
+      transition: none;
+    }
+  }
+
   /* 侧栏导航项 */
   .nav-item {
     @apply text-txt-2 hover:bg-hover hover:text-txt flex h-8 items-center justify-start gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150;

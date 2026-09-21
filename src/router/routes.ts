@@ -29,18 +29,6 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/workspace/DatabasesPage.vue'),
         meta: { nav: 'databases', title: '数据库' },
       },
-      {
-        path: 'ssh-keys',
-        name: 'ssh-keys',
-        component: () => import('@/pages/workspace/SshKeysPage.vue'),
-        meta: { nav: 'ssh-keys', title: 'SSH 密钥' },
-      },
-      {
-        path: 'recent',
-        name: 'recent',
-        component: () => import('@/pages/workspace/RecentPage.vue'),
-        meta: { nav: 'recent', title: '最近连接' },
-      },
     ],
   },
   {

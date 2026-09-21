@@ -11,8 +11,6 @@ import type {
 export const NAV_ITEMS: NavItem<NavId>[] = [
   { id: 'servers', label: 'Servers', icon: 'lucide:server' },
   { id: 'databases', label: 'Databases', icon: 'lucide:database' },
-  { id: 'ssh-keys', label: 'SSH Keys', icon: 'lucide:key-round' },
-  { id: 'recent', label: 'Recent', icon: 'lucide:clock' },
 ]
 
 /** 机器详情面板的视图切换 */
@@ -118,18 +116,6 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         icon: 'lucide:scan-search',
         shortcut: '⌘⇧F',
       },
-      {
-        id: 'recent-sessions',
-        label: 'Recent Sessions',
-        icon: 'lucide:clock',
-        shortcut: '⌘⇧R',
-      },
-      {
-        id: 'manage-keys',
-        label: 'Manage SSH Keys',
-        icon: 'lucide:key-round',
-        shortcut: '⌘⇧K',
-      },
     ],
   },
 ]
@@ -150,6 +136,4 @@ export const COMMAND_TARGETS: Record<string, CommandTarget> = {
   'upload-files': { nav: 'servers', machineView: 'files' },
   'search-servers': { nav: 'servers', focusSearch: true },
   'global-search': { focusSearch: true },
-  'recent-sessions': { nav: 'recent' },
-  'manage-keys': { nav: 'ssh-keys' },
 }

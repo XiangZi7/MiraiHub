@@ -38,6 +38,48 @@ impl AuthMethod {
     }
 }
 
+/// 代理类型。
+///
+/// 只支持能承载任意 TCP 的两种：SOCKS5 和 HTTP CONNECT。
+/// "不走代理"用 `Option<ProxyConfig>` 的 None 表达，不在这里留 `None` 变体 ——
+/// 否则每个用到的地方都要再判一次"类型是不是 none"。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProxyKind {
+    Socks5,
+    Http,
+}
+
+impl ProxyKind {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Socks5 => "SOCKS5",
+            Self::Http => "HTTP",
+        }
+    }
+}
+
+/// 代理服务器配置。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyConfig {
+    pub kind: ProxyKind,
+    pub host: String,
+    pub port: u16,
+    /// 空串表示免认证。用空串而不是 Option，是为了让前端表单可以直接双向绑定。
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+}
+
+impl ProxyConfig {
+    /// 配了用户名才算需要认证。只填密码不填用户名没有意义，按免认证处理。
+    pub fn credentials(&self) -> Option<(&str, &str)> {
+        (!self.username.is_empty()).then_some((self.username.as_str(), self.password.as_str()))
+    }
+}
+
 /// 建立连接所需的全部参数。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,6 +98,9 @@ pub struct SshConfig {
     /// 是否按 ~/.ssh/known_hosts 校验主机密钥。
     #[serde(default = "default_verify_host_key")]
     pub verify_host_key: bool,
+    /// 走代理连目标机。None 表示直连。
+    #[serde(default)]
+    pub proxy: Option<ProxyConfig>,
 }
 
 fn default_timeout_secs() -> u64 {

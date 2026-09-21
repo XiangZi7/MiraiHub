@@ -1,5 +1,5 @@
 /** 侧栏主视图 id */
-export type NavId = 'servers' | 'databases' | 'ssh-keys' | 'recent'
+export type NavId = 'servers' | 'databases'
 
 /** 机器详情面板的视图 id */
 export type MachineViewId = 'files' | 'agent'

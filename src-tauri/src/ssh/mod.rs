@@ -4,6 +4,7 @@
 //! - `models`   数据结构，无 IO
 //! - `error`    模块内错误，跨 IPC 时收敛成 `crate::error::AppError`
 //! - `events`   推送给前端的事件负载与发送辅助
+//! - `proxy`    SOCKS5 / HTTP CONNECT 握手，产出给 SSH 用的 TCP 流
 //! - `shell`    远端命令的转义与输出切分，被 stats / files 复用
 //! - `session`  单条连接：认证、PTY shell、exec
 //! - `stats`    远端系统指标采集（走 exec，不装 agent）
@@ -23,6 +24,7 @@ pub mod files;
 pub mod keys;
 pub mod manager;
 pub mod models;
+pub mod proxy;
 pub mod session;
 pub mod shell;
 pub mod stats;

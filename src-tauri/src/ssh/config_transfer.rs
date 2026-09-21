@@ -98,6 +98,43 @@ fn integer_text(value: Option<&Value>, default: u64, min: u64, max: u64) -> u64 
         .unwrap_or(default)
 }
 
+/// 旧版 `proxy` 对象的解析结果。
+enum LegacyProxy {
+    /// 没配或 type 为 none
+    None,
+    /// 类型不认识，调用方据此给出"已忽略"警告
+    Unsupported,
+    /// 可直接写进 `settings.proxy` 的对象
+    Config(Value),
+}
+
+/// 旧版代理形如 `{ type, host, port, username, password }`，
+/// 和当前 `SshProxyConfig` 只差一个字段名（type → kind）。
+fn legacy_proxy(value: Option<&Value>) -> AppResult<LegacyProxy> {
+    let Some(proxy) = value.and_then(Value::as_object) else {
+        return Ok(LegacyProxy::None);
+    };
+    let kind = match proxy.get("type").and_then(Value::as_str) {
+        None | Some("none") | Some("") => return Ok(LegacyProxy::None),
+        Some("socks5") => "socks5",
+        Some("http") => "http",
+        Some(_) => return Ok(LegacyProxy::Unsupported),
+    };
+    let host = text(proxy.get("host"), "代理地址", false)?;
+    // 旧版允许选了类型却没填地址；这种配置连不上任何东西，按直连导入更省事。
+    if host.trim().is_empty() {
+        return Ok(LegacyProxy::None);
+    }
+    let port = port(proxy.get("port")).map_err(|_| invalid("代理端口无效"))?;
+    Ok(LegacyProxy::Config(json!({
+        "kind": kind,
+        "host": host,
+        "port": port,
+        "username": text(proxy.get("username"), "代理用户名", false)?,
+        "password": text(proxy.get("password"), "代理密码", false)?,
+    })))
+}
+
 fn timestamp(value: Option<&Value>) -> i64 {
     value
         .and_then(Value::as_str)
@@ -128,7 +165,12 @@ fn connection_meta(value: &Value) -> AppResult<SshConfigPreviewItem> {
                 || !text(auth.get("passphrase"), "私钥口令", false)?.is_empty()
         }
         _ => false,
-    };
+    } || settings
+        .get("proxy")
+        .and_then(Value::as_object)
+        .and_then(|proxy| proxy.get("password"))
+        .and_then(Value::as_str)
+        .is_some_and(|password| !password.is_empty());
 
     Ok(SshConfigPreviewItem {
         id: text(connection.get("id"), "连接 ID", true)?,
@@ -347,13 +389,34 @@ fn normalize_legacy(payload: Value) -> AppResult<NormalizedArchive> {
             || config
                 .get("envVars")
                 .and_then(Value::as_array)
-                .is_some_and(|value| !value.is_empty())
-            || config
-                .get("proxy")
-                .and_then(Value::as_object)
-                .and_then(|value| value.get("type"))
-                .and_then(Value::as_str)
-                .is_some_and(|value| value != "none");
+                .is_some_and(|value| !value.is_empty());
+        // 旧版代理对象和现在的模型字段一一对应，直接搬过来；
+        // 只有类型不认识（比如 socks4）才算不支持。
+        let proxy = match legacy_proxy(config.get("proxy"))? {
+            LegacyProxy::None => Value::Null,
+            LegacyProxy::Unsupported => {
+                unsupported = true;
+                Value::Null
+            }
+            LegacyProxy::Config(value) => {
+                includes_credentials |= value
+                    .get("password")
+                    .and_then(Value::as_str)
+                    .is_some_and(|password| !password.is_empty());
+                value
+            }
+        };
+
+        let mut settings = json!({
+            "auth": auth,
+            "timeoutSecs": timeout_secs,
+            "keepaliveSecs": keepalive_secs,
+            "terminalType": "xterm-256color",
+            "startupCommand": startup_command,
+        });
+        if !proxy.is_null() {
+            settings["proxy"] = proxy;
+        }
 
         connections.push(json!({
             "id": id,
@@ -368,13 +431,7 @@ fn normalize_legacy(payload: Value) -> AppResult<NormalizedArchive> {
             "tagColor": color,
             "createdAt": created_at + index as i64,
             "lastUsedAt": 0,
-            "settings": {
-                "auth": auth,
-                "timeoutSecs": timeout_secs,
-                "keepaliveSecs": keepalive_secs,
-                "terminalType": "xterm-256color",
-                "startupCommand": startup_command,
-            }
+            "settings": settings
         }));
     }
 
@@ -395,7 +452,7 @@ fn normalize_legacy(payload: Value) -> AppResult<NormalizedArchive> {
         ));
     }
     if unsupported {
-        warnings.push("旧版代理、隧道和环境变量暂不受当前 SSH 连接模型支持，已安全忽略。".into());
+        warnings.push("旧版隧道、环境变量和不支持的代理类型已安全忽略。".into());
     }
 
     Ok(NormalizedArchive {
@@ -432,6 +489,12 @@ fn redact_connection(connection: &mut Value, credentials: bool, startup_commands
     };
     if !startup_commands {
         settings.insert("startupCommand".into(), Value::String(String::new()));
+    }
+    // 代理密码和登录凭据一起剥离，"不含凭据"的导出不能把它漏出去。
+    if !credentials {
+        if let Some(proxy) = settings.get_mut("proxy").and_then(Value::as_object_mut) {
+            proxy.insert("password".into(), Value::String(String::new()));
+        }
     }
     let Some(auth) = settings.get_mut("auth").and_then(Value::as_object_mut) else {
         return;
@@ -728,5 +791,38 @@ mod tests {
         );
         assert_eq!(selected["connections"][0]["settings"]["startupCommand"], "");
         assert_eq!(selected["includesCredentials"], false);
+    }
+
+    #[test]
+    fn legacy_proxy_is_imported_and_its_password_is_redactable() {
+        let mut archive = legacy();
+        archive["configs"][0]["proxy"] = json!({
+            "type": "socks5", "host": "127.0.0.1", "port": "7890",
+            "username": "kuriyama", "password": "mirai"
+        });
+        // 代理类型认识、隧道为空：不该再报"已忽略"
+        let normalized = normalize_legacy(archive).unwrap();
+        assert_eq!(normalized.warnings.len(), 1, "{:?}", normalized.warnings);
+        let proxy = &normalized.payload["connections"][0]["settings"]["proxy"];
+        assert_eq!(proxy["kind"], "socks5");
+        assert_eq!(proxy["host"], "127.0.0.1");
+        assert_eq!(proxy["port"], 7890);
+        assert_eq!(proxy["username"], "kuriyama");
+
+        let selected = selected_payload(normalized, &["ssh-1".into()], false, true).unwrap();
+        let proxy = &selected["connections"][0]["settings"]["proxy"];
+        assert_eq!(proxy["kind"], "socks5");
+        assert_eq!(proxy["password"], "");
+    }
+
+    #[test]
+    fn unknown_legacy_proxy_type_is_dropped_with_warning() {
+        let mut archive = legacy();
+        archive["configs"][0]["proxy"] = json!({ "type": "socks4", "host": "1.2.3.4", "port": "1080" });
+        let normalized = normalize_legacy(archive).unwrap();
+        assert!(normalized.payload["connections"][0]["settings"]
+            .get("proxy")
+            .is_none());
+        assert_eq!(normalized.warnings.len(), 2, "{:?}", normalized.warnings);
     }
 }

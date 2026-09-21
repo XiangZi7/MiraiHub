@@ -133,8 +133,8 @@ const entries = {
   'Key Passphrase': ['密钥口令', 'Key Passphrase'],
   'Optional passphrase': ['可选口令', 'Optional passphrase'],
   'Route this SSH connection through a SOCKS or HTTP proxy.': [
-    '通过 SOCKS 或 HTTP 代理建立此 SSH 连接。',
-    'Route this SSH connection through a SOCKS or HTTP proxy.',
+    '通过 SOCKS5 或 HTTP 代理建立此 SSH 连接。目标地址交给代理解析，可配合代理软件的分流规则使用。',
+    'Route this SSH connection through a SOCKS5 or HTTP proxy. The target host is resolved by the proxy, so it works with your proxy client’s routing rules.',
   ],
   'Proxy Type': ['代理类型', 'Proxy Type'],
   'Proxy Host': ['代理主机', 'Proxy Host'],

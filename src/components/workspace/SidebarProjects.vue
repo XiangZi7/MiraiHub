@@ -112,6 +112,8 @@ const allExpanded = computed(
 )
 watch(listKind, () => {
   state.keyword = ''
+  state.creatingGroup = false
+  state.editingGroupId = ''
 })
 watch(
   () => state.keyword,
@@ -259,11 +261,6 @@ function toneOf(connection: SavedConnection): 'success' | 'amber' | 'txt-3' {
   return props.openIds.has(connection.id) ? 'amber' : 'txt-3'
 }
 
-function createGroup(name: string): void {
-  state.creatingGroup = false
-  emit('createGroup', name)
-}
-
 function renameGroup(groupId: string, name: string): void {
   state.editingGroupId = ''
   emit('renameGroup', groupId, name)
@@ -392,20 +389,14 @@ function runContextAction(action: string): void {
       :key="listKind"
       v-model:keyword="keyword"
       v-model:sort="sort"
+      v-model:creating-group="state.creatingGroup"
       :label="label"
       :expanded="allExpanded"
       :transferable="listKind === 'ssh'"
       :match-count="matchCount"
-      @create-group="state.creatingGroup = true"
+      @create-group="emit('createGroup', $event)"
       @toggle-all="setAllExpanded(!allExpanded)"
       @transfer="emit('transferSsh')"
-    />
-
-    <SidebarGroupEditor
-      v-if="state.creatingGroup"
-      :placeholder="t('New group')"
-      @submit="createGroup"
-      @cancel="state.creatingGroup = false"
     />
 
     <div

@@ -20,6 +20,7 @@ use tokio::sync::Mutex;
 use super::error::{SshError, SshResult};
 use super::events::{emit_output, emit_status, OutputEvent, StatusEvent};
 use super::models::{AuthMethod, CommandOutput, PtyOptions, SshConfig};
+use super::proxy;
 
 /// 连接事件处理器。
 ///
@@ -90,30 +91,31 @@ impl SshSession {
             ..Default::default()
         };
 
-        let addr = (config.host.as_str(), config.port);
-        let connect_fut = client::connect(
-            Arc::new(ssh_config),
-            addr,
-            ClientHandler {
-                host: config.host.clone(),
-                port: config.port,
-                verify_host_key: config.verify_host_key,
-            },
-        );
+        // 整段（代理握手 + TCP + SSH 握手）共用一个超时窗口：
+        // russh 自身没有连接超时，靠外层 timeout 兜住，
+        // 否则连一个丢包的地址会一直挂着，用户只看到界面卡住。
+        let handler = ClientHandler {
+            host: config.host.clone(),
+            port: config.port,
+            verify_host_key: config.verify_host_key,
+        };
+        let connect_fut = async {
+            let stream = proxy::connect(&config.host, config.port, config.proxy.as_ref()).await?;
+            client::connect_stream(Arc::new(ssh_config), stream, handler)
+                .await
+                .map_err(|source| SshError::Connect {
+                    endpoint: config.endpoint(),
+                    source,
+                })
+        };
 
-        // russh 自身没有连接超时，靠外层 timeout 兜住：
-        // 否则连一个丢包的地址会一直挂着，用户只看到界面卡住
         let mut handle =
             tokio::time::timeout(Duration::from_secs(config.timeout_secs), connect_fut)
                 .await
                 .map_err(|_| SshError::Timeout {
                     endpoint: endpoint.clone(),
                     secs: config.timeout_secs,
-                })?
-                .map_err(|source| SshError::Connect {
-                    endpoint: endpoint.clone(),
-                    source,
-                })?;
+                })??;
 
         authenticate(&mut handle, &config).await?;
 
@@ -519,6 +521,17 @@ fn validate_config(config: &SshConfig) -> SshResult<()> {
         return Err(SshError::InvalidInput("端口必须在 1-65535 之间".into()));
     }
 
+    if let Some(proxy) = &config.proxy {
+        if proxy.host.trim().is_empty() {
+            return Err(SshError::InvalidInput("代理地址不能为空".into()));
+        }
+        if proxy.port == 0 {
+            return Err(SshError::InvalidInput(
+                "代理端口必须在 1-65535 之间".into(),
+            ));
+        }
+    }
+
     Ok(())
 }
 
@@ -535,6 +548,7 @@ mod tests {
             timeout_secs: 20,
             keepalive_secs: 30,
             verify_host_key: true,
+            proxy: None,
         }
     }
 

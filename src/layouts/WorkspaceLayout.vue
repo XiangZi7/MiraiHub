@@ -65,21 +65,17 @@ const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
 const { reorder: reorderWorkspaceTabs } = workspace
 const layout = useWorkspaceLayoutStore()
-const { sidebarWidth, sidebarCollapsed, machineOpen } = storeToRefs(layout)
+const { sidebarWidth, sidebarCollapsed } = storeToRefs(layout)
 const { activeNav, selectNav, openConnection, selectTab, followActiveTab } =
   useWorkspaceNavigation()
 const controllers = provideWorkspaceControllers()
-const { fullscreen, toggleFullscreen } = useFullscreen()
+// 标签栏不再放全屏按钮，但 F11 / Esc 仍然要能用，所以这里只挂监听不取返回值。
+useFullscreen()
 const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
 const state = reactive({ keyword: '', paletteOpen: false })
 const { keyword, paletteOpen } = toRefs(state)
 const activeSshTab = computed(() =>
   activeTab.value?.connection.kind === 'ssh' ? activeTab.value : undefined
-)
-const activeTerminalTab = computed(() =>
-  ['ssh', 'local'].includes(activeTab.value?.connection.kind ?? '')
-    ? activeTab.value
-    : undefined
 )
 
 onMounted(() => {
@@ -336,24 +332,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           />
           <div class="flex items-center gap-0.5 pb-1.5">
             <ServerOperations :session-id="activeSshTab?.sessionId" />
-            <IconButton
-              v-if="!activeTerminalTab || activeSshTab"
-              :icon="
-                machineOpen
-                  ? 'lucide:panel-right-close'
-                  : 'lucide:panel-right-open'
-              "
-              :size="14"
-              :title="machineOpen ? t('收起机器面板') : t('展开机器面板')"
-              :aria-expanded="machineOpen"
-              @click="machineOpen = !machineOpen"
-            />
-            <IconButton
-              :icon="fullscreen ? 'lucide:minimize' : 'lucide:maximize'"
-              :size="14"
-              :title="fullscreen ? t('退出全屏 (Esc)') : t('全屏 (F11)')"
-              @click="toggleFullscreen"
-            />
           </div>
         </div>
 

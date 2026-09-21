@@ -11,6 +11,19 @@ export type SshAuthMethod =
   | { type: 'privateKey'; path: string; passphrase?: string }
   | { type: 'agent' }
 
+/** 代理类型。只支持能承载任意 TCP 的两种；不走代理用 `proxy: undefined` 表达 */
+export type SshProxyKind = 'socks5' | 'http'
+
+/** 代理服务器配置 */
+export interface SshProxyConfig {
+  kind: SshProxyKind
+  host: string
+  port: number
+  /** 空串表示免认证 */
+  username: string
+  password: string
+}
+
 /** 建立连接的入参 */
 export interface SshConfig {
   host: string
@@ -23,6 +36,8 @@ export interface SshConfig {
   keepaliveSecs?: number
   /** 使用 ~/.ssh/known_hosts 验证主机密钥；首次连接采用 TOFU 记录 */
   verifyHostKey?: boolean
+  /** 走代理连目标机。省略表示直连 */
+  proxy?: SshProxyConfig
 }
 
 /** 打开交互式 shell 的终端参数 */

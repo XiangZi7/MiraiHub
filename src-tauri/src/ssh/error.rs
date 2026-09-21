@@ -17,6 +17,13 @@ pub enum SshError {
     #[error("连接 {endpoint} 超时（{secs}s）")]
     Timeout { endpoint: String, secs: u64 },
 
+    /// 代理链路上的失败。
+    ///
+    /// 和 `Connect` 分开是因为排查方向完全不同：这条错误说明问题出在代理与
+    /// 客户端之间，目标机可能压根没收到请求，把它并进 `Connect` 会把人引向目标机。
+    #[error("经代理 {endpoint} 连接失败：{reason}")]
+    Proxy { endpoint: String, reason: String },
+
     #[error("认证失败：服务器拒绝了 {method} 方式")]
     AuthRejected { method: &'static str },
 
@@ -73,7 +80,9 @@ pub enum SshError {
 impl From<SshError> for AppError {
     fn from(err: SshError) -> Self {
         let kind = match &err {
-            SshError::Connect { .. } | SshError::Timeout { .. } => ErrorKind::Network,
+            SshError::Connect { .. } | SshError::Timeout { .. } | SshError::Proxy { .. } => {
+                ErrorKind::Network
+            }
             SshError::AuthRejected { .. } | SshError::KeyParse { .. } | SshError::AgentAuth(_) => {
                 ErrorKind::Auth
             }

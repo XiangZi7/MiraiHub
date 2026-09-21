@@ -15,7 +15,7 @@ import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { ConnectionTagColor, NewConnection } from '@/types/connection'
 import { isSshConnection } from '@/types/connection'
-import type { SshAuthMethod, SshConfig } from '@/types/ssh'
+import type { SshAuthMethod, SshConfig, SshProxyConfig } from '@/types/ssh'
 import ConnectionTagEditor from './ConnectionTagEditor.vue'
 import ConnectionGroupSelect from './ConnectionGroupSelect.vue'
 import PrivateKeySelector from './PrivateKeySelector.vue'
@@ -103,7 +103,7 @@ const form = reactive({
   startupCommand: '',
   privateKey: defaultPrivateKey.value,
   passphrase: '',
-  proxyType: 'none',
+  proxyType: 'none' as 'none' | SshProxyConfig['kind'],
   proxyHost: '',
   proxyPort: '',
   proxyUsername: '',
@@ -159,6 +159,11 @@ async function loadConnection(): Promise<void> {
         settings.auth.type === 'privateKey'
           ? (settings.auth.passphrase ?? '')
           : '',
+      proxyType: settings.proxy?.kind ?? 'none',
+      proxyHost: settings.proxy?.host ?? '',
+      proxyPort: settings.proxy ? String(settings.proxy.port) : '',
+      proxyUsername: settings.proxy?.username ?? '',
+      proxyPassword: settings.proxy?.password ?? '',
     })
     savePassword.value =
       settings.auth.type === 'password' && Boolean(settings.auth.password)
@@ -236,6 +241,22 @@ function buildConfig(): SshConfig {
     timeoutSecs,
     keepaliveSecs,
     verifyHostKey: settings.verifyHostKey,
+    proxy: buildProxy(),
+  }
+}
+
+/**
+ * 表单的代理段 → API 入参。选了「不走代理」返回 undefined，
+ * 让保存出去的连接和旧数据一样根本没有这个字段。
+ */
+function buildProxy(): SshProxyConfig | undefined {
+  if (form.proxyType === 'none') return undefined
+  return {
+    kind: form.proxyType,
+    host: form.proxyHost.trim(),
+    port: Number(form.proxyPort),
+    username: form.proxyUsername.trim(),
+    password: form.proxyPassword,
   }
 }
 
@@ -320,6 +341,20 @@ function validate(): boolean {
     return false
   }
 
+  if (form.proxyType !== 'none') {
+    if (!form.proxyHost.trim()) {
+      activeSection.value = 'proxy'
+      toast.warning(t('请填写代理地址'))
+      return false
+    }
+    const proxyPort = Number(form.proxyPort)
+    if (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
+      activeSection.value = 'proxy'
+      toast.warning(t('代理端口必须是 1–65535 之间的整数'))
+      return false
+    }
+  }
+
   return true
 }
 
@@ -379,6 +414,7 @@ async function saveConnection(): Promise<void> {
         keepaliveSecs,
         terminalType: form.terminalType,
         startupCommand: form.startupCommand.trim(),
+        proxy: buildProxy(),
       },
     }
 

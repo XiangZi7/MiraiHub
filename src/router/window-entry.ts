@@ -33,7 +33,7 @@ function surfaceOf(
 }
 
 export function isWorkspaceNav(value: unknown): value is NavId {
-  return ['servers', 'databases', 'ssh-keys', 'recent'].includes(String(value))
+  return ['servers', 'databases'].includes(String(value))
 }
 
 /** 旧版 Rust query 入口集中转换；窗口身份一经启动确定，不随路由改变。 */

@@ -136,7 +136,6 @@ test("连接深链接、具名导航、前进后退与活动标签保持一致",
     await router.push("/servers/a");
     workspace.setStatus("a", "connected", "session-a");
     await router.push("/databases/db");
-    await router.push("/recent");
     assert.deepEqual(
       workspace.tabs.map((tab) => tab.id),
       ["a", "db"],
@@ -149,6 +148,10 @@ test("连接深链接、具名导航、前进后退与活动标签保持一致",
     });
     router.back();
     await back;
+    assert.equal(router.currentRoute.value.fullPath, "/servers/a");
+    assert.equal(workspace.activeId, "a");
+    // 具名导航不带 id，落到该视图下最近使用的标签。
+    await router.push({ name: "databases" });
     assert.equal(router.currentRoute.value.fullPath, "/databases/db");
     assert.equal(workspace.activeId, "db");
     await router.push({ name: "servers" });

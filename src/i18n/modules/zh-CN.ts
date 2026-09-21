@@ -52,8 +52,6 @@ export default {
   Search: '搜索',
   'Search Servers': '搜索服务器',
   'Global Search': '全局搜索',
-  'Recent Sessions': '最近会话',
-  'Manage SSH Keys': '管理 SSH 密钥',
   'workspace.paletteShortcut': '命令面板 ({shortcut})',
   'workspace.deleteConnection':
     '确定删除“{name}”吗？此操作不会删除服务器上的任何数据。',
