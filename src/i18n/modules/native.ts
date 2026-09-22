@@ -181,6 +181,45 @@ export const en = {
   '模型输出达到长度上限，请缩小任务范围后重试':
     'Model output reached the length limit. Reduce the task scope and try again.',
   'Claude 工具参数无效': 'Invalid Claude tool arguments',
+  '模型单轮返回的工具调用过多，未执行本次操作':
+    'The model returned too many tool calls in one turn. Nothing was executed.',
+  '并行工具调用未执行：请一次只调用一个工具，得到结果后再调用下一个。':
+    'Parallel tool calls were not executed. Call one tool at a time and wait for its result.',
+  'MCP 响应的单行超过 1 MB 限制':
+    'A single line of the MCP response exceeds the 1 MB limit',
+  'MCP 服务返回的不是 JSON':
+    'The MCP server did not return JSON',
+  'MCP 服务返回错误': 'The MCP server returned an error',
+  'MCP 服务的标准输入不可用': 'The MCP server stdin is unavailable',
+  'MCP 服务的标准输出不可用': 'The MCP server stdout is unavailable',
+  'MCP 服务已退出': 'The MCP server exited',
+  'MCP 响应超过 1 MB 限制': 'The MCP response exceeds the 1 MB limit',
+  'MCP 服务响应超时': 'The MCP server timed out',
+  '读取 MCP 服务响应失败': 'Could not read the MCP server response',
+  'MCP 服务的事件流没有返回匹配的响应':
+    'The MCP event stream did not return a matching response',
+  '请填写 MCP 服务器名称（最多 80 字）':
+    'Enter an MCP server name (up to 80 characters)',
+  'MCP 服务器的适用目标无效': 'Invalid target for the MCP server',
+  '请填写启动命令（最多 512 字符，不能含控制字符）':
+    'Enter a start command (up to 512 characters, no control characters)',
+  '启动参数最多 32 项，每项最多 1024 字符':
+    'Up to 32 arguments, 1024 characters each',
+  '环境变量或请求头最多 32 项': 'Up to 32 environment variables or headers',
+  '环境变量或请求头的名称无效（字母、数字与下划线，且不能以数字开头）':
+    'Invalid environment variable or header name (letters, digits and underscores; cannot start with a digit)',
+  '环境变量或请求头的值过长或含控制字符':
+    'An environment variable or header value is too long or contains control characters',
+  'MCP 工具调用超时': 'The MCP tool call timed out',
+  'MCP 服务器已删除或停用，未执行本次操作':
+    'The MCP server was removed or disabled. Nothing was executed.',
+  '最多保存 20 个 MCP 服务器': 'Up to 20 MCP servers can be saved',
+  'MCP 服务器不存在，请刷新后重试':
+    'MCP server not found. Refresh and try again.',
+  'MCP 工具参数必须是 JSON 对象，未执行本次操作':
+    'MCP tool arguments must be a JSON object. Nothing was executed.',
+  '调用外部 MCP 工具': 'Call an external MCP tool',
+  '调用 MCP 工具': 'Call MCP tool',
 } satisfies Record<string, string>
 export const zh = Object.fromEntries(
   Object.keys(en).map(key => [key, key])

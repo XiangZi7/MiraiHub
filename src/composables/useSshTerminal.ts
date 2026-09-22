@@ -236,10 +236,9 @@ export function useSshTerminal() {
       }
 
       state.status = 'disconnected'
+      // Shown as a notice above the terminal. Writing it into xterm breaks CJK
+      // glyphs, because the cell grid cannot match the fallback font's width.
       state.error = ssh.errorMessage(err)
-      terminal.writeln(
-        `\r\n\x1b[31m${i18n.global.t('terminal.connectionFailed', { error: state.error })}\x1b[0m`
-      )
 
       // TCP 已连上但订阅、PTY 或启动命令失败时，后端会话已经登记进管理器；
       // 只清前端订阅会把它永久留在会话表里，所以这里也要主动断开。
@@ -313,9 +312,6 @@ export function useSshTerminal() {
 
     state.status = 'disconnected'
     state.error = ssh.errorMessage(err)
-    term.value?.writeln(
-      `\r\n\x1b[31m${i18n.global.t('terminal.sendFailed', { error: state.error })}\x1b[0m`
-    )
   }
 
   /** 统一发送用户输入，并同步维护一份轻量的当前行镜像供补全使用。 */

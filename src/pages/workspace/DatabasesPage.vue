@@ -4,8 +4,8 @@ import { storeToRefs } from 'pinia'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { registerWorkspaceController } from '@/composables/useWorkspaceControllers'
-import { useWorkspaceStatus } from '@/composables/useWorkspaceStatus'
 import { isDatabaseConnection } from '@/types/connection'
+import type { SshSessionStatus } from '@/types/ssh'
 import DatabaseView from '@/components/workspace/DatabaseView.vue'
 import RedisView from '@/components/workspace/RedisView.vue'
 const workspace = useWorkspaceStore()
@@ -16,7 +16,11 @@ const views =
   useTemplateRef<
     Array<InstanceType<typeof DatabaseView> | InstanceType<typeof RedisView>>
   >('databaseViews')
-const handleSshStatus = useWorkspaceStatus()
+const handleSshStatus = (
+  id: string,
+  status: SshSessionStatus,
+  sessionId: string
+) => workspace.setStatus(id, status, sessionId)
 const activeDatabaseConnection = computed(() => {
   const connection = activeTab.value?.connection
   return connection && isDatabaseConnection(connection) ? connection : undefined

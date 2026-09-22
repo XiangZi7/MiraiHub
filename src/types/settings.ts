@@ -70,7 +70,6 @@ export const DEFAULT_SETTINGS = {
   rememberPasswords: true,
   clipboardClearTimeout: '0',
 
-  notifyConnectionChanges: true,
   notifyTransferComplete: true,
   notifyErrors: true,
   notificationSound: false,

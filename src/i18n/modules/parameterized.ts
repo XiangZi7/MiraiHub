@@ -76,6 +76,7 @@ const entries = {
     '聊天记录尚未保存：{error}',
     'Chat history has not been saved: {error}',
   ],
+  'agent.providerError': ['模型服务错误：{error}', 'Model service error: {error}'],
   'agent.analyzeAttachments': [
     '请分析上传的文件。',
     'Please analyze the attached files.',

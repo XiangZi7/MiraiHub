@@ -557,11 +557,6 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         title: '应用通知',
         fields: [
           {
-            key: 'notifyConnectionChanges',
-            label: '连接建立与断开',
-            control: 'switch',
-          },
-          {
             key: 'notifyTransferComplete',
             label: '文件传输完成',
             description: '在导航栏文件传输入口显示完成标记',

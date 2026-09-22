@@ -62,7 +62,10 @@ pub async fn alter_table_options(
             clauses.push(format!("COMMENT={}", valid_comment(comment)?));
         }
         if let Some(next_value) = options.auto_increment {
-            clauses.push(format!("AUTO_INCREMENT={}", valid_auto_increment(next_value)?));
+            clauses.push(format!(
+                "AUTO_INCREMENT={}",
+                valid_auto_increment(next_value)?
+            ));
         }
         if !clauses.is_empty() {
             statements.push(format!("ALTER TABLE {target} {}", clauses.join(", ")));
@@ -283,13 +286,23 @@ mod tests {
         options.auto_increment = Some(1000);
 
         let clauses = [
-            format!("ENGINE={}", safe_option(options.engine.as_deref().unwrap(), "存储引擎").unwrap()),
+            format!(
+                "ENGINE={}",
+                safe_option(options.engine.as_deref().unwrap(), "存储引擎").unwrap()
+            ),
             format!(
                 "DEFAULT CHARSET={} COLLATE={}",
                 safe_option(options.charset.as_deref().unwrap(), "字符集").unwrap(),
-                safe_option(options.collation.as_deref().unwrap_or("utf8mb4_0900_ai_ci"), "排序规则").unwrap()
+                safe_option(
+                    options.collation.as_deref().unwrap_or("utf8mb4_0900_ai_ci"),
+                    "排序规则"
+                )
+                .unwrap()
             ),
-            format!("COMMENT={}", valid_comment(options.comment.as_deref().unwrap()).unwrap()),
+            format!(
+                "COMMENT={}",
+                valid_comment(options.comment.as_deref().unwrap()).unwrap()
+            ),
             format!(
                 "AUTO_INCREMENT={}",
                 valid_auto_increment(options.auto_increment.unwrap()).unwrap()

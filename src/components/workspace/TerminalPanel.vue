@@ -5,6 +5,7 @@ import {
   computed,
   nextTick,
   onBeforeUnmount,
+  ref,
   shallowRef,
   useTemplateRef,
   watch,
@@ -15,7 +16,7 @@ import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSshTerminal } from '@/composables/useSshTerminal'
 import { useSshShellCompletion } from '@/composables/useSshShellCompletion'
 import { useSettings } from '@/composables/useSettings'
-import { toast } from '@/composables/useToast'
+import SessionErrorNotice from '@/components/ui/SessionErrorNotice.vue'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from './TerminalSuggestions.vue'
@@ -116,9 +117,9 @@ watch(
   },
   { immediate: true }
 )
+const showError = ref(false)
 watch(error, message => {
-  if (message)
-    toast.error({ title: t('SSH 终端连接失败'), description: message })
+  showError.value = Boolean(message)
 })
 
 /** 工具条上的连接状态文案与配色 */
@@ -432,6 +433,14 @@ defineExpose({
       <div
         ref="terminal"
         class="absolute inset-0 p-2"
+      />
+      <SessionErrorNotice
+        v-if="showError && error && status === 'disconnected'"
+        class="absolute inset-x-2 top-2 z-10"
+        :message="error"
+        :title="t('SSH 终端连接失败')"
+        @retry="reconnect"
+        @dismiss="showError = false"
       />
       <p
         v-if="status === 'connecting'"

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
+import SessionErrorNotice from '@/components/ui/SessionErrorNotice.vue'
 import type { SshSessionStatus } from '@/types/ssh'
 
 const { t } = useI18n()
@@ -11,10 +12,12 @@ const { t } = useI18n()
 defineProps<{
   status: SshSessionStatus
   needsPassword: boolean
+  error?: string
 }>()
 
 const emit = defineEmits<{
   connect: [password?: string]
+  dismissError: []
 }>()
 
 const password = defineModel<string>('password', { required: true })
@@ -36,6 +39,15 @@ const password = defineModel<string>('password', { required: true })
           :class="status === 'connecting' && 'animate-spin'"
         />
       </div>
+      <SessionErrorNotice
+        v-if="error"
+        class="w-full text-left"
+        :message="error"
+        :title="t('数据库连接失败')"
+        :retry-label="t('重新连接')"
+        @retry="emit('connect', needsPassword ? password : undefined)"
+        @dismiss="emit('dismissError')"
+      />
       <p class="text-txt-2 text-sm">
         {{
           status === 'connecting' ? t('正在连接数据库…') : t('数据库连接未建立')

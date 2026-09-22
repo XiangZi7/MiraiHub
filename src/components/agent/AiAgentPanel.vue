@@ -613,7 +613,7 @@ watch(
   align-items: center;
   gap: 5px;
   align-self: stretch;
-  border-bottom: 2px solid var(--agent-color);
+  border-bottom: 2px solid var(--color-violet);
   padding: 10px 3px;
   font-size: 11px;
   white-space: nowrap;
@@ -633,6 +633,28 @@ watch(
   overflow: auto;
   padding: 22px 18px;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--color-violet) 45%, transparent)
+    transparent;
+}
+.agent-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.agent-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.agent-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-line-strong);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 10px;
+}
+.agent-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklch, var(--color-violet) 60%, transparent);
+}
+.agent-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 .agent-intro {
   display: flex;
@@ -773,6 +795,9 @@ watch(
   overflow-wrap: anywhere;
   max-height: 240px;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--color-violet) 45%, transparent)
+    transparent;
   background: #0004;
   border-radius: 6px;
   padding: 10px;

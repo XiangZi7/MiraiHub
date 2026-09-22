@@ -135,6 +135,9 @@ const expired = computed(() => seconds.value === 0)
   padding: 12px;
   max-height: 240px;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--color-violet) 45%, transparent)
+    transparent;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   background: #0006;

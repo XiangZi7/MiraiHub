@@ -288,6 +288,9 @@ watch(
   gap: 6px;
   max-height: 150px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--color-violet) 45%, transparent)
+    transparent;
   padding-bottom: 7px;
 }
 .draft-attachment {

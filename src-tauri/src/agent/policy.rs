@@ -17,7 +17,9 @@ impl ApprovalMode {
             Self::Auto => match action {
                 Action::Shell { command, .. } => !super::read_only::shell(command),
                 Action::Sql { sql, .. } => !super::read_only::sql(sql),
-                Action::RedisCommand { .. } => true,
+                // An external server's own read-only claim is not trusted, so MCP
+                // tools are approved one by one unless the user picked Full access.
+                Action::RedisCommand { .. } | Action::Mcp { .. } => true,
                 _ => false,
             },
             Self::Full => false,
@@ -35,12 +37,39 @@ impl ApprovalMode {
 #[derive(Clone, Debug)]
 pub enum Action {
     Probe(String),
-    Schema { schema: String, table: String },
-    Shell { command: String, reason: String },
-    Sql { sql: String, reason: String },
-    RedisScan { cursor: String, pattern: String },
-    RedisInspect { key: String },
-    RedisCommand { command: String, reason: String },
+    Schema {
+        schema: String,
+        table: String,
+    },
+    Shell {
+        command: String,
+        reason: String,
+    },
+    Sql {
+        sql: String,
+        reason: String,
+    },
+    RedisScan {
+        cursor: String,
+        pattern: String,
+    },
+    RedisInspect {
+        key: String,
+    },
+    RedisCommand {
+        command: String,
+        reason: String,
+    },
+    /// An external MCP tool. `description` is the server's own wording, shown as the
+    /// approval reason because the model supplies no separate one.
+    Mcp {
+        server_id: String,
+        server_name: String,
+        tool: String,
+        remote_name: String,
+        description: String,
+        args: Value,
+    },
 }
 impl Action {
     pub fn approval_details(&self) -> (String, String) {
@@ -64,6 +93,20 @@ impl Action {
                 "读取 Redis 键类型、TTL 和部分内容".into(),
             ),
             Self::RedisCommand { command, reason } => (command.clone(), reason.clone()),
+            Self::Mcp {
+                server_name,
+                remote_name,
+                description,
+                args,
+                ..
+            } => (
+                json!({"server": server_name, "tool": remote_name, "arguments": args}).to_string(),
+                if description.is_empty() {
+                    "调用外部 MCP 工具".into()
+                } else {
+                    description.clone()
+                },
+            ),
         }
     }
     pub fn approval(&self) -> Option<(&str, &str)> {
@@ -83,6 +126,7 @@ impl Action {
             Self::RedisScan { .. } => "扫描 Redis 键",
             Self::RedisInspect { .. } => "读取 Redis 键",
             Self::RedisCommand { .. } => "执行 Redis 命令",
+            Self::Mcp { .. } => "调用 MCP 工具",
         }
     }
 }
@@ -126,7 +170,12 @@ fn parse<T: serde::de::DeserializeOwned>(args: &str) -> AppResult<T> {
 fn bounded(value: &str, max: usize) -> AppResult<()> {
     if value.trim().is_empty() || value.len()>max || value.chars().any(|c| (c.is_control() && c != '\n' && c != '\t') || matches!(c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}')) { Err(AppError::invalid_input("工具参数为空、过长或包含非法字符")) } else { Ok(()) }
 }
-pub fn classify(kind: &str, name: &str, args: &str) -> AppResult<Action> {
+pub fn classify(
+    registry: &super::mcp::Registry,
+    kind: &str,
+    name: &str,
+    args: &str,
+) -> AppResult<Action> {
     if args.len() > 20000 {
         return Err(AppError::invalid_input("工具参数过长"));
     }
@@ -196,9 +245,37 @@ pub fn classify(kind: &str, name: &str, args: &str) -> AppResult<Action> {
                 reason: a.reason,
             })
         }
-        _ => Err(AppError::invalid_input(
-            "未知工具或工具与当前连接类型不匹配，已阻止执行",
-        )),
+        _ => match registry.get(name) {
+            Some(super::mcp::ToolSpec {
+                source:
+                    super::mcp::ToolSource::External {
+                        server_id,
+                        server_name,
+                        remote_name,
+                        description,
+                    },
+                ..
+            }) => {
+                let args: Value = serde_json::from_str(args)
+                    .map_err(|_| AppError::invalid_input("工具参数不符合后端安全策略"))?;
+                if !args.is_object() {
+                    return Err(AppError::invalid_input(
+                        "MCP 工具参数必须是 JSON 对象，未执行本次操作",
+                    ));
+                }
+                Ok(Action::Mcp {
+                    server_id: server_id.clone(),
+                    server_name: server_name.clone(),
+                    tool: name.to_owned(),
+                    remote_name: remote_name.clone(),
+                    description: description.clone(),
+                    args,
+                })
+            }
+            _ => Err(AppError::invalid_input(
+                "未知工具或工具与当前连接类型不匹配，已阻止执行",
+            )),
+        },
     }
 }
 // No user/model text is interpolated into these commands. Absolute paths and a
@@ -212,30 +289,15 @@ pub fn probe_command(probe: &str) -> AppResult<&'static str> {
         _ => Err(AppError::invalid_input("只读探针不在允许列表中")),
     }
 }
+/// Built-in tools only. External MCP tools are added per run from the saved servers.
+/// Production code asks `Registry` directly; tests use this for the built-in shape.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn definitions(kind: &str) -> Value {
-    let tool = |name: &str, description: &str, properties: Value, required: Value| json!({"type":"function","function":{"name":name,"description":description,"parameters":{"type":"object","properties":properties,"required":required,"additionalProperties":false}}});
-    if kind == "ssh" {
-        json!([
-        tool("server_status","Run a fixed Linux read-only probe under the user's approval mode. No file contents, secrets or environment variables.",json!({"probe":{"type":"string","enum":["system","disk","processes","network"]}}),json!(["probe"])),
-        tool("propose_shell","Provide an EXACT shell command. The backend applies the user's approval mode. Explain effects and risks. Never claim it ran before a tool result.",json!({"command":{"type":"string"},"reason":{"type":"string"}}),json!(["command","reason"]))
-    ])
-    } else if kind == "database" {
-        json!([
-        tool("database_schema","Read metadata only. Empty schema and table lists objects; supply both for column structure. No row data.",json!({"schema":{"type":"string"},"table":{"type":"string"}}),json!(["schema","table"])),
-        tool("propose_sql","Provide exact SQL for the selected database. The backend applies the user's approval mode, including for SELECT or EXPLAIN because SQL can have side effects. Explain effects and returned data. Use LIMIT for reads.",json!({"sql":{"type":"string"},"reason":{"type":"string"}}),json!(["sql","reason"]))
-    ])
-    } else if kind == "redis" {
-        json!([
-            tool("redis_scan", "Scan one batch of keys in the bound Redis database with SCAN COUNT 100. Start cursor at string 0; continue using the returned cursor until it is 0. Empty batches and duplicates are possible. pattern is a Redis glob, usually *. Key id is base64 of raw bytes; retain it for redis_inspect.", json!({"cursor":{"type":"string"},"pattern":{"type":"string"}}), json!(["cursor","pattern"])),
-            tool("redis_inspect", "Read one key's type, TTL, length and bounded value preview. key must be the exact base64 id returned by redis_scan, including for binary keys. No writes. Results may be truncated or expire concurrently.", json!({"key":{"type":"string"}}), json!(["key"])),
-            tool("propose_redis", "Provide one EXACT Redis command with quoted/escaped arguments. All custom commands require approval in Ask/Auto. Explain effects and returned data. Prefer bounded ranges and SCAN over KEYS. Connection-state commands, SELECT, AUTH, transactions and subscriptions are unavailable. The selected database is fixed; each tool uses an independent connection. Writes are immediate and not rolled back.", json!({"command":{"type":"string"},"reason":{"type":"string"}}), json!(["command","reason"]))
-        ])
-    } else {
-        json!([])
-    }
+    crate::agent::mcp::Registry::build(kind, &[]).definitions()
 }
 #[cfg(test)]
 mod tests {
+    use super::*;
     use super::*;
     #[test]
     fn redis_tools_preserve_exact_arguments_and_enforce_approval_modes() {
@@ -258,7 +320,13 @@ mod tests {
                 true,
             ),
         ] {
-            let action = classify("redis", name, &args.to_string()).unwrap();
+            let action = classify(
+                &crate::agent::mcp::Registry::build("redis", &[]),
+                "redis",
+                name,
+                &args.to_string(),
+            )
+            .unwrap();
             assert!(ApprovalMode::Ask.requires_approval(&action));
             assert_eq!(ApprovalMode::Auto.requires_approval(&action), custom);
             assert!(!ApprovalMode::Full.requires_approval(&action));
@@ -268,8 +336,20 @@ mod tests {
                     args["command"].as_str().unwrap()
                 );
             }
-            assert!(classify("database", name, &args.to_string()).is_err());
-            assert!(classify("ssh", name, &args.to_string()).is_err());
+            assert!(classify(
+                &crate::agent::mcp::Registry::build("database", &[]),
+                "database",
+                name,
+                &args.to_string()
+            )
+            .is_err());
+            assert!(classify(
+                &crate::agent::mcp::Registry::build("ssh", &[]),
+                "ssh",
+                name,
+                &args.to_string()
+            )
+            .is_err());
         }
         for (name, args) in [
             (
@@ -284,7 +364,13 @@ mod tests {
             ("propose_sql", json!({"sql":"SELECT 1","reason":"test"})),
             ("propose_shell", json!({"command":"id","reason":"test"})),
         ] {
-            assert!(classify("redis", name, &args.to_string()).is_err());
+            assert!(classify(
+                &crate::agent::mcp::Registry::build("redis", &[]),
+                "redis",
+                name,
+                &args.to_string()
+            )
+            .is_err());
         }
         for command in [
             "SELECT 2",
@@ -295,6 +381,7 @@ mod tests {
             "CLIENT REPLY OFF",
         ] {
             assert!(classify(
+                &crate::agent::mcp::Registry::build("redis", &[]),
                 "redis",
                 "propose_redis",
                 &json!({"command":command,"reason":"read-only"}).to_string()
@@ -347,6 +434,7 @@ mod tests {
             "sudo reboot",
         ] {
             let a = classify(
+                &crate::agent::mcp::Registry::build("ssh", &[]),
                 "ssh",
                 "propose_shell",
                 &json!({"command":command,"reason":"test"}).to_string(),
@@ -362,6 +450,7 @@ mod tests {
             "DROP TABLE users",
         ] {
             assert!(classify(
+                &crate::agent::mcp::Registry::build("database", &[]),
                 "database",
                 "propose_sql",
                 &json!({"sql":sql,"reason":"test"}).to_string()
@@ -380,6 +469,7 @@ mod tests {
             ("ls && rm file", true),
         ] {
             let action = classify(
+                &crate::agent::mcp::Registry::build("ssh", &[]),
                 "ssh",
                 "propose_shell",
                 &json!({"command":command,"reason":"This is completely read-only"}).to_string(),
@@ -414,11 +504,61 @@ mod tests {
                 r#"{"probe":"disk","probe":"system"}"#,
             ),
         ] {
-            assert!(classify(kind, name, args).is_err());
+            assert!(classify(
+                &crate::agent::mcp::Registry::build(kind, &[]),
+                kind,
+                name,
+                args
+            )
+            .is_err());
         }
-        assert!(classify("ssh", "server_status", r#"{"probe":"disk"}"#)
-            .unwrap()
-            .approval()
-            .is_none());
+        assert!(classify(
+            &crate::agent::mcp::Registry::build("ssh", &[]),
+            "ssh",
+            "server_status",
+            r#"{"probe":"disk"}"#
+        )
+        .unwrap()
+        .approval()
+        .is_none());
+    }
+    #[test]
+    fn external_mcp_tools_need_approval_and_stay_on_their_own_server() {
+        let mut server = crate::agent::mcp::McpServer {
+            id: "server-1".into(),
+            name: "Files".into(),
+            enabled: true,
+            transport: crate::agent::mcp::servers::Transport::Stdio,
+            command: "server".into(),
+            args: Vec::new(),
+            env: Vec::new(),
+            url: String::new(),
+            headers: Vec::new(),
+            targets: vec!["ssh".into()],
+            tools: vec![json!({"name":"list","description":"List files",
+                "inputSchema":{"type":"object","properties":{"path":{"type":"string"}}}})],
+        };
+        let registry = crate::agent::mcp::Registry::build("ssh", &[server.clone()]);
+        let action = classify(&registry, "ssh", "mcp__Files__list", r#"{"path":"/tmp"}"#).unwrap();
+        assert!(ApprovalMode::Ask.requires_approval(&action));
+        assert!(ApprovalMode::Auto.requires_approval(&action));
+        assert!(!ApprovalMode::Full.requires_approval(&action));
+        let (command, reason) = action.approval_details();
+        assert!(command.contains("\"server\":\"Files\"") && command.contains("\"path\":\"/tmp\""));
+        assert_eq!(reason, "List files");
+        assert_eq!(action.label(), "调用 MCP 工具");
+        // A built-in name is never routed to an external server, even when one exists.
+        assert!(
+            classify(&registry, "ssh", "server_status", r#"{"probe":"disk"}"#)
+                .unwrap()
+                .approval()
+                .is_none()
+        );
+        // A tool advertised for SSH is not callable from a database conversation.
+        server.targets = vec!["ssh".into()];
+        let database = crate::agent::mcp::Registry::build("database", &[server]);
+        assert!(classify(&database, "database", "mcp__Files__list", "{}").is_err());
+        assert!(classify(&registry, "ssh", "mcp__Files__list", "[]").is_err());
+        assert!(classify(&registry, "ssh", "mcp__Files__missing", "{}").is_err());
     }
 }

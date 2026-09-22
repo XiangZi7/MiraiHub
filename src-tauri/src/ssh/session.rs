@@ -526,9 +526,7 @@ fn validate_config(config: &SshConfig) -> SshResult<()> {
             return Err(SshError::InvalidInput("代理地址不能为空".into()));
         }
         if proxy.port == 0 {
-            return Err(SshError::InvalidInput(
-                "代理端口必须在 1-65535 之间".into(),
-            ));
+            return Err(SshError::InvalidInput("代理端口必须在 1-65535 之间".into()));
         }
     }
 

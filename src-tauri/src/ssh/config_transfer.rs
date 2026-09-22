@@ -818,7 +818,8 @@ mod tests {
     #[test]
     fn unknown_legacy_proxy_type_is_dropped_with_warning() {
         let mut archive = legacy();
-        archive["configs"][0]["proxy"] = json!({ "type": "socks4", "host": "1.2.3.4", "port": "1080" });
+        archive["configs"][0]["proxy"] =
+            json!({ "type": "socks4", "host": "1.2.3.4", "port": "1080" });
         let normalized = normalize_legacy(archive).unwrap();
         assert!(normalized.payload["connections"][0]["settings"]
             .get("proxy")

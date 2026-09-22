@@ -11,6 +11,9 @@ import type {
   AgentAttachment,
   AgentApprovalMode,
   AgentProgress,
+  McpServer,
+  McpServerInput,
+  McpProbe,
 } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -31,6 +34,13 @@ export const deleteConfig = (profileId: string) =>
   call<AgentSettings>('ai_delete_config', { profileId })
 export const testConfig = (profileId: string) =>
   call<string>('ai_test_config', { profileId })
+export const listMcpServers = () => call<McpServer[]>('ai_list_mcp_servers')
+export const saveMcpServer = (input: McpServerInput) =>
+  call<McpServer[]>('ai_save_mcp_server', { input })
+export const deleteMcpServer = (id: string) =>
+  call<McpServer[]>('ai_delete_mcp_server', { id })
+export const testMcpServer = (id: string) =>
+  call<McpProbe>('ai_test_mcp_server', { id })
 export const onConfigChanged = (handler: () => void) =>
   IS_TAURI ? listen('ai-config-changed', handler) : Promise.resolve(() => {})
 export const start = (

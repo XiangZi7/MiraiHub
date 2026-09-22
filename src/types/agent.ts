@@ -91,6 +91,65 @@ export interface AgentProgress {
   text: string
   phase: 'thinking' | 'answering' | 'tool'
 }
+export type McpTransport = 'stdio' | 'http'
+export type McpTarget = 'ssh' | 'database' | 'redis'
+/** A secret the page can see exists but never reads back. */
+export interface McpSecret {
+  key: string
+  hasValue: boolean
+}
+export interface McpServer {
+  id: string
+  name: string
+  enabled: boolean
+  transport: McpTransport
+  command: string
+  args: string[]
+  env: McpSecret[]
+  url: string
+  headers: McpSecret[]
+  targets: McpTarget[]
+  tools: string[]
+}
+/** What the page sends. An empty value keeps the stored secret unless `clear` is set. */
+export interface McpSecretInput {
+  key: string
+  value: string
+  clear: boolean
+}
+export interface McpServerInput {
+  id?: string
+  name: string
+  enabled: boolean
+  transport: McpTransport
+  command: string
+  args: string[]
+  env: McpSecretInput[]
+  url: string
+  headers: McpSecretInput[]
+  targets: McpTarget[]
+}
+export interface McpSecretDraft extends McpSecretInput {
+  hasValue: boolean
+}
+export interface McpServerDraft {
+  id?: string
+  name: string
+  enabled: boolean
+  transport: McpTransport
+  command: string
+  argsText: string
+  env: McpSecretDraft[]
+  url: string
+  headers: McpSecretDraft[]
+  targets: McpTarget[]
+  tools: string[]
+}
+export interface McpProbe {
+  serverInfo?: { name?: string; version?: string }
+  protocolVersion?: string
+  tools: string[]
+}
 export interface AgentConversation {
   id: string
   title: string

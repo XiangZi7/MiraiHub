@@ -51,6 +51,7 @@ fn register_plugins(builder: Builder<Wry>) -> Builder<Wry> {
 fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
     builder
         .manage(agent::AgentManager::default())
+        .manage(agent::mcp::Pool::default())
         .manage(ssh::editor::EditorManager::default())
         .manage(platform::remote_editor::RemoteEditorWindows::default())
         .manage(platform::column_tags::ColumnTagsWindow::default())

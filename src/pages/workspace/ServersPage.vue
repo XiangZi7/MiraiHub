@@ -5,7 +5,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { registerWorkspaceController } from '@/composables/useWorkspaceControllers'
-import { useWorkspaceStatus } from '@/composables/useWorkspaceStatus'
+import { type SshSessionStatus } from '@/types/ssh'
 import {
   isLocalConnection,
   toSshConfig,
@@ -28,7 +28,11 @@ const localTerminals =
   useTemplateRef<Array<InstanceType<typeof LocalTerminalPanel>>>(
     'localTerminals'
   )
-const handleSshStatus = useWorkspaceStatus()
+const handleSshStatus = (
+  id: string,
+  status: SshSessionStatus,
+  sessionId: string
+) => workspace.setStatus(id, status, sessionId)
 const sshTabViews = computed(() =>
   openTabs
     .filter(tab => tab.connection.kind === 'ssh')

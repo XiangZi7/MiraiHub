@@ -52,7 +52,10 @@ pub(super) fn normalize(response: Value) -> AppResult<Value> {
         || matches!(response["status"].as_str(), Some("failed" | "cancelled"))
     {
         return Err(AppError::internal(
-            "模型服务在生成过程中返回错误，请检查模型与中转站状态",
+            match super::config::provider_detail(&response) {
+                Some(detail) => format!("模型服务错误：{detail}"),
+                None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
+            },
         ));
     }
     if response["incomplete_details"]["reason"] == "max_output_tokens" {
@@ -181,19 +184,30 @@ mod tests {
     fn incomplete_and_failed_outputs_never_become_tool_calls() {
         for response in [
             json!({"status":"incomplete", "output":[]}),
-            json!({"status":"failed", "error":{"message":"secret-value"}}),
+            json!({"status":"failed", "error":{"message":"quota exceeded"}}),
             json!({"status":"completed", "output":[{"type":"function_call", "status":"in_progress"}]}),
             json!({"status":"completed", "output":[{"type":"function_call", "call_id":"x", "name":"x", "arguments":"[]"}]}),
             json!({"status":"completed", "output":[{"type":"function_call", "call_id":"", "name":"x", "arguments":"{}"}]}),
             json!({"status":"completed", "output":[{"type":"unexpected_tool"}]}),
         ] {
-            let error = normalize(response).unwrap_err();
-            assert!(!error.message.contains("secret-value"));
+            assert!(normalize(response).is_err());
         }
         let error = normalize(
             json!({"status":"incomplete", "incomplete_details":{"reason":"max_output_tokens"}}),
         )
         .unwrap_err();
         assert!(error.message.contains("长度上限"));
+    }
+
+    #[test]
+    fn surfaces_the_providers_failure_reason_with_credentials_masked() {
+        let error = normalize(json!({"status":"failed",
+            "error":{"message":"Incorrect API key provided: sk-abcdefgh12345678"}}))
+        .unwrap_err();
+        assert!(error.message.contains("Incorrect API key provided"));
+        assert!(!error.message.contains("sk-abcdefgh12345678"));
+        // A failure the service did not explain keeps the existing guidance.
+        let error = normalize(json!({"status":"cancelled"})).unwrap_err();
+        assert!(error.message.contains("请检查模型与中转站状态"));
     }
 }

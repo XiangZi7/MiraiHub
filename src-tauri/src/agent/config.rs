@@ -101,6 +101,10 @@ pub struct Profile {
 pub struct Settings {
     pub active_id: String,
     pub profiles: Vec<Profile>,
+    /// External MCP servers. Secrets travel with the profiles, so they share this
+    /// encrypted file instead of the generic settings store.
+    #[serde(default)]
+    pub mcp_servers: Vec<super::mcp::McpServer>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -200,6 +204,7 @@ fn decode(bytes: &[u8]) -> AppResult<Settings> {
                 name: "原有配置".into(),
                 config,
             }],
+            mcp_servers: Vec::new(),
         },
     })
 }
@@ -341,12 +346,11 @@ pub async fn completion(
     super::protocol::completion(config, messages, tools).await
 }
 pub(super) async fn request_json(request: reqwest::RequestBuilder) -> AppResult<serde_json::Value> {
-    let response = request.send().await.map_err(request_error)?;
-    check_status(&response)?;
+    let response = check_status(request.send().await.map_err(request_error)?).await?;
     response_json(response).await
 }
 pub(super) fn request_error(error: reqwest::Error) -> AppError {
-    // Do not expose URLs, headers or provider response bodies (may contain secrets).
+    // Do not expose URLs, headers or the request body (may contain secrets).
     if error.is_timeout() {
         AppError::internal(
             "模型连接或响应超时，请稍后重试；长上下文、模型思考或中转站拥堵可能增加等待时间",
@@ -357,14 +361,87 @@ pub(super) fn request_error(error: reqwest::Error) -> AppError {
         AppError::internal("模型连接中断或请求失败，请检查网络与中转站状态")
     }
 }
-pub(super) fn check_status(response: &reqwest::Response) -> AppResult<()> {
-    if !response.status().is_success() {
-        return Err(AppError::internal(format!(
-            "模型服务返回 HTTP {}，请检查地址、模型、密钥与额度",
-            response.status().as_u16()
-        )));
+pub(super) async fn check_status(response: reqwest::Response) -> AppResult<reqwest::Response> {
+    if response.status().is_success() {
+        return Ok(response);
     }
-    Ok(())
+    let status = response.status().as_u16();
+    let body = bounded_bytes(response, 8192).await;
+    Err(AppError::internal(match provider_detail_bytes(&body) {
+        Some(detail) => format!("模型服务错误：HTTP {status} · {detail}"),
+        None => format!("模型服务未说明错误：HTTP {status}"),
+    }))
+}
+/// The provider's own wording is the most useful diagnostic, so it is surfaced instead
+/// of a bare status code. Credential-shaped tokens are masked and the text is bounded;
+/// request URLs, headers and bodies still never leave the process.
+pub(super) fn provider_detail(error: &serde_json::Value) -> Option<String> {
+    // Only the fields providers use for their own wording. A bare `error` value can be
+    // an object carrying echoed request data, so it is never quoted as a whole.
+    let paths: [&[&str]; 4] = [
+        &["error", "message"],
+        &["message"],
+        &["detail"],
+        &["error", "code"],
+    ];
+    paths
+        .iter()
+        .filter_map(|path| path.iter().fold(error, |value, key| &value[*key]).as_str())
+        .map(|text| scrub(&clip_inline(text, 500)))
+        .find(|detail| !detail.is_empty())
+}
+fn provider_detail_bytes(body: &[u8]) -> Option<String> {
+    // Only fields a provider uses for its own message are forwarded. An arbitrary
+    // body can carry echoed credentials, so anything unrecognized stays unquoted.
+    let body = String::from_utf8_lossy(body);
+    serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|value| provider_detail(&value))
+}
+/// A provider may echo the key it received; never let it round-trip into the panel or history.
+pub(super) fn redact(config: &Config, mut error: AppError) -> AppError {
+    if config.api_key.len() >= 8 {
+        error.message = error.message.replace(&config.api_key, "***");
+    }
+    error
+}
+/// One line is enough for an error; collapsing whitespace also makes masking reliable.
+fn clip_inline(text: &str, max: usize) -> String {
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= max {
+        return collapsed;
+    }
+    format!("{}…", collapsed.chars().take(max).collect::<String>())
+}
+/// Masks credentials a provider may quote back, for example
+/// "Incorrect API key provided: sk-…". `redact` additionally covers the configured
+/// key, including keys without a recognizable prefix.
+fn scrub(text: &str) -> String {
+    const PREFIXES: [&str; 6] = ["sk-", "sk_", "pat-", "ghp_", "xoxb-", "api_key="];
+    let mut words: Vec<&str> = Vec::new();
+    let mut mask_next = false;
+    for word in text.split(' ') {
+        let lower = word.to_ascii_lowercase();
+        let credential = word.len() >= 12 && PREFIXES.iter().any(|prefix| lower.contains(prefix));
+        words.push(if std::mem::take(&mut mask_next) || credential {
+            "***"
+        } else {
+            word
+        });
+        mask_next = lower.trim_end_matches(':') == "bearer";
+    }
+    words.join(" ")
+}
+async fn bounded_bytes(mut response: reqwest::Response, max: usize) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    while let Ok(Some(chunk)) = response.chunk().await {
+        let room = max.saturating_sub(bytes.len());
+        if room == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..chunk.len().min(room)]);
+    }
+    bytes
 }
 pub(super) async fn response_json(mut response: reqwest::Response) -> AppResult<serde_json::Value> {
     let mut bytes = Vec::new();

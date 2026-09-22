@@ -33,7 +33,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 
 # 异步运行时。Tauri 内部已用 tokio，这里显式声明是因为 ssh 模块直接用了
 # timeout / spawn / 同步原语；features 按需取，不开 "full"。
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "io-util", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net", "io-util", "fs", "process"] }
 
 # SSH：纯 Rust 实现，Windows 上无需 OpenSSL/libssh2 工具链。
 # 关掉 default features 是为了甩掉 aws-lc-rs —— 它带 C 代码，Windows 上要装 NASM 才能编。

@@ -138,19 +138,24 @@ pub(super) async fn completion(
     messages: &[Value],
     tools: Option<Value>,
 ) -> AppResult<Value> {
-    let (resource, body) = completion_body(config, messages, tools)?;
-    let request = authenticate(
-        config,
-        config::client()?
-            .post(endpoint(config, resource)?)
-            .json(&body),
-    );
-    let result = config::request_json(request).await?;
-    match config.api_format {
-        ApiFormat::Openai => Ok(result),
-        ApiFormat::Responses => super::responses::normalize(result),
-        ApiFormat::Anthropic => normalize_anthropic(result),
+    let result = async {
+        let (resource, body) = completion_body(config, messages, tools)?;
+        let request = authenticate(
+            config,
+            config::client()?
+                .post(endpoint(config, resource)?)
+                .json(&body),
+        );
+        let result = config::request_json(request).await?;
+        match config.api_format {
+            ApiFormat::Openai => Ok(result),
+            ApiFormat::Responses => super::responses::normalize(result),
+            ApiFormat::Anthropic => normalize_anthropic(result),
+        }
     }
+    .await;
+    // Provider wording is surfaced verbatim, so strip the key it may have quoted back.
+    result.map_err(|error| config::redact(config, error))
 }
 
 pub(super) async fn streaming_completion(
@@ -163,16 +168,20 @@ pub(super) async fn streaming_completion(
     if config.api_format == ApiFormat::Anthropic {
         return completion(config, messages, tools).await;
     }
-    let (resource, mut body) = completion_body(config, messages, tools)?;
-    body["stream"] = true.into();
-    let request = authenticate(
-        config,
-        config::streaming_client()?
-            .post(endpoint(config, resource)?)
-            .header("accept", "text/event-stream")
-            .json(&body),
-    );
-    super::streaming::completion(request, config.api_format, on_progress).await
+    let result = async {
+        let (resource, mut body) = completion_body(config, messages, tools)?;
+        body["stream"] = true.into();
+        let request = authenticate(
+            config,
+            config::streaming_client()?
+                .post(endpoint(config, resource)?)
+                .header("accept", "text/event-stream")
+                .json(&body),
+        );
+        super::streaming::completion(request, config.api_format, on_progress).await
+    }
+    .await;
+    result.map_err(|error| config::redact(config, error))
 }
 
 fn completion_body(

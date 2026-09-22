@@ -1185,6 +1185,38 @@ export const en = {
     'Foreign key “{value0}” has an incomplete reference',
   '外键“{value0}”使用 SET NULL 时本地字段必须允许 NULL':
     'Local columns for foreign key “{value0}” must be nullable to use SET NULL',
+  '外部 MCP 服务器': 'External MCP servers',
+  '外部 MCP 服务器是以当前用户权限运行的本机程序，不在 SSH 与数据库的审批边界内。调用其工具仍会逐次征求确认。':
+    'An external MCP server is a local program running with your user permissions, outside the SSH and database approval boundary. Each of its tool calls still asks for confirmation.',
+  '已添加的 MCP 服务器': 'Added MCP servers',
+  个工具: 'tools',
+  已停用: 'Disabled',
+  '还没有 MCP 服务器。': 'No MCP servers yet.',
+  添加服务器: 'Add server',
+  连接方式: 'Connection',
+  服务地址: 'Service URL',
+  环境变量: 'Environment variables',
+  请求头: 'Headers',
+  测试连接: 'Test connection',
+  '本地程序（stdio）': 'Local program (stdio)',
+  '远程服务（HTTP）': 'Remote service (HTTP)',
+  '参数（每行一个）': 'Arguments (one per line)',
+  '留空保留已保存的值': 'Leave blank to keep the saved value',
+  添加一项: 'Add one',
+  '已发现 {value0} 个工具。': 'Found {value0} tools.',
+  '适用目标（不选则全部可用）': 'Available for (all targets when none selected)',
+  '已发现的工具': 'Discovered tools',
+  保存服务器: 'Save server',
+  '请填写 MCP 服务器名称': 'Enter an MCP server name',
+  '请填写 MCP 服务地址': 'Enter the MCP service URL',
+  请填写启动命令: 'Enter the command to start',
+  'MCP 服务器已保存。': 'MCP server saved.',
+  'MCP 服务器已删除。': 'MCP server deleted.',
+  '已连接，该服务器没有提供工具。':
+    'Connected. This server provides no tools.',
+  连接失败: 'Connection failed',
+  重试: 'Retry',
+  关闭提示: 'Dismiss notice',
 }
 
 export const zh = Object.fromEntries(

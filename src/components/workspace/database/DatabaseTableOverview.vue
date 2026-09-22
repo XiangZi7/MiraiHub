@@ -3,9 +3,12 @@ import { useI18n } from 'vue-i18n'
 
 import { computed, reactive, toRefs, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppColumnResizeHandle from '@/components/ui/AppColumnResizeHandle.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { useDatabaseColumnWidths } from '@/composables/useDatabaseColumnWidths'
 import { databaseObjectKey } from '@/composables/useDatabaseSession'
 import type { DatabaseObject } from '@/types/database'
+import { cn } from '@/utils/cn'
 import DatabaseObjectContextMenu from './DatabaseObjectContextMenu.vue'
 
 const { t } = useI18n()
@@ -40,6 +43,17 @@ const { selectedKey, menu } = toRefs(state)
 const tables = computed(() =>
   props.objects.filter(object => object.kind === 'table')
 )
+// 表列表只有「表名 / 备注」两列，列宽按数据库记住，重开连接后仍在。
+const columnScope = computed(() => {
+  const schema = tables.value[0]?.schema
+  return schema ? `overview:${schema}` : ''
+})
+const { resized, widthOf, beginResize, autoFit, keyboardResize } =
+  useDatabaseColumnWidths(columnScope)
+const columns = computed(() => [
+  { name: 'name', label: t('表名') },
+  { name: 'comment', label: t('备注') },
+])
 const showSchema = computed(
   () => new Set(tables.value.map(table => table.schema)).size > 1
 )
@@ -104,25 +118,42 @@ watch([() => props.objects, () => props.loading], () => {
     </div>
     <table
       v-else
-      class="w-full table-fixed border-collapse text-left text-xs"
+      :class="
+        cn(
+          'w-full border-collapse text-left text-xs',
+          resized ? 'table-fixed' : 'table-auto'
+        )
+      "
     >
-      <colgroup>
-        <col class="w-2/5" />
-        <col />
+      <colgroup v-if="resized">
+        <col
+          v-for="column in columns"
+          :key="column.name"
+          :style="{ width: `${widthOf(column.name)}px` }"
+        />
       </colgroup>
       <thead class="bg-panel text-txt-3 sticky top-0 z-10">
         <tr>
           <th
+            v-for="(column, index) in columns"
+            :key="column.name"
+            :data-column="column.name"
             scope="col"
-            class="border-line-soft border-r border-b px-3 py-2 font-medium"
+            :class="
+              cn(
+                'border-line-soft relative border-b px-3 py-2 font-medium',
+                index === 0 && 'border-r',
+                !resized && (index === 0 ? 'w-2/5' : '')
+              )
+            "
           >
-            {{ t('表名') }}
-          </th>
-          <th
-            scope="col"
-            class="border-line-soft border-b px-3 py-2 font-medium"
-          >
-            {{ t('备注') }}
+            {{ column.label }}
+            <AppColumnResizeHandle
+              :label="t('调整“{value0}”列宽', { value0: column.label })"
+              @pointerdown="beginResize(column.name, $event)"
+              @dblclick="autoFit(column.name, $event)"
+              @keydown="keyboardResize(column.name, $event)"
+            />
           </th>
         </tr>
       </thead>

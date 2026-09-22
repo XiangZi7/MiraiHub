@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 
 const MAX_RESPONSE_BYTES: usize = 1_048_576;
 const MAX_WIRE_BYTES: usize = 16 * MAX_RESPONSE_BYTES;
+/// A parallel batch is answered rather than executed, so it only has to stay bounded.
+pub(super) const MAX_TOOL_CALLS: usize = 8;
 
 #[derive(Default)]
 struct Decoder {
@@ -102,11 +104,6 @@ impl Decoder {
         }
         let event: Value = serde_json::from_slice(data)
             .map_err(|_| AppError::invalid_input("模型流式响应不是有效 JSON"))?;
-        if !event["error"].is_null() || event["type"] == "error" {
-            return Err(AppError::internal(
-                "模型服务在生成过程中返回错误，请检查模型与中转站状态",
-            ));
-        }
         let kind = event["type"]
             .as_str()
             .unwrap_or_else(|| std::str::from_utf8(name).unwrap_or(""));
@@ -115,6 +112,14 @@ impl Decoder {
         }
         if self.format == ApiFormat::Responses {
             return self.responses_event(&event, kind, on_progress);
+        }
+        // Chat-completions relays report failures as an error object. Responses events
+        // carry their own and are handled above, where the provider's wording is kept.
+        if !event["error"].is_null() || event["type"] == "error" {
+            return Err(AppError::internal(match config::provider_detail(&event) {
+                Some(detail) => format!("模型服务错误：{detail}"),
+                None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
+            }));
         }
         if kind.starts_with("response.") {
             return Err(AppError::invalid_input(
@@ -175,56 +180,67 @@ impl Decoder {
             .as_array()
             .filter(|calls| !calls.is_empty())
         {
-            // The executor accepts one tool at a time. Reject parallel calls before execution.
-            if calls.len() != 1 || calls[0]["index"].as_u64() != Some(0) {
-                return Err(AppError::invalid_input(
-                    "已阻止并行工具调用，请使用支持单工具调用的模型",
-                ));
-            }
-            if self.message["tool_calls"].is_null() {
-                self.message["tool_calls"] =
-                    json!([{"id":"", "type":"function", "function":{"name":"", "arguments":""}}]);
-            }
-            let part = &calls[0];
-            let call = &mut self.message["tool_calls"][0];
-            for key in ["id", "type"] {
-                // Relays can serialize omitted metadata as empty strings on
-                // argument-only chunks. Keep the established identity/type.
-                if let Some(value) = part
-                    .get(key)
-                    .filter(|value| !value.is_null() && *value != "")
-                {
-                    if !value.is_string() {
-                        return Err(AppError::invalid_input(
-                            "模型工具调用的 id/type 不是字符串，未执行本次操作",
-                        ));
-                    }
-                    if key == "type" && value != "function" {
-                        return Err(AppError::invalid_input("不支持的工具类型"));
-                    }
-                    if key == "id" && call[key] != "" && call[key] != *value {
-                        return Err(AppError::invalid_input(
-                            "模型工具调用的 ID 在分片间发生冲突，未执行本次操作",
-                        ));
-                    }
-                    call[key] = value.clone();
+            // Accumulate every slot the provider streams. The executor's
+            // one-tool-at-a-time policy is applied once the response is complete,
+            // so a parallel batch can be answered instead of aborting the run.
+            for part in calls {
+                let index = part["index"].as_u64().unwrap_or(0) as usize;
+                if index >= MAX_TOOL_CALLS {
+                    return Err(AppError::invalid_input(
+                        "模型单轮返回的工具调用过多，未执行本次操作",
+                    ));
                 }
-            }
-            for key in ["name", "arguments"] {
-                if let Some(value) = part["function"].get(key).filter(|value| !value.is_null()) {
-                    let text = value.as_str().ok_or_else(|| {
-                        AppError::invalid_input(
-                            "模型工具调用的函数名或参数不是字符串，未执行本次操作",
-                        )
-                    })?;
-                    append(&mut call["function"][key], text)?;
+                if !self.message["tool_calls"].is_array() {
+                    self.message["tool_calls"] = json!([]);
                 }
-            }
-            // Preserve provider-specific tool signatures (e.g. Gemini extra_content).
-            if let Some(fields) = part.as_object() {
-                for (key, value) in fields {
-                    if !["index", "id", "type", "function"].contains(&key.as_str()) {
+                if let Some(slots) = self.message["tool_calls"].as_array_mut() {
+                    while slots.len() <= index {
+                        slots.push(
+                            json!({"id":"", "type":"function", "function":{"name":"", "arguments":""}}),
+                        );
+                    }
+                }
+                let call = &mut self.message["tool_calls"][index];
+                for key in ["id", "type"] {
+                    // Relays can serialize omitted metadata as empty strings on
+                    // argument-only chunks. Keep the established identity/type.
+                    if let Some(value) = part
+                        .get(key)
+                        .filter(|value| !value.is_null() && *value != "")
+                    {
+                        if !value.is_string() {
+                            return Err(AppError::invalid_input(
+                                "模型工具调用的 id/type 不是字符串，未执行本次操作",
+                            ));
+                        }
+                        if key == "type" && value != "function" {
+                            return Err(AppError::invalid_input("不支持的工具类型"));
+                        }
+                        if key == "id" && call[key] != "" && call[key] != *value {
+                            return Err(AppError::invalid_input(
+                                "模型工具调用的 ID 在分片间发生冲突，未执行本次操作",
+                            ));
+                        }
                         call[key] = value.clone();
+                    }
+                }
+                for key in ["name", "arguments"] {
+                    if let Some(value) = part["function"].get(key).filter(|value| !value.is_null())
+                    {
+                        let text = value.as_str().ok_or_else(|| {
+                            AppError::invalid_input(
+                                "模型工具调用的函数名或参数不是字符串，未执行本次操作",
+                            )
+                        })?;
+                        append(&mut call["function"][key], text)?;
+                    }
+                }
+                // Preserve provider-specific tool signatures (e.g. Gemini extra_content).
+                if let Some(fields) = part.as_object() {
+                    for (key, value) in fields {
+                        if !["index", "id", "type", "function"].contains(&key.as_str()) {
+                            call[key] = value.clone();
+                        }
                     }
                 }
             }
@@ -284,8 +300,13 @@ impl Decoder {
                 self.done = true;
             }
             "response.failed" | "response.cancelled" => {
+                // Only the provider's error object is quoted. The rest of the event can
+                // carry echoed request data, which must not reach the panel.
                 return Err(AppError::internal(
-                    "模型服务在生成过程中返回错误，请检查模型与中转站状态",
+                    match config::provider_detail(&json!({"error": event["response"]["error"]})) {
+                        Some(detail) => format!("模型服务错误：{detail}"),
+                        None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
+                    },
                 ));
             }
             "response.incomplete" => {
@@ -332,51 +353,54 @@ impl Decoder {
             }
         }
         if let Some(calls) = calls.filter(|calls| !calls.is_empty()) {
-            if calls.len() != 1 {
+            // Every slot is validated so a parallel batch reaches the executor intact;
+            // the one-tool-at-a-time policy is applied there, not by aborting the run.
+            if calls.len() > MAX_TOOL_CALLS {
                 return Err(AppError::invalid_input(
-                    "已阻止并行工具调用，请使用支持单工具调用的模型",
+                    "模型单轮返回的工具调用过多，未执行本次操作",
                 ));
             }
-            let call = &calls[0];
-            if call["id"].as_str().unwrap_or("").trim().is_empty() {
-                return Err(AppError::invalid_input("缺少有效工具调用 ID"));
-            }
-            if call["function"]["name"]
-                .as_str()
-                .unwrap_or("")
-                .trim()
-                .is_empty()
-            {
-                return Err(AppError::invalid_input(
-                    "模型工具调用缺少函数名，未执行本次操作",
-                ));
-            }
-            let args = call["function"]["arguments"].as_str().ok_or_else(|| {
-                AppError::invalid_input("模型工具调用的函数名或参数不是字符串，未执行本次操作")
-            })?;
-            if args.trim().is_empty() {
-                return Err(AppError::invalid_input(
-                    "模型工具调用缺少参数，未执行本次操作",
-                ));
-            }
-            // Do not repair, concatenate snapshots, or substitute {}: these are
-            // executable arguments. Report the failure without exposing them.
-            match serde_json::from_str::<Value>(args) {
-                Ok(value) if value.is_object() => {}
-                Ok(_) => {
-                    return Err(AppError::invalid_input(
-                        "模型工具调用参数必须是 JSON 对象，未执行本次操作",
-                    ))
+            for call in calls {
+                if call["id"].as_str().unwrap_or("").trim().is_empty() {
+                    return Err(AppError::invalid_input("缺少有效工具调用 ID"));
                 }
-                Err(error) if error.is_eof() => {
+                if call["function"]["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim()
+                    .is_empty()
+                {
                     return Err(AppError::invalid_input(
-                        "模型工具调用参数不完整，未执行本次操作",
-                    ))
+                        "模型工具调用缺少函数名，未执行本次操作",
+                    ));
                 }
-                Err(_) => {
+                let args = call["function"]["arguments"].as_str().ok_or_else(|| {
+                    AppError::invalid_input("模型工具调用的函数名或参数不是字符串，未执行本次操作")
+                })?;
+                if args.trim().is_empty() {
                     return Err(AppError::invalid_input(
-                        "模型工具调用参数不是有效 JSON，未执行本次操作",
-                    ))
+                        "模型工具调用缺少参数，未执行本次操作",
+                    ));
+                }
+                // Do not repair, concatenate snapshots, or substitute {}: these are
+                // executable arguments. Report the failure without exposing them.
+                match serde_json::from_str::<Value>(args) {
+                    Ok(value) if value.is_object() => {}
+                    Ok(_) => {
+                        return Err(AppError::invalid_input(
+                            "模型工具调用参数必须是 JSON 对象，未执行本次操作",
+                        ))
+                    }
+                    Err(error) if error.is_eof() => {
+                        return Err(AppError::invalid_input(
+                            "模型工具调用参数不完整，未执行本次操作",
+                        ))
+                    }
+                    Err(_) => {
+                        return Err(AppError::invalid_input(
+                            "模型工具调用参数不是有效 JSON，未执行本次操作",
+                        ))
+                    }
                 }
             }
         }
@@ -433,8 +457,8 @@ pub(super) async fn completion(
     format: ApiFormat,
     on_progress: &mut (dyn FnMut(&str, &str) + Send),
 ) -> AppResult<Value> {
-    let mut response = request.send().await.map_err(config::request_error)?;
-    config::check_status(&response)?;
+    let mut response =
+        config::check_status(request.send().await.map_err(config::request_error)?).await?;
     // Some relays ignore stream=true and return a regular JSON response. Consume
     // that single response; never retry a model request automatically.
     let json_response = response
@@ -456,7 +480,10 @@ pub(super) async fn completion(
         }
         if !response["error"].is_null() {
             return Err(AppError::internal(
-                "模型服务在生成过程中返回错误，请检查模型与中转站状态",
+                match config::provider_detail(&response) {
+                    Some(detail) => format!("模型服务错误：{detail}"),
+                    None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
+                },
             ));
         }
         // Apply the same completion checks when a relay ignores streaming.
@@ -551,14 +578,22 @@ mod tests {
         for tail in [
             chunk(json!({"content":"late"}), Value::Null),
             chunk(json!({}), json!("length")),
-            event(json!({"type":"ping", "error":{"message":"secret-value"}})),
             event(json!({"usage":{}, "content":"must not be ignored"})),
-            "event: error\ndata: {\"message\":\"secret-value\"}\n\n".into(),
         ] {
             let error =
                 parse(&(chunk(json!({"content":"ok"}), json!("stop")) + &tail)).unwrap_err();
-            assert!(!error.message.contains("secret-value"));
+            assert!(!error.message.contains("must not be ignored"));
         }
+        // The provider's own wording is quoted, but a credential it echoes is masked.
+        let error = parse(
+            &(chunk(json!({"content":"ok"}), json!("stop"))
+                + &event(
+                    json!({"type":"ping", "error":{"message":"bad key sk-abcdefgh12345678"}}),
+                )),
+        )
+        .unwrap_err();
+        assert!(error.message.contains("bad key"));
+        assert!(!error.message.contains("sk-abcdefgh12345678"));
     }
     #[test]
     fn explains_wrong_protocol_instead_of_generic_incompatibility() {
@@ -597,7 +632,7 @@ mod tests {
             String::new(),
             "data: [DONE]\n\n".into(),
             event(
-                json!({"type":"response.failed", "response":{"error":{"message":"secret-value"}}}),
+                json!({"type":"response.failed", "response":{"error":{"message":"bad key sk-abcdefgh12345678"}}}),
             ),
             event(
                 json!({"type":"response.incomplete", "response":{"incomplete_details":{"reason":"max_output_tokens"}}}),
@@ -605,14 +640,24 @@ mod tests {
             event(
                 json!({"type":"response.completed", "response":{"status":"in_progress", "output":[tool]}}),
             ),
-            event(json!({"type":"response.completed", "response":response(json!([tool,tool]))})),
             event(
                 json!({"type":"response.completed", "response":response(json!([{"type":"function_call", "call_id":"call_1", "name":"server_status", "arguments":"{"}]))}),
             ),
         ] {
             let error = parse_format(&(prefix.clone() + &tail), ApiFormat::Responses).unwrap_err();
-            assert!(!error.message.contains("secret-value"));
+            assert!(!error.message.contains("sk-abcdefgh12345678"));
         }
+        // A parallel batch is kept whole; the executor answers it instead of failing here.
+        let parallel = prefix
+            + &event(json!({"type":"response.completed", "response":response(json!([tool,tool]))}));
+        let parsed = parse_format(&parallel, ApiFormat::Responses).unwrap();
+        assert_eq!(
+            parsed["choices"][0]["message"]["tool_calls"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
     #[test]
     fn decodes_utf8_reasoning_heartbeats_usage_and_multiline_data() {
@@ -659,7 +704,7 @@ mod tests {
         assert_eq!(history["reasoning_content"], "检查");
     }
     #[test]
-    fn rejects_truncation_length_errors_and_parallel_calls() {
+    fn rejects_truncation_length_errors_and_unfinished_calls() {
         let tool = chunk(
             json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"server_status","arguments":"{\"probe\":\"disk\"}"}}]}),
             Value::Null,
@@ -669,17 +714,42 @@ mod tests {
             tool.clone() + "data: [DONE]\n\n",
             tool.clone() + &chunk(json!({}), json!("length")) + "data: [DONE]\n\n",
             tool.clone() + &chunk(json!({}), json!("stop")),
-            chunk(
-                json!({"tool_calls":[{"index":1,"function":{"arguments":"{}"}}]}),
-                Value::Null,
-            ),
-            "data: {\"error\":{\"message\":\"secret-value\"}}\n\n".into(),
+            "data: {\"error\":{\"message\":\"bad key sk-abcdefgh12345678\"}}\n\n".into(),
             "data: invalid\n\n".into(),
             chunk(json!({"content":"partial"}), Value::Null),
         ] {
             let error = parse(&wire).unwrap_err();
-            assert!(!error.message.contains("secret-value"));
+            assert!(!error.message.contains("sk-abcdefgh12345678"));
         }
+    }
+    #[test]
+    fn assembles_a_parallel_batch_and_rejects_more_than_eight() {
+        let wire = chunk(
+            json!({"tool_calls":[
+                {"index":0,"id":"call_a","type":"function","function":{"name":"server_status","arguments":"{\"probe\":\"disk\"}"}},
+                {"index":1,"id":"call_b","type":"function","function":{"name":"server_status","arguments":"{\"probe\":\"system\"}"}}
+            ]}),
+            json!("tool_calls"),
+        ) + "data: [DONE]\n\n";
+        let result = parse(&wire).unwrap();
+        let calls = result["choices"][0]["message"]["tool_calls"]
+            .as_array()
+            .unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1]["id"], "call_b");
+        // A gap in the streamed indexes leaves an empty slot, which fails validation
+        // instead of being silently skipped or executed.
+        let gapped = chunk(
+            json!({"tool_calls":[{"index":1,"id":"call_b","function":{"name":"server_status","arguments":"{}"}}]}),
+            json!("tool_calls"),
+        );
+        assert!(parse(&gapped).is_err());
+        let overflow = chunk(
+            json!({"tool_calls":[{"index":MAX_TOOL_CALLS,"function":{"arguments":"{}"}}]}),
+            Value::Null,
+        );
+        let error = parse(&overflow).unwrap_err();
+        assert!(error.message.contains("工具调用过多"));
     }
     #[test]
     fn preserves_tool_identity_when_continuations_contain_empty_placeholders() {
@@ -699,6 +769,7 @@ mod tests {
             assert_eq!(call["id"], "call_pm2");
             assert_eq!(call["type"], "function");
             let action = super::super::policy::classify(
+                &super::super::mcp::Registry::build("ssh", &[]),
                 "ssh",
                 call["function"]["name"].as_str().unwrap(),
                 call["function"]["arguments"].as_str().unwrap(),

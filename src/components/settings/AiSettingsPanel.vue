@@ -9,6 +9,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AiProfileForm from './AiProfileForm.vue'
+import McpServersPanel from './McpServersPanel.vue'
 import { IS_TAURI } from '@/utils/window'
 import { translateLabel } from '@/i18n'
 
@@ -127,6 +128,7 @@ function confirmDelete(): void {
             <li>{{ t('切换连接、关闭面板或停止任务会撤销待审批操作。') }}</li>
             <li>{{ t('聊天记录在本机加密保存，可从聊天记录菜单管理。') }}</li>
           </ul>
+          <McpServersPanel />
           <p>
             {{
               t(

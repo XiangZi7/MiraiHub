@@ -707,9 +707,7 @@ async fn list_indexes(
                 let primary = index_name == "PRIMARY";
                 let sequence = row.try_get::<i64, _>("SEQ_IN_INDEX").unwrap_or(0);
                 let column = mysql_optional_metadata_text(&row, "COLUMN_NAME")?;
-                let sub_part = row
-                    .try_get::<Option<i64>, _>("SUB_PART")
-                    .unwrap_or(None);
+                let sub_part = row.try_get::<Option<i64>, _>("SUB_PART").unwrap_or(None);
                 grouped
                     .entry((index_name, unique, primary))
                     .or_default()
@@ -757,9 +755,7 @@ async fn list_indexes(
         .into_iter()
         .map(|((name, unique, primary), mut columns)| {
             columns.sort_by_key(|(sequence, _, _)| *sequence);
-            let sub_part = columns
-                .iter()
-                .find_map(|(_, _, sub_part)| *sub_part);
+            let sub_part = columns.iter().find_map(|(_, _, sub_part)| *sub_part);
             DatabaseIndex {
                 name,
                 columns: columns.into_iter().map(|(_, column, _)| column).collect(),
@@ -814,10 +810,10 @@ async fn list_foreign_keys(
                 let referenced_column =
                     mysql_optional_metadata_text(&row, "REFERENCED_COLUMN_NAME")?
                         .unwrap_or_default();
-                let update_rule = mysql_optional_metadata_text(&row, "UPDATE_RULE")?
-                    .unwrap_or_default();
-                let delete_rule = mysql_optional_metadata_text(&row, "DELETE_RULE")?
-                    .unwrap_or_default();
+                let update_rule =
+                    mysql_optional_metadata_text(&row, "UPDATE_RULE")?.unwrap_or_default();
+                let delete_rule =
+                    mysql_optional_metadata_text(&row, "DELETE_RULE")?.unwrap_or_default();
                 grouped.entry(constraint).or_default().push((
                     row.try_get::<i64, _>("ORDINAL_POSITION").unwrap_or(0),
                     column,
