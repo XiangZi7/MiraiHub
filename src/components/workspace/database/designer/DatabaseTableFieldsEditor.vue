@@ -110,7 +110,7 @@ defineExpose({ add: addColumn })
       class="designer-table-wrap scroll-thin"
     >
       <table class="designer-table min-w-[960px]">
-        <thead>
+        <thead class="database-glass-header database-glass-header--sticky">
           <tr>
             <th
               class="w-8"
@@ -386,12 +386,8 @@ defineExpose({ add: addColumn })
   font-size: 10.5px;
 }
 .designer-table th {
-  position: sticky;
-  z-index: 2;
-  top: 0;
   border-right: 1px solid var(--color-line-soft);
   border-bottom: 1px solid var(--color-line-soft);
-  background: color-mix(in oklch, var(--color-panel) 94%, transparent);
   padding: 7px 6px;
   color: var(--color-txt-3);
   font-weight: 500;

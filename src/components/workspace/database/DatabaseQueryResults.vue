@@ -253,7 +253,7 @@ async function copyResult(): Promise<void> {
             :style="{ width: `${widthOf(column.name)}px` }"
           />
         </colgroup>
-        <thead class="bg-panel sticky top-0 z-10">
+        <thead class="database-glass-header database-glass-header--sticky">
           <tr class="text-txt-3">
             <th
               class="border-line-soft w-10 border-r border-b px-2 py-1.5 text-right font-medium"
@@ -266,7 +266,7 @@ async function copyResult(): Promise<void> {
               :data-column="column.name"
               :class="
                 cn(
-                  'border-line-soft relative border-r border-b px-3 py-1.5 font-medium last:border-r-0',
+                  'border-line-soft border-r border-b px-3 py-1.5 font-medium last:border-r-0',
                   !resized && 'min-w-28'
                 )
               "

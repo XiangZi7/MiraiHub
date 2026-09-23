@@ -203,7 +203,7 @@ watch(
           <table
             class="border-line-soft w-full border-collapse overflow-hidden rounded-lg border text-left text-[11px]"
           >
-            <thead class="bg-panel text-txt-3">
+            <thead class="database-glass-header text-txt-3">
               <tr>
                 <th class="border-line-soft border px-3 py-2 font-medium">
                   {{ t('参数名') }}
@@ -278,7 +278,7 @@ watch(
         </h3>
         <div class="border-line-soft overflow-hidden rounded-lg border">
           <table class="w-full border-collapse text-left text-[10.5px]">
-            <thead class="bg-card text-txt-3">
+            <thead class="database-glass-header database-glass-header--card text-txt-3">
               <tr>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
                   {{ t('参数名') }}

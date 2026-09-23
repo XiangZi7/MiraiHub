@@ -132,7 +132,7 @@ watch([() => props.objects, () => props.loading], () => {
           :style="{ width: `${widthOf(column.name)}px` }"
         />
       </colgroup>
-      <thead class="bg-panel text-txt-3 sticky top-0 z-10">
+      <thead class="database-glass-header database-glass-header--sticky text-txt-3">
         <tr>
           <th
             v-for="(column, index) in columns"
@@ -141,7 +141,7 @@ watch([() => props.objects, () => props.loading], () => {
             scope="col"
             :class="
               cn(
-                'border-line-soft relative border-b px-3 py-2 font-medium',
+                'border-line-soft border-b px-3 py-2 font-medium',
                 index === 0 && 'border-r',
                 !resized && (index === 0 ? 'w-2/5' : '')
               )

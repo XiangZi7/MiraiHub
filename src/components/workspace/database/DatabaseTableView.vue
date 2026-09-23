@@ -805,7 +805,7 @@ watch(
                   :style="{ width: `${widthOf(column.name)}px` }"
                 />
               </colgroup>
-              <thead class="bg-panel sticky top-0 z-10">
+              <thead class="database-glass-header database-glass-header--sticky">
                 <tr class="text-txt-3">
                   <th
                     class="border-line-soft w-9 border-r border-b px-1.5 py-1.5 text-right font-medium"
@@ -822,7 +822,7 @@ watch(
                     :data-column="column.name"
                     :class="
                       cn(
-                        'border-line-soft hover:bg-hover relative cursor-pointer border-r border-b px-2.5 py-1.5 font-medium select-none',
+                        'border-line-soft hover:bg-hover cursor-pointer border-r border-b px-2.5 py-1.5 font-medium select-none',
                         !resized && 'min-w-36'
                       )
                     "
@@ -1034,7 +1034,7 @@ watch(
           class="scroll-thin min-h-0 flex-1 overflow-auto"
         >
           <table class="w-full border-collapse text-left text-[11px]">
-            <thead class="bg-panel text-txt-3 sticky top-0">
+            <thead class="database-glass-header database-glass-header--sticky text-txt-3">
               <tr>
                 <th class="border-line-soft border-b px-3 py-2 font-medium">
                   {{ t('字段') }}
@@ -1218,7 +1218,7 @@ watch(
         </h3>
         <div class="border-line-soft overflow-hidden rounded-lg border">
           <table class="w-full border-collapse text-left text-[10.5px]">
-            <thead class="bg-card text-txt-3">
+            <thead class="database-glass-header database-glass-header--card text-txt-3">
               <tr>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
                   {{ t('字段名') }}

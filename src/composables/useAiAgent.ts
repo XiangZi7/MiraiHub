@@ -166,6 +166,42 @@ export function useAiAgent(
     await release(id, token)
     if (token === generation) await refreshHistory(token)
   }
+  // A profile change replaces the runtime, but keeps the saved conversation.
+  async function changeProfile(): Promise<void> {
+    const previous = state.run
+    if (!previous?.id || state.switchingConversation) return
+    const selectedTarget = { ...target.value }
+    const { token, id } = detach()
+    state.run = {
+      ...previous,
+      id: '',
+      status:
+        previous.status === 'running' || previous.status === 'approval'
+          ? 'cancelled'
+          : previous.status,
+      approval: null,
+    }
+    state.switchingConversation = true
+    try {
+      await release(id, token)
+      if (token !== generation) return
+      const restored = await api.openConversation(
+        selectedTarget,
+        previous.conversationId
+      )
+      if (token === generation) {
+        state.run = restored
+        state.historyError = ''
+      }
+    } catch (error) {
+      if (token === generation) state.historyError = api.errorMessage(error)
+    } finally {
+      if (token === generation) {
+        state.switchingConversation = false
+        await refreshHistory(token)
+      }
+    }
+  }
   async function selectConversation(conversationId: string): Promise<void> {
     if (
       state.switchingConversation ||
@@ -435,6 +471,7 @@ export function useAiAgent(
     decide,
     stop,
     clear,
+    changeProfile,
     selectConversation,
     removeConversation,
     renameConversation,

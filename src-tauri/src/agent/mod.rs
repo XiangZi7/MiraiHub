@@ -163,7 +163,9 @@ impl Run {
             target: self.target_label.clone(),
             provider: self.config.base_url.clone(),
             model: self.config.model.clone(),
-            status: if cell.cancelled.load(Ordering::SeqCst) {
+            status: if cell.cancelled.load(Ordering::SeqCst)
+                && matches!(self.status.as_str(), "running" | "approval")
+            {
                 "cancelled".into()
             } else {
                 self.status.clone()
@@ -1156,6 +1158,18 @@ mod tests {
         assert!(run.check(&cell).is_err());
         assert!(run.snapshot(&cell).approval.is_none());
         assert_eq!(run.snapshot(&cell).status, "cancelled");
+    }
+    #[test]
+    fn cancelling_a_completed_run_preserves_its_status() {
+        let mut run = pending_run();
+        run.status = "completed".into();
+        run.pending = None;
+        let cell = Cell {
+            cancelled: AtomicBool::new(true),
+            cancel_notify: Notify::new(),
+            run: Mutex::new(pending_run()),
+        };
+        assert_eq!(run.snapshot(&cell).status, "completed");
     }
     #[test]
     fn expired_approvals_can_be_dismissed_and_cannot_be_reused() {

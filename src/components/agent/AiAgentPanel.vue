@@ -38,7 +38,9 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ split: []; close: [] }>()
 const profiles = useAgentProfiles(() => {
-  newConversation()
+  draft.clearAttachments()
+  state.approvalMode = 'auto'
+  void changeProfile()
 })
 const {
   run,
@@ -59,6 +61,7 @@ const {
   decide,
   stop,
   clear,
+  changeProfile,
 } = useAiAgent(
   toRef(props, 'target'),
   toRef(props, 'active'),

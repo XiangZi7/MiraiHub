@@ -23,13 +23,16 @@ export function useAgentDraft(
   })
   let version = 0
   let readVersion = 0
-  function reset(): void {
+  function clearAttachments(): void {
     version++
     readVersion++
-    state.prompt = ''
     state.attachments = []
     state.reading = false
     state.attachmentError = ''
+  }
+  function reset(): void {
+    clearAttachments()
+    state.prompt = ''
   }
   async function addFiles(files: File[]): Promise<void> {
     if (state.reading || !files.length) return
@@ -86,5 +89,5 @@ export function useAgentDraft(
     }
   }
   onScopeDispose(reset)
-  return { ...toRefs(state), reset, addFiles, removeFile, submit }
+  return { ...toRefs(state), reset, clearAttachments, addFiles, removeFile, submit }
 }

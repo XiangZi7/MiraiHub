@@ -33,7 +33,7 @@ const mockUrl = dataModule(`
     const run = mock.runs.get(id);run.status='completed';run.entries.push({role:'assistant',text:'**回复**'});save(run);return clone(run)
   }
   export const cancel = async id => {const run=mock.runs.get(id);if(run){run.status='cancelled';run.approval=null;save(run)}}
-  export const forget = async id => {mock.forgotten.push(id)}
+  export const forget = async id => {mock.forgotten.push(id);const run=mock.runs.get(id);if(run && (run.status==='running' || run.status==='approval')){run.status='cancelled';run.approval=null;save(run)}}
   export const deleteConversation = async (target,id) => {await openConversation(target,id);mock.records.delete(id)}
   export const renameConversation = async (target,id,title) => {
     await openConversation(target,id)
@@ -289,6 +289,57 @@ test('new conversations retain history, switching restores context and remount l
   assert.ok(reopened.state.run.value)
   assert.equal(reopened.state.run.value.id, '')
   reopened.app.unmount()
+})
+
+test('changing profiles continues the same conversation with its previous messages', async () => {
+  const { app, state, profile } = fixture()
+  await flush()
+  await state.send('第一轮')
+  const conversationId = state.run.value.conversationId
+  const oldRunId = state.run.value.id
+  profile.value = 'profile-b'
+  await state.changeProfile()
+  assert.equal(state.run.value.conversationId, conversationId)
+  assert.equal(state.run.value.id, '')
+  assert.equal(state.run.value.entries.at(-1).text, '**回复**')
+  assert.ok(mock.forgotten.includes(oldRunId))
+  await state.send('继续追问')
+  assert.equal(mock.starts.at(-1).profileId, 'profile-b')
+  assert.equal(mock.starts.at(-1).conversationId, conversationId)
+  assert.equal(state.run.value.conversationId, conversationId)
+  assert.equal(mock.records.size, 1)
+  assert.equal(state.run.value.entries.filter(entry => entry.role === 'user').length, 2)
+  app.unmount()
+})
+
+test('changing profiles cancels an in-flight response without changing conversations', async () => {
+  const { app, state, profile } = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const pending = state.send('正在处理')
+  await flush()
+  const old = JSON.parse(JSON.stringify(state.run.value))
+  const late = mock.progress
+  profile.value = 'profile-b'
+  await state.changeProfile()
+  assert.equal(state.run.value.conversationId, old.conversationId)
+  assert.equal(state.run.value.id, '')
+  assert.equal(state.run.value.status, 'cancelled')
+  assert.equal(state.awaitingApproval.value, false)
+  late({ runId: old.id, text: '迟到内容', phase: 'answering' })
+  assert.equal(state.progress.value, null)
+  finish({ ...old, status: 'completed', entries: [...old.entries, { role: 'assistant', text: '旧回复' }] })
+  await pending
+  assert.equal(state.run.value.conversationId, old.conversationId)
+  assert.equal(state.run.value.id, '')
+  mock.stepGate = null
+  await state.send('用新模型继续')
+  assert.equal(mock.starts.at(-1).conversationId, old.conversationId)
+  assert.equal(mock.starts.at(-1).profileId, 'profile-b')
+  app.unmount()
 })
 
 test('late responses cannot replace a selected historical conversation', async () => {

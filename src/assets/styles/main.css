@@ -226,6 +226,41 @@
     box-shadow: var(--shadow-pop);
   }
 
+  /* 数据库表格的玻璃表头作用在每个单元格上，滚动时整行都能模糊下方数据。 */
+  .database-glass-header {
+    --database-header-surface: var(--color-panel);
+  }
+
+  .database-glass-header--card {
+    --database-header-surface: var(--color-card);
+  }
+
+  .database-glass-header > tr > th {
+    background-color: var(--database-header-surface);
+    background-color: oklch(from var(--database-header-surface) l c h);
+  }
+
+  .database-glass-header--sticky > tr > th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .database-glass-header > tr > th {
+      background-color: oklch(from var(--database-header-surface) l c h / 0.82);
+      backdrop-filter: blur(18px) saturate(150%);
+      -webkit-backdrop-filter: blur(18px) saturate(150%);
+    }
+  }
+
+  html.material-solid .database-glass-header > tr > th {
+    background-color: var(--database-header-surface);
+    background-color: oklch(from var(--database-header-surface) l c h);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     .overlay-surface {
       background-color: oklch(from var(--color-pane) l c h / 0.9);

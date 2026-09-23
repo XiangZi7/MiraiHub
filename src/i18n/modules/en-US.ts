@@ -574,8 +574,8 @@ export default {
     'Applies after saving. Resume the original conversation from chat history.',
   '聊天记录在本机加密保存，可从聊天记录菜单管理。':
     'Chat history is encrypted on this device and can be managed from the history menu.',
-  '保存或切换配置会停止当前任务并新建对话，聊天记录保留。测试仅发送固定测试消息，不读取服务器或数据库。服务商可能按其标准计费。':
-    'Saving or switching profiles stops the current task and starts a new chat; history is kept. Testing only sends a fixed message without reading servers or databases. Provider charges may apply.',
+  '保存或切换配置会停止当前任务，并在当前会话继续对话。测试仅发送固定测试消息，不读取服务器或数据库。服务商可能按其标准计费。':
+    'Saving or switching profiles stops the current task and continues in the current conversation. Testing only sends a fixed message without reading servers or databases. Provider charges may apply.',
   'ai.capacitySummary': '{steps} requests · {kb} KB · {messages} messages',
   'ai.capacityInvalid':
     'Enter whole numbers: 1–128 model requests, 64–4000 KB of context, and 16–2048 messages.',

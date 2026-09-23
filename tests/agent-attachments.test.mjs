@@ -90,6 +90,17 @@ test('late file reads cannot repopulate a new conversation or an unmounted draft
   scope.stop()
 })
 
+test('switching models keeps typed text while clearing attachments', async () => {
+  const scope = effectScope()
+  const draft = scope.run(() => useAgentDraft(async () => true))
+  draft.prompt.value = '继续当前对话'
+  await draft.addFiles([file('notes', 'notes.txt')])
+  draft.clearAttachments()
+  assert.equal(draft.prompt.value, '继续当前对话')
+  assert.equal(draft.attachments.value.length, 0)
+  scope.stop()
+})
+
 test('file-only sending works, rejected sends restore drafts, and late rejections cannot overwrite new work', async () => {
   const scope = effectScope()
   let accept = false
