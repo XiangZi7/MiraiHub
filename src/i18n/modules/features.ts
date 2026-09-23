@@ -402,7 +402,18 @@ export const en = {
   '搜索名称、地址、分组…': 'Search names, addresses, groups…',
   连接排序: 'Connection sorting',
   '正在连接数据库…': 'Connecting to database…',
+  '正在连接 Redis…': 'Connecting to Redis…',
+  '正在建立连接，请稍候。': 'Establishing a connection…',
   数据库连接未建立: 'Database is not connected',
+  'Redis 连接未建立': 'Redis is not connected',
+  'Redis 连接失败': 'Could not connect to Redis',
+  '请检查网络、主机和认证信息，然后重试。':
+    'Check the network, host, and credentials, then try again.',
+  '连接后即可浏览数据库对象并运行查询。':
+    'Connect to browse database objects and run queries.',
+  '连接后即可浏览键值并执行命令。':
+    'Connect to browse keys and run commands.',
+  查看技术详情: 'View technical details',
   输入本次连接使用的密码: 'Enter the password for this connection',
   重新连接: 'Reconnect',
   暂无对象: 'No objects',

@@ -5,7 +5,6 @@ import {
   computed,
   onBeforeUnmount,
   reactive,
-  ref,
   shallowRef,
   toRef,
   toRefs,
@@ -283,11 +282,6 @@ const databaseOptions = computed(() =>
 const selectedDatabase = computed({
   get: () => session.value?.database ?? '',
   set: (value: string) => void changeDatabase(value),
-})
-
-const showConnectionError = ref(true)
-watch(connectionError, error => {
-  if (error) showConnectionError.value = true
 })
 
 watch(objectsError, error => {
@@ -1438,9 +1432,8 @@ watch(
           v-model:password="password"
           :status="status"
           :needs-password="needsPassword"
-          :error="showConnectionError ? connectionError : ''"
+          :error="connectionError"
           @connect="connect"
-          @dismiss-error="showConnectionError = false"
         />
         <template v-else>
           <DatabaseTableOverview

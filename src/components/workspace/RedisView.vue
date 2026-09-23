@@ -293,7 +293,7 @@ defineExpose({
           />
         </div>
         <p
-          v-if="error"
+          v-if="connected && error"
           role="alert"
           class="text-danger bg-card shrink-0 px-3 py-2 text-xs break-words"
         >
@@ -302,8 +302,10 @@ defineExpose({
         <DatabaseConnectionState
           v-if="!connected"
           v-model:password="password"
+          kind="redis"
           :status="status"
           :needs-password="needsPassword"
+          :error="error"
           @connect="connect"
         />
         <template v-else>
