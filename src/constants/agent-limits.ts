@@ -4,6 +4,7 @@ export const AGENT_LIMIT_RANGES = {
   maxSteps: { min: 1, max: 128 },
   maxContextKb: { min: 64, max: 4000 },
   maxMessages: { min: 16, max: 2048 },
+  maxRetries: { min: 0, max: 999 },
 } as const
 
 export const AGENT_CAPACITY_PRESETS = [
@@ -24,8 +25,10 @@ export const AGENT_CAPACITY_PRESETS = [
   },
 ] as const
 
-export const DEFAULT_AGENT_LIMITS: Readonly<AgentLimits> =
-  AGENT_CAPACITY_PRESETS[0].limits
+export const DEFAULT_AGENT_LIMITS: Readonly<AgentLimits> = {
+  ...AGENT_CAPACITY_PRESETS[0].limits,
+  maxRetries: 5,
+}
 
 export function validAgentLimits(limits: AgentLimits): boolean {
   return (Object.keys(AGENT_LIMIT_RANGES) as (keyof AgentLimits)[]).every(
@@ -40,7 +43,7 @@ export function validAgentLimits(limits: AgentLimits): boolean {
 export function agentCapacityPreset(limits: AgentLimits): string {
   return (
     AGENT_CAPACITY_PRESETS.find(preset =>
-      (Object.keys(AGENT_LIMIT_RANGES) as (keyof AgentLimits)[]).every(
+      (Object.keys(preset.limits) as (keyof typeof preset.limits)[]).every(
         key => preset.limits[key] === limits[key]
       )
     )?.value ?? 'custom'

@@ -51,12 +51,7 @@ pub(super) fn normalize(response: Value) -> AppResult<Value> {
     if !response["error"].is_null()
         || matches!(response["status"].as_str(), Some("failed" | "cancelled"))
     {
-        return Err(AppError::internal(
-            match super::config::provider_detail(&response) {
-                Some(detail) => format!("模型服务错误：{detail}"),
-                None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
-            },
-        ));
+        return Err(super::config::provider_error(&response));
     }
     if response["incomplete_details"]["reason"] == "max_output_tokens" {
         return Err(AppError::invalid_input(

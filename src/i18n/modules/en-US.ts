@@ -578,7 +578,7 @@ export default {
     'Saving or switching profiles stops the current task and continues in the current conversation. Testing only sends a fixed message without reading servers or databases. Provider charges may apply.',
   'ai.capacitySummary': '{steps} requests · {kb} KB · {messages} messages',
   'ai.capacityInvalid':
-    'Enter whole numbers: 1–128 model requests, 64–4000 KB of context, and 16–2048 messages.',
+    'Enter whole numbers: 1–128 model requests, 64–4000 KB of context, 16–2048 messages, and 0–999 automatic retries.',
   'settings.shortcutLabel':
     '{label}: currently {shortcut}. Press a new shortcut to change it.',
   '标签化显示…': 'Show as tags…',

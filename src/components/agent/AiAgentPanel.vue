@@ -23,6 +23,7 @@ import AgentApprovalCard from './AgentApprovalCard.vue'
 import AgentMarkdown from './AgentMarkdown.vue'
 import AgentConversationMenu from './AgentConversationMenu.vue'
 import AgentCopyButton from './AgentCopyButton.vue'
+import AgentRetryStatus from './AgentRetryStatus.vue'
 
 const { t } = useI18n()
 
@@ -39,7 +40,6 @@ const props = withDefaults(
 const emit = defineEmits<{ split: []; close: [] }>()
 const profiles = useAgentProfiles(() => {
   draft.clearAttachments()
-  state.approvalMode = 'auto'
   void changeProfile()
 })
 const {
@@ -79,7 +79,7 @@ const {
 const state = reactive({
   // 对话复制状态
   copied: false,
-  // 当前会话的审批选择，不从历史记录自动恢复完全访问权限
+  // 当前连接的审批选择；切换配置或对话时保留，不从历史记录恢复
   approvalMode: 'auto' as AgentApprovalMode,
 })
 const { copied, approvalMode } = toRefs(state)
@@ -137,6 +137,7 @@ const statusLabel = computed(
           thinking: t('模型正在思考'),
           answering: t('正在生成回复'),
           tool: t('正在准备工具调用'),
+          retrying: t('ai.retryWaiting'),
         }[progress.value.phase]
       : undefined) ??
     {
@@ -153,13 +154,11 @@ async function submit(): Promise<void> {
 }
 function newConversation(): void {
   draft.reset()
-  state.approvalMode = 'auto'
   void clear()
 }
 function switchConversation(id: string): void {
   if (run.value?.conversationId === id) return
   draft.reset()
-  state.approvalMode = 'auto'
   void selectConversation(id)
 }
 function suggest(text: string): void {
@@ -497,7 +496,14 @@ watch(
           :busy="busy"
           @decide="decide"
         />
-        <div class="text-txt-3 flex items-center gap-2 text-[11px]">
+        <AgentRetryStatus
+          v-if="busy && progress?.phase === 'retrying' && progress.retry"
+          :retry="progress.retry"
+        />
+        <div
+          v-else
+          class="text-txt-3 flex items-center gap-2 text-[11px]"
+        >
           <AppIcon
             v-if="busy"
             name="lucide:loader-circle"

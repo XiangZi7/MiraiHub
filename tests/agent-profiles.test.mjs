@@ -105,16 +105,21 @@ test('capacity settings migrate old profiles and remain independent through save
   try {
     await flush()
     assert.deepEqual({ ...state.draft.value.limits }, DEFAULT_AGENT_LIMITS)
-    state.draft.value.limits = { ...AGENT_CAPACITY_PRESETS[1].limits }
+    state.draft.value.limits = {
+      ...DEFAULT_AGENT_LIMITS,
+      ...AGENT_CAPACITY_PRESETS[1].limits,
+      maxRetries: 999,
+    }
     state.selectedId.value = 'b'
     assert.deepEqual({ ...state.draft.value.limits }, DEFAULT_AGENT_LIMITS)
     state.draft.value.limits.maxSteps = 48
     state.selectedId.value = 'a'
     await state.save()
-    assert.deepEqual(
-      api.saved.input.config.limits,
-      AGENT_CAPACITY_PRESETS[1].limits
-    )
+    assert.deepEqual(api.saved.input.config.limits, {
+      ...DEFAULT_AGENT_LIMITS,
+      ...AGENT_CAPACITY_PRESETS[1].limits,
+      maxRetries: 999,
+    })
     assert.equal(state.drafts.value.b.limits.maxSteps, 48)
     assert.equal(
       state.settings.value.profiles.find(p => p.id === 'a').limits.maxSteps,
@@ -129,7 +134,11 @@ test('capacity settings migrate old profiles and remain independent through save
       await flush()
       assert.deepEqual(
         { ...reopened.state.draft.value.limits },
-        AGENT_CAPACITY_PRESETS[1].limits
+        {
+          ...DEFAULT_AGENT_LIMITS,
+          ...AGENT_CAPACITY_PRESETS[1].limits,
+          maxRetries: 999,
+        }
       )
       reopened.state.draft.value.limits.maxSteps = 96
       assert.equal(
@@ -158,11 +167,12 @@ test('invalid custom capacity blocks saving and all presets stay within backend 
   try {
     await flush()
     for (const preset of AGENT_CAPACITY_PRESETS)
-      assert.ok(validAgentLimits(preset.limits))
+      assert.ok(validAgentLimits({ ...DEFAULT_AGENT_LIMITS, ...preset.limits }))
     for (const [key, values] of Object.entries({
       maxSteps: [0, 129, 1.5, '', NaN],
       maxContextKb: [63, 4001, Infinity],
       maxMessages: [15, 2049],
+      maxRetries: [-1, 1000, 1.5, '', NaN],
     })) {
       for (const value of values) {
         state.draft.value.limits = { ...DEFAULT_AGENT_LIMITS, [key]: value }
@@ -176,10 +186,29 @@ test('invalid custom capacity blocks saving and all presets stay within backend 
       maxSteps: 128,
       maxContextKb: 4000,
       maxMessages: 2048,
+      maxRetries: 999,
     }
     await state.save()
     assert.equal(state.error.value, '')
     assert.equal(api.saved.input.config.limits.maxSteps, 128)
+    assert.equal(api.saved.input.config.limits.maxRetries, 999)
+    state.draft.value.limits.maxRetries = 0
+    await state.save()
+    assert.equal(api.saved.input.config.limits.maxRetries, 0)
+  } finally {
+    app.unmount()
+  }
+})
+
+test('profiles with existing capacity but no retry field keep their limits and gain the default', async () => {
+  const { app, state } = fixture(useAgentSettings)
+  api.settings.profiles[0].limits = { ...AGENT_CAPACITY_PRESETS[1].limits }
+  try {
+    await flush()
+    assert.deepEqual(
+      { ...state.draft.value.limits },
+      { ...DEFAULT_AGENT_LIMITS, ...AGENT_CAPACITY_PRESETS[1].limits }
+    )
   } finally {
     app.unmount()
   }

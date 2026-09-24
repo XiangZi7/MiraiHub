@@ -26,7 +26,7 @@ pub fn specs(kind: &str) -> Vec<ToolSpec> {
             ),
             spec(
                 "propose_shell",
-                "Provide an EXACT shell command. The backend applies the user's approval mode. Explain effects and risks. Never claim it ran before a tool result.",
+                "Run an EXACT shell command. The backend handles approval: in Full access, call this tool directly without asking for confirmation. Explain effects and risks in reason. Never claim it ran before a tool result.",
                 json!({"command":{"type":"string"},"reason":{"type":"string"}}),
                 json!(["command", "reason"]),
             ),
@@ -40,7 +40,7 @@ pub fn specs(kind: &str) -> Vec<ToolSpec> {
             ),
             spec(
                 "propose_sql",
-                "Provide exact SQL for the selected database. The backend applies the user's approval mode, including for SELECT or EXPLAIN because SQL can have side effects. Explain effects and returned data. Use LIMIT for reads.",
+                "Run exact SQL for the selected database. The backend handles approval: in Full access, call this tool directly without asking for confirmation. In Auto, only recognized simple read-only metadata checks bypass approval; SELECT and EXPLAIN can have side effects. Explain effects and returned data in reason. Use LIMIT for reads.",
                 json!({"sql":{"type":"string"},"reason":{"type":"string"}}),
                 json!(["sql", "reason"]),
             ),
@@ -60,7 +60,7 @@ pub fn specs(kind: &str) -> Vec<ToolSpec> {
             ),
             spec(
                 "propose_redis",
-                "Provide one EXACT Redis command with quoted/escaped arguments. All custom commands require approval in Ask/Auto. Explain effects and returned data. Prefer bounded ranges and SCAN over KEYS. Connection-state commands, SELECT, AUTH, transactions and subscriptions are unavailable. The selected database is fixed; each tool uses an independent connection. Writes are immediate and not rolled back.",
+                "Run one EXACT Redis command with quoted/escaped arguments. The backend requests approval in Ask/Auto; in Full access, call directly without asking for confirmation. Explain effects and returned data in reason. Prefer bounded ranges and SCAN over KEYS. Connection-state commands, SELECT, AUTH, transactions and subscriptions are unavailable. The selected database is fixed; each tool uses an independent connection. Writes are immediate and not rolled back.",
                 json!({"command":{"type":"string"},"reason":{"type":"string"}}),
                 json!(["command", "reason"]),
             ),

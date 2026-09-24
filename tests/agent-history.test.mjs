@@ -201,6 +201,44 @@ test('stopping preserves the visible partial answer and ignores late stream chun
   app.unmount()
 })
 
+test('stopping during retry discards stale previews and ignores late retry events', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const pending = state.send('等待限流恢复')
+  await flush()
+  const id = state.run.value.id
+  const late = mock.progress
+  late({ runId: id, text: '未完成的旧回复', phase: 'answering' })
+  late({
+    runId: id,
+    text: '',
+    phase: 'retrying',
+    retry: {
+      attempt: 1,
+      max: 999,
+      retryAt: Date.now() + 60000,
+      reason: 'HTTP 429',
+    },
+  })
+  assert.equal(state.progress.value.retry.max, 999)
+  assert.equal(state.progress.value.text, '')
+  await state.stop()
+  assert.equal(state.run.value.status, 'cancelled')
+  assert.equal(
+    state.run.value.entries.filter(entry => entry.role === 'assistant').length,
+    0
+  )
+  late({ runId: id, text: '', phase: 'retrying' })
+  assert.equal(state.progress.value, null)
+  finish(structuredClone(mock.runs.get(id)))
+  await pending
+  app.unmount()
+})
+
 test('switching conversations rejects progress from the previous model request', async () => {
   const { app, state } = fixture()
   await flush()
@@ -308,7 +346,10 @@ test('changing profiles continues the same conversation with its previous messag
   assert.equal(mock.starts.at(-1).conversationId, conversationId)
   assert.equal(state.run.value.conversationId, conversationId)
   assert.equal(mock.records.size, 1)
-  assert.equal(state.run.value.entries.filter(entry => entry.role === 'user').length, 2)
+  assert.equal(
+    state.run.value.entries.filter(entry => entry.role === 'user').length,
+    2
+  )
   app.unmount()
 })
 
@@ -331,7 +372,11 @@ test('changing profiles cancels an in-flight response without changing conversat
   assert.equal(state.awaitingApproval.value, false)
   late({ runId: old.id, text: '迟到内容', phase: 'answering' })
   assert.equal(state.progress.value, null)
-  finish({ ...old, status: 'completed', entries: [...old.entries, { role: 'assistant', text: '旧回复' }] })
+  finish({
+    ...old,
+    status: 'completed',
+    entries: [...old.entries, { role: 'assistant', text: '旧回复' }],
+  })
   await pending
   assert.equal(state.run.value.conversationId, old.conversationId)
   assert.equal(state.run.value.id, '')

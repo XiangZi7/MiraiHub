@@ -6,6 +6,7 @@
 //! 而不是去匹配错误文案。
 
 use serde::Serialize;
+use std::time::Duration;
 
 /// 错误分类。前端据此决定交互：
 /// 比如 `Auth` 弹重新输入密码，`Network` 提示重试，`Internal` 只记日志。
@@ -14,7 +15,7 @@ use serde::Serialize;
 pub enum ErrorKind {
     /// 参数不合法（端口越界、路径为空等），调用方的问题
     InvalidInput,
-    /// 连接建立失败：DNS、超时、拒绝连接
+    /// 网络或服务端的瞬时故障：DNS、超时、拒绝连接、连接中断、限流、过载，稍后重试可能成功
     Network,
     /// 认证失败：密码错误、密钥不被接受、口令解不开私钥
     Auth,
@@ -32,6 +33,9 @@ pub enum ErrorKind {
 pub struct AppError {
     pub kind: ErrorKind,
     pub message: String,
+    /// 服务端要求的最短重试等待（HTTP `Retry-After` 等），只在后端使用，不跨 IPC
+    #[serde(skip)]
+    pub retry_after: Option<Duration>,
 }
 
 impl AppError {
@@ -39,11 +43,16 @@ impl AppError {
         Self {
             kind,
             message: message.into(),
+            retry_after: None,
         }
     }
 
     pub fn invalid_input(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidInput, message)
+    }
+
+    pub fn network(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Network, message)
     }
 
     pub fn not_found(message: impl Into<String>) -> Self {

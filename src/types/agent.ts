@@ -18,6 +18,7 @@ export interface AgentLimits {
   maxSteps: number
   maxContextKb: number
   maxMessages: number
+  maxRetries: number
 }
 export interface AgentConfigInput {
   apiFormat: AgentApiFormat
@@ -89,7 +90,14 @@ export interface AgentRun {
 export interface AgentProgress {
   runId: string
   text: string
-  phase: 'thinking' | 'answering' | 'tool'
+  phase: 'thinking' | 'answering' | 'tool' | 'retrying'
+  retry?: AgentRetryNotice
+}
+export interface AgentRetryNotice {
+  attempt: number
+  max: number
+  retryAt: number
+  reason: string
 }
 export type McpTransport = 'stdio' | 'http'
 export type McpTarget = 'ssh' | 'database' | 'redis'

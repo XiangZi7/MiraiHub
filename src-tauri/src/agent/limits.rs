@@ -9,6 +9,13 @@ pub struct Limits {
     pub max_steps: usize,
     pub max_context_kb: usize,
     pub max_messages: usize,
+    /// Automatic re-sends of one model request after rate limiting, overload or a
+    /// dropped connection. Profiles saved before this setting use the default.
+    #[serde(default = "default_max_retries")]
+    pub max_retries: usize,
+}
+const fn default_max_retries() -> usize {
+    5
 }
 impl Default for Limits {
     fn default() -> Self {
@@ -16,6 +23,7 @@ impl Default for Limits {
             max_steps: 8,
             max_context_kb: 180,
             max_messages: 64,
+            max_retries: default_max_retries(),
         }
     }
 }
@@ -24,8 +32,9 @@ impl Limits {
         if !(1..=128).contains(&self.max_steps)
             || !(64..=4000).contains(&self.max_context_kb)
             || !(16..=2048).contains(&self.max_messages)
+            || self.max_retries > 999
         {
-            return Err(AppError::invalid_input("任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–4000 KB，历史消息须为 16–2048 条"));
+            return Err(AppError::invalid_input("任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–4000 KB，历史消息须为 16–2048 条，失败重试须为 0–999 次"));
         }
         Ok(())
     }
@@ -65,6 +74,7 @@ mod tests {
             max_steps: 32,
             max_context_kb: 1000,
             max_messages: 256,
+            ..Limits::default()
         };
         let message = json!({"role":"user", "content":"查".repeat(70000)});
         assert!(standard
@@ -114,13 +124,35 @@ mod tests {
                 max_messages: 2049,
                 ..Limits::default()
             },
+            Limits {
+                max_retries: 1000,
+                ..Limits::default()
+            },
         ] {
             assert!(invalid.validate().is_err());
+        }
+        for retries in [0, 999] {
+            let limits = Limits {
+                max_retries: retries,
+                ..Limits::default()
+            };
+            assert!(limits.validate().is_ok());
         }
         let history = vec![json!({"role":"assistant","content":"ok"}); 64];
         assert!(Limits::default().check_context(&history, None).is_ok());
         assert!(Limits::default()
             .check_context(&history, Some(&json!({"role":"user","content":"more"})))
             .is_err());
+    }
+    #[test]
+    fn profiles_saved_before_retry_setting_use_the_default() {
+        let limits: Limits =
+            serde_json::from_str(r#"{"maxSteps":32,"maxContextKb":1000,"maxMessages":256}"#)
+                .unwrap();
+        assert_eq!(limits.max_retries, 5);
+        assert_eq!(
+            serde_json::to_value(Limits::default()).unwrap()["maxRetries"],
+            5
+        );
     }
 }

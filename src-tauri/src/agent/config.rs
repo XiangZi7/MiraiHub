@@ -351,14 +351,18 @@ pub(super) async fn request_json(request: reqwest::RequestBuilder) -> AppResult<
 }
 pub(super) fn request_error(error: reqwest::Error) -> AppError {
     // Do not expose URLs, headers or the request body (may contain secrets).
-    if error.is_timeout() {
-        AppError::internal(
+    // Everything except a malformed request is a transport failure, so it is
+    // reported as `Network` and the agent may send the same request again.
+    if error.is_builder() {
+        AppError::internal("模型连接中断或请求失败，请检查网络与中转站状态")
+    } else if error.is_timeout() {
+        AppError::network(
             "模型连接或响应超时，请稍后重试；长上下文、模型思考或中转站拥堵可能增加等待时间",
         )
     } else if error.is_connect() {
-        AppError::internal("无法连接模型服务，请检查网络、证书及 API 地址")
+        AppError::network("无法连接模型服务，请检查网络、证书及 API 地址")
     } else {
-        AppError::internal("模型连接中断或请求失败，请检查网络与中转站状态")
+        AppError::network("模型连接中断或请求失败，请检查网络与中转站状态")
     }
 }
 pub(super) async fn check_status(response: reqwest::Response) -> AppResult<reqwest::Response> {
@@ -366,11 +370,128 @@ pub(super) async fn check_status(response: reqwest::Response) -> AppResult<reqwe
         return Ok(response);
     }
     let status = response.status().as_u16();
+    let headers = response.headers();
+    let retry_after = retry_after(headers, std::time::SystemTime::now());
+    let should_retry = headers
+        .get("x-should-retry")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| match value.trim().to_ascii_lowercase().as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        });
     let body = bounded_bytes(response, 8192).await;
-    Err(AppError::internal(match provider_detail_bytes(&body) {
+    let message = match provider_detail_bytes(&body) {
         Some(detail) => format!("模型服务错误：HTTP {status} · {detail}"),
         None => format!("模型服务未说明错误：HTTP {status}"),
-    }))
+    };
+    let transient =
+        should_retry.unwrap_or_else(|| transient_status(status) && !quota_exhausted(&body));
+    let mut error = if transient {
+        AppError::network(message)
+    } else {
+        AppError::internal(message)
+    };
+    error.retry_after = retry_after;
+    Err(error)
+}
+/// Statuses where sending the same request again can succeed: request timeout,
+/// conflicts, rate limits (429) and server-side failures such as 503 or 529 overload.
+fn transient_status(status: u16) -> bool {
+    matches!(status, 408 | 409 | 425 | 429) || (status >= 500 && !matches!(status, 501 | 505))
+}
+/// A rate limit clears on its own; an exhausted balance or quota does not.
+fn quota_exhausted(body: &[u8]) -> bool {
+    let body = String::from_utf8_lossy(body).to_ascii_lowercase();
+    [
+        "insufficient_quota",
+        "insufficient_balance",
+        "insufficient balance",
+        "余额不足",
+        "额度不足",
+        "额度已用尽",
+    ]
+    .iter()
+    .any(|needle| body.contains(needle))
+}
+/// An error object a provider sends with HTTP 200, in a stream or a JSON body. Such
+/// failures are usually upstream overload, rate limiting or a dropped upstream
+/// connection, so they are transient unless the provider marks the request itself
+/// as rejected (invalid, unauthorized, filtered or out of quota).
+pub(super) fn provider_error(error: &serde_json::Value) -> AppError {
+    let message = match provider_detail(error) {
+        Some(detail) => format!("模型服务错误：{detail}"),
+        None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
+    };
+    if transient_error(error) {
+        AppError::network(message)
+    } else {
+        AppError::internal(message)
+    }
+}
+fn transient_error(error: &serde_json::Value) -> bool {
+    const REJECTED: [&str; 9] = [
+        "invalid",
+        "auth",
+        "permission",
+        "not_found",
+        "context_length",
+        "content",
+        "policy",
+        "safety",
+        "unsupported",
+    ];
+    if quota_exhausted(error.to_string().as_bytes()) {
+        return false;
+    }
+    let inner = if error["error"].is_object() {
+        &error["error"]
+    } else {
+        error
+    };
+    let fields = [&inner["code"], &inner["status"], &inner["type"]];
+    // Gemini-style errors carry the HTTP status as a number.
+    if let Some(status) = fields.iter().find_map(|value| value.as_u64()) {
+        return u16::try_from(status).is_ok_and(transient_status);
+    }
+    let labels = fields
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    !REJECTED.iter().any(|marker| labels.contains(marker))
+}
+/// The wait a provider asks for: `retry-after-ms` (OpenAI/Anthropic SDK convention),
+/// then `Retry-After` as seconds or an HTTP date. Absurd values are capped.
+fn retry_after(
+    headers: &reqwest::header::HeaderMap,
+    now: std::time::SystemTime,
+) -> Option<std::time::Duration> {
+    const MAX: std::time::Duration = std::time::Duration::from_secs(600);
+    let header = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+    };
+    let seconds = |text: &str, scale: f64| {
+        text.parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| std::time::Duration::from_secs_f64((value / scale).min(MAX.as_secs_f64())))
+    };
+    if let Some(delay) = header("retry-after-ms").and_then(|text| seconds(text, 1000.0)) {
+        return Some(delay);
+    }
+    let text = header("retry-after")?;
+    seconds(text, 1.0).or_else(|| {
+        let date = chrono::DateTime::parse_from_rfc2822(text).ok()?;
+        let delay = std::time::SystemTime::from(date)
+            .duration_since(now)
+            .unwrap_or_default();
+        Some(delay.min(MAX))
+    })
 }
 /// The provider's own wording is the most useful diagnostic, so it is surfaced instead
 /// of a bare status code. Credential-shaped tokens are masked and the text is bounded;
@@ -496,6 +617,7 @@ mod tests {
             max_steps: 32,
             max_context_kb: 1000,
             max_messages: 256,
+            max_retries: 999,
         };
         expanded.config.limits = limits;
         settings.upsert(expanded, false).unwrap();
@@ -599,6 +721,71 @@ mod tests {
         let ciphertext = protect(plain, true).unwrap();
         assert_ne!(ciphertext, plain);
         assert_eq!(protect(&ciphertext, false).unwrap(), plain);
+    }
+    #[test]
+    fn classifies_transient_provider_failures_and_requested_waits() {
+        use std::time::{Duration, SystemTime};
+        for status in [408, 409, 425, 429, 500, 502, 503, 504, 529] {
+            assert!(transient_status(status), "{status}");
+        }
+        for status in [400, 401, 402, 403, 404, 413, 422, 501, 505] {
+            assert!(!transient_status(status), "{status}");
+        }
+        assert!(quota_exhausted(
+            br#"{"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}"#
+        ));
+        assert!(quota_exhausted("账户余额不足，请充值".as_bytes()));
+        assert!(!quota_exhausted(
+            br#"{"error":{"message":"Rate limit: 5 requests per minute"}}"#
+        ));
+        use crate::error::ErrorKind;
+        use serde_json::json;
+        for transient in [
+            json!({"error":{"type":"server_error","message":"upstream reset"}}),
+            json!({"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}),
+            json!({"type":"error","code":"rate_limit_exceeded","message":"Slow down"}),
+            json!({"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}),
+            serde_json::Value::Null,
+        ] {
+            let error = provider_error(&transient);
+            assert!(matches!(error.kind, ErrorKind::Network), "{transient}");
+        }
+        for rejected in [
+            json!({"error":{"type":"invalid_request_error","code":"context_length_exceeded"}}),
+            json!({"error":{"type":"authentication_error","message":"bad key"}}),
+            json!({"error":{"code":400,"status":"INVALID_ARGUMENT"}}),
+            json!({"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}),
+        ] {
+            let error = provider_error(&rejected);
+            assert!(matches!(error.kind, ErrorKind::Internal), "{rejected}");
+        }
+        assert_eq!(
+            provider_error(&json!({"error":{"message":"Overloaded"}})).message,
+            "模型服务错误：Overloaded"
+        );
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_445_412_470);
+        let parse = |pairs: &[(&'static str, &str)]| {
+            let mut headers = reqwest::header::HeaderMap::new();
+            for (name, value) in pairs {
+                headers.insert(*name, value.parse().unwrap());
+            }
+            retry_after(&headers, now)
+        };
+        assert_eq!(parse(&[("retry-after", "7")]), Some(Duration::from_secs(7)));
+        assert_eq!(
+            parse(&[("retry-after-ms", "1500"), ("retry-after", "7")]),
+            Some(Duration::from_millis(1500))
+        );
+        assert_eq!(
+            parse(&[("retry-after", "Wed, 21 Oct 2015 07:28:00 GMT")]),
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(
+            parse(&[("retry-after", "86400")]),
+            Some(Duration::from_secs(600))
+        );
+        assert_eq!(parse(&[("retry-after", "soon")]), None);
+        assert_eq!(parse(&[]), None);
     }
 }
 #[cfg(test)]
@@ -765,6 +952,33 @@ mod http_tests {
         let error = completion(&config(url), &[], None).await.unwrap_err();
         assert!(error.message.contains("401"));
         assert!(!error.message.contains("do-not-echo"));
+        // Credentials do not start working by themselves; never re-send this request.
+        assert!(matches!(error.kind, crate::error::ErrorKind::Internal));
+        server.await.unwrap();
+    }
+    #[tokio::test]
+    async fn rate_limits_are_transient_and_carry_the_requested_wait() {
+        let (url, server) = mock(
+            "429 Too Many Requests",
+            r#"{"error":{"message":"Rate limit: 5 requests per minute"}}"#,
+            "Retry-After: 3\r\n",
+        )
+        .await;
+        let error = completion(&config(url), &[], None).await.unwrap_err();
+        assert!(matches!(error.kind, crate::error::ErrorKind::Network));
+        assert_eq!(error.retry_after, Some(std::time::Duration::from_secs(3)));
+        assert!(error
+            .message
+            .contains("429 · Rate limit: 5 requests per minute"));
+        server.await.unwrap();
+        let (url, server) = mock(
+            "429 Too Many Requests",
+            r#"{"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}"#,
+            "",
+        )
+        .await;
+        let error = completion(&config(url), &[], None).await.unwrap_err();
+        assert!(matches!(error.kind, crate::error::ErrorKind::Internal));
         server.await.unwrap();
     }
     #[tokio::test]

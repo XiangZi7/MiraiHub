@@ -147,6 +147,9 @@ pub(super) async fn completion(
                 .json(&body),
         );
         let result = config::request_json(request).await?;
+        if result.get("error").is_some_and(|error| !error.is_null()) {
+            return Err(config::provider_error(&result));
+        }
         match config.api_format {
             ApiFormat::Openai => Ok(result),
             ApiFormat::Responses => super::responses::normalize(result),
@@ -251,6 +254,34 @@ pub(super) fn history_message(message: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn every_protocol_keeps_the_current_approval_instruction() {
+        let instruction = super::super::policy::ApprovalMode::Full.instruction();
+        let messages = vec![
+            json!({"role":"system","content":"Base instructions"}),
+            json!({"role":"system","content":instruction}),
+            json!({"role":"user","content":"Run the task"}),
+        ];
+        for api_format in [
+            ApiFormat::Openai,
+            ApiFormat::Responses,
+            ApiFormat::Anthropic,
+        ] {
+            let config = Config {
+                enabled: true,
+                model: "test-model".into(),
+                api_format,
+                ..Config::default()
+            };
+            let (_, body) = completion_body(&config, &messages, None).unwrap();
+            let actual = match api_format {
+                ApiFormat::Openai => body["messages"][1]["content"].as_str().unwrap(),
+                ApiFormat::Responses => body["instructions"].as_str().unwrap(),
+                ApiFormat::Anthropic => body["system"][1]["text"].as_str().unwrap(),
+            };
+            assert!(actual.contains(instruction));
+        }
+    }
     #[test]
     fn builds_native_and_relay_endpoints_without_duplicate_suffixes() {
         for (format, base, resource, expected) in [

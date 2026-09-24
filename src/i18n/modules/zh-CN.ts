@@ -63,7 +63,7 @@ export default {
   'ai.saved': '已保存并切换到「{name}」。',
   'ai.capacitySummary': '{steps} 次请求 · {kb} KB · {messages} 条消息',
   'ai.capacityInvalid':
-    '请填写整数：每轮模型请求 1–128 次，上下文容量 64–4000 KB，历史消息 16–2048 条。',
+    '请填写整数：每轮模型请求 1–128 次，上下文容量 64–4000 KB，历史消息 16–2048 条，失败自动重试 0–999 次。',
   'backup.saved': '备份已保存：{path}',
   'backup.restored':
     '恢复完成：新增 {add}，更新 {update}，跳过 {skip}。未自动连接任何服务器。',

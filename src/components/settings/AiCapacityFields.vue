@@ -23,7 +23,7 @@ const preset = computed({
   set: (value: string) => {
     state.custom = value === 'custom'
     const selected = AGENT_CAPACITY_PRESETS.find(item => item.value === value)
-    if (selected) limits.value = { ...selected.limits }
+    if (selected) limits.value = { ...limits.value, ...selected.limits }
   },
 })
 const options = computed(() => [
@@ -101,6 +101,26 @@ const options = computed(() => [
         )
       }}
     </p>
+    <div class="capacity-field">
+      <label for="ai-max-retries">{{ t('ai.maxRetries') }}</label>
+      <input
+        id="ai-max-retries"
+        v-model.number="limits.maxRetries"
+        type="number"
+        step="1"
+        :min="AGENT_LIMIT_RANGES.maxRetries.min"
+        :max="AGENT_LIMIT_RANGES.maxRetries.max"
+        :disabled="disabled"
+        required
+        aria-describedby="ai-retries-help"
+      />
+      <p
+        id="ai-retries-help"
+        class="capacity-help"
+      >
+        {{ t('ai.retryHelp') }}
+      </p>
+    </div>
     <p class="capacity-help">{{ t('保存后生效；可从聊天记录继续原会话。') }}</p>
   </section>
 </template>

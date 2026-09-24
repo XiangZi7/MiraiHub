@@ -16,7 +16,7 @@ import { useI18n } from 'vue-i18n'
 function editProfile(profile: AgentConfig): AgentProfileDraft {
   return {
     ...profile,
-    limits: { ...(profile.limits ?? DEFAULT_AGENT_LIMITS) },
+    limits: { ...DEFAULT_AGENT_LIMITS, ...profile.limits },
     apiKey: '',
     clearKey: false,
   }

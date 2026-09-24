@@ -1,5 +1,7 @@
 /** Application-owned native messages. Service responses, SQL, and shell output stay verbatim. */
 export const en = {
+  '任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–4000 KB，历史消息须为 16–2048 条，失败重试须为 0–999 次':
+    'Invalid task limits: use 1–128 model requests, 64–4000 KB of context, 16–2048 messages, and 0–999 retries.',
   'Redis 扫描参数无效': 'Invalid Redis scan arguments',
   'Redis 键标识无效': 'Invalid Redis key identifier',
   'Redis 操作超时；写入可能已生效，请核对结果':
@@ -187,8 +189,7 @@ export const en = {
     'Parallel tool calls were not executed. Call one tool at a time and wait for its result.',
   'MCP 响应的单行超过 1 MB 限制':
     'A single line of the MCP response exceeds the 1 MB limit',
-  'MCP 服务返回的不是 JSON':
-    'The MCP server did not return JSON',
+  'MCP 服务返回的不是 JSON': 'The MCP server did not return JSON',
   'MCP 服务返回错误': 'The MCP server returned an error',
   'MCP 服务的标准输入不可用': 'The MCP server stdin is unavailable',
   'MCP 服务的标准输出不可用': 'The MCP server stdout is unavailable',
@@ -208,7 +209,7 @@ export const en = {
   '环境变量或请求头最多 32 项': 'Up to 32 environment variables or headers',
   '环境变量或请求头的名称无效（字母、数字与下划线，且不能以数字开头）':
     'Invalid environment variable or header name (letters, digits and underscores; cannot start with a digit)',
-  '环境变量或请求头的值过长或含控制字符':
+  环境变量或请求头的值过长或含控制字符:
     'An environment variable or header value is too long or contains control characters',
   'MCP 工具调用超时': 'The MCP tool call timed out',
   'MCP 服务器已删除或停用，未执行本次操作':

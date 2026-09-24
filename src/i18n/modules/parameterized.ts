@@ -1,5 +1,15 @@
 /** Full sentences keep variable content independent of each language's word order. */
 const entries = {
+  'agent.retryCountdown': [
+    '第 {attempt}/{max} 次重试 · {seconds} 秒后重新请求',
+    'Retry {attempt}/{max} · Requesting again in {seconds}s',
+  ],
+  'ai.maxRetries': ['失败自动重试次数', 'Automatic retries on failure'],
+  'ai.retryWaiting': ['等待自动重试', 'Waiting to retry'],
+  'ai.retryHelp': [
+    '0–999 次，默认 5 次；0 表示关闭。限流、服务过载或连接中断时等待后重新请求，优先使用服务端指定的等待时间。可随时停止。',
+    '0–999 retries, default 5; 0 disables retries. Rate limits, server overload and interrupted connections wait before requesting again, using the server’s requested delay when available. Stop at any time.',
+  ],
   'agent.officialProfile': ['{name} 官网', '{name} official'],
   Server: ['服务器', 'Server'],
   'localhost or db.example.com': [
@@ -76,7 +86,10 @@ const entries = {
     '聊天记录尚未保存：{error}',
     'Chat history has not been saved: {error}',
   ],
-  'agent.providerError': ['模型服务错误：{error}', 'Model service error: {error}'],
+  'agent.providerError': [
+    '模型服务错误：{error}',
+    'Model service error: {error}',
+  ],
   'agent.analyzeAttachments': [
     '请分析上传的文件。',
     'Please analyze the attached files.',

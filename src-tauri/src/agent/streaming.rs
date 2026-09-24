@@ -98,8 +98,9 @@ impl Decoder {
             return Ok(());
         }
         if name == b"error" {
-            return Err(AppError::internal(
-                "模型服务在生成过程中返回错误，请检查模型与中转站状态",
+            // Parsed only to quote the provider's wording and classify the failure.
+            return Err(config::provider_error(
+                &serde_json::from_slice(data).unwrap_or(Value::Null),
             ));
         }
         let event: Value = serde_json::from_slice(data)
@@ -116,10 +117,7 @@ impl Decoder {
         // Chat-completions relays report failures as an error object. Responses events
         // carry their own and are handled above, where the provider's wording is kept.
         if !event["error"].is_null() || event["type"] == "error" {
-            return Err(AppError::internal(match config::provider_detail(&event) {
-                Some(detail) => format!("模型服务错误：{detail}"),
-                None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
-            }));
+            return Err(config::provider_error(&event));
         }
         if kind.starts_with("response.") {
             return Err(AppError::invalid_input(
@@ -302,11 +300,8 @@ impl Decoder {
             "response.failed" | "response.cancelled" => {
                 // Only the provider's error object is quoted. The rest of the event can
                 // carry echoed request data, which must not reach the panel.
-                return Err(AppError::internal(
-                    match config::provider_detail(&json!({"error": event["response"]["error"]})) {
-                        Some(detail) => format!("模型服务错误：{detail}"),
-                        None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
-                    },
+                return Err(config::provider_error(
+                    &json!({"error": event["response"]["error"]}),
                 ));
             }
             "response.incomplete" => {
@@ -346,6 +341,13 @@ impl Decoder {
             }
             Some("stop") if !has_calls => {}
             Some("tool_calls") if has_calls => {}
+            // EOF without a finish reason: the connection or relay dropped the stream.
+            // Nothing was executed, so the same request can be sent again.
+            None => {
+                return Err(AppError::network(
+                    "模型流式响应未完整结束，未执行本次工具调用，请重试",
+                ))
+            }
             _ => {
                 return Err(AppError::invalid_input(
                     "模型流式响应未完整结束，未执行本次工具调用，请重试",
@@ -460,7 +462,7 @@ pub(super) async fn completion(
     let mut response =
         config::check_status(request.send().await.map_err(config::request_error)?).await?;
     // Some relays ignore stream=true and return a regular JSON response. Consume
-    // that single response; never retry a model request automatically.
+    // that single response; retrying transient failures is the caller's decision.
     let json_response = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -479,12 +481,7 @@ pub(super) async fn completion(
             return super::responses::normalize(response);
         }
         if !response["error"].is_null() {
-            return Err(AppError::internal(
-                match config::provider_detail(&response) {
-                    Some(detail) => format!("模型服务错误：{detail}"),
-                    None => "模型服务在生成过程中返回错误，请检查模型与中转站状态".into(),
-                },
-            ));
+            return Err(config::provider_error(&response));
         }
         // Apply the same completion checks when a relay ignores streaming.
         if response["choices"][0]["finish_reason"].is_string() {
@@ -1098,6 +1095,7 @@ mod tests {
         .await
         .unwrap_err();
         assert!(error.message.contains("超时"));
+        assert!(matches!(error.kind, crate::error::ErrorKind::Network));
         server.abort();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -1113,6 +1111,43 @@ mod tests {
         .unwrap_err();
         assert!(error.message.contains("无法连接"));
         assert!(!error.message.contains("超时"));
+        assert!(matches!(error.kind, crate::error::ErrorKind::Network));
+    }
+    #[test]
+    fn classifies_interrupted_streams_and_in_band_failures_for_retry() {
+        use crate::error::ErrorKind;
+        // EOF before a finish reason: nothing was executed, so the request may be re-sent.
+        let cut = parse(&chunk(json!({"content":"partial"}), Value::Null)).unwrap_err();
+        assert!(matches!(cut.kind, ErrorKind::Network));
+        let overloaded = parse(
+            &(chunk(json!({"content":"partial"}), Value::Null)
+                + &event(json!({"error":{"type":"server_error","message":"upstream overloaded"}}))),
+        )
+        .unwrap_err();
+        assert!(matches!(overloaded.kind, ErrorKind::Network));
+        assert!(overloaded.message.contains("upstream overloaded"));
+        let limited = parse(
+            "event: error\ndata: {\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Slow down\"}}\n\n",
+        )
+        .unwrap_err();
+        assert!(matches!(limited.kind, ErrorKind::Network));
+        assert!(limited.message.contains("Slow down"));
+        let failed = parse_format(
+            &event(
+                json!({"type":"response.failed", "response":{"error":{"code":"server_error","message":"retry later"}}}),
+            ),
+            ApiFormat::Responses,
+        )
+        .unwrap_err();
+        assert!(matches!(failed.kind, ErrorKind::Network));
+        // Rejected requests and finished-but-unusable answers are final.
+        let rejected = parse(&event(
+            json!({"error":{"type":"invalid_request_error","message":"prompt is too long"}}),
+        ))
+        .unwrap_err();
+        assert!(matches!(rejected.kind, ErrorKind::Internal));
+        let length = parse(&chunk(json!({"content":"partial"}), json!("length"))).unwrap_err();
+        assert!(matches!(length.kind, ErrorKind::InvalidInput));
     }
     #[tokio::test]
     #[ignore = "65-second regression check for the former 60-second total timeout"]

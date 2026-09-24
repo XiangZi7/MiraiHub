@@ -14,6 +14,8 @@ const components = [
   'src/components/agent/AgentComposer.vue',
   'src/components/agent/AgentApprovalCard.vue',
   'src/components/agent/AgentMarkdown.vue',
+  'src/components/agent/AgentRetryStatus.vue',
+  'src/components/settings/AiCapacityFields.vue',
 ]
 const load = sourceLoader({}, components)
 const { i18n } = await load('src/i18n/index.ts')
@@ -68,6 +70,145 @@ const visible = el =>
       .map(([, value]) => value),
     ...el.children.map(visible),
   ].join(' ')
+
+test('retry status counts down, translates diagnostics, and updates for the next attempt', async context => {
+  context.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 10000 })
+  const { default: RetryStatus } = await load(components[6])
+  const props = reactive({
+    retry: {
+      attempt: 1,
+      max: 999,
+      retryAt: 12000,
+      reason: '模型服务错误：HTTP 429 · Too many requests',
+    },
+  })
+  const root = node('root')
+  const app = renderer.createApp({ render: () => h(RetryStatus, props) })
+  i18n.global.locale.value = 'zh-CN'
+  app.use(i18n).mount(root)
+  try {
+    assert.match(visible(root), /第 1\/999 次重试 · 2 秒/)
+    context.mock.timers.tick(1000)
+    await nextTick()
+    assert.match(visible(root), /1 秒后/)
+    props.retry = { ...props.retry, attempt: 2, retryAt: 14000 }
+    i18n.global.locale.value = 'en-US'
+    await nextTick()
+    assert.match(visible(root), /Retry 2\/999.*3s/)
+    assert.match(visible(root), /Model service error: HTTP 429/)
+    context.mock.timers.tick(5000)
+    await nextTick()
+    assert.match(visible(root), /in 0s/)
+  } finally {
+    app.unmount()
+  }
+})
+
+test('capacity presets preserve the independently editable retry count', async () => {
+  const { default: Capacity } = await load(components[7])
+  const { DEFAULT_AGENT_LIMITS } = await load('src/constants/agent-limits.ts')
+  const state = reactive({
+    limits: { ...DEFAULT_AGENT_LIMITS, maxRetries: 999 },
+  })
+  const root = node('root')
+  const app = renderer.createApp({
+    render: () =>
+      h(Capacity, {
+        disabled: false,
+        modelValue: state.limits,
+        'onUpdate:modelValue': value => {
+          state.limits = value
+        },
+      }),
+  })
+  app.use(i18n).mount(root)
+  try {
+    const section = app._instance.subTree.component.subTree
+    const select = section.children.find(
+      child => child.props?.['onUpdate:modelValue']
+    )
+    select.props['onUpdate:modelValue']('enhanced')
+    await nextTick()
+    assert.equal(state.limits.maxSteps, 32)
+    assert.equal(state.limits.maxRetries, 999)
+    const retryInput = root.children[0].children
+      .flatMap(child => child.children)
+      .find(child => child.props.id === 'ai-max-retries')
+    assert.ok(retryInput)
+    assert.equal(retryInput.props.min, 0)
+    assert.equal(retryInput.props.max, 999)
+  } finally {
+    app.unmount()
+  }
+})
+
+test('panel preserves the selected permission across profiles and conversations, but resets for another target', async () => {
+  const mockUrl = dataModule(`
+    import { shallowRef } from ${JSON.stringify(import.meta.resolve('vue'))}
+    export let profileChanged
+    const ref = shallowRef
+    export function useAgentProfiles(changed) {
+      profileChanged = changed
+      return { activeId: ref('a'), active: ref({enabled:true}), options: ref([]), loading: ref(false), switching: ref(false), error: ref(''), select() {} }
+    }
+    export function useAiAgent() {
+      return { run:ref(null), busy:ref(false), progress:ref(null), error:ref(''), awaitingApproval:ref(false), conversations:ref([]), historyLoading:ref(false), historyError:ref(''), historyMutating:ref(false), switchingConversation:ref(false), selectConversation() {}, removeConversation() {}, renameConversation() {}, refreshHistory() {}, send() {}, decide() {}, stop() {}, clear() {}, changeProfile() {} }
+    }
+    export function useAgentDraft() {
+      return { prompt:ref(''), attachments:ref([]), reading:ref(false), attachmentError:ref(''), reset() {}, clearAttachments() {} }
+    }
+  `)
+  const panelLoad = sourceLoader(
+    {
+      '@/composables/useAgentProfiles': mockUrl,
+      '@/composables/useAiAgent': mockUrl,
+      '@/composables/useAgentDraft': mockUrl,
+    },
+    ['src/components/agent/AiAgentPanel.vue']
+  )
+  const { default: Panel } = await panelLoad(
+    'src/components/agent/AiAgentPanel.vue'
+  )
+  const mock = await import(mockUrl)
+  const root = node('root')
+  const state = reactive({
+    target: { kind: 'ssh', sessionId: 'a', database: '' },
+  })
+  const app = renderer.createApp({
+    render: () => h(Panel, { target: state.target }),
+  })
+  app.use(i18n).mount(root)
+  const find = predicate => {
+    const visit = vnode => {
+      if (predicate(vnode)) return vnode
+      for (const child of Array.isArray(vnode.children) ? vnode.children : []) {
+        const match = child && typeof child === 'object' ? visit(child) : null
+        if (match) return match
+      }
+    }
+    return visit(app._instance.subTree.component.subTree)
+  }
+  const composer = () => find(vnode => vnode.props?.['onUpdate:approvalMode'])
+  try {
+    assert.equal(composer().props['approval-mode'], 'auto')
+    composer().props['onUpdate:approvalMode']('full')
+    await nextTick()
+    mock.profileChanged()
+    await nextTick()
+    assert.equal(composer().props['approval-mode'], 'full')
+    find(vnode => vnode.props?.icon === 'lucide:square-pen').props.onClick()
+    await nextTick()
+    assert.equal(composer().props['approval-mode'], 'full')
+    find(vnode => vnode.props?.onSelect).props.onSelect('another-chat')
+    await nextTick()
+    assert.equal(composer().props['approval-mode'], 'full')
+    state.target = { ...state.target, sessionId: 'b' }
+    await nextTick()
+    assert.equal(composer().props['approval-mode'], 'auto')
+  } finally {
+    app.unmount()
+  }
+})
 
 test('mounted transfer and AI components update immediately in both languages', async () => {
   const cases = [
