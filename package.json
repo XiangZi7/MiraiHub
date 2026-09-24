@@ -27,6 +27,7 @@
     "format": "prettier --write 'src/**/*.{vue,ts,js,jsx,html,css,scss,md}'"
   },
   "dependencies": {
+    "@codemirror/lang-sql": "^6.10.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@iconify/vue": "^5.0.1",

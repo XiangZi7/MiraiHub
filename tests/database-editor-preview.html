@@ -19,7 +19,7 @@
       addCollection(icons)
       mockWindows('main')
       const state = reactive({
-        panel: 'designer',
+        panel: new URLSearchParams(location.search).get('panel') || 'designer',
         dirty: false,
         sql: 'SELECT p\nFROM `solo-band`.`app_logs`;',
         ran: '',
@@ -165,7 +165,7 @@
                   h(Editor, {
                     modelValue: state.sql,
                     'onUpdate:modelValue': value => (state.sql = value),
-                    suggestions: ['path', 'port', 'payload', 'app_logs'],
+                    suggestions: ['device', 'path', 'port', 'payload', 'app_logs'],
                     onRun: sql => (state.ran = sql),
                   }),
                   h(Results, { execution, loading: false, error: '' }),

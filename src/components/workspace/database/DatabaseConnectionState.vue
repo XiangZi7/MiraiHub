@@ -146,8 +146,8 @@ function reconnect() {
   border-radius: 16px;
   background: var(--color-pane);
   box-shadow: var(--shadow-pane);
-  backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
 }
 
 .connection-state-heading {
@@ -264,8 +264,8 @@ function reconnect() {
 }
 
 :global(html.material-solid) .connection-state {
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 @container connection-state (max-width: 420px) {

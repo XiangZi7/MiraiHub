@@ -131,8 +131,8 @@ const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
     inset 0 1px 0 rgb(255 255 255 / 0.07);
   padding: 11px 10px 12px 12px;
   pointer-events: auto;
-  backdrop-filter: blur(30px) saturate(175%);
   -webkit-backdrop-filter: blur(30px) saturate(175%);
+  backdrop-filter: blur(30px) saturate(175%);
 }
 
 .toast-card-success {

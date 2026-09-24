@@ -15,35 +15,26 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type { ContextMenuItem } from '@/types/context-menu'
+import type { DatabaseKind } from '@/types/database'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/useToast'
 import {
-  filterSqlSuggestions,
-  sqlCompletionPrefix,
+  completeSql,
+  parseSql,
+  type SqlSuggestion,
 } from '@/utils/sql-completion'
 import { cn } from '@/utils/cn'
 
 const { t } = useI18n()
 
-interface SqlToken {
-  text: string
-  kind:
-    | 'plain'
-    | 'keyword'
-    | 'function'
-    | 'string'
-    | 'number'
-    | 'comment'
-    | 'operator'
-    | 'identifier'
-}
-
 const props = withDefaults(
   defineProps<{
+    databaseKind?: DatabaseKind
     disabled?: boolean
     suggestions?: readonly string[]
   }>(),
   {
+    databaseKind: 'mysql',
     disabled: false,
     suggestions: () => [],
   }
@@ -63,6 +54,8 @@ const autocompleteForced = shallowRef(false)
 const activeSuggestion = shallowRef(0)
 const replaceStart = shallowRef(0)
 const currentPrefix = shallowRef('')
+const replaceEnd = shallowRef(0)
+const filteredSuggestions = shallowRef<SqlSuggestion[]>([])
 // 响应式状态
 const state = reactive({
   // 菜单打开时保存选区，菜单获取焦点后仍能精确执行原选区
@@ -190,128 +183,15 @@ async function handleContextAction(id: string): Promise<void> {
   }
 }
 
-const SQL_KEYWORDS = [
-  'SELECT',
-  'FROM',
-  'WHERE',
-  'INSERT',
-  'INTO',
-  'VALUES',
-  'UPDATE',
-  'SET',
-  'DELETE',
-  'CREATE',
-  'ALTER',
-  'DROP',
-  'TABLE',
-  'VIEW',
-  'INDEX',
-  'JOIN',
-  'LEFT',
-  'RIGHT',
-  'INNER',
-  'OUTER',
-  'FULL',
-  'ON',
-  'AS',
-  'AND',
-  'OR',
-  'NOT',
-  'NULL',
-  'IS',
-  'IN',
-  'EXISTS',
-  'BETWEEN',
-  'LIKE',
-  'ILIKE',
-  'ORDER',
-  'BY',
-  'GROUP',
-  'HAVING',
-  'LIMIT',
-  'OFFSET',
-  'DISTINCT',
-  'UNION',
-  'ALL',
-  'WITH',
-  'RETURNING',
-  'CASE',
-  'WHEN',
-  'THEN',
-  'ELSE',
-  'END',
-  'ASC',
-  'DESC',
-  'TRUE',
-  'FALSE',
-  'PRIMARY',
-  'KEY',
-  'FOREIGN',
-  'REFERENCES',
-  'DEFAULT',
-  'CONSTRAINT',
-  'CASCADE',
-] as const
-const SQL_FUNCTIONS = new Set([
-  'COUNT',
-  'SUM',
-  'AVG',
-  'MIN',
-  'MAX',
-  'COALESCE',
-  'CAST',
-  'NOW',
-  'LOWER',
-  'UPPER',
-  'LENGTH',
-  'ROUND',
-])
-const keywordSet = new Set<string>(SQL_KEYWORDS)
-
+const parsedSql = computed(() => parseSql(sql.value, props.databaseKind))
+const tokens = computed(() => parsedSql.value.tokens)
 const lineNumbers = computed(() =>
   Array.from(
     { length: Math.max(1, sql.value.split('\n').length) },
     (_, index) => index + 1
   )
 )
-const tokens = computed<SqlToken[]>(() => {
-  const result: SqlToken[] = []
-  const pattern =
-    /(--[^\n]*|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][\w$]*\b|\s+|.)/gu
-  for (const match of sql.value.matchAll(pattern)) {
-    const text = match[0]
-    const upper = text.toUpperCase()
-    let kind: SqlToken['kind'] = 'plain'
-    if (text.startsWith('--') || text.startsWith('/*')) kind = 'comment'
-    else if (
-      text.startsWith("'") ||
-      text.startsWith('"') ||
-      text.startsWith('`')
-    )
-      kind = text.startsWith("'") ? 'string' : 'identifier'
-    else if (/^\d/u.test(text)) kind = 'number'
-    else if (keywordSet.has(upper)) kind = 'keyword'
-    else if (SQL_FUNCTIONS.has(upper)) kind = 'function'
-    else if (/^[+*/%=<>!.,;()[\]-]+$/u.test(text)) kind = 'operator'
-    result.push({ text, kind })
-  }
-  return result
-})
 
-const allSuggestions = computed(() => {
-  const seen = new Set<string>()
-  return [...props.suggestions, ...SQL_KEYWORDS, ...SQL_FUNCTIONS].filter(
-    item => {
-      const key = item.toLocaleLowerCase()
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    }
-  )
-})
-const filteredSuggestions = computed(() => {
-  return filterSqlSuggestions(allSuggestions.value, currentPrefix.value)
-})
 const autocompleteStyle = computed<CSSProperties>(() => {
   const editor = editorRef.value
   const before = sql.value.slice(
@@ -348,32 +228,34 @@ function updateAutocomplete(forced = false): void {
   }
 
   const cursor = editor.selectionStart
-  const prefix = sqlCompletionPrefix(sql.value, cursor)
-  if (prefix === null) {
+  const completion = completeSql(
+    parsedSql.value,
+    cursor,
+    props.suggestions,
+    forced
+  )
+  if (!completion) {
     autocompleteOpen.value = false
     return
   }
-  currentPrefix.value = prefix
-  replaceStart.value = cursor - prefix.length
+  currentPrefix.value = completion.prefix
+  replaceStart.value = completion.from
+  replaceEnd.value = completion.to
+  filteredSuggestions.value = completion.options
   autocompleteForced.value = forced
   activeSuggestion.value = 0
-  autocompleteOpen.value =
-    (forced || prefix.length >= 1) && filteredSuggestions.value.length > 0
+  autocompleteOpen.value = filteredSuggestions.value.length > 0
 }
 
-watch(
-  () => props.suggestions,
-  () => {
-    if (editorRef.value === document.activeElement)
-      updateAutocomplete(autocompleteForced.value)
-  }
-)
+watch([() => props.suggestions, () => props.databaseKind], () => {
+  if (editorRef.value === document.activeElement)
+    updateAutocomplete(autocompleteForced.value)
+})
 
-function insertSuggestion(value: string): void {
+function insertSuggestion(value: SqlSuggestion): void {
   const editor = editorRef.value
   if (!editor) return
-  const end = editor.selectionStart
-  editor.setRangeText(value, replaceStart.value, end, 'end')
+  editor.setRangeText(value.text, replaceStart.value, replaceEnd.value, 'end')
   sql.value = editor.value
   autocompleteOpen.value = false
   void nextTick(() => editor.focus())
@@ -509,7 +391,7 @@ defineExpose({ runnableSql })
       >
         <AppButton
           v-for="(suggestion, index) in filteredSuggestions"
-          :key="suggestion"
+          :key="suggestion.label"
           variant="bare"
           :class="
             cn(
@@ -525,20 +407,16 @@ defineExpose({ runnableSql })
         >
           <AppIcon
             :name="
-              keywordSet.has(suggestion.toUpperCase())
+              suggestion.kind === 'keyword'
                 ? 'lucide:case-upper'
                 : 'lucide:braces'
             "
             :size="11"
-            :class="
-              keywordSet.has(suggestion.toUpperCase())
-                ? 'text-violet'
-                : 'text-blue'
-            "
+            :class="suggestion.kind === 'keyword' ? 'text-violet' : 'text-blue'"
           />
-          <span class="min-w-0 flex-1 truncate">{{ suggestion }}</span>
+          <span class="min-w-0 flex-1 truncate">{{ suggestion.label }}</span>
           <span class="text-txt-4 text-[9px]">{{
-            keywordSet.has(suggestion.toUpperCase()) ? 'KEYWORD' : 'OBJECT'
+            suggestion.kind.toUpperCase()
           }}</span>
         </AppButton>
       </div>

@@ -1493,6 +1493,7 @@ watch(
             <SqlEditor
               ref="editor"
               v-model="activeSql"
+              :database-kind="databaseKind"
               :disabled="queryLoading"
               :suggestions="sqlSuggestions"
               @run="runQuery"
