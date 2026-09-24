@@ -13,6 +13,41 @@ use super::manager::DatabasePool;
 use super::models::{DatabaseKind, DatabaseTableOptions, TableAlterOptions};
 use super::sql;
 
+#[derive(serde::Serialize)]
+pub struct TableOptionChoices {
+    engines: Vec<String>,
+    collations: Vec<(String, String)>,
+}
+
+pub async fn table_option_choices(pool: &DatabasePool) -> DatabaseResult<TableOptionChoices> {
+    let DatabasePool::Mysql(pool) = pool else {
+        return Ok(TableOptionChoices {
+            engines: vec![],
+            collations: vec![],
+        });
+    };
+    let engines = sqlx::query("SELECT ENGINE FROM information_schema.ENGINES WHERE SUPPORT IN ('YES', 'DEFAULT') ORDER BY ENGINE")
+        .fetch_all(pool).await.map_err(DatabaseError::Query)?;
+    let collations = sqlx::query("SELECT COLLATION_NAME, CHARACTER_SET_NAME FROM information_schema.COLLATIONS ORDER BY CHARACTER_SET_NAME, COLLATION_NAME")
+        .fetch_all(pool).await.map_err(DatabaseError::Query)?;
+    let text = super::metadata::mysql_optional_metadata_text;
+    Ok(TableOptionChoices {
+        engines: engines
+            .iter()
+            .map(|row| Ok(text(row, "ENGINE")?.unwrap_or_default()))
+            .collect::<DatabaseResult<_>>()?,
+        collations: collations
+            .iter()
+            .map(|row| {
+                Ok((
+                    text(row, "COLLATION_NAME")?.unwrap_or_default(),
+                    text(row, "CHARACTER_SET_NAME")?.unwrap_or_default(),
+                ))
+            })
+            .collect::<DatabaseResult<_>>()?,
+    })
+}
+
 /// 读取一张表的当前选项。视图没有这些选项，返回 None。
 pub async fn read_table_options(
     pool: &DatabasePool,
@@ -57,6 +92,11 @@ pub async fn alter_table_options(
                 )),
                 None => clauses.push(format!("DEFAULT CHARSET={charset}")),
             }
+        } else if let Some(collation) = options.collation.as_deref() {
+            clauses.push(format!(
+                "DEFAULT COLLATE={}",
+                safe_option(collation, "排序规则")?
+            ));
         }
         if let Some(comment) = options.comment.as_deref() {
             clauses.push(format!("COMMENT={}", valid_comment(comment)?));
@@ -121,7 +161,8 @@ async fn mysql_table_options(
 ) -> DatabaseResult<Option<DatabaseTableOptions>> {
     let rows = sqlx::query(
         r#"
-        SELECT ENGINE, TABLE_COLLATION, TABLE_COMMENT, AUTO_INCREMENT
+        SELECT ENGINE, TABLE_COLLATION, TABLE_COMMENT, ROW_FORMAT,
+               CAST(AUTO_INCREMENT AS CHAR) AS AUTO_INCREMENT
         FROM information_schema.tables
         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'
         "#,
@@ -147,8 +188,11 @@ async fn mysql_table_options(
         engine: super::metadata::mysql_optional_metadata_text(&row, "ENGINE")?,
         charset,
         collation,
+        row_format: super::metadata::mysql_optional_metadata_text(&row, "ROW_FORMAT")?,
         comment: super::metadata::mysql_optional_metadata_text(&row, "TABLE_COMMENT")?,
-        auto_increment: row.try_get::<i64, _>("AUTO_INCREMENT").ok(),
+        // information_schema 的计数器是 UNSIGNED BIGINT。直接读 i64 会因类型
+        // 不兼容而丢失值；转为文本也能避免经过 JavaScript 后损失整数精度。
+        auto_increment: super::metadata::mysql_optional_metadata_text(&row, "AUTO_INCREMENT")?,
     }))
 }
 
@@ -180,6 +224,7 @@ async fn postgresql_table_options(
         engine: None,
         charset: None,
         collation: None,
+        row_format: None,
         comment: row.try_get("table_comment").unwrap_or(None),
         auto_increment: None,
     }))

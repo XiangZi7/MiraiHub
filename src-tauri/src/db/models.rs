@@ -146,8 +146,9 @@ pub struct DatabaseTableOptions {
     pub engine: Option<String>,
     pub charset: Option<String>,
     pub collation: Option<String>,
+    pub row_format: Option<String>,
     pub comment: Option<String>,
-    pub auto_increment: Option<i64>,
+    pub auto_increment: Option<String>,
 }
 
 /// 一次表选项改动。None 表示不修改该选项；引擎/字符集在 Rust 侧按方言校验。

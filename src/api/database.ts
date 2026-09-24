@@ -114,6 +114,22 @@ export async function tableOptions(
   })
 }
 
+export async function completionColumns(
+  sessionId: string,
+  schema: string
+): Promise<string[]> {
+  ensureTauri()
+  return invoke<string[]>('db_completion_columns', { sessionId, schema })
+}
+
+export async function tableOptionChoices(sessionId: string): Promise<{
+  engines: string[]
+  collations: [string, string][]
+}> {
+  ensureTauri()
+  return invoke('db_table_option_choices', { sessionId })
+}
+
 export async function alterTableOptions(
   sessionId: string,
   schema: string,

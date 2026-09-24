@@ -83,9 +83,10 @@ export interface DatabaseTableOptions {
   engine: string | null
   charset: string | null
   collation: string | null
+  rowFormat: string | null
   comment: string | null
-  /** 自增计数器当前值；PostgreSQL / 读不出来时为 null。 */
-  autoIncrement: number | null
+  /** MySQL 下次分配的自增计数器，以文本保留无符号 BIGINT 精度。 */
+  autoIncrement: string | null
 }
 
 export interface TableAlterOptions {

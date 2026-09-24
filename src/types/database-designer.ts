@@ -2,11 +2,7 @@ import type { DatabaseKind } from './database'
 
 export type TableIndexKind = 'index' | 'unique' | 'fulltext'
 export type ReferentialAction =
-  | 'NO ACTION'
-  | 'RESTRICT'
-  | 'CASCADE'
-  | 'SET NULL'
-  | 'SET DEFAULT'
+  'NO ACTION' | 'RESTRICT' | 'CASCADE' | 'SET NULL' | 'SET DEFAULT'
 
 export interface TableDesignerColumn {
   id: string
@@ -47,8 +43,10 @@ export interface TableDesignerDraft {
   comment: string
   engine: string
   charset: string
-  /** MySQL 表选项的自增计数器；null 表示不修改（新建表时也没有）。 */
-  autoIncrement: number | null
+  collation: string
+  rowFormat: string
+  /** 十进制文本保留 BIGINT 精度；null 表示不指定计数器。 */
+  autoIncrement: string | null
   columns: TableDesignerColumn[]
   indexes: TableDesignerIndex[]
   foreignKeys: TableDesignerForeignKey[]

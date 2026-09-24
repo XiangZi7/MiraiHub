@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>数据库编辑器回归预览</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, reactive } from 'vue'
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      import { addCollection } from '@iconify/vue'
+      import icons from 'virtual:mirai-icons'
+      import '/src/assets/styles/main.css'
+      addCollection(icons)
+      mockWindows('main')
+      const state = reactive({
+        panel: 'designer',
+        dirty: false,
+        sql: 'SELECT p\nFROM `solo-band`.`app_logs`;',
+        ran: '',
+        saved: 0,
+      })
+      const detail = {
+        schema: 'solo-band',
+        name: 'app_logs',
+        kind: 'table',
+        columns: [
+          {
+            name: 'id',
+            dataType: 'bigint unsigned',
+            nullable: false,
+            primaryKey: true,
+            autoIncrement: true,
+            defaultValue: null,
+            comment: '主键',
+          },
+          {
+            name: 'path',
+            dataType: 'varchar(255)',
+            nullable: true,
+            primaryKey: false,
+            autoIncrement: false,
+            defaultValue: null,
+            comment: '请求路径',
+          },
+        ],
+        indexes: [],
+        foreignKeys: [],
+        primaryKey: ['id'],
+        rowEstimate: 1421,
+        ddl: '',
+        options: {
+          engine: 'InnoDB',
+          charset: 'utf8mb4',
+          collation: 'utf8mb4_unicode_ci',
+          rowFormat: 'Dynamic',
+          comment: '请求日志',
+          autoIncrement: '9007199254740993',
+        },
+      }
+      mockIPC(
+        async (command, args) => {
+          if (command === 'db_table_detail') return detail
+          if (command === 'db_table_option_choices')
+            return {
+              engines: ['InnoDB', 'MyISAM', 'MEMORY'],
+              collations: [
+                ['utf8mb4_unicode_ci', 'utf8mb4'],
+                ['utf8mb4_general_ci', 'utf8mb4'],
+                ['utf8mb4_bin', 'utf8mb4'],
+                ['latin1_bin', 'latin1'],
+              ],
+            }
+          if (command === 'db_execute') {
+            state.saved++
+            state.ran = args.sql
+            return { statements: [], elapsedMs: 1, cancelled: false }
+          }
+          if (command === 'load_settings') return {}
+          return null
+        },
+        { shouldMockEvents: true }
+      )
+      const { i18n } = await import('/src/i18n/index.ts')
+      const { pinia } = await import('/src/stores')
+      const { default: Designer } =
+        await import('/src/components/workspace/database/DatabaseTableDesigner.vue')
+      const { default: Editor } =
+        await import('/src/components/workspace/database/SqlEditor.vue')
+      const { default: Results } =
+        await import('/src/components/workspace/database/DatabaseQueryResults.vue')
+      i18n.global.locale.value = 'zh-CN'
+      const columns = [
+        'id',
+        'kind',
+        'level',
+        'category',
+        'message',
+        'path',
+        'method',
+        'status',
+        'duration',
+        'ip',
+        'user_agent',
+        'created_at',
+      ].map(name => ({ name, dataType: 'VARCHAR' }))
+      const execution = {
+        statements: [
+          {
+            statement: 'SELECT * FROM app_logs',
+            offset: 0,
+            columns,
+            rows: Array.from({ length: 1421 }, (_, index) =>
+              columns.map((column, c) =>
+                c === 0
+                  ? String(index + 1)
+                  : column.name === 'path'
+                    ? '/api/v1/logs'
+                    : `${column.name} ${index + 1}`
+              )
+            ),
+            rowsAffected: 0,
+            elapsedMs: 22,
+            truncated: false,
+            message: '1421 rows',
+            error: null,
+          },
+        ],
+        elapsedMs: 22,
+        cancelled: false,
+      }
+      const target = { schema: detail.schema, name: detail.name }
+      createApp({
+        render: () =>
+          h('div', { class: 'h-screen flex flex-col p-3 gap-2' }, [
+            h('nav', { class: 'flex gap-4 text-xs' }, [
+              h(
+                'button',
+                { onClick: () => (state.panel = 'designer') },
+                '设计表预览'
+              ),
+              h(
+                'button',
+                { onClick: () => (state.panel = 'query') },
+                'SQL 查询预览'
+              ),
+              h('span', { 'data-testid': 'dirty' }, `未保存：${state.dirty}`),
+              h('span', { 'data-testid': 'ran' }, `已运行：${state.ran}`),
+            ]),
+            state.panel === 'designer'
+              ? h(Designer, {
+                  sessionId: 'preview',
+                  databaseKind: 'mysql',
+                  schema: detail.schema,
+                  objects: [],
+                  editTable: target,
+                  onDirty: value => (state.dirty = value),
+                })
+              : h('div', { class: 'flex min-h-0 flex-1 flex-col' }, [
+                  h(Editor, {
+                    modelValue: state.sql,
+                    'onUpdate:modelValue': value => (state.sql = value),
+                    suggestions: ['path', 'port', 'payload', 'app_logs'],
+                    onRun: sql => (state.ran = sql),
+                  }),
+                  h(Results, { execution, loading: false, error: '' }),
+                ]),
+          ]),
+      })
+        .use(pinia)
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

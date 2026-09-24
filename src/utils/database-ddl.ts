@@ -84,9 +84,28 @@ export function validateTableDraft({
   if (!draft.columns.length) errors.push(i18n.global.t('至少需要一个字段'))
   if (
     draft.autoIncrement != null &&
-    (!Number.isInteger(draft.autoIncrement) || draft.autoIncrement < 1)
+    (!/^[1-9]\d*$/u.test(String(draft.autoIncrement)) ||
+      BigInt(draft.autoIncrement) >
+        (kind === 'mysql' ? 18446744073709551615n : 9223372036854775807n))
   )
-    errors.push(i18n.global.t('自增值必须是不小于 1 的整数'))
+    errors.push(i18n.global.t('自增值必须是有效范围内的正整数'))
+  if (kind === 'mysql') {
+    for (const value of [
+      draft.engine,
+      draft.charset,
+      draft.collation,
+      draft.rowFormat,
+    ]) {
+      if (value && !/^[a-zA-Z0-9_]+$/u.test(value))
+        errors.push(i18n.global.t('表选项只能包含字母、数字和下划线'))
+    }
+    if (
+      draft.collation &&
+      draft.charset &&
+      !draft.collation.startsWith(`${draft.charset}_`)
+    )
+      errors.push(i18n.global.t('排序规则必须属于所选字符集'))
+  }
 
   const knownTypes = new Set(
     (extraTypes ?? []).map(value => value.trim().toLowerCase())
@@ -137,6 +156,8 @@ export function validateTableDraft({
   }
   if (kind === 'mysql' && autoIncrementCount > 1)
     errors.push(i18n.global.t('MySQL 每张表只能有一个自动递增字段'))
+  if (draft.autoIncrement != null && autoIncrementCount !== 1)
+    errors.push(i18n.global.t('设置自增值需要且只能有一个自增字段'))
 
   const columnNames = new Set(draft.columns.map(column => column.name))
   const indexNames = new Set<string>()
@@ -244,13 +265,19 @@ export function buildCreateTableSql({
 
   const suffix =
     kind === 'mysql'
-      ? ` ENGINE=${safeOption(draft.engine || 'InnoDB')} DEFAULT CHARSET=${safeOption(draft.charset || 'utf8mb4')}${draft.comment ? ` COMMENT=${quoteLiteral(draft.comment, kind)}` : ''}`
+      ? ` ENGINE=${safeOption(draft.engine || 'InnoDB')} DEFAULT CHARSET=${safeOption(draft.charset || 'utf8mb4')}${draft.collation ? ` COLLATE=${safeOption(draft.collation)}` : ''}${draft.rowFormat ? ` ROW_FORMAT=${safeOption(draft.rowFormat)}` : ''}${draft.autoIncrement != null ? ` AUTO_INCREMENT=${draft.autoIncrement}` : ''}${draft.comment ? ` COMMENT=${quoteLiteral(draft.comment, kind)}` : ''}`
       : ''
   const statements = [
     `CREATE TABLE ${table} (\n${definitions.join(',\n')}\n)${suffix};`,
   ]
 
   if (kind === 'postgresql') {
+    if (draft.autoIncrement != null) {
+      const column = draft.columns.find(column => column.autoIncrement)!
+      statements.push(
+        `ALTER TABLE ${table} ALTER COLUMN ${quoteIdentifier(column.name, kind)} RESTART WITH ${draft.autoIncrement};`
+      )
+    }
     for (const index of draft.indexes) {
       const unique = index.kind === 'unique' ? 'UNIQUE ' : ''
       statements.push(
@@ -513,9 +540,7 @@ export function buildAlterTableSql({
     if (index.primary) continue
     if (draftIndexNames.has(index.name.toLowerCase())) continue
     if (
-      !index.columns.every(column =>
-        realColumnNames.has(column.toLowerCase())
-      )
+      !index.columns.every(column => realColumnNames.has(column.toLowerCase()))
     )
       continue
     if (index.subPart != null) continue
@@ -556,7 +581,8 @@ export function buildAlterTableSql({
         .map(column => quoteIdentifier(column, kind))
         .join(', ')
       if (kind === 'mysql') mainClauses.push(`ADD PRIMARY KEY (${columns})`)
-      else pgStatements.push(`ALTER TABLE ${target} ADD PRIMARY KEY (${columns})`)
+      else
+        pgStatements.push(`ALTER TABLE ${target} ADD PRIMARY KEY (${columns})`)
     }
   }
 
@@ -585,7 +611,9 @@ export function buildAlterTableSql({
         normalizeDefault(draftColumn.defaultValue || null)
     ) {
       if (kind === 'mysql') {
-        mainClauses.push(`MODIFY COLUMN ${renderColumn(draftColumn, kind).trim()}`)
+        mainClauses.push(
+          `MODIFY COLUMN ${renderColumn(draftColumn, kind).trim()}`
+        )
       } else {
         pgStatements.push(
           ...postgresqlColumnAlter(target, currentColumn, draftColumn)
@@ -650,23 +678,58 @@ export function buildAlterTableSql({
   }
 
   // 表选项（MySQL 合并进主 ALTER；PostgreSQL 走 COMMENT ON）。
-  if (kind === 'mysql' && current.options) {
-    if (draft.engine && draft.engine !== current.options.engine)
+  if (kind === 'mysql') {
+    if (draft.engine && draft.engine !== current.options?.engine)
       mainClauses.push(`ENGINE=${safeOption(draft.engine)}`)
-    if (draft.charset && draft.charset !== current.options.charset)
+    if (
+      draft.charset &&
+      (draft.charset !== current.options?.charset ||
+        (draft.collation === '' && current.options?.collation))
+    )
       mainClauses.push(`DEFAULT CHARSET=${safeOption(draft.charset)}`)
-    if ((draft.comment ?? '') !== (current.options.comment ?? ''))
+    if (
+      draft.collation &&
+      (draft.collation !== current.options?.collation ||
+        draft.charset !== current.options?.charset)
+    )
+      mainClauses.push(`COLLATE=${safeOption(draft.collation)}`)
+    if (
+      draft.rowFormat &&
+      draft.rowFormat.toUpperCase() !==
+        current.options?.rowFormat?.toUpperCase()
+    )
+      mainClauses.push(`ROW_FORMAT=${safeOption(draft.rowFormat)}`)
+    if ((draft.comment ?? '') !== (current.options?.comment ?? ''))
       mainClauses.push(`COMMENT=${quoteLiteral(draft.comment ?? '', kind)}`)
     if (
       draft.autoIncrement != null &&
-      draft.autoIncrement !== current.options.autoIncrement
+      String(draft.autoIncrement) !== String(current.options?.autoIncrement)
     )
       mainClauses.push(`AUTO_INCREMENT=${draft.autoIncrement}`)
-  } else if (kind === 'postgresql' && current.options) {
-    if ((draft.comment ?? '') !== (current.options.comment ?? ''))
+  } else if (kind === 'postgresql') {
+    if ((draft.comment ?? '') !== (current.options?.comment ?? ''))
       pgStatements.push(
         `COMMENT ON TABLE ${target} IS ${quoteLiteral(draft.comment ?? '', kind)}`
       )
+    if (
+      draft.autoIncrement != null &&
+      String(draft.autoIncrement) !== String(current.options?.autoIncrement)
+    ) {
+      const column = draft.columns.find(column => column.autoIncrement)!
+      const storedColumn = current.columns.find(
+        item => item.name === column.name
+      )
+      if (
+        storedColumn?.autoIncrement &&
+        /\bnextval\s*\(/iu.test(storedColumn.defaultValue ?? '')
+      )
+        throw new Error(
+          i18n.global.t('serial 序列请在查询中使用 ALTER SEQUENCE 修改')
+        )
+      pgStatements.push(
+        `ALTER TABLE ${target} ALTER COLUMN ${quoteIdentifier(column.name, kind)} RESTART WITH ${draft.autoIncrement}`
+      )
+    }
   }
 
   if (kind === 'mysql') {

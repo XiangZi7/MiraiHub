@@ -109,6 +109,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         db::commands::db_list_databases,
         db::commands::db_list_objects,
         db::commands::db_describe_object,
+        db::commands::db_completion_columns,
+        db::commands::db_table_option_choices,
         db::commands::db_table_detail,
         db::commands::db_routine_detail,
         db::commands::db_create_database,

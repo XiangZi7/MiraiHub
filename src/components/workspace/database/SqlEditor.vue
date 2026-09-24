@@ -2,9 +2,25 @@
 import { useI18n } from 'vue-i18n'
 
 import type { CSSProperties } from 'vue'
-import { computed, nextTick, reactive, shallowRef, useTemplateRef } from 'vue'
+import {
+  computed,
+  nextTick,
+  reactive,
+  shallowRef,
+  toRefs,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import type { ContextMenuItem } from '@/types/context-menu'
+import { copyText } from '@/utils/clipboard'
+import { toast } from '@/composables/useToast'
+import {
+  filterSqlSuggestions,
+  sqlCompletionPrefix,
+} from '@/utils/sql-completion'
 import { cn } from '@/utils/cn'
 
 const { t } = useI18n()
@@ -47,6 +63,132 @@ const autocompleteForced = shallowRef(false)
 const activeSuggestion = shallowRef(0)
 const replaceStart = shallowRef(0)
 const currentPrefix = shallowRef('')
+// 响应式状态
+const state = reactive({
+  // 菜单打开时保存选区，菜单获取焦点后仍能精确执行原选区
+  contextMenu: {
+    open: false,
+    x: 0,
+    y: 0,
+    start: 0,
+    end: 0,
+    source: '',
+    selected: '',
+  },
+  // 右键默认行为可能移动光标，提前保留用户已经选中的内容
+  pendingSelection: null as {
+    start: number
+    end: number
+    source: string
+  } | null,
+})
+const { contextMenu } = toRefs(state)
+const contextItems = computed<ContextMenuItem[]>(() => [
+  {
+    id: 'run-selection',
+    label: t('运行选中的 SQL'),
+    icon: 'lucide:play',
+    shortcut: 'Ctrl+Enter',
+    disabled: props.disabled || !state.contextMenu.selected.trim(),
+  },
+  {
+    id: 'run-all',
+    label: t('运行全部 SQL'),
+    icon: 'lucide:list-start',
+    disabled: props.disabled || !sql.value.trim(),
+  },
+  {
+    id: 'copy',
+    label: t('复制'),
+    icon: 'lucide:copy',
+    separatorBefore: true,
+    disabled: !state.contextMenu.selected,
+  },
+  {
+    id: 'cut',
+    label: t('剪切'),
+    icon: 'lucide:scissors',
+    disabled: props.disabled || !state.contextMenu.selected,
+  },
+  {
+    id: 'paste',
+    label: t('粘贴'),
+    icon: 'lucide:clipboard-paste',
+    disabled: props.disabled,
+  },
+  {
+    id: 'select-all',
+    label: t('全选'),
+    shortcut: 'Ctrl+A',
+    disabled: !sql.value,
+  },
+])
+
+function openContextMenu(event: MouseEvent): void {
+  const editor = editorRef.value
+  if (!editor) return
+  autocompleteOpen.value = false
+  const pending = state.pendingSelection
+  const selection =
+    pending?.source === sql.value
+      ? pending
+      : { start: editor.selectionStart, end: editor.selectionEnd }
+  state.pendingSelection = null
+  state.contextMenu = {
+    open: true,
+    x: event.clientX,
+    y: event.clientY,
+    start: selection.start,
+    end: selection.end,
+    source: sql.value,
+    selected: sql.value.slice(selection.start, selection.end),
+  }
+}
+
+function captureContextSelection(event: PointerEvent): void {
+  const editor = editorRef.value
+  state.pendingSelection =
+    event.button === 2 &&
+    editor &&
+    editor.selectionStart !== editor.selectionEnd
+      ? {
+          start: editor.selectionStart,
+          end: editor.selectionEnd,
+          source: sql.value,
+        }
+      : null
+}
+
+async function handleContextAction(id: string): Promise<void> {
+  const selection = { ...state.contextMenu }
+  state.contextMenu.open = false
+  if (id === 'run-selection' || id === 'run-all') {
+    if (props.disabled) return
+    const statement =
+      id === 'run-selection' ? selection.selected.trim() : sql.value.trim()
+    if (statement) emit('run', statement)
+    return
+  }
+  const editor = editorRef.value
+  if (!editor) return
+  try {
+    if (id === 'copy' || id === 'cut') await copyText(selection.selected)
+    if (id === 'cut' || id === 'paste') {
+      if (props.disabled) return
+      const text = id === 'paste' ? await navigator.clipboard.readText() : ''
+      if (sql.value !== selection.source || props.disabled) return
+      editor.setRangeText(text, selection.start, selection.end, 'end')
+      sql.value = editor.value
+    }
+    await nextTick()
+    editor.focus()
+    if (id === 'select-all') editor.select()
+    else if (id === 'copy')
+      editor.setSelectionRange(selection.start, selection.end)
+  } catch {
+    toast.error(t('剪贴板操作失败，请使用键盘快捷键重试'))
+  }
+}
 
 const SQL_KEYWORDS = [
   'SELECT',
@@ -158,7 +300,7 @@ const tokens = computed<SqlToken[]>(() => {
 
 const allSuggestions = computed(() => {
   const seen = new Set<string>()
-  return [...SQL_KEYWORDS, ...SQL_FUNCTIONS, ...props.suggestions].filter(
+  return [...props.suggestions, ...SQL_KEYWORDS, ...SQL_FUNCTIONS].filter(
     item => {
       const key = item.toLocaleLowerCase()
       if (seen.has(key)) return false
@@ -168,26 +310,20 @@ const allSuggestions = computed(() => {
   )
 })
 const filteredSuggestions = computed(() => {
-  const prefix = currentPrefix.value.toLocaleLowerCase()
-  return allSuggestions.value
-    .filter(
-      item =>
-        autocompleteForced.value ||
-        !prefix ||
-        item.toLocaleLowerCase().startsWith(prefix)
-    )
-    .filter(item => item.toLocaleLowerCase() !== prefix)
-    .slice(0, 10)
+  return filterSqlSuggestions(allSuggestions.value, currentPrefix.value)
 })
 const autocompleteStyle = computed<CSSProperties>(() => {
   const editor = editorRef.value
-  const before = sql.value.slice(0, editor?.selectionStart ?? 0)
+  const before = sql.value.slice(
+    0,
+    replaceStart.value + currentPrefix.value.length
+  )
   const lines = before.split('\n')
   const row = lines.length - 1
   const column = lines.at(-1)?.length ?? 0
   return {
     left: `${Math.max(8, Math.min(column * 7.25 + 12 - scroll.left, (editor?.clientWidth ?? 320) - 220))}px`,
-    top: `${Math.max(8, row * 19.8 + 30 - scroll.top)}px`,
+    top: `${Math.max(8, Math.min(row * 19.8 + 30 - scroll.top, (editor?.clientHeight ?? 320) - 160))}px`,
   }
 })
 
@@ -212,15 +348,26 @@ function updateAutocomplete(forced = false): void {
   }
 
   const cursor = editor.selectionStart
-  const prefix =
-    sql.value.slice(0, cursor).match(/[A-Za-z_][\w$]*$/u)?.[0] ?? ''
+  const prefix = sqlCompletionPrefix(sql.value, cursor)
+  if (prefix === null) {
+    autocompleteOpen.value = false
+    return
+  }
   currentPrefix.value = prefix
   replaceStart.value = cursor - prefix.length
   autocompleteForced.value = forced
   activeSuggestion.value = 0
   autocompleteOpen.value =
-    (forced || prefix.length >= 2) && filteredSuggestions.value.length > 0
+    (forced || prefix.length >= 1) && filteredSuggestions.value.length > 0
 }
+
+watch(
+  () => props.suggestions,
+  () => {
+    if (editorRef.value === document.activeElement)
+      updateAutocomplete(autocompleteForced.value)
+  }
+)
 
 function insertSuggestion(value: string): void {
   const editor = editorRef.value
@@ -233,6 +380,7 @@ function insertSuggestion(value: string): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  if (event.isComposing) return
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault()
     emit('save')
@@ -264,6 +412,11 @@ function handleKeydown(event: KeyboardEvent): void {
           direction +
           filteredSuggestions.value.length) %
         filteredSuggestions.value.length
+      void nextTick(() =>
+        editorRef.value?.parentElement
+          ?.querySelector('[aria-selected="true"]')
+          ?.scrollIntoView({ block: 'nearest' })
+      )
       return
     }
     if (event.key === 'Enter' || event.key === 'Tab') {
@@ -290,7 +443,8 @@ function handleKeydown(event: KeyboardEvent): void {
   void nextTick(() => editor.setSelectionRange(start + 2, start + 2))
 }
 
-function handleInput(): void {
+function handleInput(event: Event): void {
+  if ((event as InputEvent).isComposing) return
   updateAutocomplete()
 }
 
@@ -342,11 +496,14 @@ defineExpose({ runnableSql })
         @keyup.right="updateAutocomplete()"
         @scroll="syncScroll"
         @blur="autocompleteOpen = false"
+        @contextmenu.prevent.stop="openContextMenu"
+        @pointerdown="captureContextSelection"
+        @compositionend="updateAutocomplete()"
       />
 
       <div
         v-if="autocompleteOpen && filteredSuggestions.length"
-        class="border-line-strong bg-panel/96 shadow-pop absolute z-30 w-52 overflow-hidden rounded-lg border p-1 backdrop-blur-xl"
+        class="border-line-strong bg-panel/96 shadow-pop scroll-thin absolute z-30 max-h-40 w-52 overflow-y-auto rounded-lg border p-1 backdrop-blur-xl"
         :style="autocompleteStyle"
         role="listbox"
       >
@@ -361,6 +518,8 @@ defineExpose({ runnableSql })
             )
           "
           tabindex="-1"
+          role="option"
+          :aria-selected="index === activeSuggestion"
           @pointerdown.prevent="insertSuggestion(suggestion)"
           @pointerenter="activeSuggestion = index"
         >
@@ -384,6 +543,15 @@ defineExpose({ runnableSql })
         </AppButton>
       </div>
     </div>
+    <AppContextMenu
+      :open="contextMenu.open"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :items="contextItems"
+      :label="t('SQL 编辑器')"
+      @close="contextMenu.open = false"
+      @select="handleContextAction"
+    />
   </div>
 </template>
 

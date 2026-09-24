@@ -14,12 +14,12 @@ import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
-import AppSelect from '@/components/ui/AppSelect.vue'
 import { toast } from '@/composables/useToast'
 import type { DatabaseKind, DatabaseObject } from '@/types/database'
 import type { DatabaseTableDetail } from '@/types/database'
 import type {
   TableDesignerDraft,
+  TableDesignerColumn,
   TableDesignerIndex,
   ReferentialAction,
 } from '@/types/database-designer'
@@ -32,9 +32,11 @@ import {
   validateTableDraft,
 } from '@/utils/database-ddl'
 import { copyText } from '@/utils/clipboard'
+import { tableDesignerSnapshot } from '@/utils/database-designer'
 import DatabaseTableFieldsEditor from './designer/DatabaseTableFieldsEditor.vue'
 import DatabaseTableForeignKeysEditor from './designer/DatabaseTableForeignKeysEditor.vue'
 import DatabaseTableIndexesEditor from './designer/DatabaseTableIndexesEditor.vue'
+import DatabaseTableOptionsEditor from './designer/DatabaseTableOptionsEditor.vue'
 
 const { t } = useI18n()
 
@@ -46,7 +48,7 @@ const props = defineProps<{
   schema: string
   objects: readonly DatabaseObject[]
   /** 编辑模式：要设计的现有表；不传为新建表。 */
-  editTable?: { schema: string, name: string } | null
+  editTable?: { schema: string; name: string } | null
 }>()
 
 const emit = defineEmits<{
@@ -59,6 +61,7 @@ const emit = defineEmits<{
 const editing = computed(() => Boolean(props.editTable))
 const currentDetail = shallowRef<DatabaseTableDetail | null>(null)
 const loadingDetail = ref(false)
+const loadError = ref('')
 const extraTypes = ref<string[]>([])
 
 function defaultDraft(schema: string): TableDesignerDraft {
@@ -68,6 +71,8 @@ function defaultDraft(schema: string): TableDesignerDraft {
     comment: '',
     engine: 'InnoDB',
     charset: 'utf8mb4',
+    collation: '',
+    rowFormat: '',
     autoIncrement: null,
     columns: [
       {
@@ -90,6 +95,7 @@ function defaultDraft(schema: string): TableDesignerDraft {
 }
 
 const draft = reactive<TableDesignerDraft>(defaultDraft(props.schema))
+const baseline = ref(tableDesignerSnapshot(draft))
 const activePanel = ref<DesignerPanel>('columns')
 const creating = ref(false)
 const applying = ref(false)
@@ -97,31 +103,39 @@ const referencedColumns = reactive<Record<string, string[]>>({})
 const loadingReference = ref('')
 
 const validation = computed(() =>
-  validateTableDraft({ kind: props.databaseKind, draft, extraTypes: extraTypes.value })
+  validateTableDraft({
+    kind: props.databaseKind,
+    draft,
+    extraTypes: extraTypes.value,
+  })
 )
 
-function computedAlterSql(): string | null {
+const alterResult = computed(() => {
   const current = currentDetail.value
-  if (!editing.value || !current || !validation.value.valid) return null
+  if (!editing.value || !current || !validation.value.valid || !dirty.value)
+    return { sql: '', error: '' }
   try {
-    return buildAlterTableSql({
+    const sql = buildAlterTableSql({
       kind: props.databaseKind,
       current,
       draft,
       extraTypes: extraTypes.value,
     })
-  } catch {
-    return null
+    return { sql, error: '' }
+  } catch (cause) {
+    return { sql: '', error: database.errorMessage(cause) }
   }
-}
+})
 
 const sqlPreview = computed(() => {
   if (editing.value) {
+    if (loadError.value) return `-- ${loadError.value}`
     if (!currentDetail.value) return t('-- 正在读取表结构…')
     if (!validation.value.valid)
       return t('-- 完成必填配置后将在这里生成 ALTER TABLE SQL')
     return (
-      computedAlterSql() || `-- ${t('没有需要保存的修改')}`
+      alterResult.value.sql ||
+      `-- ${alterResult.value.error || t('没有需要保存的修改')}`
     )
   }
   try {
@@ -165,22 +179,17 @@ const panelItems = computed(() => [
     count: null,
   },
 ])
-const engineOptions = ['InnoDB', 'MyISAM', 'MEMORY'].map(value => ({
-  value,
-  label: value,
-}))
-const charsetOptions = ['utf8mb4', 'utf8', 'latin1', 'ascii'].map(value => ({
-  value,
-  label: value,
-}))
 
 const fieldsEditor =
   useTemplateRef<InstanceType<typeof DatabaseTableFieldsEditor>>('fieldsEditor')
 const indexesEditor =
-  useTemplateRef<InstanceType<typeof DatabaseTableIndexesEditor>>('indexesEditor')
-const foreignKeysEditor = useTemplateRef<
-  InstanceType<typeof DatabaseTableForeignKeysEditor>
->('foreignKeysEditor')
+  useTemplateRef<InstanceType<typeof DatabaseTableIndexesEditor>>(
+    'indexesEditor'
+  )
+const foreignKeysEditor =
+  useTemplateRef<InstanceType<typeof DatabaseTableForeignKeysEditor>>(
+    'foreignKeysEditor'
+  )
 
 /**
  * 「添加」按钮跟着当前面板走。
@@ -204,26 +213,14 @@ const addAction = computed(() => {
   }
 })
 
-const autoIncrementInput = computed({
-  get: () => (draft.autoIncrement == null ? '' : String(draft.autoIncrement)),
-  set: (value: string) => {
-    const trimmed = value.trim()
-    draft.autoIncrement = trimmed === '' ? null : Number(trimmed)
-  },
-})
-const hasAutoIncrementColumn = computed(() =>
-  draft.columns.some(column => column.autoIncrement)
-)
-
-function currentAutoIncrementLabel(): string {
-  const current = currentDetail.value?.options?.autoIncrement
-  return current == null ? '—' : String(current)
-}
-
+let loadVersion = 0
 async function loadEditTarget(): Promise<void> {
+  const version = ++loadVersion
   const target = props.editTable
+  loadError.value = ''
+  currentDetail.value = null
   if (!props.sessionId || !target) {
-    currentDetail.value = null
+    loadingDetail.value = false
     return
   }
   loadingDetail.value = true
@@ -234,15 +231,19 @@ async function loadEditTarget(): Promise<void> {
       target.name,
       'table'
     )
+    if (version !== loadVersion) return
     currentDetail.value = detail
     hydrateFromDetail(detail)
+    baseline.value = tableDesignerSnapshot(draft)
   } catch (cause) {
+    if (version !== loadVersion) return
+    loadError.value = database.errorMessage(cause)
     toast.error({
       title: t('读取表结构失败'),
       description: database.errorMessage(cause),
     })
   } finally {
-    loadingDetail.value = false
+    if (version === loadVersion) loadingDetail.value = false
   }
 }
 
@@ -290,8 +291,10 @@ function hydrateFromDetail(detail: DatabaseTableDetail): void {
   draft.schema = detail.schema
   draft.name = detail.name
   draft.comment = detail.options?.comment ?? ''
-  draft.engine = detail.options?.engine ?? 'InnoDB'
-  draft.charset = detail.options?.charset ?? 'utf8mb4'
+  draft.engine = detail.options?.engine ?? ''
+  draft.charset = detail.options?.charset ?? ''
+  draft.collation = detail.options?.collation ?? ''
+  draft.rowFormat = detail.options?.rowFormat?.toUpperCase() ?? ''
   draft.autoIncrement = detail.options?.autoIncrement ?? null
   draft.columns = detail.columns.map((column, index) => {
     const parsed = parseStoredType(column.dataType, kind)
@@ -319,7 +322,7 @@ onMounted(() => {
 })
 
 watch(
-  () => props.editTable,
+  () => [props.sessionId, props.editTable],
   () => {
     void loadEditTarget()
   }
@@ -371,6 +374,8 @@ async function createTable(): Promise<void> {
     )
     const failed = execution.statements.find(statement => statement.error)
     if (failed?.error) throw new Error(failed.error)
+    baseline.value = tableDesignerSnapshot(draft)
+    emit('dirty', false)
     emit('created', draft.schema, draft.name)
   } catch (cause) {
     toast.error({
@@ -389,15 +394,12 @@ async function applyChanges(): Promise<void> {
     toast.warning(validation.value.errors[0] ?? t('请完善建表配置'))
     return
   }
-  const alterSql = computedAlterSql()
-  // PostgreSQL 的自增计数走专用接口（identity 列校验在 Rust 侧）。
-  const pgAutoIncrement =
-    props.databaseKind === 'postgresql' &&
-    draft.autoIncrement != null &&
-    draft.autoIncrement !== current.options?.autoIncrement
-      ? draft.autoIncrement
-      : null
-  if (!alterSql && pgAutoIncrement == null) {
+  if (alterResult.value.error) {
+    toast.warning(alterResult.value.error)
+    return
+  }
+  const alterSql = alterResult.value.sql
+  if (!alterSql) {
     toast.info(t('没有需要保存的修改'))
     return
   }
@@ -408,11 +410,8 @@ async function applyChanges(): Promise<void> {
       const failed = execution.statements.find(statement => statement.error)
       if (failed?.error) throw new Error(failed.error)
     }
-    if (pgAutoIncrement != null) {
-      await database.alterTableOptions(props.sessionId, draft.schema, draft.name, {
-        autoIncrement: pgAutoIncrement,
-      })
-    }
+    baseline.value = tableDesignerSnapshot(draft)
+    emit('dirty', false)
     emit('applied', draft.schema, draft.name)
   } catch (cause) {
     toast.error({
@@ -425,38 +424,63 @@ async function applyChanges(): Promise<void> {
 }
 
 const hasChanges = computed(() => {
+  if (
+    loadingDetail.value ||
+    loadError.value ||
+    creating.value ||
+    applying.value
+  )
+    return false
   if (!editing.value) return validation.value.valid
-  return computedAlterSql() != null
+  return Boolean(alterResult.value.sql)
 })
 
-/** 关闭标签的未保存提示只认真正的修改：
-    新建模式与初始骨架对比（忽略自动生成的列 id），未编辑不提示。 */
-function draftSnapshot(value: TableDesignerDraft): string {
-  return JSON.stringify({
-    schema: value.schema,
-    name: value.name,
-    comment: value.comment,
-    engine: value.engine,
-    charset: value.charset,
-    autoIncrement: value.autoIncrement,
-    indexes: value.indexes,
-    foreignKeys: value.foreignKeys,
-    columns: value.columns.map(column => ({ ...column, id: '' })),
-  })
-}
-const initialDraftSnapshot = draftSnapshot(defaultDraft(props.schema))
+// 是否需要关闭确认与 SQL 能否执行分开：无效输入同样是未保存修改。
 const dirty = computed(() => {
-  if (editing.value) return hasChanges.value
-  return draftSnapshot(draft) !== initialDraftSnapshot
+  if (editing.value && (loadingDetail.value || !currentDetail.value))
+    return false
+  return tableDesignerSnapshot(draft) !== baseline.value
 })
-watch(dirty, value => emit('dirty', value))
+watch(dirty, value => emit('dirty', value), { immediate: true, flush: 'sync' })
+
+function resetDraft(): void {
+  if (currentDetail.value) hydrateFromDetail(currentDetail.value)
+  else Object.assign(draft, defaultDraft(props.schema))
+}
+
+function updateColumns(columns: TableDesignerColumn[]): void {
+  const previouslyIncrementing = draft.columns.some(
+    column => column.autoIncrement
+  )
+  draft.columns = columns
+  const incrementing = columns.filter(column => column.autoIncrement)
+  if (!incrementing.length) draft.autoIncrement = null
+  else if (
+    !previouslyIncrementing &&
+    incrementing.length === 1 &&
+    currentDetail.value?.columns.some(
+      column => column.name === incrementing[0].name && column.autoIncrement
+    )
+  ) {
+    draft.autoIncrement = currentDetail.value.options?.autoIncrement ?? null
+  }
+}
+
+const editorDisabled = computed(
+  () =>
+    loadingDetail.value ||
+    Boolean(loadError.value) ||
+    creating.value ||
+    applying.value
+)
 </script>
 
 <template>
   <div class="table-designer">
     <!-- 常规属性一行放下：标签横排在输入框前，标题交给标签页显示 -->
-    <section
+    <fieldset
       class="general-bar"
+      :disabled="editorDisabled"
       :aria-label="t('建表配置')"
     >
       <label class="general-field table-name">
@@ -481,32 +505,6 @@ watch(dirty, value => emit('dirty', value))
           :aria-label="t('数据库或 Schema')"
         />
       </label>
-      <template v-if="databaseKind === 'mysql'">
-        <div class="general-field select-field">
-          <span>{{ t('存储引擎') }}</span>
-          <div class="select-box">
-            <AppSelect
-              v-model="draft.engine"
-              :label="t('存储引擎')"
-              :options="engineOptions"
-              hide-label
-              compact
-            />
-          </div>
-        </div>
-        <div class="general-field select-field">
-          <span>{{ t('字符集') }}</span>
-          <div class="select-box">
-            <AppSelect
-              v-model="draft.charset"
-              :label="t('字符集')"
-              :options="charsetOptions"
-              hide-label
-              compact
-            />
-          </div>
-        </div>
-      </template>
       <label class="general-field comment-field">
         <span>{{ t('表备注') }}</span>
         <AppInput
@@ -516,7 +514,7 @@ watch(dirty, value => emit('dirty', value))
           :aria-label="t('表备注')"
         />
       </label>
-    </section>
+    </fieldset>
 
     <!-- 面板切换与操作同一行：添加按钮跟着面板走，保存固定在右侧 -->
     <div class="designer-toolbar">
@@ -547,10 +545,30 @@ watch(dirty, value => emit('dirty', value))
       </nav>
       <div class="designer-actions">
         <AppButton
+          size="sm"
+          class="h-7"
+          :disabled="!dirty || editorDisabled"
+          @click="resetDraft"
+        >
+          {{ t('还原修改') }}
+        </AppButton>
+        <AppButton
+          v-if="editing"
+          size="sm"
+          class="h-7"
+          :disabled="dirty || loadingDetail || applying"
+          @click="loadEditTarget"
+        >
+          <AppIcon
+            name="lucide:refresh-cw"
+            :size="11"
+          />{{ t('刷新') }}
+        </AppButton>
+        <AppButton
           v-if="addAction"
           size="sm"
           class="h-7"
-          :disabled="loadingDetail"
+          :disabled="editorDisabled"
           @click="addAction.run()"
           ><AppIcon
             name="lucide:plus"
@@ -607,7 +625,10 @@ watch(dirty, value => emit('dirty', value))
       </div>
     </div>
 
-    <main class="designer-body">
+    <fieldset
+      class="designer-body"
+      :disabled="editorDisabled"
+    >
       <div
         v-if="loadingDetail"
         class="text-txt-3 flex items-center gap-2 p-6 text-[11px]"
@@ -619,11 +640,19 @@ watch(dirty, value => emit('dirty', value))
         />
         {{ t('正在读取表结构…') }}
       </div>
+      <div
+        v-else-if="loadError"
+        class="validation-error p-6"
+        role="alert"
+      >
+        {{ loadError }}
+      </div>
       <template v-else>
         <DatabaseTableFieldsEditor
           v-show="activePanel === 'columns'"
           ref="fieldsEditor"
-          v-model="draft.columns"
+          :model-value="draft.columns"
+          @update:model-value="updateColumns"
           :database-kind="databaseKind"
           :extra-types="extraTypes"
         />
@@ -645,54 +674,38 @@ watch(dirty, value => emit('dirty', value))
           :loading-reference="loadingReference"
           @inspect-table="inspectReference"
         />
-        <section
+        <DatabaseTableOptionsEditor
           v-show="activePanel === 'options'"
-          class="options-panel"
-        >
-          <label class="option-field">
-            <span>{{
-              databaseKind === 'mysql'
-                ? t('自增值（AUTO_INCREMENT）')
-                : t('自增值（RESTART WITH）')
-            }}</span>
-            <AppInput
-              v-model="autoIncrementInput"
-              size="sm"
-              monospace
-              autocomplete="off"
-              inputmode="numeric"
-              :placeholder="t('当前值 {value0}，留空表示不修改', { value0: currentAutoIncrementLabel() })"
-              :aria-label="t('自增值')"
-            />
-          </label>
-          <p class="options-hint">
-            {{
-              databaseKind !== 'mysql'
-                ? t('只对 identity 自增列生效；serial 序列列保存时会提示改用 ALTER SEQUENCE。')
-                : hasAutoIncrementColumn
-                  ? t('下一个插入行将从这个值开始递增。')
-                  : t('表当前没有自增字段；先在字段页勾选自增后，这里才会生效。')
-            }}
-          </p>
-        </section>
+          v-model:engine="draft.engine"
+          v-model:charset="draft.charset"
+          v-model:collation="draft.collation"
+          v-model:row-format="draft.rowFormat"
+          v-model:comment="draft.comment"
+          v-model:auto-increment="draft.autoIncrement"
+          :session-id="sessionId"
+          :database-kind="databaseKind"
+          :columns="draft.columns"
+          :current="currentDetail"
+          :editing="editing"
+        />
         <pre
           v-show="activePanel === 'sql'"
           class="sql-preview scroll-thin"
         ><code>{{ sqlPreview }}</code></pre>
       </template>
-    </main>
+    </fieldset>
 
     <!-- 底栏只在出错时说话；没问题就安静地报个数 -->
     <footer class="designer-footer">
       <div
-        v-if="!validation.valid"
+        v-if="!validation.valid || alterResult.error"
         class="validation-error"
         :title="validation.errors.join('\n')"
       >
         <AppIcon
           name="lucide:circle-alert"
           :size="12"
-        />{{ validation.errors[0]
+        />{{ validation.errors[0] || alterResult.error
         }}<span v-if="validation.errors.length > 1">{{
           t('database.moreErrors', { count: validation.errors.length - 1 })
         }}</span>
@@ -726,6 +739,9 @@ watch(dirty, value => emit('dirty', value))
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 14px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
   border-bottom: 1px solid var(--color-line-soft);
   padding: 6px 12px;
   background:
@@ -749,12 +765,6 @@ watch(dirty, value => emit('dirty', value))
 }
 .schema-field {
   flex: 1 1 140px;
-}
-.select-field {
-  flex: none;
-}
-.select-box {
-  width: 104px;
 }
 .comment-field {
   flex: 2 1 220px;
@@ -830,28 +840,13 @@ watch(dirty, value => emit('dirty', value))
 }
 .designer-body {
   display: flex;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-}
-.options-panel {
-  display: grid;
-  max-width: 480px;
-  gap: 8px;
-  overflow: auto;
-  padding: 14px 12px;
-}
-.option-field {
-  display: grid;
-  gap: 4px;
-  color: var(--color-txt-4);
-  font-size: 9.5px;
-}
-.options-hint {
-  margin: 0;
-  color: var(--color-txt-4);
-  font-size: 9.5px;
-  line-height: 1.6;
 }
 .sql-preview {
   min-height: 0;

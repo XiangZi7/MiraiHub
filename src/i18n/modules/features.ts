@@ -1,5 +1,49 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  '最多 {count} 行': 'Up to {count} rows',
+  查询返回行数上限: 'Query row limit',
+  '{count} 个字段': '{count} columns',
+  左右滚动可查看全部字段: 'Scroll horizontally to see all columns',
+  '已达行数上限，调高上限后重新执行':
+    'Row limit reached. Increase the limit and run again.',
+  '运行选中的 SQL': 'Run selected SQL',
+  '运行全部 SQL': 'Run all SQL',
+  剪切: 'Cut',
+  '剪贴板操作失败，请使用键盘快捷键重试':
+    'Clipboard operation failed. Try the keyboard shortcut.',
+  还原修改: 'Revert changes',
+  使用字符集默认排序规则: 'Use the charset default collation',
+  保持默认: 'Keep default',
+  未读取: 'Unavailable',
+  表选项: 'Table options',
+  自增设置: 'Auto-increment settings',
+  自增字段: 'Auto-increment column',
+  无: 'None',
+  当前自增计数器: 'Current auto-increment counter',
+  留空表示不指定: 'Leave blank to keep unspecified',
+  设置自增值需要且只能有一个自增字段:
+    'Setting a counter requires exactly one auto-increment column',
+  'serial 序列请在查询中使用 ALTER SEQUENCE 修改':
+    'Use ALTER SEQUENCE in a query to modify serial sequences',
+  '这是下一次分配的自增计数器，不是最大主键；服务器会根据现有数据和自增步长决定实际值。':
+    'This is the next auto-increment counter, not the largest primary key. Existing data and the server increment determine the actual value.',
+  'RESTART WITH 设置 identity 列的下次值；当前序列值请在查询中查看。':
+    'RESTART WITH sets the next identity value. Inspect the current sequence value in a query.',
+  存储与字符集: 'Storage and character set',
+  '未能读取服务器可选项，可手动输入受支持的值。':
+    'Server options could not be loaded. Enter supported values manually.',
+  排序规则: 'Collation',
+  行格式: 'Row format',
+  '字符集与排序规则设置表的默认值，不转换已有字段；修改引擎或行格式可能重建表。':
+    'Charset and collation set table defaults without converting existing columns. Changing the engine or row format may rebuild the table.',
+  '修改后可在 SQL 预览中检查，点击保存修改后生效。':
+    'Review changes in SQL preview, then save to apply them.',
+  自增值必须是有效范围内的正整数:
+    'The auto-increment value must be a positive integer within range',
+  '表选项只能包含字母、数字和下划线':
+    'Table options may contain only letters, numbers, and underscores',
+  排序规则必须属于所选字符集:
+    'The collation must belong to the selected charset',
   服务器指标: 'Server metrics',
   指标暂不可用: 'Metrics unavailable',
   '正在采集指标…': 'Collecting metrics…',
@@ -411,8 +455,7 @@ export const en = {
     'Check the network, host, and credentials, then try again.',
   '连接后即可浏览数据库对象并运行查询。':
     'Connect to browse database objects and run queries.',
-  '连接后即可浏览键值并执行命令。':
-    'Connect to browse keys and run commands.',
+  '连接后即可浏览键值并执行命令。': 'Connect to browse keys and run commands.',
   查看技术详情: 'View technical details',
   输入本次连接使用的密码: 'Enter the password for this connection',
   重新连接: 'Reconnect',
@@ -1212,19 +1255,19 @@ export const en = {
   '本地程序（stdio）': 'Local program (stdio)',
   '远程服务（HTTP）': 'Remote service (HTTP)',
   '参数（每行一个）': 'Arguments (one per line)',
-  '留空保留已保存的值': 'Leave blank to keep the saved value',
+  留空保留已保存的值: 'Leave blank to keep the saved value',
   添加一项: 'Add one',
   '已发现 {value0} 个工具。': 'Found {value0} tools.',
-  '适用目标（不选则全部可用）': 'Available for (all targets when none selected)',
-  '已发现的工具': 'Discovered tools',
+  '适用目标（不选则全部可用）':
+    'Available for (all targets when none selected)',
+  已发现的工具: 'Discovered tools',
   保存服务器: 'Save server',
   '请填写 MCP 服务器名称': 'Enter an MCP server name',
   '请填写 MCP 服务地址': 'Enter the MCP service URL',
   请填写启动命令: 'Enter the command to start',
   'MCP 服务器已保存。': 'MCP server saved.',
   'MCP 服务器已删除。': 'MCP server deleted.',
-  '已连接，该服务器没有提供工具。':
-    'Connected. This server provides no tools.',
+  '已连接，该服务器没有提供工具。': 'Connected. This server provides no tools.',
   连接失败: 'Connection failed',
   重试: 'Retry',
   关闭提示: 'Dismiss notice',

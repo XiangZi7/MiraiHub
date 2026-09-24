@@ -20,6 +20,21 @@ use super::sql;
 
 const MYSQL_SYSTEM_SCHEMAS: &str = "'information_schema', 'mysql', 'performance_schema', 'sys'";
 
+/// 编辑器补全独立读取元数据，不占用用户查询的执行/取消状态。
+pub async fn completion_columns(pool: &DatabasePool, schema: &str) -> DatabaseResult<Vec<String>> {
+    match pool {
+        DatabasePool::Mysql(pool) => {
+            let rows = sqlx::query("SELECT DISTINCT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? ORDER BY COLUMN_NAME")
+                .bind(schema).fetch_all(pool).await.map_err(DatabaseError::Query)?;
+            rows.iter().map(|row| mysql_metadata_text(row, "COLUMN_NAME")).collect()
+        }
+        DatabasePool::Postgresql(pool) => {
+            sqlx::query_scalar("SELECT DISTINCT column_name::text FROM information_schema.columns WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY column_name::text")
+                .fetch_all(pool).await.map_err(DatabaseError::Query)
+        }
+    }
+}
+
 /// MySQL 9.x 的部分 information_schema 文本列会在预处理协议中报告为 BINARY。
 /// `try_get::<String>` 会先做 SQL 类型兼容性检查，因此即便内容是 UTF-8 文本也会失败。
 /// 元数据列由 MySQL 自身生成，直接读取协议字节后按连接字符集解码，可同时兼容

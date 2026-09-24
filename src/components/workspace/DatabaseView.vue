@@ -31,6 +31,7 @@ import {
   useDatabaseSession,
 } from '@/composables/useDatabaseSession'
 import { useDatabaseTabActions } from '@/composables/useDatabaseTabActions'
+import { useDatabaseCompletions } from '@/composables/useDatabaseCompletions'
 import { useDatabaseSidebarWidth } from '@/composables/useDatabaseSidebarWidth'
 import { activeAfterTabClose } from '@/utils/tab-actions'
 import { useSavedDatabaseQueries } from '@/composables/useSavedDatabaseQueries'
@@ -88,7 +89,7 @@ interface TableDesignerTab extends TabItem {
   kind: 'table-designer'
   schema: string
   /** 编辑模式：要设计的现有表；null 为新建表。 */
-  editTarget: { schema: string, name: string } | null
+  editTarget: { schema: string; name: string } | null
 }
 
 type WorkspaceTab = QueryTab | ObjectTab | TableDesignerTab
@@ -151,6 +152,13 @@ function toggleAgentSplit(): void {
 const connection = toRef(props, 'connection')
 const password = shallowRef('')
 const editor = shallowRef<SqlEditorExpose | null>(null)
+const queryRowLimit = useStorage('miraihub:database-query-row-limit', '500')
+const queryRowLimitOptions = computed(() =>
+  [500, 1000, 5000, 10000, 50000].map(value => ({
+    value: String(value),
+    label: t('最多 {count} 行', { count: value }),
+  }))
+)
 const queryEditorRatio = useStorage<number>(
   `miraihub:database-query-split:${props.connection?.id ?? 'default'}`,
   58
@@ -224,7 +232,6 @@ const deleteDialog = reactive({
   savedQuery: null as SavedDatabaseQuery | null,
   truncateTarget: null as DatabaseObject | null,
 })
-
 
 // 响应式状态
 const state = reactive({
@@ -389,8 +396,13 @@ const canRun = computed(
   () =>
     connected.value && Boolean(activeSql.value.trim()) && !queryLoading.value
 )
+const completionColumns = useDatabaseCompletions(
+  sessionId,
+  databaseName,
+  objects
+)
 const sqlSuggestions = computed(() => {
-  const values: string[] = []
+  const values: string[] = [...completionColumns.value]
   for (const object of objects.value) {
     values.push(object.name, `${object.schema}.${object.name}`)
     for (const column of columnsByObject.value[databaseObjectKey(object)] ?? [])
@@ -572,8 +584,7 @@ const queryTabActions = useDatabaseTabActions({
   tabs: () =>
     queryState.tabs.map(tab => ({
       ...tab,
-      dirty:
-        tab.kind === 'table-designer' && dirtyDesignerIds.has(tab.id),
+      dirty: tab.kind === 'table-designer' && dirtyDesignerIds.has(tab.id),
     })),
   close: closeQueryTabs,
   hasSavedQuery: id => savedQueries.value.some(query => query.id === id),
@@ -801,7 +812,7 @@ function createObjectTemplate(schema: string, kind: DatabaseObjectKind): void {
 
 function openTableDesigner(
   schema: string,
-  editTarget: { schema: string, name: string } | null = null
+  editTarget: { schema: string; name: string } | null = null
 ): void {
   const id = `table-designer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   queryState.tabs.push({
@@ -1037,9 +1048,15 @@ async function confirmDelete(): Promise<void> {
     deleteDialog.truncateTarget = null
     if (!sessionId.value) return
     try {
-      await database.truncateTable(sessionId.value, truncateTarget.schema, truncateTarget.name)
+      await database.truncateTable(
+        sessionId.value,
+        truncateTarget.schema,
+        truncateTarget.name
+      )
       toast.success(
-        t('表“{value0}”已清空，自增计数器已重置', { value0: truncateTarget.name })
+        t('表“{value0}”已清空，自增计数器已重置', {
+          value0: truncateTarget.name,
+        })
       )
       await refreshObjects()
     } catch (cause) {
@@ -1120,7 +1137,11 @@ async function runQuery(sqlOverride?: string): Promise<void> {
     })
     historyEntries.value = listQueryHistory(props.connection.id)
   }
-  await executeSql(sql)
+  const maxRows = Number(queryRowLimit.value)
+  await executeSql(
+    sql,
+    [500, 1000, 5000, 10000, 50000].includes(maxRows) ? maxRows : 500
+  )
 }
 
 function showHistory(event: MouseEvent): void {
@@ -1328,6 +1349,19 @@ watch(
               :disabled="status === 'connecting'"
               @click="connected ? disconnect() : connect()"
             />
+            <div
+              v-if="activeQuery"
+              class="w-32 shrink-0"
+            >
+              <AppSelect
+                v-model="queryRowLimit"
+                :label="t('查询返回行数上限')"
+                :options="queryRowLimitOptions"
+                :disabled="queryLoading"
+                compact
+                hide-label
+              />
+            </div>
             <IconButton
               v-if="activeQuery"
               icon="lucide:history"

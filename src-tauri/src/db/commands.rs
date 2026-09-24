@@ -80,6 +80,25 @@ pub async fn db_list_databases(
 }
 
 #[tauri::command]
+pub async fn db_completion_columns(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    schema: String,
+) -> AppResult<Vec<String>> {
+    let pool = manager.pool(&session_id).await?;
+    Ok(metadata::completion_columns(&pool, &schema).await?)
+}
+
+#[tauri::command]
+pub async fn db_table_option_choices(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+) -> AppResult<table_ops::TableOptionChoices> {
+    let pool = manager.pool(&session_id).await?;
+    Ok(table_ops::table_option_choices(&pool).await?)
+}
+
+#[tauri::command]
 pub async fn db_describe_object(
     manager: State<'_, DatabaseManager>,
     session_id: String,

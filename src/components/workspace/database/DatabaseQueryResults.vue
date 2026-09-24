@@ -24,9 +24,24 @@ const props = defineProps<{
 
 const activeTab = shallowRef<'results' | 'messages'>('results')
 const activeStatement = shallowRef(0)
+const page = shallowRef(0)
+const pageSize = 200
 const result = computed(
   () => props.execution?.statements[activeStatement.value] ?? null
 )
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil((result.value?.rows.length ?? 0) / pageSize))
+)
+const visibleRows = computed(
+  () =>
+    result.value?.rows.slice(
+      page.value * pageSize,
+      (page.value + 1) * pageSize
+    ) ?? []
+)
+watch(result, () => {
+  page.value = 0
+})
 const rowCountLabel = computed(() => {
   if (!result.value) return '0 rows'
   if (!result.value.columns.length)
@@ -109,7 +124,9 @@ async function copyResult(): Promise<void> {
 </script>
 
 <template>
-  <div class="border-line flex min-h-0 flex-1 flex-col border-t">
+  <div
+    class="border-line flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-t"
+  >
     <div
       class="border-line-soft scroll-none flex h-8 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2"
     >
@@ -203,7 +220,7 @@ async function copyResult(): Promise<void> {
 
     <div
       v-else
-      class="scroll-thin min-h-0 flex-1 overflow-auto"
+      class="query-result-scroll scroll-thin min-h-0 min-w-0 flex-1 overflow-auto"
     >
       <div
         v-if="loading"
@@ -238,19 +255,20 @@ async function copyResult(): Promise<void> {
       </div>
       <table
         v-else
+        :style="{
+          width: `${40 + result.columns.reduce((width, column) => width + (resized ? widthOf(column.name) : 160), 0)}px`,
+          minWidth: '100%',
+        }"
         :class="
-          cn(
-            'w-full border-collapse text-left font-mono text-[11.5px]',
-            resized && 'table-fixed'
-          )
+          cn('table-fixed border-collapse text-left font-mono text-[11.5px]')
         "
       >
-        <colgroup v-if="resized">
+        <colgroup>
           <col style="width: 40px" />
           <col
             v-for="(column, index) in result.columns"
             :key="`${column.name}:${index}`"
-            :style="{ width: `${widthOf(column.name)}px` }"
+            :style="{ width: `${resized ? widthOf(column.name) : 160}px` }"
           />
         </colgroup>
         <thead class="database-glass-header database-glass-header--sticky">
@@ -289,14 +307,14 @@ async function copyResult(): Promise<void> {
         </thead>
         <tbody>
           <tr
-            v-for="(row, rowIndex) in result.rows"
+            v-for="(row, rowIndex) in visibleRows"
             :key="rowIndex"
             class="text-txt-2 hover:bg-hover"
           >
             <td
               class="border-line-soft text-txt-4 border-r border-b px-2 py-1.5 text-right"
             >
-              {{ rowIndex + 1 }}
+              {{ page * pageSize + rowIndex + 1 }}
             </td>
             <td
               v-for="(value, columnIndex) in row"
@@ -326,14 +344,21 @@ async function copyResult(): Promise<void> {
     </div>
 
     <footer
-      class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center border-t px-3 text-[10.5px]"
+      class="border-line-soft text-txt-3 flex min-h-8 shrink-0 flex-wrap items-center gap-y-1 border-t px-3 py-1 text-[10.5px]"
     >
       <span>{{ rowCountLabel }}</span>
+      <span
+        v-if="result?.columns.length"
+        class="text-txt-4 ml-2"
+        :title="t('左右滚动可查看全部字段')"
+        >{{ t('{count} 个字段', { count: result.columns.length }) }} ·
+        {{ t('左右滚动可查看全部字段') }}</span
+      >
       <span
         v-if="result?.truncated"
         class="text-amber ml-2"
       >
-        {{ t('结果已截断') }}
+        {{ t('已达行数上限，调高上限后重新执行') }}
       </span>
       <span
         v-if="execution && execution.statements.length > 1"
@@ -342,6 +367,26 @@ async function copyResult(): Promise<void> {
         {{ t('database.statements', { count: execution.statements.length }) }}
       </span>
       <div class="flex-1" />
+      <div
+        v-if="pageCount > 1"
+        class="mx-2 flex items-center gap-1"
+      >
+        <IconButton
+          icon="lucide:chevron-left"
+          :size="11"
+          :disabled="page === 0"
+          :title="t('上一页')"
+          @click="page -= 1"
+        />
+        <span>{{ page + 1 }} / {{ pageCount }}</span>
+        <IconButton
+          icon="lucide:chevron-right"
+          :size="11"
+          :disabled="page + 1 >= pageCount"
+          :title="t('下一页')"
+          @click="page += 1"
+        />
+      </div>
       <div
         v-if="result?.columns.length"
         class="mr-2 flex items-center gap-0.5"
@@ -385,3 +430,13 @@ async function copyResult(): Promise<void> {
     </footer>
   </div>
 </template>
+
+<style scoped>
+.query-result-scroll {
+  scrollbar-width: auto;
+}
+.query-result-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+</style>

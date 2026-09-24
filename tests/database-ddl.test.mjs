@@ -6,9 +6,138 @@ const load = sourceLoader()
 await load('src/i18n/index.ts')
 const {
   buildAlterTableSql,
+  buildCreateTableSql,
+  validateTableDraft,
   parseStoredType,
   normalizeDataTypeLabel,
 } = await load('src/utils/database-ddl.ts')
+
+function optionsDraft(overrides = {}) {
+  return {
+    schema: 'app',
+    name: 'users',
+    comment: '',
+    engine: 'InnoDB',
+    charset: 'utf8mb4',
+    collation: 'utf8mb4_bin',
+    rowFormat: 'DYNAMIC',
+    autoIncrement: '9007199254740993',
+    columns: [draftColumn()],
+    indexes: [],
+    foreignKeys: [],
+    ...overrides,
+  }
+}
+
+test('新建表和修改表完整保留大整数自增值、排序规则与行格式', () => {
+  const draft = optionsDraft()
+  const created = buildCreateTableSql({ kind: 'mysql', draft })
+  assert.match(
+    created,
+    /COLLATE=utf8mb4_bin ROW_FORMAT=DYNAMIC AUTO_INCREMENT=9007199254740993/
+  )
+  const current = currentDetail({
+    columns: [currentColumn()],
+    primaryKey: ['id'],
+    options: {
+      engine: 'InnoDB',
+      charset: 'utf8mb4',
+      collation: 'utf8mb4_general_ci',
+      rowFormat: 'Compact',
+      comment: '',
+      autoIncrement: '12',
+    },
+  })
+  const sql = buildAlterTableSql({ kind: 'mysql', current, draft })
+  assert.match(
+    sql,
+    /COLLATE=utf8mb4_bin, ROW_FORMAT=DYNAMIC, AUTO_INCREMENT=9007199254740993/
+  )
+  assert.doesNotMatch(sql, /MODIFY COLUMN/)
+  current.options = {
+    ...current.options,
+    ...draft,
+    autoIncrement: draft.autoIncrement,
+  }
+  assert.equal(buildAlterTableSql({ kind: 'mysql', current, draft }), '')
+  assert.match(
+    buildAlterTableSql({
+      kind: 'mysql',
+      current,
+      draft: { ...draft, collation: '' },
+    }),
+    /DEFAULT CHARSET=utf8mb4/
+  )
+})
+
+test('自增值与表选项拒绝无效、越界和注入输入', () => {
+  for (const autoIncrement of [
+    '0',
+    '-1',
+    '1.5',
+    'abc',
+    '1e3',
+    '18446744073709551616',
+    '1; DROP TABLE x',
+  ])
+    assert.equal(
+      validateTableDraft({
+        kind: 'mysql',
+        draft: optionsDraft({ autoIncrement }),
+      }).valid,
+      false
+    )
+  assert.equal(
+    validateTableDraft({
+      kind: 'mysql',
+      draft: optionsDraft({ autoIncrement: '18446744073709551615' }),
+    }).valid,
+    true
+  )
+  assert.equal(
+    validateTableDraft({
+      kind: 'mysql',
+      draft: optionsDraft({ collation: 'latin1_bin' }),
+    }).valid,
+    false
+  )
+  assert.equal(
+    validateTableDraft({
+      kind: 'mysql',
+      draft: optionsDraft({ engine: 'InnoDB;DROP' }),
+    }).valid,
+    false
+  )
+  assert.equal(
+    validateTableDraft({
+      kind: 'mysql',
+      draft: optionsDraft({ columns: [draftColumn({ autoIncrement: false })] }),
+    }).valid,
+    false
+  )
+})
+
+test('PostgreSQL 仅修改 identity 计数器也生成可执行 SQL，serial 不被误操作', () => {
+  const current = currentDetail({
+    columns: [currentColumn()],
+    primaryKey: ['id'],
+    options: { comment: '', autoIncrement: null },
+  })
+  const draft = optionsDraft({ autoIncrement: '100' })
+  assert.equal(
+    buildAlterTableSql({ kind: 'postgresql', current, draft }),
+    'ALTER TABLE "app"."users" ALTER COLUMN "id" RESTART WITH 100'
+  )
+  assert.match(
+    buildCreateTableSql({ kind: 'postgresql', draft }),
+    /RESTART WITH 100;/
+  )
+  current.columns[0].defaultValue = "nextval('app.users_id_seq'::regclass)"
+  assert.throws(
+    () => buildAlterTableSql({ kind: 'postgresql', current, draft }),
+    /ALTER SEQUENCE/
+  )
+})
 
 function draftColumn(overrides = {}) {
   return {
@@ -73,10 +202,11 @@ test('解析 MySQL 与 PostgreSQL 存储类型并归一别名', () => {
     length: '',
     unsigned: false,
   })
-  assert.deepEqual(
-    parseStoredType('int(10) unsigned zerofill', 'mysql'),
-    { base: 'int', length: '10', unsigned: true }
-  )
+  assert.deepEqual(parseStoredType('int(10) unsigned zerofill', 'mysql'), {
+    base: 'int',
+    length: '10',
+    unsigned: true,
+  })
   assert.deepEqual(parseStoredType('character varying(255)', 'postgresql'), {
     base: 'varchar',
     length: '255',
@@ -221,7 +351,13 @@ test('MySQL 主键集合变化生成 DROP/ADD PRIMARY KEY', () => {
     ],
     primaryKey: ['id'],
     indexes: [
-      { name: 'PRIMARY', columns: ['id'], unique: true, primary: true, subPart: null },
+      {
+        name: 'PRIMARY',
+        columns: ['id'],
+        unique: true,
+        primary: true,
+        subPart: null,
+      },
     ],
   })
   const draft = {
@@ -298,10 +434,7 @@ test('PostgreSQL 类型与可空差异生成 ALTER COLUMN 语句', () => {
     sql,
     /ALTER TABLE "app"\."users" ALTER COLUMN "name" SET NOT NULL/u
   )
-  assert.match(
-    sql,
-    /COMMENT ON COLUMN "app"\."users"\."name" IS ''/u
-  )
+  assert.match(sql, /COMMENT ON COLUMN "app"\."users"\."name" IS ''/u)
 })
 
 test('PostgreSQL 自增差异生成 ADD/DROP IDENTITY', () => {
@@ -331,8 +464,15 @@ test('PostgreSQL 自增差异生成 ADD/DROP IDENTITY', () => {
     ...draft,
     columns: [draftColumn()],
   }
-  const addSql = buildAlterTableSql({ kind: 'postgresql', current: restored, draft: addIdentity })
-  assert.match(addSql, /ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY/u)
+  const addSql = buildAlterTableSql({
+    kind: 'postgresql',
+    current: restored,
+    draft: addIdentity,
+  })
+  assert.match(
+    addSql,
+    /ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY/u
+  )
 })
 
 test('表改名与换 schema 的语句放在最后', () => {
@@ -352,17 +492,29 @@ test('表改名与换 schema 的语句放在最后', () => {
     foreignKeys: [],
   }
   const sql = buildAlterTableSql({ kind: 'mysql', current, draft })
-  assert.ok(sql.trim().endsWith('RENAME TABLE `app`.`users` TO `app`.`members`'))
+  assert.ok(
+    sql.trim().endsWith('RENAME TABLE `app`.`users` TO `app`.`members`')
+  )
 
   const pgSql = buildAlterTableSql({ kind: 'postgresql', current, draft })
-  assert.ok(pgSql.trim().endsWith('ALTER TABLE "app"."users" RENAME TO "members"'))
+  assert.ok(
+    pgSql.trim().endsWith('ALTER TABLE "app"."users" RENAME TO "members"')
+  )
 
   const schemaMove = { ...draft, name: 'users', schema: 'archive' }
-  const mysqlMove = buildAlterTableSql({ kind: 'mysql', current, draft: schemaMove })
+  const mysqlMove = buildAlterTableSql({
+    kind: 'mysql',
+    current,
+    draft: schemaMove,
+  })
   assert.ok(
     mysqlMove.trim().endsWith('RENAME TABLE `app`.`users` TO `archive`.`users`')
   )
-  const pgMove = buildAlterTableSql({ kind: 'postgresql', current, draft: schemaMove })
+  const pgMove = buildAlterTableSql({
+    kind: 'postgresql',
+    current,
+    draft: schemaMove,
+  })
   assert.ok(pgMove.includes('SET SCHEMA "archive"'))
 })
 
@@ -470,7 +622,11 @@ test('外键规则变化触发重建，复合外键保持原样', () => {
       },
     ],
   }
-  const unchangedSql = buildAlterTableSql({ kind: 'mysql', current, draft: unchanged })
+  const unchangedSql = buildAlterTableSql({
+    kind: 'mysql',
+    current,
+    draft: unchanged,
+  })
   assert.doesNotMatch(unchangedSql, /fk_order/u)
   assert.doesNotMatch(unchangedSql, /fk_multi/u)
 
@@ -489,7 +645,11 @@ test('外键规则变化触发重建，复合外键保持原样', () => {
       },
     ],
   }
-  const changedSql = buildAlterTableSql({ kind: 'mysql', current, draft: changed })
+  const changedSql = buildAlterTableSql({
+    kind: 'mysql',
+    current,
+    draft: changed,
+  })
   assert.match(changedSql, /DROP FOREIGN KEY `fk_order`/u)
   assert.match(
     changedSql,

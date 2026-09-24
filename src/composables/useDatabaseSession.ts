@@ -220,7 +220,7 @@ export function useDatabaseSession(
     }
   }
 
-  async function executeSql(sql: string): Promise<void> {
+  async function executeSql(sql: string, maxRows = 500): Promise<void> {
     const sessionId = state.sessionId
     if (!sessionId || state.queryLoading) return
 
@@ -228,7 +228,7 @@ export function useDatabaseSession(
     state.queryError = ''
     state.queryExecution = null
     try {
-      const result = await database.execute(sessionId, sql)
+      const result = await database.execute(sessionId, sql, maxRows)
       if (state.sessionId !== sessionId) return
 
       state.queryExecution = result
