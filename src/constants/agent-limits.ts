@@ -11,17 +11,17 @@ export const AGENT_CAPACITY_PRESETS = [
   {
     value: 'standard',
     label: '标准',
-    limits: { maxSteps: 8, maxContextKb: 180, maxMessages: 64 },
+    limits: { maxSteps: 32, maxContextKb: 1000, maxMessages: 256 },
   },
   {
     value: 'enhanced',
     label: '增强',
-    limits: { maxSteps: 32, maxContextKb: 1000, maxMessages: 256 },
+    limits: { maxSteps: 64, maxContextKb: 2000, maxMessages: 512 },
   },
   {
     value: 'deep',
     label: '深度',
-    limits: { maxSteps: 64, maxContextKb: 4000, maxMessages: 1024 },
+    limits: { maxSteps: 128, maxContextKb: 4000, maxMessages: 2048 },
   },
 ] as const
 

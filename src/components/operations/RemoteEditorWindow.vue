@@ -133,10 +133,12 @@ onBeforeUnmount(() => {
 </template>
 <style scoped>
 .remote-editor-window {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  border: 1px solid var(--color-line-strong);
   background: var(--color-window);
 }
 .remote-editor-window :deep(.operation-window) {

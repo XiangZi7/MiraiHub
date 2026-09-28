@@ -145,6 +145,18 @@ pub async fn ssh_path_exists(
 }
 
 #[tauri::command]
+pub async fn ssh_create_path(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    directory: String,
+    name: String,
+    is_directory: bool,
+) -> AppResult<()> {
+    let session = manager.get(&session_id).await?;
+    Ok(files::create_path(&session, &directory, &name, is_directory).await?)
+}
+
+#[tauri::command]
 pub async fn ssh_rename_path(
     manager: State<'_, SessionManager>,
     session_id: String,

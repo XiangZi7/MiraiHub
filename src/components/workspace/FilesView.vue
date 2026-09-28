@@ -31,6 +31,7 @@ import type { ContextMenuItem } from '@/types/context-menu'
 import type { SshRemoteFile } from '@/types/ssh'
 import { scheduleClipboardClear } from '@/utils/clipboard'
 import FileConflictDialog from './FileConflictDialog.vue'
+import RemoteFileCreateDialog from './RemoteFileCreateDialog.vue'
 import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
 import RemoteFileList from './RemoteFileList.vue'
 import RemotePathInput from './RemotePathInput.vue'
@@ -82,6 +83,10 @@ const state = reactive({
   menuFile: null as SshRemoteFile | null,
   pendingDelete: null as SshRemoteFile | null,
   renaming: null as SshRemoteFile | null,
+  createMenuOpen: false,
+  createMenuX: 0,
+  createMenuY: 0,
+  creating: null as 'file' | 'directory' | null,
 })
 
 const {
@@ -144,6 +149,34 @@ async function copyPath(): Promise<void> {
   await pathClip.copy(path.value)
   scheduleClipboardClear(path.value)
   toast.success(t('远端路径已复制'))
+}
+
+const createItems = computed<ContextMenuItem[]>(() => [
+  { id: 'file', label: t('新建文件'), icon: 'lucide:file-plus' },
+  { id: 'directory', label: t('新建文件夹'), icon: 'lucide:folder-plus' },
+])
+
+function openCreateMenu(event: MouseEvent): void {
+  const button = event.currentTarget as HTMLElement
+  const rect = button.getBoundingClientRect()
+  state.createMenuX = rect.left
+  state.createMenuY = rect.bottom + 4
+  state.createMenuOpen = true
+}
+
+async function createRemote(name: string): Promise<void> {
+  const kind = state.creating
+  state.creating = null
+  if (!kind || !props.sessionId || !path.value) return
+  const session = props.sessionId
+  const directory = path.value
+  try {
+    await ssh.createPath(session, directory, name, kind === 'directory')
+    if (props.sessionId === session && path.value === directory) await refresh()
+    toast.success(t('已创建“{value0}”', { value0: name }))
+  } catch (createError) {
+    toast.error({ title: t('创建失败'), description: ssh.errorMessage(createError) })
+  }
 }
 
 const contextItems = computed<ContextMenuItem[]>(() => {
@@ -408,6 +441,13 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         @click="copyPath"
       />
       <IconButton
+        icon="lucide:plus"
+        :size="14"
+        :title="t('新建文件或文件夹')"
+        :disabled="!connected || !path"
+        @click="openCreateMenu"
+      />
+      <IconButton
         icon="lucide:upload"
         :size="14"
         :title="t('上传文件')"
@@ -557,8 +597,23 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       @submit="renameFile"
       @close="state.renaming = null"
     />
+    <RemoteFileCreateDialog
+      v-if="state.creating"
+      :is-directory="state.creating === 'directory'"
+      @submit="createRemote"
+      @close="state.creating = null"
+    />
   </div>
 
+  <AppContextMenu
+    :open="state.createMenuOpen"
+    :x="state.createMenuX"
+    :y="state.createMenuY"
+    :items="createItems"
+    :label="t('新建文件或文件夹')"
+    @select="state.creating = $event as 'file' | 'directory'"
+    @close="state.createMenuOpen = false"
+  />
   <AppContextMenu
     :open="state.menuOpen"
     :x="state.menuX"

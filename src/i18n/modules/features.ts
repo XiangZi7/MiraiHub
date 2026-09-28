@@ -385,6 +385,7 @@ export const en = {
   '支持 1 MB 以内的 UTF-8 普通文件。保存前检查冲突并备份原内容；保留基本权限、所有者及换行格式。特殊 ACL、扩展属性和硬链接关系不保留。':
     'Supports regular UTF-8 files up to 1 MB. Checks for conflicts and backs up original content before saving. Preserves basic permissions, ownership, and line endings, but not special ACLs, extended attributes, or hard links.',
   '关闭未保存的文件？': 'Close unsaved file?',
+  '当前修改尚未保存，关闭后将丢失。': 'Unsaved changes will be lost when you close this file.',
   '放弃草稿并重新加载？': 'Discard draft and reload?',
   '当前修改尚未保存。可以取消并复制草稿，避免丢失编辑内容。':
     'Changes have not been saved. Cancel and copy your draft to avoid losing edits.',
@@ -676,6 +677,12 @@ export const en = {
   前进: 'Forward',
   上一级: 'Parent directory',
   复制路径: 'Copy path',
+  新建文件或文件夹: 'New file or folder',
+  新建文件: 'New file',
+  新建文件夹: 'New folder',
+  创建: 'Create',
+  创建失败: 'Could not create',
+  '已创建“{value0}”': 'Created “{value0}”',
   上传文件夹: 'Upload folder',
   下载选中文件: 'Download selected file',
   隐藏点文件: 'Hide dotfiles',

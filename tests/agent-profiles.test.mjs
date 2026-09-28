@@ -123,7 +123,7 @@ test('capacity settings migrate old profiles and remain independent through save
     assert.equal(state.drafts.value.b.limits.maxSteps, 48)
     assert.equal(
       state.settings.value.profiles.find(p => p.id === 'a').limits.maxSteps,
-      32
+      AGENT_CAPACITY_PRESETS[1].limits.maxSteps
     )
     // Re-opening the editor uses the saved values and fresh draft objects.
     const stored = structuredClone(api.settings)
@@ -144,7 +144,7 @@ test('capacity settings migrate old profiles and remain independent through save
       assert.equal(
         reopened.state.settings.value.profiles.find(p => p.id === 'a').limits
           .maxSteps,
-        32
+        AGENT_CAPACITY_PRESETS[1].limits.maxSteps
       )
       reopened.state.add()
       assert.deepEqual(
@@ -153,7 +153,7 @@ test('capacity settings migrate old profiles and remain independent through save
       )
       reopened.state.draft.value.limits.maxSteps = 100
       reopened.state.add()
-      assert.equal(reopened.state.draft.value.limits.maxSteps, 8)
+      assert.equal(reopened.state.draft.value.limits.maxSteps, 32)
     } finally {
       reopened.app.unmount()
     }

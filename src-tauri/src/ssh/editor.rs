@@ -1,4 +1,4 @@
-//! UTF-8 editing with optimistic conflict checks, a retained backup and atomic replacement.
+//! UTF-8 editing of remote regular files.
 use super::{tunnels::random_id, SessionManager};
 use crate::{
     error::{AppError, AppResult},
@@ -6,7 +6,7 @@ use crate::{
 };
 use russh_sftp::{
     client::SftpSession,
-    protocol::{FileAttributes, OpenFlags, Packet, StatusCode},
+    protocol::{FileAttributes, OpenFlags},
 };
 use serde::Serialize;
 use std::{collections::HashMap, time::Duration};
@@ -26,13 +26,10 @@ pub struct TextDocument {
     pub text: String,
     pub line_ending: String,
     pub bom: bool,
-    pub backup_path: Option<String>,
 }
 struct Document {
     owner: String,
     view: TextDocument,
-    original: Vec<u8>,
-    attrs: FileAttributes,
 }
 #[derive(Default)]
 pub struct EditorManager {
@@ -139,15 +136,9 @@ async fn read_file(sftp: &SftpSession, path: &str) -> AppResult<(Vec<u8>, FileAt
     }
     Ok((bytes, after))
 }
-async fn create_file(sftp: &SftpSession, path: &str, bytes: &[u8]) -> AppResult<()> {
-    let mut attrs = FileAttributes::empty();
-    attrs.permissions = Some(0o600);
+async fn write_file(sftp: &SftpSession, path: &str, bytes: &[u8]) -> AppResult<()> {
     let mut file = sftp
-        .open_with_flags_and_attributes(
-            path,
-            OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
-            attrs,
-        )
+        .open_with_flags(path, OpenFlags::WRITE | OpenFlags::TRUNCATE)
         .await
         .map_err(sftp_error)?;
     file.write_all(bytes).await?;
@@ -155,23 +146,6 @@ async fn create_file(sftp: &SftpSession, path: &str, bytes: &[u8]) -> AppResult<
     file.sync_all().await.map_err(sftp_error)?;
     file.shutdown().await?;
     Ok(())
-}
-fn sibling(path: &str, kind: &str, id: &str) -> AppResult<String> {
-    let (parent, name) = path
-        .rsplit_once('/')
-        .ok_or_else(|| AppError::invalid_input("远端路径无效"))?;
-    if name.is_empty() {
-        return Err(AppError::invalid_input("不能编辑目录"));
-    }
-    Ok(format!("{parent}/.{name}.mirai-{kind}-{id}"))
-}
-fn rename_packet(from: &str, to: &str) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for path in [from, to] {
-        bytes.extend_from_slice(&(path.len() as u32).to_be_bytes());
-        bytes.extend_from_slice(path.as_bytes());
-    }
-    bytes
 }
 #[tauri::command]
 pub async fn ssh_text_open(
@@ -196,14 +170,13 @@ pub async fn ssh_text_open(
             return Err(AppError::invalid_input("请打开符号链接的实际目标文件"));
         }
         let path = sftp.canonicalize(path).await.map_err(sftp_error)?;
-        let (bytes, attrs) = read_file(&sftp, &path).await?;
+        let (bytes, _) = read_file(&sftp, &path).await?;
         let (text, line_ending, bom) = decode(&bytes)?;
-        Ok::<_, AppError>((path, bytes, attrs, text, line_ending, bom))
+        Ok::<_, AppError>((path, text, line_ending, bom))
     };
-    let (path, original, attrs, text, line_ending, bom) =
-        tokio::time::timeout(Duration::from_secs(20), operation)
-            .await
-            .map_err(|_| AppError::internal("读取远端文件超时"))??;
+    let (path, text, line_ending, bom) = tokio::time::timeout(Duration::from_secs(20), operation)
+        .await
+        .map_err(|_| AppError::internal("读取远端文件超时"))??;
     let view = TextDocument {
         id: random_id(),
         session_id,
@@ -212,7 +185,6 @@ pub async fn ssh_text_open(
         text,
         line_ending,
         bom,
-        backup_path: None,
     };
     let mut documents = editor.documents.lock().await;
     // The window may have closed while its SFTP read was in flight.
@@ -231,8 +203,6 @@ pub async fn ssh_text_open(
         Document {
             owner: window.label().to_owned(),
             view: view.clone(),
-            original,
-            attrs,
         },
     );
     Ok(view)
@@ -245,7 +215,7 @@ pub async fn ssh_text_save(
     id: String,
     text: String,
 ) -> AppResult<TextDocument> {
-    // Serialize saves from this app; each document retains the exact bytes it originally read.
+    // Serialize saves from this editor window.
     let mut documents = editor.documents.lock().await;
     let document = documents
         .get_mut(&id)
@@ -254,90 +224,18 @@ pub async fn ssh_text_save(
     let bytes = encode(&text, &document.view.line_ending, document.view.bom)?;
     let session = manager.get(&document.view.session_id).await?;
     let path = document.view.path.clone();
-    let suffix = random_id();
-    let temporary = sibling(&path, "edit", &suffix)?;
-    let backup = sibling(&path, "backup", &suffix)?;
     let operation = async {
-        let raw = session.open_raw_sftp().await?;
-        let version = raw.init().await.map_err(sftp_error)?;
-        if version
-            .extensions
-            .get("posix-rename@openssh.com")
-            .map(String::as_str)
-            != Some("1")
-        {
-            return Err(AppError::invalid_input(
-                "服务器不支持原子替换扩展，已停止保存；请下载后使用外部编辑器",
-            ));
-        }
         let sftp = session.open_sftp().await?;
-        if sftp.canonicalize(&path).await.map_err(sftp_error)? != path {
-            return Err(AppError::invalid_input(
-                "远端路径指向已改变，请重新打开文件",
-            ));
+        let attrs = sftp.symlink_metadata(&path).await.map_err(sftp_error)?;
+        if !attrs.is_regular() || attrs.is_symlink() {
+            return Err(AppError::invalid_input("仅可保存普通文件"));
         }
-        let (current, attrs) = read_file(&sftp, &path).await?;
-        if current != document.original || !same_metadata(&document.attrs, &attrs) {
-            return Err(AppError::invalid_input(
-                "保存冲突：远端文件已被其他程序修改。请复制当前草稿后重新加载，不会覆盖远端内容",
-            ));
-        }
-        if current == bytes {
-            return Ok::<_, AppError>((attrs, false));
-        }
-        create_file(&sftp, &backup, &current).await?;
-        create_file(&sftp, &temporary, &bytes).await?;
-        let mut permissions = FileAttributes::empty();
-        permissions.permissions = attrs.permissions;
-        permissions.uid = attrs.uid;
-        permissions.gid = attrs.gid;
-        sftp.set_metadata(&temporary, permissions)
-            .await
-            .map_err(sftp_error)?;
-        let (check, latest) = read_file(&sftp, &path).await?;
-        if check != current || !same_metadata(&attrs, &latest) {
-            return Err(AppError::invalid_input(
-                "保存冲突：上传期间远端文件改变，原文件未被替换",
-            ));
-        }
-        match raw
-            .extended("posix-rename@openssh.com", rename_packet(&temporary, &path))
-            .await
-            .map_err(sftp_error)?
-        {
-            Packet::Status(status) if status.status_code == StatusCode::Ok => {}
-            Packet::Status(status) => return Err(sftp_error(status.error_message)),
-            _ => return Err(AppError::internal("服务器未确认保存结果，请重新加载核对")),
-        }
-        let (written, attrs) = read_file(&sftp, &path).await?;
-        if written != bytes {
-            return Err(AppError::internal(
-                "保存后内容再次改变，请重新加载并核对远端文件",
-            ));
-        }
-        Ok((attrs, true))
+        write_file(&sftp, &path, &bytes).await
     };
-    let result = tokio::time::timeout(Duration::from_secs(45), operation).await;
-    let (attrs, changed) = match result {
-        Ok(Ok(result)) => result,
-        Ok(Err(error)) => {
-            return Err(AppError::internal(format!(
-                "{}。若保存已开始，备份位置：{}",
-                error.message, backup
-            )))
-        }
-        Err(_) => {
-            return Err(AppError::internal(format!(
-                "保存超时，结果未确认；请重新加载核对。若备份已创建，位置：{backup}"
-            )))
-        }
-    };
-    document.original = bytes;
-    document.attrs = attrs;
+    tokio::time::timeout(Duration::from_secs(45), operation)
+        .await
+        .map_err(|_| AppError::internal("保存超时，请重新加载核对远端文件"))??;
     document.view.text = text;
-    if changed {
-        document.view.backup_path = Some(backup);
-    }
     Ok(document.view.clone())
 }
 #[tauri::command]
@@ -383,7 +281,7 @@ mod tests {
         }
     }
     #[test]
-    fn metadata_change_is_a_conflict() {
+    fn detects_a_change_while_reading() {
         let mut a = FileAttributes::empty();
         a.size = Some(10);
         a.mtime = Some(4);
@@ -391,18 +289,5 @@ mod tests {
         assert!(same_metadata(&a, &b));
         b.mtime = Some(5);
         assert!(!same_metadata(&a, &b));
-    }
-    #[test]
-    fn temporary_files_stay_beside_target() {
-        assert_eq!(
-            sibling("/etc/app.conf", "backup", "123").unwrap(),
-            "/etc/.app.conf.mirai-backup-123"
-        );
-        assert!(sibling("/", "edit", "1").is_err());
-    }
-    #[test]
-    fn rename_paths_use_sftp_string_encoding() {
-        let packet = rename_packet("/a", "/b");
-        assert_eq!(packet, vec![0, 0, 0, 2, b'/', b'a', 0, 0, 0, 2, b'/', b'b']);
     }
 }

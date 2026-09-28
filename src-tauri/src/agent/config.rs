@@ -195,7 +195,7 @@ fn decode(bytes: &[u8]) -> AppResult<Settings> {
     }
     let result = serde_json::from_slice::<Stored>(bytes)
         .map_err(|_| AppError::internal("AI 设置损坏，无法读取"))?;
-    Ok(match result {
+    let mut settings = match result {
         Stored::Current(settings) => settings,
         Stored::Legacy(config) => Settings {
             active_id: "legacy-default".into(),
@@ -206,7 +206,19 @@ fn decode(bytes: &[u8]) -> AppResult<Settings> {
             }],
             mcp_servers: Vec::new(),
         },
-    })
+    };
+    // Existing untouched standard profiles used a very small fixed budget.
+    // Move that exact preset forward without changing any custom capacity.
+    for profile in &mut settings.profiles {
+        let limits = &mut profile.config.limits;
+        if (limits.max_steps, limits.max_context_kb, limits.max_messages) == (8, 180, 64) {
+            *limits = Limits {
+                max_retries: limits.max_retries,
+                ..Limits::default()
+            };
+        }
+    }
+    Ok(settings)
 }
 pub fn read(app: &AppHandle) -> AppResult<Settings> {
     let path = app
@@ -634,6 +646,18 @@ mod tests {
         invalid.config.limits.max_steps = 0;
         assert!(settings.upsert(invalid, false).is_err());
         assert_eq!(settings.profile("old").unwrap().name, "Existing");
+    }
+    #[test]
+    fn upgrades_only_the_old_standard_capacity() {
+        let settings = decode(br#"{"activeId":"old","profiles":[{"id":"old","name":"Old","config":{"enabled":false,"baseUrl":"https://same.example/v1","model":"test-model","limits":{"maxSteps":8,"maxContextKb":180,"maxMessages":64}}},{"id":"custom","name":"Custom","config":{"enabled":false,"baseUrl":"https://same.example/v1","model":"test-model","limits":{"maxSteps":8,"maxContextKb":1000,"maxMessages":64}}}]}"#).unwrap();
+        assert_eq!(
+            settings.profile("old").unwrap().config.limits,
+            Limits::default()
+        );
+        assert_eq!(
+            settings.profile("custom").unwrap().config.limits.max_steps,
+            8
+        );
     }
     #[test]
     fn multiple_profiles_isolate_keys_and_reject_stale_updates() {

@@ -20,9 +20,9 @@ const fn default_max_retries() -> usize {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            max_steps: 8,
-            max_context_kb: 180,
-            max_messages: 64,
+            max_steps: 32,
+            max_context_kb: 1000,
+            max_messages: 256,
             max_retries: default_max_retries(),
         }
     }
@@ -69,7 +69,12 @@ mod tests {
     use serde_json::json;
     #[test]
     fn expanded_budgets_allow_longer_tool_runs_and_conversations() {
-        let standard = Limits::default();
+        let standard = Limits {
+            max_steps: 8,
+            max_context_kb: 180,
+            max_messages: 64,
+            ..Limits::default()
+        };
         let expanded = Limits {
             max_steps: 32,
             max_context_kb: 1000,
@@ -139,8 +144,12 @@ mod tests {
             assert!(limits.validate().is_ok());
         }
         let history = vec![json!({"role":"assistant","content":"ok"}); 64];
-        assert!(Limits::default().check_context(&history, None).is_ok());
-        assert!(Limits::default()
+        let legacy = Limits {
+            max_messages: 64,
+            ..Limits::default()
+        };
+        assert!(legacy.check_context(&history, None).is_ok());
+        assert!(legacy
             .check_context(&history, Some(&json!({"role":"user","content":"more"})))
             .is_err());
     }

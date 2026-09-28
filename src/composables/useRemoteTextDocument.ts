@@ -4,14 +4,12 @@ import {
   onBeforeUnmount,
   onMounted,
   reactive,
-  toRef,
   watch,
 } from 'vue'
-import { refDebounced, useClipboard, useEventListener } from '@vueuse/core'
+import { useEventListener } from '@vueuse/core'
 import * as api from '@/api/operations'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
 import { textMetrics } from '@/utils/text-metrics'
-import { scheduleClipboardClear } from '@/utils/clipboard'
 
 export function useRemoteTextDocument(
   request: RemoteEditRequest,
@@ -21,7 +19,7 @@ export function useRemoteTextDocument(
 ) {
   // 响应式状态
   const state = reactive({
-    // 后端文件快照，保存时用于冲突检查
+    // 最近一次从远端读取或保存的内容
     document: null as api.TextDocument | null,
     // 用户编辑的草稿，仅保留在当前窗口内存中
     draft: '',
@@ -31,31 +29,19 @@ export function useRemoteTextDocument(
     error: '',
     // 保存结果或窗口关闭提示
     message: '',
-    // 是否正在预览待保存内容
-    reviewing: false,
-    // 本次确认保存的固定内容
-    reviewedText: '',
     // 待确认的放弃草稿动作
-    discard: '' as '' | 'close' | 'reload',
+    discard: '' as '' | 'close',
   })
 
   const dirty = computed(
     () => !!state.document && state.draft !== state.document.text
   )
-  const settledDraft = refDebounced(toRef(state, 'draft'), 180, {
-    maxWait: 500,
-  })
-  const metrics = computed(() => textMetrics(settledDraft.value))
-  const lines = computed(() => metrics.value.lines)
-  const bytes = computed(() => metrics.value.bytes)
-  const { copy } = useClipboard()
   let alive = true
   async function load(): Promise<void> {
     if (state.busy) return
     state.busy = true
     state.error = ''
     state.message = ''
-    state.reviewing = false
     try {
       const doc = await api.openText(request.sessionId, request.path)
       if (!alive) {
@@ -72,34 +58,23 @@ export function useRemoteTextDocument(
       state.busy = false
     }
   }
-  function review(): void {
-    if (!dirty.value || state.busy) return
+  async function save(): Promise<void> {
+    if (!dirty.value || !state.document || state.busy) return
     if (textMetrics(state.draft).bytes > 1024 * 1024) {
       state.error = i18n.global.t('草稿超过 1 MB，请缩短后再保存')
       return
     }
-    state.reviewedText = state.draft
-    state.reviewing = true
-    state.error = ''
-    state.message = ''
-  }
-  async function save(): Promise<void> {
-    if (!state.reviewing || !state.document || state.busy) return
+    const text = state.draft
     state.busy = true
     state.error = ''
+    state.message = ''
     try {
-      const doc = await api.saveText(state.document.id, state.reviewedText)
+      const doc = await api.saveText(state.document.id, text)
       state.document = doc
       state.draft = doc.text
-      state.reviewing = false
-      state.message = doc.backupPath
-        ? i18n.global.t('已保存。原内容备份：{value0}', {
-            value0: doc.backupPath,
-          })
-        : i18n.global.t('内容没有变化')
+      state.message = i18n.global.t('已保存')
     } catch (error) {
       state.error = api.errorMessage(error)
-      state.reviewing = false
     } finally {
       state.busy = false
     }
@@ -114,30 +89,16 @@ export function useRemoteTextDocument(
       else onClose()
     }
   }
-  function requestReload(): void {
-    if (dirty.value) state.discard = 'reload'
-    else void load()
-  }
   function confirmDiscard(): void {
     const action = state.discard
     state.discard = ''
     if (action === 'close') onClose()
-    else if (action === 'reload') void load()
-  }
-  async function copyDraft(): Promise<void> {
-    try {
-      await copy(state.draft)
-      scheduleClipboardClear(state.draft)
-      state.message = i18n.global.t('草稿已复制')
-    } catch (error) {
-      state.error = api.errorMessage(error)
-    }
   }
   useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault()
       event.stopPropagation()
-      if (!state.discard && !state.reviewing) review()
+      if (!state.discard) void save()
     }
   })
   useEventListener(window, 'beforeunload', (event: BeforeUnloadEvent) => {
@@ -162,13 +123,8 @@ export function useRemoteTextDocument(
   return {
     state,
     dirty,
-    lines,
-    bytes,
     requestClose,
-    requestReload,
     confirmDiscard,
-    review,
     save,
-    copyDraft,
   }
 }

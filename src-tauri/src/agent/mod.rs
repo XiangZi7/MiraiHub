@@ -1,5 +1,6 @@
 //! Server-owned conversations and immutable, expiring, single-use approvals.
 mod attachments;
+mod compaction;
 mod config;
 pub mod history;
 mod limits;
@@ -657,6 +658,7 @@ pub async fn ai_start(
         run.messages
             .extend(history::resume_messages(previous.messages));
     }
+    compaction::if_needed(&mut run, None, Some(&message), false).await?;
     run.config
         .limits
         .check_context(&run.messages, Some(&message))?;
@@ -713,6 +715,7 @@ pub async fn ai_send(
     if run.status != "completed" {
         return Err(AppError::invalid_input("请等待当前任务结束或开始新对话"));
     }
+    compaction::if_needed(&mut run, Some(&cell), Some(&message), false).await?;
     run.config
         .limits
         .check_context(&run.messages, Some(&message))?;
@@ -757,6 +760,7 @@ async fn step(
 ) -> AppResult<()> {
     run.check(cell)?;
     validate_target(app, run).await?;
+    compaction::if_needed(run, Some(cell), None, false).await?;
     let mut messages = run.messages.clone();
     messages.insert(
         1,
@@ -764,12 +768,28 @@ async fn step(
     );
     run.config.limits.check_request(run.steps, &messages)?;
     run.steps += 1;
-    let response = retry::completion(run, &messages, cell, &mut |progress| {
+    let mut on_progress = |progress| {
         if let Some(channel) = channel {
             let _ = channel.send(progress);
         }
-    })
-    .await?;
+    };
+    let response = match retry::completion(run, &messages, cell, &mut on_progress).await {
+        Ok(response) => response,
+        Err(error)
+            if compaction::is_context_error(&error)
+                && compaction::if_needed(run, Some(cell), None, true).await? =>
+        {
+            let mut compacted = run.messages.clone();
+            compacted.insert(
+                1,
+                json!({"role":"system", "content":run.approval_mode.instruction()}),
+            );
+            run.config.limits.check_request(run.steps, &compacted)?;
+            run.steps += 1;
+            retry::completion(run, &compacted, cell, &mut on_progress).await?
+        }
+        Err(error) => return Err(error),
+    };
     run.check(cell)?;
     validate_target(app, run).await?;
     let message = &response["choices"][0]["message"];

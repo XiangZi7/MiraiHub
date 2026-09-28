@@ -89,6 +89,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ssh::commands::ssh_system_stats,
         ssh::commands::ssh_list_directory,
         ssh::commands::ssh_path_exists,
+        ssh::commands::ssh_create_path,
         ssh::commands::ssh_rename_path,
         ssh::commands::ssh_delete_path,
         ssh::commands::ssh_upload_file,

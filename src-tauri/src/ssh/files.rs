@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_util::{stream, StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::StatusCode;
+use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -130,6 +130,51 @@ pub async fn path_exists(session: &SshSession, path: &str) -> SshResult<bool> {
     validate_remote_path(path)?;
     let sftp = session.open_sftp().await?;
     sftp.try_exists(path).await.map_err(sftp_error)
+}
+
+/// Create one file or folder in the selected remote directory.
+pub async fn create_path(
+    session: &SshSession,
+    directory: &str,
+    name: &str,
+    is_directory: bool,
+) -> SshResult<()> {
+    let path = create_child_path(directory, name)?;
+    let sftp = session.open_sftp().await?;
+    if sftp.try_exists(&path).await.map_err(sftp_error)? {
+        return Err(SshError::RemoteFileExists(path));
+    }
+    if is_directory {
+        sftp.create_dir(&path).await.map_err(sftp_error)?;
+    } else {
+        let mut attrs = FileAttributes::empty();
+        attrs.permissions = Some(0o644);
+        let mut file = sftp
+            .open_with_flags_and_attributes(
+                &path,
+                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
+                attrs,
+            )
+            .await
+            .map_err(sftp_error)?;
+        file.shutdown().await?;
+    }
+    Ok(())
+}
+
+fn create_child_path(directory: &str, name: &str) -> SshResult<String> {
+    validate_remote_path(directory)?;
+    if !directory.starts_with('/')
+        || name.is_empty()
+        || matches!(name, "." | "..")
+        || name.contains(['/', '\\', '\0'])
+        || name.chars().any(char::is_control)
+    {
+        return Err(SshError::InvalidInput(
+            "请输入有效的文件或文件夹名称".into(),
+        ));
+    }
+    Ok(format!("{}/{}", directory.trim_end_matches('/'), name))
 }
 
 /// 重命名远端文件或目录。
@@ -865,6 +910,28 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn creation_stays_inside_the_selected_directory() {
+        assert_eq!(create_child_path("/", "new.txt").unwrap(), "/new.txt");
+        assert_eq!(
+            create_child_path("/etc/nginx/", "sites").unwrap(),
+            "/etc/nginx/sites"
+        );
+        for name in [
+            "",
+            ".",
+            "..",
+            "../other",
+            "a/b",
+            "a\\b",
+            "a\0b",
+            "line\nbreak",
+        ] {
+            assert!(create_child_path("/etc", name).is_err());
+        }
+        assert!(create_child_path("relative", "new.txt").is_err());
+    }
 
     #[test]
     fn parses_full_iso_entry() {

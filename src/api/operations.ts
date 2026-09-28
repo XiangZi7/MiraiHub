@@ -44,7 +44,6 @@ export interface TextDocument {
   text: string
   lineEnding: string
   bom: boolean
-  backupPath: string | null
 }
 export const listTunnels = () => call<Tunnel[]>('ssh_tunnel_list')
 export const startTunnel = (request: {

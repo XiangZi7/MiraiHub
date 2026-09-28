@@ -174,6 +174,16 @@ export async function pathExists(
   return invoke<boolean>('ssh_path_exists', { sessionId, path })
 }
 
+export async function createPath(
+  sessionId: string,
+  directory: string,
+  name: string,
+  isDirectory: boolean
+): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_create_path', { sessionId, directory, name, isDirectory })
+}
+
 export async function renamePath(
   sessionId: string,
   oldPath: string,
