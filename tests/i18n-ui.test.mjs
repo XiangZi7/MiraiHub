@@ -129,8 +129,12 @@ test('capacity presets preserve the independently editable retry count', async (
     )
     select.props['onUpdate:modelValue']('enhanced')
     await nextTick()
-    assert.equal(state.limits.maxSteps, 32)
-    assert.equal(state.limits.maxRetries, 999)
+    assert.deepEqual({ ...state.limits }, {
+      maxSteps: 64,
+      maxContextKb: 2000,
+      maxMessages: 512,
+      maxRetries: 999,
+    })
     const retryInput = root.children[0].children
       .flatMap(child => child.children)
       .find(child => child.props.id === 'ai-max-retries')
