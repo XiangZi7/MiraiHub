@@ -1,0 +1,12 @@
+Use case: ads-marketing / product-mockup
+Asset type: MiraiHub GitHub README product hero, landscape 16:9, approximately 1920x1080 or larger.
+Primary request: Create a new premium product presentation for MiraiHub, a Windows desktop workspace for SSH terminals, SFTP files, MySQL/PostgreSQL/Redis, server monitoring, and AI Agent.
+Input images: Image 1 is the real MiraiHub database workspace screenshot, used as the exact interface reference to place on the main floating software panel. Image 2 is the existing MiraiHub app icon, used as the exact brand identity reference. These are reference assets, not targets for standalone alteration.
+Scene/backdrop: A refined midnight graphite studio backdrop with a restrained violet halo, a soft reflective surface, and subtle depth. Keep the background clean and avoid busy neon streaks.
+Subject: One dominant large desktop application panel showing the actual interface from Image 1, with a gentle three-quarter perspective. Preserve the real UI layout, readable SQL editor, results table, and AI sidebar. Small abstract server and database forms can support the composition without competing with the application.
+Brand identity: Use the rounded white icon and purple/pink circular eyeglasses mark from Image 2. Preserve its silhouette; do not substitute an owl, robot, or infinity symbol.
+Composition/framing: Generous margins. Clear brand and headline in the upper area; the application panel occupies most of the lower area. The entire software window stays inside the image. Favor product clarity over dramatic perspective.
+Lighting/mood: Soft professional studio lighting, crisp edges, gentle violet reflections, confident and understated. Bright enough to distinguish the dark UI from the backdrop.
+Text (verbatim): "MiraiHub"; "一站式服务器与开发基础设施工作台"; "SSH · SFTP · DATABASES · MONITORING · AI AGENT".
+Typography: Clean modern sans-serif. MiraiHub must be spelled M-i-r-a-i-H-u-b. Render the Chinese headline exactly. Avoid tiny extra marketing copy.
+Constraints: No fabricated feature badges, fake metrics, platform support claims, or additional logos. Do not introduce server addresses, user accounts, API keys, or business records. Preserve masking already present in the screenshot. No watermarks. This is a promotional product visual; it must not look like another functional screenshot.
