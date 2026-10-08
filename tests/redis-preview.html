@@ -32,6 +32,32 @@
         key('cache:settings'),
         key('events:stream'),
       ]
+      const volume = Math.min(
+        10000,
+        Number(new URLSearchParams(location.search).get('volume')) || 0
+      )
+      if (volume)
+        keys.splice(
+          0,
+          keys.length,
+          ...Array.from({ length: volume }, (_, i) =>
+            key(
+              `soloband:${i % 2 ? 'wt:v2' : '8c:v1'}:https://www.8comic.com:True:banner-member:chapter-${i}`
+            )
+          )
+        )
+      const matches = (name, pattern) => {
+        let expression = '^'
+        for (let i = 0; i < pattern.length; i++) {
+          const char = pattern[i]
+          if (char === '\\' && i + 1 < pattern.length)
+            expression += pattern[++i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          else if (char === '*') expression += '.*'
+          else if (char === '?') expression += '.'
+          else expression += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        }
+        return new RegExp(expression + '$').test(name)
+      }
       const session = () => ({
         sessionId: 'preview',
         database: state.database,
@@ -134,14 +160,16 @@
           }
           if (command === 'redis_scan')
             return {
-              cursor: '0',
+              cursor:
+                state.database === '0' &&
+                Number(args.cursor) + 100 < keys.length
+                  ? String(Number(args.cursor) + 100)
+                  : '0',
               keys:
                 state.database === '0'
-                  ? keys.filter(
-                      key =>
-                        args.pattern === '*' ||
-                        key.name.startsWith(args.pattern.replace('*', ''))
-                    )
+                  ? keys
+                      .slice(Number(args.cursor), Number(args.cursor) + 100)
+                      .filter(key => matches(key.name, args.pattern))
                   : [],
             }
           if (command === 'redis_inspect')

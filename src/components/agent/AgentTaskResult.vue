@@ -38,28 +38,33 @@ const title = computed(() =>
     :class="(result.needsAttention || status === 'cancelled') && 'attention'"
     :aria-label="t('任务结果')"
   >
-    <div class="result-heading">
-      <AppIcon
-        :name="
-          result.needsAttention || status === 'cancelled'
-            ? 'lucide:clipboard-list'
-            : 'lucide:clipboard-check'
-        "
-        :size="18"
-      /><strong>{{ title }}</strong>
-    </div>
-    <div class="result-metrics">
-      <div>
-        <strong>{{ result.operations.length }}</strong
-        ><span>{{ t('实际操作') }}</span>
+    <div class="result-summary">
+      <div
+        class="result-heading"
+        :title="t('以上为实际工具执行记录，问题是否解决请以验证结果为准。')"
+      >
+        <AppIcon
+          :name="
+            result.needsAttention || status === 'cancelled'
+              ? 'lucide:clipboard-list'
+              : 'lucide:clipboard-check'
+          "
+          :size="14"
+        /><strong>{{ title }}</strong>
       </div>
-      <div>
-        <strong>{{ result.completed }}</strong
-        ><span>{{ t('正常完成') }}</span>
-      </div>
-      <div>
-        <strong>{{ formatAgentDuration(result.durationMs) }}</strong
-        ><span>{{ t('工具耗时') }}</span>
+      <div class="result-metrics">
+        <div>
+          <span>{{ t('实际操作') }}</span
+          ><strong>{{ result.operations.length }}</strong>
+        </div>
+        <div>
+          <span>{{ t('正常完成') }}</span
+          ><strong>{{ result.completed }}</strong>
+        </div>
+        <div>
+          <span>{{ t('工具耗时') }}</span
+          ><strong>{{ formatAgentDuration(result.durationMs) }}</strong>
+        </div>
       </div>
     </div>
     <p
@@ -116,18 +121,15 @@ const title = computed(() =>
         >
       </div>
     </div>
-    <p class="result-caption">
-      {{ t('以上为实际工具执行记录，问题是否解决请以验证结果为准。') }}
-    </p>
   </section>
 </template>
 
 <style scoped>
 .task-result {
-  padding: 15px;
+  padding: 9px 11px;
   border: 1px solid
     color-mix(in srgb, var(--color-success) 25%, var(--color-line));
-  border-radius: 12px;
+  border-radius: 7px;
   background:
     linear-gradient(
       135deg,
@@ -140,10 +142,16 @@ const title = computed(() =>
   border-color: var(--color-line);
   background: var(--color-card);
 }
+.result-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
 .result-heading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: var(--color-success);
   font-size: var(--agent-body-font, 12px);
 }
@@ -154,39 +162,36 @@ const title = computed(() =>
   font-weight: 500;
 }
 .result-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1.2fr;
-  margin-top: 16px;
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: auto;
+  gap: 6px 12px;
 }
 .result-metrics div {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
   min-width: 0;
 }
 .result-metrics strong {
   color: var(--color-txt);
-  font-size: 19px;
+  font-size: var(--agent-small-font, 11px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .result-metrics span,
 .result-notice,
-.result-caption,
 .result-comparisons {
   font-size: var(--agent-small-font, 10px);
   color: var(--color-txt-3);
 }
 .result-notice {
-  margin: 12px 0 0;
-}
-.result-caption {
-  margin: 13px 0 0;
-  line-height: 1.7;
+  margin: 6px 0 0;
 }
 .result-comparisons {
-  margin-top: 12px;
-  padding-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--color-line-soft);
 }
 .result-comparisons p {

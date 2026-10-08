@@ -141,11 +141,6 @@ const {
   max: agentMax,
   style: agentStyle,
 } = useAgentPaneWidth(agentContainer, 'database')
-const agentTarget = computed(() => ({
-  kind: 'database' as const,
-  sessionId: connected.value ? sessionId.value : '',
-  database: session.value?.database ?? '',
-}))
 function toggleAgent(): void {
   if (agentState.agentOpen) {
     agentState.agentOpen = false
@@ -205,12 +200,6 @@ async function askAgentStructure(object: DatabaseObject): Promise<void> {
     })
   }
 }
-watch(
-  () => JSON.stringify(agentTarget.value),
-  () => {
-    agentState.contextRequest = null
-  }
-)
 const connection = toRef(props, 'connection')
 const password = shallowRef('')
 const editor = shallowRef<SqlEditorExpose | null>(null)
@@ -333,6 +322,19 @@ const {
   onStatus: (nextStatus, nextSessionId) =>
     emit('status', nextStatus, nextSessionId),
 })
+
+// watch 会立即读取 getter；先创建数据库会话，再派生和监听 AI 的执行目标。
+const agentTarget = computed(() => ({
+  kind: 'database' as const,
+  sessionId: connected.value ? sessionId.value : '',
+  database: session.value?.database ?? '',
+}))
+watch(
+  () => JSON.stringify(agentTarget.value),
+  () => {
+    agentState.contextRequest = null
+  }
+)
 
 const databaseKind = computed<DatabaseKind>(() =>
   props.connection && isSqlConnection(props.connection)

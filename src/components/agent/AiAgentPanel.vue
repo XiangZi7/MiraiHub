@@ -16,7 +16,6 @@ import type {
   AgentContextRequest,
   AgentTarget,
 } from '@/types/agent'
-import { summarizeAgentTurn } from '@/utils/agent-execution'
 import { useAiAgent } from '@/composables/useAiAgent'
 import { useAgentProfiles } from '@/composables/useAgentProfiles'
 import { useAgentDraft } from '@/composables/useAgentDraft'
@@ -106,9 +105,6 @@ const draft = useAgentDraft((text, attachments) =>
 const { prompt, attachments, reading, attachmentError } = draft
 const scroll = useTemplateRef<HTMLElement>('scroll')
 const composer = useTemplateRef<InstanceType<typeof AgentComposer>>('composer')
-const task = computed(() =>
-  run.value ? summarizeAgentTurn(run.value.entries, run.value.status) : null
-)
 const isRedis = computed(() => props.target.kind === 'redis')
 const isDatabase = computed(() => props.target.kind !== 'ssh')
 const suggestions = computed(() =>
@@ -355,28 +351,6 @@ watch(
         @click="emit('close')"
       />
     </header>
-    <div
-      v-if="run && (busy || awaitingApproval)"
-      class="task-progress"
-      role="status"
-    >
-      <AppIcon
-        :name="
-          awaitingApproval ? 'lucide:shield-check' : 'lucide:loader-circle'
-        "
-        :size="15"
-        :class="busy && 'animate-spin'"
-      />
-      <div>
-        <strong>{{ statusLabel }}</strong
-        ><span v-if="task?.operations.length">{{
-          t('已记录 {count} 项操作', { count: task.operations.length })
-        }}</span>
-      </div>
-      <span class="task-progress-live">{{
-        awaitingApproval ? t('待确认') : 'LIVE'
-      }}</span>
-    </div>
     <div
       ref="scroll"
       class="agent-scroll"
@@ -707,42 +681,8 @@ watch(
 .presentation-agent .agent-scroll {
   padding: 20px 16px;
 }
-.task-progress {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-line-soft);
-  background: color-mix(in srgb, var(--agent-color) 5%, var(--color-panel));
-  color: var(--agent-color);
-}
-.task-progress > div {
-  display: grid;
-  gap: 3px;
-  flex: 1;
-  min-width: 0;
-}
-.task-progress strong {
-  font-size: var(--agent-body-font);
-  font-weight: 500;
-}
-.task-progress span {
-  font-size: var(--agent-small-font);
-  color: var(--color-txt-3);
-}
-.task-progress .task-progress-live {
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: var(--agent-color);
-}
 .operation-message {
   margin-block: -2px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .task-progress .animate-spin {
-    animation: none;
-  }
 }
 .database-agent {
   --agent-color: #74d696;

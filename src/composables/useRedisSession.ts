@@ -18,6 +18,7 @@ import type {
   RedisCommandResult,
 } from '@/types/redis'
 import type { SshSessionStatus } from '@/types/ssh'
+import { isRedisReadCommand } from '@/utils/redis-commands'
 
 export function useRedisSession(
   connection: Ref<SavedConnection>,
@@ -50,6 +51,8 @@ export function useRedisSession(
   })
   let generation = 0
   let runtimePassword: string | undefined
+  // 增量去重，避免每次追加扫描都遍历全部已加载键。
+  let seenKeyIds = new Set<string>()
   const connected = computed(
     () => state.status === 'connected' && !!state.session
   )
@@ -60,6 +63,7 @@ export function useRedisSession(
   }
   function clearData() {
     state.keys = []
+    seenKeyIds.clear()
     state.cursor = '0'
     state.scanned = false
     state.detail = null
@@ -147,22 +151,40 @@ export function useRedisSession(
       (!reset && state.scanned && state.cursor === '0')
     )
       return
-    const cursor = reset ? '0' : state.cursor
+    const request = generation
+    const patternToScan = (reset ? pattern : state.pattern) || '*'
     await perform(
-      id => redis.scan(id, cursor, reset ? pattern : state.pattern),
+      async id => {
+        let cursor = reset ? '0' : state.cursor
+        const keys: RedisKey[] = []
+        const batchIds = new Set<string>()
+        const started = Date.now()
+        // 稀疏匹配可能连续返回空批次；有界地前进，用户仍可手动继续。
+        for (let batch = 0; batch < 10; batch++) {
+          const page = await redis.scan(id, cursor, patternToScan)
+          if (request !== generation) break
+          cursor = page.cursor
+          for (const key of page.keys) {
+            if (batchIds.has(key.id) || (!reset && seenKeyIds.has(key.id)))
+              continue
+            batchIds.add(key.id)
+            keys.push(key)
+          }
+          if (keys.length || cursor === '0' || Date.now() - started >= 1000)
+            break
+        }
+        return { cursor, keys }
+      },
       page => {
         if (reset) {
           state.keys = []
-          state.pattern = pattern
+          seenKeyIds = new Set()
+          state.pattern = patternToScan
         }
-        const seen = new Set(state.keys.map(key => key.id))
-        state.keys.push(
-          ...page.keys.filter(key => {
-            if (seen.has(key.id)) return false
-            seen.add(key.id)
-            return true
-          })
-        )
+        for (const key of page.keys) {
+          seenKeyIds.add(key.id)
+          state.keys.push(key)
+        }
         state.cursor = page.cursor
         state.scanned = true
       }
@@ -203,7 +225,8 @@ export function useRedisSession(
           state.result = result
         }
       )) &&
-      request === generation
+      request === generation &&
+      !isRedisReadCommand(command)
     ) {
       state.detail = null
       await scan(true)

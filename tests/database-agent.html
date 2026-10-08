@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>数据库 AI Agent 回归验证 · 模拟数据</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, reactive } from 'vue'
+      import { createPinia } from 'pinia'
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      import '/src/assets/styles/main.css'
+      mockWindows('main')
+      const connection = {
+        id: 'db-agent-fixture',
+        kind: 'postgresql',
+        name: 'Demo database',
+        host: 'demo.invalid',
+        port: 5432,
+        username: 'demo',
+        group: '',
+        tags: [],
+        tagColor: 'green',
+        settings: { database: 'demo', password: '', ssl: false },
+        createdAt: 1,
+        updatedAt: 1,
+      }
+      const state = reactive({ connection, recording: false })
+      const session = {
+        sessionId: 'fixture-db',
+        kind: 'postgresql',
+        database: 'demo',
+        endpoint: 'demo.invalid:5432',
+        serverVersion: '16 (模拟)',
+      }
+      const object = {
+        schema: 'public',
+        name: 'orders',
+        kind: 'table',
+        identity: '',
+        rowEstimate: 7,
+        comment: '模拟订单表',
+        createdAt: null,
+        updatedAt: null,
+      }
+      mockIPC(
+        (command, args) => {
+          if (command === 'db_connect')
+            return { ...session, kind: args.config.kind }
+          if (command === 'db_list_objects') return [object]
+          if (command === 'db_list_databases') return ['demo']
+          if (command === 'db_completion_columns')
+            return ['id', 'total', 'created_at']
+          if (command === 'db_describe_object')
+            return [
+              {
+                name: 'id',
+                dataType: 'bigint',
+                nullable: false,
+                defaultValue: null,
+                ordinal: 1,
+                primaryKey: true,
+                autoIncrement: true,
+                comment: null,
+              },
+              {
+                name: 'total',
+                dataType: 'numeric',
+                nullable: false,
+                defaultValue: null,
+                ordinal: 2,
+                primaryKey: false,
+                autoIncrement: false,
+                comment: null,
+              },
+            ]
+          if (command === 'ai_get_config')
+            return {
+              activeId: 'fixture',
+              profiles: [
+                {
+                  id: 'fixture',
+                  name: '演示模型',
+                  model: 'local-fixture',
+                  enabled: true,
+                  baseUrl: 'https://example.invalid',
+                  apiFormat: 'openai',
+                  hasApiKey: false,
+                },
+              ],
+            }
+          if (command === 'ai_list_conversations') return []
+          if (['db_disconnect', 'ai_cancel', 'ai_forget'].includes(command))
+            return
+          throw new Error(`Unexpected fixture command: ${command}`)
+        },
+        { shouldMockEvents: true }
+      )
+      const { default: DatabaseView } =
+        await import('/src/components/workspace/DatabaseView.vue')
+      const { useWorkspaceLayoutStore } =
+        await import('/src/stores/workspace-layout.ts')
+      const { i18n } = await import('/src/i18n/index.ts')
+      const pinia = createPinia()
+      const layout = useWorkspaceLayoutStore(pinia)
+      i18n.global.locale.value = 'zh-CN'
+      createApp({
+        render: () =>
+          h(
+            'main',
+            {
+              style:
+                'height:100vh;padding:18px;display:flex;flex-direction:column;gap:12px',
+            },
+            [
+              h(
+                'header',
+                { style: 'display:flex;gap:18px;align-items:center' },
+                [
+                  h('strong', '数据库 AI Agent 回归验证 · 全部为模拟数据'),
+                  h(
+                    'button',
+                    {
+                      onClick: () => {
+                        state.connection = {
+                          ...state.connection,
+                          kind:
+                            state.connection.kind === 'postgresql'
+                              ? 'mysql'
+                              : 'postgresql',
+                        }
+                      },
+                    },
+                    'MySQL / PostgreSQL'
+                  ),
+                  h(
+                    'button',
+                    {
+                      onClick: () => {
+                        layout.recording = !layout.recording
+                      },
+                    },
+                    '录屏模式'
+                  ),
+                ]
+              ),
+              h(DatabaseView, { connection: state.connection, active: true }),
+            ]
+          ),
+      })
+        .use(pinia)
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

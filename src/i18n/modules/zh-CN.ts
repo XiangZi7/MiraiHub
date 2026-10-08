@@ -1,6 +1,7 @@
 import { zh as features } from './features'
 import { zh as parameterized } from './parameterized'
 import { zh as native } from './native'
+import { zh as redis } from './redis'
 import en from './en-US'
 
 // Existing Chinese source labels double as stable message IDs during migration.
@@ -9,6 +10,7 @@ export default {
   ...features,
   ...parameterized,
   ...native,
+  ...redis,
   'Cancel transfer': '取消传输',
   Cancelled: '已取消',
   'Close file transfer': '关闭文件传输',

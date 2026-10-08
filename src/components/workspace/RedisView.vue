@@ -13,6 +13,7 @@ import RedisConsole from './redis/RedisConsole.vue'
 import { useRedisSession } from '@/composables/useRedisSession'
 import { useDatabaseSidebarWidth } from '@/composables/useDatabaseSidebarWidth'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
+import { isRedisReadCommand } from '@/utils/redis-commands'
 import type { AgentTarget } from '@/types/agent'
 import type { SavedConnection } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
@@ -146,8 +147,9 @@ function toggleAgentSplit() {
   state.agentSplit = !state.agentSplit
 }
 function runCommand() {
-  if (connected.value && state.command.trim())
-    guard(() => execute(state.command))
+  if (!connected.value || busy.value || !state.command.trim()) return
+  if (isRedisReadCommand(state.command)) void execute(state.command)
+  else guard(() => execute(state.command))
 }
 defineExpose({
   closeWarningFor: (ids: readonly string[]) =>
@@ -325,6 +327,8 @@ defineExpose({
             v-model="command"
             :busy="busy"
             :result="result"
+            :selected-key="detail?.key"
+            :key-type="detail?.keyType"
             @execute="runCommand"
           />
         </template>

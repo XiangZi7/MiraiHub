@@ -1,10 +1,12 @@
 import { en as features } from './features'
 import { en as parameterized } from './parameterized'
 import { en as native } from './native'
+import { en as redis } from './redis'
 export default {
   ...features,
   ...parameterized,
   ...native,
+  ...redis,
   请求批准: 'Ask to approve',
   帮我批准: 'Auto approve',
   完全访问权限: 'Full access',

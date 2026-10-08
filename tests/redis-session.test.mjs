@@ -67,7 +67,7 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 const flush = async () => {
-  for (let i = 0; i < 12; i++) await nextTick()
+  for (let i = 0; i < 40; i++) await nextTick()
 }
 
 async function fixture(t, handlers = {}) {
@@ -172,6 +172,59 @@ test('failed SELECT keeps the active database and successful switch resets keys'
   await state.switchDatabase('2')
   assert.equal(state.session.value.database, '2')
   assert.deepEqual(mock.calls.at(-1), ['scan', 's1', '0', '*'])
+})
+
+test('sparse SCAN advances through empty and duplicate batches but remains bounded', async t => {
+  const key = { id: 'aw==', name: 'k' }
+  const { state } = await fixture(t, {
+    scan: async () => ({ cursor: '1', keys: [key] }),
+  })
+  const cursors = []
+  mock.handlers.scan = async (_id, cursor) => {
+    cursors.push(cursor)
+    return cursor === '3'
+      ? { cursor: '4', keys: [{ id: 'bmV3', name: 'new' }] }
+      : {
+          cursor: String(Number(cursor) + 1),
+          keys: cursor === '1' ? [key] : [],
+        }
+  }
+  await state.scan()
+  assert.deepEqual(cursors, ['1', '2', '3'])
+  assert.deepEqual(
+    state.keys.value.map(key => key.name),
+    ['k', 'new']
+  )
+  cursors.length = 0
+  mock.handlers.scan = async (_id, cursor) => {
+    cursors.push(cursor)
+    return { cursor: String(Number(cursor) + 1), keys: [] }
+  }
+  await state.scan()
+  assert.equal(cursors.length, 10)
+  assert.equal(state.cursor.value, '14')
+})
+
+test('read commands preserve loaded keys, cursor and detail; writes still refresh', async t => {
+  const key = { id: 'aw==', name: 'k' }
+  const detail = { key, keyType: 'string', value: 'value', editable: true }
+  const { state } = await fixture(t, {
+    scan: async () => ({ cursor: '17', keys: [key] }),
+    inspect: async () => detail,
+    execute: async () => ({ value: 'OK', elapsedMs: 1, truncated: false }),
+  })
+  await state.inspect(key)
+  const keys = state.keys.value
+  const scans = mock.calls.filter(([name]) => name === 'scan').length
+  await state.execute('GET "k"')
+  await state.execute('TTL "k"')
+  assert.equal(mock.calls.filter(([name]) => name === 'scan').length, scans)
+  assert.equal(state.keys.value, keys)
+  assert.equal(state.cursor.value, '17')
+  assert.deepEqual(state.detail.value, detail)
+  await state.execute('SET "k" "changed"')
+  assert.equal(state.detail.value, null)
+  assert.equal(mock.calls.filter(([name]) => name === 'scan').length, scans + 1)
 })
 
 test('operation results from a disconnected session cannot overwrite a new connection', async t => {
