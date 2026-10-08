@@ -6,6 +6,10 @@ export const en = {
   包含: 'Contains',
   前缀: 'Prefix',
   匹配模式: 'Glob pattern',
+  '查找包含输入文字的键，例如 token':
+    'Find keys containing the text, e.g. token',
+  '查找以输入文字开头的键，例如 user:':
+    'Find keys starting with the text, e.g. user:',
   'user:* 前缀 · *token* 包含 · ? 单字符':
     'user:* prefix · *token* contains · ? one character',
   '留空搜索全部键，Enter 开始搜索':

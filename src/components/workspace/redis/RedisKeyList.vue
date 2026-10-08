@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { computed, reactive, toRefs, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  reactive,
+  toRefs,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import AppInput from '@/components/ui/AppInput.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { groupRedisKeys } from '@/utils/redis-browser'
 import type { RedisKey } from '@/types/redis'
 
@@ -18,6 +27,8 @@ const pageSize = 50
 const state = reactive({
   // 仅筛选已加载的数据，不发送请求
   filter: '',
+  // 本地筛选按需展开，收起时清空，避免隐藏的条件影响键列表
+  filterOpen: false,
   // 两级前缀适合 cache:模块 等键名；零表示平铺
   depth: 2,
   // 当前已展开的前缀
@@ -25,8 +36,19 @@ const state = reactive({
   // 当前显示页，从零开始
   page: 0,
 })
-const { filter, depth, expanded, page } = toRefs(state)
+const { filter, filterOpen, expanded, page } = toRefs(state)
 const scroller = useTemplateRef<HTMLElement>('scroller')
+const filterField = useTemplateRef<HTMLElement>('filterField')
+const depthModel = computed({
+  get: () => String(state.depth),
+  set: (value: string) => (state.depth = Number(value)),
+})
+const depths = computed(() => [
+  { value: '0', label: t('平铺列表') },
+  { value: '1', label: t('一级分组') },
+  { value: '2', label: t('二级分组') },
+  { value: '3', label: t('三级分组') },
+])
 const filtered = computed(() => {
   if (!state.filter) return props.keys
   const query = state.filter.toLocaleLowerCase()
@@ -102,43 +124,66 @@ function toggle(prefix: string) {
   if (state.expanded.has(prefix)) state.expanded.delete(prefix)
   else state.expanded.add(prefix)
 }
+async function toggleFilter() {
+  state.filterOpen = !state.filterOpen
+  if (!state.filterOpen) state.filter = ''
+  else {
+    await nextTick()
+    filterField.value?.querySelector('input')?.focus()
+  }
+}
+function closeFilter() {
+  state.filterOpen = false
+  state.filter = ''
+}
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="flex shrink-0 items-center gap-1.5 px-2 py-1.5">
-      <label class="field h-7 min-w-0 flex-1 gap-1 rounded px-1.5">
-        <AppIcon
-          name="lucide:list-filter"
-          :size="12"
-          class="text-txt-4 shrink-0"
-        />
-        <input
-          v-model="filter"
-          :aria-label="t('筛选已加载的键')"
-          :placeholder="t('筛选已加载的键')"
-          spellcheck="false"
+    <div class="flex h-9 shrink-0 items-center gap-1.5 px-2">
+      <slot name="heading" />
+      <div class="ml-auto flex min-w-0 items-center gap-1">
+        <AppSelect
+          v-model="depthModel"
+          class="w-24 min-w-0"
+          :label="t('前缀分组层级')"
+          :options="depths"
+          compact
+          hide-label
         />
         <IconButton
-          v-if="filter"
-          icon="lucide:x"
-          :size="11"
-          class="size-5"
-          :title="t('清除筛选')"
-          :aria-label="t('清除筛选')"
-          @click="filter = ''"
+          icon="lucide:list-filter"
+          :size="13"
+          :class="filterOpen && 'bg-violet/10 text-violet'"
+          :title="t('筛选已加载的键')"
+          :aria-label="t('筛选已加载的键')"
+          :aria-expanded="filterOpen"
+          @click="toggleFilter"
         />
-      </label>
-      <select
-        v-model.number="depth"
-        class="field h-7 max-w-24 rounded px-1 text-[10px]"
-        :aria-label="t('前缀分组层级')"
-      >
-        <option :value="0">{{ t('平铺列表') }}</option>
-        <option :value="1">{{ t('一级分组') }}</option>
-        <option :value="2">{{ t('二级分组') }}</option>
-        <option :value="3">{{ t('三级分组') }}</option>
-      </select>
+      </div>
+    </div>
+    <div
+      v-if="filterOpen"
+      ref="filterField"
+      class="relative mx-2 mb-1.5 shrink-0"
+    >
+      <AppInput
+        v-model="filter"
+        size="sm"
+        class="pr-8"
+        :aria-label="t('筛选已加载的键')"
+        :placeholder="t('筛选已加载的键')"
+        spellcheck="false"
+        @keydown.esc.stop="closeFilter"
+      />
+      <IconButton
+        icon="lucide:x"
+        :size="12"
+        class="absolute top-0 right-0"
+        :title="t('清除筛选')"
+        :aria-label="t('清除筛选')"
+        @click="closeFilter"
+      />
     </div>
     <div
       ref="scroller"

@@ -24,6 +24,12 @@
         sql: 'SELECT p\nFROM `solo-band`.`app_logs`;',
         ran: '',
         saved: 0,
+        hasPrimaryKey: true,
+        rowRequests: [],
+        rows: Array.from({ length: 8 }, (_, index) => [
+          String(index + 1),
+          `/api/v1/logs/${index + 1}`,
+        ]),
       })
       const detail = {
         schema: 'solo-band',
@@ -65,7 +71,37 @@
       }
       mockIPC(
         async (command, args) => {
-          if (command === 'db_table_detail') return detail
+          if (command === 'db_table_detail')
+            return { ...detail, primaryKey: state.hasPrimaryKey ? ['id'] : [] }
+          if (command === 'db_fetch_rows')
+            return {
+              columns: detail.columns.map(({ name, dataType }) => ({
+                name,
+                dataType,
+              })),
+              rows: state.rows.map(row => [...row]),
+              offset: 0,
+              limit: 100,
+              hasMore: false,
+              elapsedMs: 2,
+              sql: 'SELECT * FROM app_logs LIMIT 100',
+            }
+          if (command === 'db_mutate_rows') {
+            state.rowRequests.push(structuredClone(args.request))
+            for (const mutation of args.request.mutations) {
+              if (mutation.type === 'delete')
+                state.rows = state.rows.filter(
+                  row =>
+                    row[0] !==
+                    mutation.keys.find(key => key.column === 'id').value
+                )
+            }
+            return {
+              rowsAffected: args.request.mutations.length,
+              statements: [],
+              elapsedMs: 3,
+            }
+          }
           if (command === 'db_table_option_choices')
             return {
               engines: ['InnoDB', 'MyISAM', 'MEMORY'],
@@ -94,6 +130,8 @@
         await import('/src/components/workspace/database/SqlEditor.vue')
       const { default: Results } =
         await import('/src/components/workspace/database/DatabaseQueryResults.vue')
+      const { default: TableView } =
+        await import('/src/components/workspace/database/DatabaseTableView.vue')
       i18n.global.locale.value = 'zh-CN'
       const columns = [
         'id',
@@ -149,6 +187,21 @@
                 { onClick: () => (state.panel = 'query') },
                 'SQL 查询预览'
               ),
+              h(
+                'button',
+                { onClick: () => (state.panel = 'table') },
+                '数据行菜单预览'
+              ),
+              state.panel === 'table'
+                ? h(
+                    'button',
+                    {
+                      onClick: () =>
+                        (state.hasPrimaryKey = !state.hasPrimaryKey),
+                    },
+                    '切换有 / 无主键'
+                  )
+                : null,
               h('span', { 'data-testid': 'dirty' }, `未保存：${state.dirty}`),
               h('span', { 'data-testid': 'ran' }, `已运行：${state.ran}`),
             ]),
@@ -161,15 +214,42 @@
                   editTable: target,
                   onDirty: value => (state.dirty = value),
                 })
-              : h('div', { class: 'flex min-h-0 flex-1 flex-col' }, [
-                  h(Editor, {
-                    modelValue: state.sql,
-                    'onUpdate:modelValue': value => (state.sql = value),
-                    suggestions: ['device', 'path', 'port', 'payload', 'app_logs'],
-                    onRun: sql => (state.ran = sql),
-                  }),
-                  h(Results, { execution, loading: false, error: '' }),
-                ]),
+              : state.panel === 'table'
+                ? h(TableView, {
+                    key: String(state.hasPrimaryKey),
+                    sessionId: 'preview',
+                    object: {
+                      ...target,
+                      identity: 'preview.app_logs',
+                      kind: 'table',
+                      rowEstimate: 8,
+                    },
+                  })
+                : h('div', { class: 'flex min-h-0 flex-1 flex-col' }, [
+                    h(Editor, {
+                      modelValue: state.sql,
+                      'onUpdate:modelValue': value => (state.sql = value),
+                      suggestions: [
+                        'device',
+                        'path',
+                        'port',
+                        'payload',
+                        'app_logs',
+                      ],
+                      onRun: sql => (state.ran = sql),
+                    }),
+                    h(Results, { execution, loading: false, error: '' }),
+                  ]),
+            state.panel === 'table'
+              ? h(
+                  'pre',
+                  {
+                    'data-testid': 'row-requests',
+                    class: 'text-txt-3 text-[11px] whitespace-pre-wrap',
+                  },
+                  `模拟提交记录：${JSON.stringify(state.rowRequests)}`
+                )
+              : null,
           ]),
       })
         .use(pinia)

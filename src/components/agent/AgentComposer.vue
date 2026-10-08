@@ -231,14 +231,14 @@ watch(
 }
 .agent-composer {
   min-width: 0;
-  border: 1px solid var(--color-line);
+  border: 1px solid color-mix(in oklch, var(--color-violet) 50%, transparent);
   background: var(--color-input, #ffffff04);
   border-radius: 16px;
   padding: 10px 10px 7px;
   transition: border-color 150ms ease;
 }
 .agent-composer:focus-within {
-  border-color: color-mix(in srgb, var(--agent-color) 55%, var(--color-line));
+  border-color: color-mix(in oklch, var(--color-violet) 80%, transparent);
 }
 .agent-composer textarea {
   display: block;

@@ -269,7 +269,6 @@ watch(
   <section
     class="agent-panel"
     :class="{
-      'database-agent': isDatabase,
       'embedded-agent': embedded,
       'presentation-agent': presentation,
     }"
@@ -653,7 +652,7 @@ watch(
 
 <style scoped>
 .agent-panel {
-  --agent-color: #b08bfa;
+  --agent-color: var(--color-violet);
   --agent-body-font: 12px;
   --agent-small-font: 11px;
   display: flex;
@@ -683,9 +682,6 @@ watch(
 }
 .operation-message {
   margin-block: -2px;
-}
-.database-agent {
-  --agent-color: #74d696;
 }
 .embedded-agent {
   border: 0;

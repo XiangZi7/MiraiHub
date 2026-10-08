@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, toRefs, useId } from 'vue'
+import { computed, reactive, toRefs } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AgentQueryResult } from '@/types/agent'
 import {
@@ -8,9 +8,9 @@ import {
   queryCsv,
 } from '@/utils/agent-artifacts'
 import AgentCopyButton from './AgentCopyButton.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 const props = defineProps<{ result: AgentQueryResult }>()
 const { t } = useI18n()
-const id = useId()
 // 响应式状态
 const state = reactive({
   // 当前结果视图
@@ -18,7 +18,7 @@ const state = reactive({
   // 横轴字段序号
   x: 0,
   // 纵轴字段序号，空值自动选择数值列
-  y: '' as string | number,
+  y: '',
 })
 const { view, x, y } = toRefs(state)
 const numeric = computed(() => numericColumns(props.result))
@@ -34,6 +34,35 @@ const geometry = computed(() =>
   chartGeometry(props.result, Number(state.x), selectedY.value)
 )
 const csv = computed(() => queryCsv(props.result))
+const views = computed(() => [
+  { value: 'table', label: t('表格'), icon: 'lucide:table-2' },
+  {
+    value: 'line',
+    label: t('折线图'),
+    icon: 'lucide:chart-line',
+    disabled: !canChart.value,
+  },
+  {
+    value: 'bar',
+    label: t('柱状图'),
+    icon: 'lucide:chart-column',
+    disabled: !canChart.value,
+  },
+])
+const xModel = computed({
+  get: () => String(state.x),
+  set: (value: string) => (state.x = Number(value)),
+})
+const xOptions = computed(() =>
+  props.result.columns.map((label, index) => ({ value: String(index), label }))
+)
+const yOptions = computed(() => [
+  { value: '', label: t('自动') },
+  ...numeric.value.map(index => ({
+    value: String(index),
+    label: props.result.columns[index] ?? '',
+  })),
+])
 </script>
 <template>
   <section
@@ -55,53 +84,37 @@ const csv = computed(() => queryCsv(props.result))
     </p>
     <template v-else>
       <div class="query-controls">
-        <label :for="`${id}-view`">{{ t('视图') }}</label
-        ><select
-          :id="`${id}-view`"
+        <AppSelect
           v-model="view"
-        >
-          <option value="table">{{ t('表格') }}</option>
-          <option
-            value="line"
-            :disabled="!canChart"
-          >
-            {{ t('折线图') }}
-          </option>
-          <option
-            value="bar"
-            :disabled="!canChart"
-          >
-            {{ t('柱状图') }}
-          </option>
-        </select>
+          class="query-view"
+          :label="t('视图')"
+          :options="views"
+          compact
+          hide-label
+        />
         <template v-if="canChart && view !== 'table'">
-          <label :for="`${id}-x`">X</label
-          ><select
-            :id="`${id}-x`"
-            v-model="x"
-          >
-            <option
-              v-for="(column, index) in result.columns"
-              :key="index"
-              :value="index"
-            >
-              {{ column }}
-            </option>
-          </select>
-          <label :for="`${id}-y`">Y</label
-          ><select
-            :id="`${id}-y`"
-            v-model="y"
-          >
-            <option value="">{{ t('自动') }}</option>
-            <option
-              v-for="index in numeric"
-              :key="index"
-              :value="index"
-            >
-              {{ result.columns[index] }}
-            </option>
-          </select>
+          <div class="query-axis">
+            <span aria-hidden="true">X</span>
+            <AppSelect
+              v-model="xModel"
+              class="min-w-0 flex-1"
+              :label="t('横轴字段')"
+              :options="xOptions"
+              compact
+              hide-label
+            />
+          </div>
+          <div class="query-axis">
+            <span aria-hidden="true">Y</span>
+            <AppSelect
+              v-model="y"
+              class="min-w-0 flex-1"
+              :label="t('纵轴字段')"
+              :options="yOptions"
+              compact
+              hide-label
+            />
+          </div>
         </template>
       </div>
       <svg
@@ -212,14 +225,14 @@ const csv = computed(() => queryCsv(props.result))
           </table>
         </div>
       </details>
-      <p class="query-caption">
-        {{
-          result.truncated
-            ? t('部分查询结果，图表仅包含返回的行。')
-            : t('图表基于返回数据，按查询结果顺序展示；NULL 不作为零。')
-        }}
-      </p>
-      <div class="query-copy">
+      <div class="query-footer">
+        <p class="query-caption">
+          {{
+            result.truncated
+              ? t('部分查询结果，图表仅包含返回的行。')
+              : t('图表基于返回数据，按查询结果顺序展示；NULL 不作为零。')
+          }}
+        </p>
         <AgentCopyButton
           :text="csv"
           :label="t('复制 CSV')"
@@ -234,7 +247,7 @@ const csv = computed(() => queryCsv(props.result))
   border: 1px solid var(--color-line);
   border-radius: 10px;
   margin-top: 10px;
-  padding: 12px;
+  padding: 10px;
   background: var(--color-card);
   min-width: 0;
 }
@@ -255,24 +268,28 @@ header span {
 .query-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  margin-top: 12px;
+  margin-top: 10px;
   font-size: 11px;
 }
-.query-controls select {
-  max-width: 135px;
+.query-view {
+  width: 96px;
+  flex: none;
+}
+.query-axis {
+  display: flex;
+  flex: 1 1 112px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  background: var(--color-panel);
-  border: 1px solid var(--color-line);
-  border-radius: 5px;
-  padding: 4px;
-  color: var(--color-txt);
+  color: var(--color-txt-3);
 }
 .query-chart {
   display: block;
   width: 100%;
   height: auto;
+  max-height: 220px;
   margin-top: 10px;
   overflow: visible;
 }
@@ -326,25 +343,21 @@ th {
   font-size: 10px;
   line-height: 1.6;
   color: var(--color-txt-3);
-  margin: 8px 0;
+  margin: 0;
 }
 .query-error {
   color: var(--color-danger);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
-.query-copy {
+.query-footer {
   display: flex;
-  justify-content: flex-end;
-  opacity: 0;
-  pointer-events: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 6px;
 }
-.query-result:hover .query-copy,
-.query-result:focus-within .query-copy {
-  opacity: 1;
-  pointer-events: auto;
-}
-select:focus-visible,
 .query-table:focus-visible {
   outline: 1px solid var(--query-accent);
 }

@@ -66,7 +66,8 @@ async function positionMenu(): Promise<void> {
   }
   // 等待 visibility 生效后再聚焦，否则浏览器会忽略对隐藏菜单项的 focus。
   await nextTick()
-  if (props.open && menu.value === element) rootEnabledItems()[0]?.focus()
+  if (props.open && menu.value === element)
+    (rootEnabledItems()[0] ?? element).focus()
 }
 
 function selectItem(item: ContextMenuItem): void {
@@ -76,6 +77,11 @@ function selectItem(item: ContextMenuItem): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
+    return
+  }
   const current = document.activeElement as HTMLButtonElement | null
   const submenu = current?.closest<HTMLElement>('.app-context-submenu')
   const scope = submenu ?? menu.value
@@ -110,10 +116,6 @@ function handleKeydown(event: KeyboardEvent): void {
     submenu.parentElement
       ?.querySelector<HTMLButtonElement>(':scope > [role="menuitem"]')
       ?.focus()
-    return
-  } else if (event.key === 'Escape') {
-    event.preventDefault()
-    emit('close')
     return
   } else {
     return
@@ -152,6 +154,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
         class="app-context-menu"
         :class="scrollable && 'app-context-menu-scroll scroll-thin'"
         role="menu"
+        tabindex="-1"
         aria-orientation="vertical"
         :aria-label="label ?? 'Context menu'"
         :style="menuStyle"

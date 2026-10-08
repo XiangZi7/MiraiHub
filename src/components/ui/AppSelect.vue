@@ -19,6 +19,8 @@ interface SelectOption {
   value: string
   label: string
   description?: string
+  /** 选项的辅助图标，使用项目内置的 Iconify 图标名。 */
+  icon?: string
   group?: string
   disabled?: boolean
 }
@@ -392,6 +394,13 @@ watch(
               >
                 <span
                   class="app-select-indicator"
+                  aria-hidden="true"
+                />
+                <AppIcon
+                  v-if="option.icon"
+                  :name="option.icon"
+                  :size="15"
+                  :class="model === option.value ? 'text-violet' : 'text-txt-3'"
                   aria-hidden="true"
                 />
                 <span class="min-w-0 flex-1">

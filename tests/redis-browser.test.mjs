@@ -7,6 +7,7 @@ const rendered = [
   'src/components/workspace/redis/RedisKeyList.vue',
   'src/components/workspace/redis/RedisCommandGuide.vue',
   'src/components/ui/IconButton.vue',
+  'src/components/ui/AppInput.vue',
 ]
 const load = sourceLoader({}, rendered)
 const { redisSearchPattern, groupRedisKeys } = await load(
@@ -110,6 +111,12 @@ const node = (type, text = '') =>
     getRootNode() {
       return this.ownerDocument
     },
+    querySelector(type) {
+      return allNodes(this).find(child => child.type === type)
+    },
+    focus() {
+      this.ownerDocument.activeElement = this
+    },
     get options() {
       return this.children.filter(child => child.type === 'option')
     },
@@ -184,6 +191,7 @@ test('10,000 loaded keys render at most 50 list rows; groups, pagination and fil
     allNodes(root).filter(
       el =>
         el.type === 'button' &&
+        String(el.props.class).includes('nav-item') &&
         (el.props['aria-expanded'] !== undefined ||
           el.props['aria-pressed'] !== undefined)
     )
@@ -191,6 +199,12 @@ test('10,000 loaded keys render at most 50 list rows; groups, pagination and fil
   listRows()[0].props.onClick()
   await nextTick()
   assert.equal(listRows().length, 50)
+  allNodes(root)
+    .find(
+      el => el.type === 'button' && el.props['aria-label'] === '筛选已加载的键'
+    )
+    .props.onClick()
+  await nextTick()
   allNodes(root)
     .find(el => el.props['aria-label'] === '下一页')
     .props.onClick()
@@ -210,6 +224,12 @@ test('10,000 loaded keys render at most 50 list rows; groups, pagination and fil
   props.keys = [key('new:key')]
   await nextTick()
   assert.ok(!allNodes(root).some(el => el.props['aria-label'] === '下一页'))
+  allNodes(root)
+    .find(el => el.props['aria-label'] === '清除筛选')
+    .props.onClick()
+  await nextTick()
+  assert.ok(!allNodes(root).some(el => el.type === 'input'))
+  assert.equal(listRows().length, 1)
 })
 
 test('guide inserts templates for the selected key and labels writes without executing them', async t => {

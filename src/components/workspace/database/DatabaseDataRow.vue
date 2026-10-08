@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
-
 import { computed } from 'vue'
-import IconButton from '@/components/ui/IconButton.vue'
 import { tagColorCss, tagLabel } from '@/composables/useDatabaseColumnTags'
 import type {
   ColumnTagConfig,
@@ -13,8 +10,6 @@ import type {
 import { cn } from '@/utils/cn'
 import DatabaseCellEditor from './DatabaseCellEditor.vue'
 import DatabaseCellTag from './DatabaseCellTag.vue'
-
-const { t } = useI18n()
 
 /**
  * 数据表格的一行。拆成独立组件是为了把重绘控制在行内：
@@ -31,7 +26,6 @@ const props = defineProps<{
   /** 显示用的行号，已含分页偏移。 */
   number: number
   columns: ReadonlyArray<DatabaseQueryColumn>
-  canInsert: boolean
   canEdit: boolean
   deleted: boolean
   /** 全表未提交的修改，key 为 `行:列`；这里只读取本行的键。 */
@@ -48,7 +42,7 @@ const emit = defineEmits<{
   commit: [columnIndex: number, value: string]
   cancel: []
   move: [columnIndex: number, delta: 1 | -1]
-  toggleDelete: []
+  context: [event: MouseEvent]
 }>()
 
 interface CellView {
@@ -102,24 +96,12 @@ const cells = computed<CellView[]>(() =>
         deleted && 'bg-danger/7 line-through opacity-55'
       )
     "
+    @contextmenu.prevent.stop="emit('context', $event)"
   >
     <td
       class="border-line-soft text-txt-4 border-r border-b px-1.5 py-1 text-right"
     >
       {{ number }}
-    </td>
-    <td
-      v-if="canInsert"
-      class="border-line-soft border-r border-b p-0.5 text-center"
-    >
-      <IconButton
-        v-if="canEdit"
-        :icon="deleted ? 'lucide:undo-2' : 'lucide:trash-2'"
-        :size="11"
-        class="text-txt-4 hover:text-danger size-6"
-        :title="deleted ? t('撤销删除') : t('标记删除')"
-        @click="emit('toggleDelete')"
-      />
     </td>
     <td
       v-for="(cell, columnIndex) in cells"

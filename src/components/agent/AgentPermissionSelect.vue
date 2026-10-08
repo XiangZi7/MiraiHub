@@ -12,25 +12,26 @@ const options = computed(() => [
   {
     value: 'ask',
     label: t('请求批准'),
+    icon: 'lucide:hand',
     description: t('每次工具操作前询问，包括只读操作'),
   },
   {
     value: 'auto',
     label: t('帮我批准'),
+    icon: 'lucide:shield-check',
     description: t('常见只读检查自动执行，修改和未识别操作询问'),
   },
   {
     value: 'full',
     label: t('完全访问权限'),
+    icon: 'lucide:shield-alert',
     description: t('当前连接的命令与 SQL 自动执行，可修改或删除数据'),
   },
 ])
-const icon = computed(() =>
-  mode.value === 'ask'
-    ? 'lucide:hand'
-    : mode.value === 'full'
-      ? 'lucide:shield-alert'
-      : 'lucide:shield-check'
+const icon = computed(
+  () =>
+    options.value.find(option => option.value === mode.value)?.icon ??
+    'lucide:shield-check'
 )
 </script>
 

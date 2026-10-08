@@ -154,6 +154,8 @@ const {
   setTags: setColumnTags,
 } = useDatabaseColumnTags(columnScope)
 const columnMenu = reactive({ open: false, x: 0, y: 0, column: '' })
+// 行操作放在右键菜单里，已有行的删除仍先暂存，再通过提交确认执行。
+const rowMenu = reactive({ open: false, x: 0, y: 0, row: -1, inserted: false })
 /** 浏览器预览时的页内标签设置浮层；桌面版改用 Rust 创建的原生子窗口。 */
 const tagDialog = reactive({ open: false, column: '' })
 /** 正在编辑的单元格。表格平时只渲染文本，点击后才挂输入框。 */
@@ -201,6 +203,30 @@ const columnMenuItems = computed<ContextMenuItem[]>(() => {
     },
   ]
 })
+const rowMenuItems = computed<ContextMenuItem[]>(() => {
+  const busy = state.pageLoading || state.mutationLoading
+  if (rowMenu.inserted)
+    return [
+      {
+        id: 'remove-new',
+        label: t('移除新增行'),
+        icon: 'lucide:trash-2',
+        danger: true,
+        disabled: busy || !insertedRows[rowMenu.row],
+      },
+    ]
+  const deleted = deletedRows.has(rowMenu.row)
+  return [
+    {
+      id: 'toggle-delete',
+      label: deleted ? t('撤销删除') : t('标记删除'),
+      icon: deleted ? 'lucide:undo-2' : 'lucide:trash-2',
+      danger: !deleted,
+      disabled:
+        busy || !canEditExisting.value || !state.page?.rows[rowMenu.row],
+    },
+  ]
+})
 
 const tagDialogInitial = computed<ColumnTagConfig | null>(() =>
   tagDialog.open ? columnTagConfig(tagDialog.column) : null
@@ -217,11 +243,37 @@ const visibleTagLookups = computed(() =>
 )
 
 function openColumnMenu(event: MouseEvent, column: string): void {
+  rowMenu.open = false
   columnMenu.column = column
   columnMenu.x = event.clientX
   columnMenu.y = event.clientY
   columnMenu.open = true
 }
+function openRowMenu(event: MouseEvent, row: number, inserted = false): void {
+  columnMenu.open = false
+  rowMenu.row = row
+  rowMenu.inserted = inserted
+  rowMenu.x = event.clientX
+  rowMenu.y = event.clientY
+  rowMenu.open = true
+}
+function handleRowAction(id: string): void {
+  if (rowMenuItems.value.find(item => item.id === id)?.disabled !== false)
+    return
+  if (id === 'remove-new') insertedRows.splice(rowMenu.row, 1)
+  else if (id === 'toggle-delete') toggleDelete(rowMenu.row)
+}
+watch(
+  [
+    () => state.page,
+    () => state.activePanel,
+    () => state.pageLoading,
+    () => state.mutationLoading,
+  ],
+  () => {
+    rowMenu.open = false
+  }
+)
 
 async function handleColumnAction(id: string): Promise<void> {
   const column = columnMenu.column
@@ -318,6 +370,7 @@ function moveEdit(rowIndex: number, columnIndex: number, delta: 1 | -1): void {
 onMounted(startColumnTagsReceiver)
 
 function clearChanges(): void {
+  rowMenu.open = false
   edits.clear()
   deletedRows.clear()
   insertedRows.splice(0)
@@ -796,26 +849,20 @@ watch(
               <colgroup v-if="resized">
                 <col style="width: 36px" />
                 <col
-                  v-if="canInsert"
-                  style="width: 32px"
-                />
-                <col
                   v-for="(column, columnIndex) in gridColumns"
                   :key="`${column.name}:${columnIndex}`"
                   :style="{ width: `${widthOf(column.name)}px` }"
                 />
               </colgroup>
-              <thead class="database-glass-header database-glass-header--sticky">
+              <thead
+                class="database-glass-header database-glass-header--sticky"
+              >
                 <tr class="text-txt-3">
                   <th
                     class="border-line-soft w-9 border-r border-b px-1.5 py-1.5 text-right font-medium"
                   >
                     #
                   </th>
-                  <th
-                    v-if="canInsert"
-                    class="border-line-soft w-8 border-r border-b"
-                  />
                   <th
                     v-for="(column, columnIndex) in gridColumns"
                     :key="`${column.name}:${columnIndex}`"
@@ -875,7 +922,6 @@ watch(
                   :row-index="rowIndex"
                   :number="state.offset + rowIndex + 1"
                   :columns="gridColumns"
-                  :can-insert="canInsert"
                   :can-edit="canEditExisting"
                   :deleted="deletedRows.has(rowIndex)"
                   :edits="edits"
@@ -891,30 +937,27 @@ watch(
                   "
                   @cancel="cancelEdit"
                   @move="(column, delta) => moveEdit(rowIndex, column, delta)"
-                  @toggle-delete="toggleDelete(rowIndex)"
+                  @context="openRowMenu($event, rowIndex)"
+                  :class="
+                    rowMenu.open &&
+                    !rowMenu.inserted &&
+                    rowMenu.row === rowIndex &&
+                    'bg-violet/8'
+                  "
                 />
 
                 <tr
                   v-for="(_, rowIndex) in insertedRows"
                   :key="`new:${rowIndex}`"
                   class="bg-accent/5 text-txt-2"
+                  @contextmenu.prevent.stop="
+                    openRowMenu($event, rowIndex, true)
+                  "
                 >
                   <td
                     class="border-line-soft text-accent border-r border-b px-1.5 py-1 text-right"
                   >
                     {{ t('NEW') }}
-                  </td>
-                  <td
-                    v-if="canInsert"
-                    class="border-line-soft border-r border-b p-0.5 text-center"
-                  >
-                    <IconButton
-                      icon="lucide:x"
-                      :size="11"
-                      class="text-txt-4 hover:text-danger size-6"
-                      :title="t('移除新增行')"
-                      @click="insertedRows.splice(rowIndex, 1)"
-                    />
                   </td>
                   <td
                     v-for="column in state.detail.columns"
@@ -1034,7 +1077,9 @@ watch(
           class="scroll-thin min-h-0 flex-1 overflow-auto"
         >
           <table class="w-full border-collapse text-left text-[11px]">
-            <thead class="database-glass-header database-glass-header--sticky text-txt-3">
+            <thead
+              class="database-glass-header database-glass-header--sticky text-txt-3"
+            >
               <tr>
                 <th class="border-line-soft border-b px-3 py-2 font-medium">
                   {{ t('字段') }}
@@ -1218,7 +1263,9 @@ watch(
         </h3>
         <div class="border-line-soft overflow-hidden rounded-lg border">
           <table class="w-full border-collapse text-left text-[10.5px]">
-            <thead class="database-glass-header database-glass-header--card text-txt-3">
+            <thead
+              class="database-glass-header database-glass-header--card text-txt-3"
+            >
               <tr>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
                   {{ t('字段名') }}
@@ -1274,6 +1321,15 @@ watch(
       :danger="deleteCount > 0"
       @close="confirmOpen = false"
       @confirm="commitChanges"
+    />
+    <AppContextMenu
+      :open="rowMenu.open"
+      :x="rowMenu.x"
+      :y="rowMenu.y"
+      :items="rowMenuItems"
+      :label="t('数据行操作')"
+      @close="rowMenu.open = false"
+      @select="handleRowAction"
     />
     <AppContextMenu
       :open="columnMenu.open"

@@ -63,25 +63,24 @@ const { t } = useI18n()
       :disabled="busy || !connected"
       @search="emit('search', $event)"
     />
-    <div class="text-txt-2 flex h-8 shrink-0 items-center gap-1.5 px-3 text-xs">
-      <AppIcon
-        name="lucide:layers"
-        :size="13"
-        class="text-blue"
-      />
-      <span>DB {{ database }}</span>
-      <span
-        v-if="connected && !busy"
-        class="text-txt-4 ml-auto text-[10px]"
-        >{{ hasMore ? t('扫描未完成') : t('扫描完成') }}</span
-      >
-    </div>
     <RedisKeyList
       :keys="keys"
       :disabled="busy || !connected"
       :selected="selected"
       @select="emit('select', $event)"
     >
+      <template #heading>
+        <div
+          class="text-txt-2 flex min-w-0 items-center gap-1.5 pl-1 text-[11px]"
+        >
+          <AppIcon
+            name="lucide:layers"
+            :size="13"
+            class="text-blue"
+          />
+          <span class="truncate">DB {{ database }}</span>
+        </div>
+      </template>
       <p
         v-if="!keys.length"
         class="text-txt-4 px-3 py-5 text-center text-[11px] leading-relaxed"
@@ -111,6 +110,7 @@ const { t } = useI18n()
         @click="emit('more')"
         >{{ t('继续扫描') }}</AppButton
       >
+      <span v-else-if="connected && !busy">{{ t('扫描完成') }}</span>
     </footer>
   </aside>
 </template>
