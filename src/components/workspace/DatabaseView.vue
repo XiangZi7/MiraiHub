@@ -68,6 +68,7 @@ import SqlEditor from './database/SqlEditor.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
+import type { AgentContextRequest } from '@/types/agent'
 
 const { t } = useI18n()
 
@@ -124,8 +125,13 @@ const {
 
 // AI 面板从标签工具栏打开，默认停靠在工作区右侧；面板标题栏可切换为全宽显示或关闭。
 // 布局与查询编辑器独立，审批始终绑定后端会话及活动库。
-const agentState = reactive({ agentOpen: false, agentSplit: true })
-const { agentOpen, agentSplit } = toRefs(agentState)
+const agentState = reactive({
+  agentOpen: false,
+  agentSplit: true,
+  // 主动选中的 SQL，绑定当前连接与数据库
+  contextRequest: null as AgentContextRequest | null,
+})
+const { agentOpen, agentSplit, contextRequest } = toRefs(agentState)
 const agentContainer = useTemplateRef<HTMLElement>('agentContainer')
 const {
   width: agentWidth,
@@ -149,6 +155,24 @@ function toggleAgent(): void {
 function toggleAgentSplit(): void {
   agentState.agentSplit = !agentState.agentSplit
 }
+function askAgent(content: string, intent: 'explain' | 'optimize'): void {
+  if (!agentTarget.value.sessionId) return
+  agentState.contextRequest = {
+    id: crypto.randomUUID(),
+    target: { ...agentTarget.value },
+    source: 'sql',
+    intent,
+    content,
+  }
+  agentState.agentSplit = true
+  agentState.agentOpen = true
+}
+watch(
+  () => JSON.stringify(agentTarget.value),
+  () => {
+    agentState.contextRequest = null
+  }
+)
 const connection = toRef(props, 'connection')
 const password = shallowRef('')
 const editor = shallowRef<SqlEditorExpose | null>(null)
@@ -1498,6 +1522,7 @@ watch(
               :suggestions="sqlSuggestions"
               @run="runQuery"
               @save="saveActiveQuery"
+              @ask-agent="askAgent"
             />
             <DatabaseQueryResizeHandle v-model="queryEditorRatio" />
             <DatabaseQueryResults
@@ -1556,12 +1581,14 @@ watch(
       <AiAgentPanel
         v-show="agentOpen"
         :target="agentTarget"
+        :context-request="contextRequest"
         :title="databaseName"
         :active="active !== false && agentOpen"
         :split="agentSplit"
         :style="agentSplit ? agentStyle : undefined"
         @split="toggleAgentSplit"
         @close="agentOpen = false"
+        @context-consumed="agentState.contextRequest = null"
       />
     </div>
 

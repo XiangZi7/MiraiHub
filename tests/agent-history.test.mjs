@@ -41,8 +41,9 @@ const mockUrl = dataModule(`
     const run=mock.records.get(id);run.title=title.trim()
     return {id,title:run.title,model:run.model,provider:run.provider,createdAt:1,updatedAt:2}
   }
-  export const respond = async (id,approvalId,approve) => {
+  export const respond = async (id,approvalId,approve,onProgress) => {
     mock.responses.push({id,approvalId,approve})
+    if(mock.respondHandler) return await mock.respondHandler(id,approvalId,approve,onProgress)
     if(mock.respondGate) await mock.respondGate
     const run = mock.runs.get(id)
     if(!run || !run.approval || run.approval.id !== approvalId) throw new Error('无效审批')
@@ -116,6 +117,53 @@ test('approval timers are removed when switching conversations or unmounting', a
   app.unmount()
   context.mock.timers.tick(1000)
   assert.equal(mock.responses.length, 0)
+})
+
+test('approved execution clears the approval immediately and ignores mismatched or cancelled progress', async () => {
+  const { app, state } = fixture()
+  await flush()
+  await state.send('检查服务')
+  const id = pendingApproval(state, Date.now() + 60000)
+  let finish
+  let progress
+  mock.respondHandler = async (_id, _approvalId, approve, onProgress) => {
+    assert.equal(approve, true)
+    progress = onProgress
+    return await new Promise(resolve => {
+      finish = resolve
+    })
+  }
+  const pending = state.decide(true)
+  await flush()
+  const event = {
+    runId: id,
+    text: '',
+    phase: 'executing',
+    operation: {
+      id: 'tool-one',
+      command: 'simulated operation',
+      status: 'running',
+    },
+  }
+  progress({ ...event, runId: 'another-run' })
+  assert.equal(state.progress.value, null)
+  assert.equal(state.awaitingApproval.value, true)
+  progress(event)
+  assert.equal(state.awaitingApproval.value, false)
+  assert.equal(state.run.value.status, 'running')
+  assert.equal(state.progress.value.operation.id, 'tool-one')
+  assert.equal(state.busy.value, true)
+  await state.stop()
+  progress(event)
+  assert.equal(state.progress.value, null)
+  finish(structuredClone(mock.runs.get(id)))
+  await pending
+  assert.equal(state.run.value.status, 'cancelled')
+  assert.equal(state.busy.value, false)
+  assert.equal(state.progress.value, null)
+  progress(event)
+  assert.equal(state.progress.value, null)
+  app.unmount()
 })
 
 test('an approval already expired when received is dismissed without approving any operation', async context => {
@@ -272,6 +320,7 @@ function fixture(reset = true) {
     mock.openError = false
     mock.responses = []
     mock.respondGate = null
+    mock.respondHandler = null
   }
   const target = shallowRef({
     kind: 'ssh',

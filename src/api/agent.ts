@@ -96,8 +96,27 @@ export async function step(
     channel.onmessage = () => {}
   }
 }
-export const respond = (runId: string, approvalId: string, approve: boolean) =>
-  call<AgentRun>('ai_respond', { runId, approvalId, approve })
+export async function respond(
+  runId: string,
+  approvalId: string,
+  approve: boolean,
+  onProgress: (progress: AgentProgress) => void = () => {}
+): Promise<AgentRun> {
+  if (!IS_TAURI)
+    return call<AgentRun>('ai_respond', { runId, approvalId, approve })
+  const channel = new Channel<AgentProgress>()
+  channel.onmessage = onProgress
+  try {
+    return await call<AgentRun>('ai_respond', {
+      runId,
+      approvalId,
+      approve,
+      onProgress: channel,
+    })
+  } finally {
+    channel.onmessage = () => {}
+  }
+}
 export const cancel = (runId: string) => call<void>('ai_cancel', { runId })
 export const forget = (runId: string) => call<void>('ai_forget', { runId })
 export function errorMessage(error: unknown): string {

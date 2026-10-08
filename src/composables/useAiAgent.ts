@@ -417,9 +417,30 @@ export function useAiAgent(
     const token = ++generation
     state.busy = true
     state.error = ''
+    let receiving = true
     try {
-      if (!accept(await api.respond(run.id, run.approval.id, approve), token))
-        return
+      const next = await api.respond(
+        run.id,
+        run.approval.id,
+        approve,
+        progress => {
+          if (
+            !receiving ||
+            token !== generation ||
+            state.run?.id !== run.id ||
+            progress.runId !== run.id
+          )
+            return
+          state.progress = progress
+          if (progress.phase === 'executing') {
+            state.run.approval = null
+            state.run.status = 'running'
+          }
+        }
+      )
+      receiving = false
+      if (!accept(next, token)) return
+      state.progress = null
       if (approve) await advance(token)
     } catch (error) {
       if (token === generation) {
@@ -433,7 +454,9 @@ export function useAiAgent(
         }
       }
     } finally {
+      receiving = false
       if (token === generation) {
+        state.progress = null
         state.busy = false
         await refreshHistory(token)
       }

@@ -1,6 +1,10 @@
 import { i18n } from '@/i18n'
 import { onScopeDispose, reactive, toRefs } from 'vue'
-import type { AgentAttachment, AgentDraftAttachment } from '@/types/agent'
+import type {
+  AgentAttachment,
+  AgentContextRequest,
+  AgentDraftAttachment,
+} from '@/types/agent'
 import {
   AGENT_MAX_FILES,
   AGENT_MAX_ATTACHMENT_BYTES,
@@ -66,6 +70,49 @@ export function useAgentDraft(
     state.attachments = state.attachments.filter(file => file.id !== id)
     state.attachmentError = ''
   }
+  function addContext(request: AgentContextRequest): boolean {
+    if (state.reading) return false
+    state.attachmentError = ''
+    if (state.attachments.length >= AGENT_MAX_FILES) {
+      state.attachmentError = i18n.global.t('每条消息最多添加 4 个文件')
+      return false
+    }
+    const content = request.content
+    const size = new TextEncoder().encode(content).length
+    if (
+      !content.trim() ||
+      size > 64000 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(content)
+    ) {
+      state.attachmentError = i18n.global.t('选区须为非空文本，最多 64 KB')
+      return false
+    }
+    if (
+      state.attachments.reduce((sum, file) => sum + file.size, size) >
+      AGENT_MAX_ATTACHMENT_BYTES
+    ) {
+      state.attachmentError = i18n.global.t('附件总大小不能超过 1 GB')
+      return false
+    }
+    state.attachments.push({
+      id: request.id,
+      name: i18n.global.t(
+        request.source === 'terminal' ? '终端选区.txt' : 'SQL 选区.sql'
+      ),
+      content,
+      size,
+      source: 'context',
+    })
+    if (!state.prompt.trim())
+      state.prompt = i18n.global.t(
+        request.intent === 'optimize'
+          ? '请分析附加 SQL 的性能，并给出优化建议。'
+          : request.source === 'terminal'
+            ? '请分析附加的终端输出，解释问题并建议下一步。'
+            : '请解释附加 SQL 的用途，并检查可能的问题。'
+      )
+    return true
+  }
   async function submit(): Promise<void> {
     if (state.reading || (!state.prompt.trim() && !state.attachments.length))
       return
@@ -89,5 +136,13 @@ export function useAgentDraft(
     }
   }
   onScopeDispose(reset)
-  return { ...toRefs(state), reset, clearAttachments, addFiles, removeFile, submit }
+  return {
+    ...toRefs(state),
+    reset,
+    clearAttachments,
+    addFiles,
+    addContext,
+    removeFile,
+    submit,
+  }
 }

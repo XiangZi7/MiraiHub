@@ -2,6 +2,7 @@
 mod attachments;
 mod compaction;
 mod config;
+mod execution;
 pub mod history;
 mod limits;
 pub mod mcp;
@@ -46,6 +47,8 @@ pub struct Entry {
     text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    operation: Option<execution::Operation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     attachments: Vec<attachments::AttachmentInfo>,
 }
@@ -119,6 +122,8 @@ pub struct Progress {
     phase: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     retry: Option<retry::Notice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation: Option<execution::Operation>,
 }
 #[derive(Default)]
 pub struct AgentManager {
@@ -157,6 +162,7 @@ impl Run {
             role: role.into(),
             text: text.into(),
             detail,
+            operation: None,
             attachments: Vec::new(),
         });
     }
@@ -302,7 +308,12 @@ async fn validate_target(app: &AppHandle, run: &Run) -> AppResult<()> {
     }
     Ok(())
 }
-async fn execute(app: &AppHandle, run: &Run, cell: &Cell, action: &Action) -> AppResult<String> {
+async fn execute(
+    app: &AppHandle,
+    run: &Run,
+    cell: &Cell,
+    action: &Action,
+) -> AppResult<execution::Output> {
     validate_target(app, run).await?;
     run.check(cell)?;
     let output = match action {
@@ -442,19 +453,56 @@ async fn execute(app: &AppHandle, run: &Run, cell: &Cell, action: &Action) -> Ap
                     outcome.text
                 )));
             }
-            return Ok(clip(&outcome.text, 16384));
+            return Ok(execution::Output {
+                text: clip(&outcome.text, 16384),
+                exit_code: None,
+            });
         }
     };
-    Ok(clip(&output.to_string(), 16384))
+    Ok(execution::Output::from_value(output))
 }
-fn tool_result(run: &mut Run, call_id: &str, action: &Action, result: AppResult<String>) {
+fn tool_result(
+    run: &mut Run,
+    call_id: &str,
+    action: &Action,
+    operation: execution::Operation,
+    result: AppResult<execution::Output>,
+) {
     let (text, role) = match result {
-        Ok(text) => (text, "tool"),
+        Ok(output) => (output.text, "tool"),
         Err(error) => (format!("工具失败：{}", error.message), "error"),
     };
     run.entry(role, action.label(), Some(text.clone()));
+    if let Some(entry) = run.entries.last_mut() {
+        entry.operation = Some(operation);
+    }
     run.messages
         .push(json!({"role":"tool","tool_call_id":call_id,"content":text}));
+}
+
+async fn execute_tracked(
+    app: &AppHandle,
+    run: &mut Run,
+    cell: &Cell,
+    call_id: &str,
+    action: &Action,
+    channel: Option<&tauri::ipc::Channel<Progress>>,
+    text: &str,
+) {
+    let mut operation = execution::Operation::start(call_id, action);
+    if let Some(channel) = channel {
+        let _ = channel.send(Progress {
+            run_id: run.id.clone(),
+            text: text.into(),
+            phase: "executing".into(),
+            retry: None,
+            operation: Some(operation.clone()),
+        });
+    }
+    let started = Instant::now();
+    let result = execute(app, run, cell, action).await;
+    operation.finish(action, &result, started.elapsed().as_millis() as u64);
+    tool_result(run, call_id, action, operation, result);
 }
 
 #[tauri::command]
@@ -864,8 +912,7 @@ async fn step(
                     Some(action.approval_details().0),
                 );
             }
-            let result = execute(app, run, cell, &action).await;
-            tool_result(run, call_id, &action, result);
+            execute_tracked(app, run, cell, call_id, &action, channel, &content).await;
         }
     } else {
         if content.is_empty() {
@@ -886,6 +933,7 @@ pub async fn ai_respond(
     run_id: String,
     approval_id: String,
     approve: bool,
+    on_progress: tauri::ipc::Channel<Progress>,
 ) -> AppResult<Snapshot> {
     guard(&window, false)?;
     let cell = state.get(&run_id).await?;
@@ -902,8 +950,16 @@ pub async fn ai_respond(
         let pending = run.take_approval(&approval_id, Instant::now())?;
         run.entry("audit", "用户批准本次执行", Some(pending.view.command));
         run.check(&cell)?;
-        let result = execute(&app, &run, &cell, &pending.action).await;
-        tool_result(&mut run, &pending.call_id, &pending.action, result);
+        execute_tracked(
+            &app,
+            &mut run,
+            &cell,
+            &pending.call_id,
+            &pending.action,
+            Some(&on_progress),
+            "",
+        )
+        .await;
         Ok::<(), AppError>(())
     }
     .await;

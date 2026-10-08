@@ -56,6 +56,24 @@ export interface AgentEntry {
   text: string
   detail?: string
   attachments?: AgentAttachmentInfo[]
+  operation?: AgentOperation
+}
+export interface AgentOperation {
+  id: string
+  label: string
+  command: string
+  reason: string
+  status: 'running' | 'completed' | 'failed' | 'unknown'
+  startedAt: number
+  durationMs?: number
+  exitCode?: number
+}
+export interface AgentContextRequest {
+  id: string
+  target: AgentTarget
+  source: 'terminal' | 'sql'
+  intent: 'explain' | 'optimize'
+  content: string
 }
 export interface AgentAttachment {
   name: string
@@ -68,6 +86,7 @@ export interface AgentAttachmentInfo {
 export interface AgentDraftAttachment
   extends AgentAttachment, AgentAttachmentInfo {
   id: string
+  source?: 'context'
 }
 export interface AgentApproval {
   id: string
@@ -90,8 +109,9 @@ export interface AgentRun {
 export interface AgentProgress {
   runId: string
   text: string
-  phase: 'thinking' | 'answering' | 'tool' | 'retrying'
+  phase: 'thinking' | 'answering' | 'tool' | 'retrying' | 'executing'
   retry?: AgentRetryNotice
+  operation?: AgentOperation
 }
 export interface AgentRetryNotice {
   attempt: number

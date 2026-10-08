@@ -271,6 +271,7 @@ pub(super) async fn completion(
             text: String::new(),
             phase: "thinking".into(),
             retry: None,
+            operation: None,
         });
         let mut partial_text = String::new();
         let result = {
@@ -284,6 +285,7 @@ pub(super) async fn completion(
                         text: partial_text.clone(),
                         phase: phase.into(),
                         retry: None,
+                        operation: None,
                     });
                     last_update = Instant::now();
                     last_phase = phase.into();
@@ -309,6 +311,7 @@ pub(super) async fn completion(
                     run_id: run.id.clone(),
                     text: String::new(),
                     phase: "retrying".into(),
+                    operation: None,
                     retry: Some(Notice {
                         attempt,
                         max: run.config.limits.max_retries,

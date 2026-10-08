@@ -11,7 +11,12 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
-import type { AgentApprovalMode, AgentTarget } from '@/types/agent'
+import type {
+  AgentApprovalMode,
+  AgentContextRequest,
+  AgentTarget,
+} from '@/types/agent'
+import { summarizeAgentTurn } from '@/utils/agent-execution'
 import { useAiAgent } from '@/composables/useAiAgent'
 import { useAgentProfiles } from '@/composables/useAgentProfiles'
 import { useAgentDraft } from '@/composables/useAgentDraft'
@@ -24,6 +29,8 @@ import AgentMarkdown from './AgentMarkdown.vue'
 import AgentConversationMenu from './AgentConversationMenu.vue'
 import AgentCopyButton from './AgentCopyButton.vue'
 import AgentRetryStatus from './AgentRetryStatus.vue'
+import AgentExecutionCard from './AgentExecutionCard.vue'
+import AgentTaskResult from './AgentTaskResult.vue'
 
 const { t } = useI18n()
 
@@ -34,10 +41,15 @@ const props = withDefaults(
     active?: boolean
     split?: boolean
     embedded?: boolean
+    contextRequest?: AgentContextRequest | null
   }>(),
   { active: true, split: false }
 )
-const emit = defineEmits<{ split: []; close: [] }>()
+const emit = defineEmits<{
+  split: []
+  close: []
+  contextConsumed: [id: string]
+}>()
 const profiles = useAgentProfiles(() => {
   draft.clearAttachments()
   void changeProfile()
@@ -81,13 +93,19 @@ const state = reactive({
   copied: false,
   // 当前连接的审批选择；切换配置或对话时保留，不从历史记录恢复
   approvalMode: 'auto' as AgentApprovalMode,
+  // 演示视图放大正文并突出执行过程，仅影响当前面板
+  presentation: false,
 })
-const { copied, approvalMode } = toRefs(state)
+const { copied, approvalMode, presentation } = toRefs(state)
 const draft = useAgentDraft((text, attachments) =>
   send(text, attachments, state.approvalMode)
 )
 const { prompt, attachments, reading, attachmentError } = draft
 const scroll = useTemplateRef<HTMLElement>('scroll')
+const composer = useTemplateRef<InstanceType<typeof AgentComposer>>('composer')
+const task = computed(() =>
+  run.value ? summarizeAgentTurn(run.value.entries, run.value.status) : null
+)
 const isRedis = computed(() => props.target.kind === 'redis')
 const isDatabase = computed(() => props.target.kind !== 'ssh')
 const suggestions = computed(() =>
@@ -138,6 +156,7 @@ const statusLabel = computed(
           answering: t('正在生成回复'),
           tool: t('正在准备工具调用'),
           retrying: t('ai.retryWaiting'),
+          executing: t('正在执行工具'),
         }[progress.value.phase]
       : undefined) ??
     {
@@ -170,6 +189,25 @@ watch(
     draft.reset()
     state.approvalMode = 'auto'
   }
+)
+watch(
+  () => props.contextRequest?.id,
+  async () => {
+    const request = props.contextRequest
+    if (
+      !request ||
+      request.target.kind !== props.target.kind ||
+      request.target.sessionId !== props.target.sessionId ||
+      request.target.database !== props.target.database
+    )
+      return
+    if (draft.addContext(request)) {
+      emit('contextConsumed', request.id)
+      await nextTick()
+      composer.value?.focus()
+    }
+  },
+  { immediate: true }
 )
 async function copyConversation(): Promise<void> {
   if (!run.value) return
@@ -231,7 +269,11 @@ watch(
 <template>
   <section
     class="agent-panel"
-    :class="{ 'database-agent': isDatabase, 'embedded-agent': embedded }"
+    :class="{
+      'database-agent': isDatabase,
+      'embedded-agent': embedded,
+      'presentation-agent': presentation,
+    }"
     aria-label="AI Agent"
   >
     <header class="agent-header">
@@ -249,6 +291,14 @@ watch(
         >AI Agent <span class="beta">BETA</span></span
       >
       <div class="flex-1" />
+      <IconButton
+        icon="lucide:scan-eye"
+        :size="14"
+        :title="presentation ? t('退出演示视图') : t('演示视图：放大文字')"
+        :aria-pressed="presentation"
+        :class="presentation && 'text-accent'"
+        @click="presentation = !presentation"
+      />
       <IconButton
         v-if="!embedded"
         icon="lucide:columns-2"
@@ -298,6 +348,28 @@ watch(
         @click="emit('close')"
       />
     </header>
+    <div
+      v-if="run && (busy || awaitingApproval)"
+      class="task-progress"
+      role="status"
+    >
+      <AppIcon
+        :name="
+          awaitingApproval ? 'lucide:shield-check' : 'lucide:loader-circle'
+        "
+        :size="15"
+        :class="busy && 'animate-spin'"
+      />
+      <div>
+        <strong>{{ statusLabel }}</strong
+        ><span v-if="task?.operations.length">{{
+          t('已记录 {count} 项操作', { count: task.operations.length })
+        }}</span>
+      </div>
+      <span class="task-progress-live">{{
+        awaitingApproval ? t('待确认') : 'LIVE'
+      }}</span>
+    </div>
     <div
       ref="scroll"
       class="agent-scroll"
@@ -388,10 +460,16 @@ watch(
           v-for="(entry, index) in run.entries"
           :key="`${run.id}-${index}`"
           class="message"
-          :class="entry.role"
+          :class="[entry.role, { 'operation-message': entry.operation }]"
           :aria-label="entry.role === 'user' ? t('你的消息') : undefined"
         >
-          <template v-if="entry.role === 'user' || entry.role === 'assistant'"
+          <AgentExecutionCard
+            v-if="entry.operation"
+            :operation="entry.operation"
+            :output="entry.detail"
+          />
+          <template
+            v-else-if="entry.role === 'user' || entry.role === 'assistant'"
             ><div
               v-if="entry.role === 'assistant'"
               class="message-author"
@@ -455,7 +533,10 @@ watch(
                 : entry.detail
             }}</pre>
           </details>
-          <div class="mt-2 flex justify-end">
+          <div
+            v-if="!entry.operation"
+            class="message-actions mt-2 flex justify-end"
+          >
             <AgentCopyButton
               :text="
                 entry.detail ? `${entry.text}\n\n${entry.detail}` : entry.text
@@ -482,13 +563,21 @@ watch(
             <span>AI Agent</span>
           </div>
           <AgentMarkdown :content="progress.text" />
-          <div class="mt-2 flex justify-end">
+          <div class="message-actions mt-2 flex justify-end">
             <AgentCopyButton
               :text="progress.text"
               :label="t('复制内容')"
             />
           </div>
         </article>
+        <AgentExecutionCard
+          v-if="progress?.operation"
+          :operation="progress.operation"
+        />
+        <AgentTaskResult
+          :entries="run.entries"
+          :status="run.status"
+        />
         <AgentApprovalCard
           v-if="run.id && run.approval"
           :approval="run.approval"
@@ -540,6 +629,7 @@ watch(
       </div>
     </div>
     <AgentComposer
+      ref="composer"
       v-model="prompt"
       v-model:approval-mode="approvalMode"
       :disabled="
@@ -577,6 +667,8 @@ watch(
 <style scoped>
 .agent-panel {
   --agent-color: #b08bfa;
+  --agent-body-font: 12px;
+  --agent-small-font: 11px;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -589,6 +681,55 @@ watch(
     linear-gradient(135deg, #ac82fb06, transparent 48%), var(--color-panel);
   color: var(--color-txt);
   font-size: 12px;
+}
+.presentation-agent {
+  --agent-body-font: 15px;
+  --agent-small-font: 12px;
+  font-size: 15px;
+}
+.presentation-agent :deep(.markdown-body code),
+.presentation-agent :deep(.agent-composer textarea) {
+  font-size: 14px;
+}
+.presentation-agent .agent-scroll {
+  padding: 20px 16px;
+}
+.task-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-line-soft);
+  background: color-mix(in srgb, var(--agent-color) 5%, var(--color-panel));
+  color: var(--agent-color);
+}
+.task-progress > div {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.task-progress strong {
+  font-size: var(--agent-body-font);
+  font-weight: 500;
+}
+.task-progress span {
+  font-size: var(--agent-small-font);
+  color: var(--color-txt-3);
+}
+.task-progress .task-progress-live {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--agent-color);
+}
+.operation-message {
+  margin-block: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-progress .animate-spin {
+    animation: none;
+  }
 }
 .database-agent {
   --agent-color: #74d696;
@@ -746,6 +887,15 @@ watch(
 }
 .message {
   min-width: 0;
+}
+.message-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+.message:hover .message-actions,
+.message:focus-within .message-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 .message-author {
   display: flex;

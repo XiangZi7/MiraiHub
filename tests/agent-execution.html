@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>AI 执行流程验证 · 模拟数据</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      .fixture {
+        padding: 22px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .fixture-bar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        font-size: 12px;
+        flex-wrap: wrap;
+      }
+      .fixture-bar strong {
+        margin-right: auto;
+      }
+      .fixture-bar button {
+        padding: 6px 10px;
+        border: 1px solid var(--color-line);
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .fixture-workspace {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        gap: 14px;
+      }
+      .fixture-editor {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        flex-direction: column;
+        border: 1px solid var(--color-line);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .fixture-agent {
+        display: flex;
+        min-width: 0;
+        max-width: 75%;
+      }
+      #last-request {
+        font: 11px/1.5 monospace;
+        margin: 0;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      import { emit } from '@tauri-apps/api/event'
+      import { createApp, h, reactive } from 'vue'
+      import { createPinia } from 'pinia'
+      import { i18n } from '/src/i18n/index.ts'
+      import '/src/assets/styles/main.css'
+
+      const state = reactive({
+        kind: 'ssh',
+        width: 510,
+        context: null,
+        sent: null,
+        sql: 'SELECT created_at, COUNT(*) AS orders\nFROM orders\nGROUP BY created_at\nORDER BY created_at;',
+      })
+      const runs = new Map()
+      const records = new Map()
+      const clone = value => structuredClone(value)
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+      const settings = {
+        activeId: 'fixture',
+        profiles: [
+          {
+            id: 'fixture',
+            name: '演示模型',
+            model: 'local-fixture',
+            enabled: true,
+            baseUrl: 'https://example.invalid',
+            apiFormat: 'openai',
+            hasApiKey: false,
+          },
+        ],
+      }
+      const target = () => ({
+        kind: state.kind,
+        sessionId: 'fixture',
+        database: state.kind === 'ssh' ? '' : 'public',
+      })
+      const operation = (id, command, status, exitCode) => ({
+        id,
+        label: '执行 Shell 命令',
+        command,
+        reason: '检查并恢复演示服务。仅模拟，不连接服务器。',
+        status,
+        startedAt: Date.now(),
+        ...(status === 'running' ? {} : { durationMs: 520, exitCode }),
+      })
+      mockWindows('main')
+      mockIPC(
+        async (command, args) => {
+          if (command === 'ai_get_config') return clone(settings)
+          if (command === 'ai_list_conversations')
+            return [...records.values()]
+              .filter(run => run.kind === args.target.kind)
+              .map(run => ({
+                id: run.conversationId,
+                title: run.entries[0].text,
+                model: run.model,
+                provider: run.provider,
+                createdAt: 1,
+                updatedAt: 2,
+              }))
+          if (command === 'ai_open_conversation')
+            return {
+              ...clone(records.get(args.conversationId)),
+              id: '',
+              approval: null,
+            }
+          if (command === 'ai_start' || command === 'ai_send') {
+            const id = crypto.randomUUID()
+            const previous =
+              command === 'ai_send'
+                ? runs.get(args.runId)
+                : records.get(args.conversationId)
+            const run = {
+              id,
+              kind: state.kind,
+              stage: 0,
+              conversationId: previous?.conversationId || id,
+              target: 'demo-server',
+              provider: 'https://example.invalid',
+              model: 'local-fixture',
+              status: 'running',
+              approval: null,
+              entries: [
+                ...(previous?.entries || []),
+                {
+                  role: 'user',
+                  text: args.prompt,
+                  attachments: (args.attachments || []).map(file => ({
+                    name: file.name,
+                    size: new TextEncoder().encode(file.content).length,
+                  })),
+                },
+              ],
+            }
+            state.sent = { prompt: args.prompt, attachments: args.attachments }
+            runs.set(id, run)
+            records.set(run.conversationId, run)
+            return clone(run)
+          }
+          if (command === 'ai_step') {
+            const run = runs.get(args.runId)
+            if (run.stage === 1) {
+              run.status = 'approval'
+              run.approval = {
+                id: crypto.randomUUID(),
+                command: 'systemctl restart nginx',
+                reason: '重启演示服务，再检查状态。仅模拟，不执行远端命令。',
+                label: '执行 Shell 命令',
+                expiresAt: Date.now() + 300000,
+              }
+              return clone(run)
+            }
+            const tool = operation(
+              crypto.randomUUID(),
+              'systemctl status nginx --no-pager',
+              'running'
+            )
+            args.onProgress.onmessage({
+              runId: run.id,
+              phase: 'executing',
+              text: '',
+              operation: tool,
+            })
+            await wait(520)
+            if (run.status === 'cancelled') return clone(run)
+            const code = run.stage === 0 ? 3 : 0
+            const finished = operation(
+              tool.id,
+              tool.command,
+              code ? 'failed' : 'completed',
+              code
+            )
+            run.entries.push({
+              role: 'tool',
+              text: finished.label,
+              operation: finished,
+              detail: JSON.stringify(
+                {
+                  stdout: code
+                    ? 'nginx.service: inactive (dead)'
+                    : 'nginx.service: active (running)',
+                  stderr: '',
+                  exitCode: code,
+                },
+                null,
+                2
+              ),
+            })
+            if (run.stage === 0) {
+              run.stage = 1
+              run.entries.push({
+                role: 'assistant',
+                text: '检查发现服务未运行。接下来可以重启服务，并再次检查状态。',
+              })
+            } else {
+              run.status = 'completed'
+              run.entries.push({
+                role: 'assistant',
+                text: '### 执行与检查结果\n\n已执行服务重启。再次检查返回退出码 **0**，服务状态为 **active (running)**。\n\n这是一段模拟流程，用于验证执行卡片、审批和结果布局。',
+              })
+            }
+            return clone(run)
+          }
+          if (command === 'ai_respond') {
+            const run = runs.get(args.runId)
+            if (!args.approve) {
+              run.status = 'cancelled'
+              run.approval = null
+              return clone(run)
+            }
+            const tool = operation(
+              crypto.randomUUID(),
+              run.approval.command,
+              'running'
+            )
+            run.approval = null
+            run.status = 'running'
+            args.onProgress.onmessage({
+              runId: run.id,
+              phase: 'executing',
+              text: '',
+              operation: tool,
+            })
+            await wait(520)
+            if (run.status === 'cancelled') return clone(run)
+            const finished = operation(tool.id, tool.command, 'completed', 0)
+            run.entries.push({
+              role: 'tool',
+              text: finished.label,
+              operation: finished,
+              detail: '{"stdout":"","exitCode":0}',
+            })
+            run.stage = 2
+            return clone(run)
+          }
+          if (command === 'ai_cancel' || command === 'ai_forget') {
+            const run = runs.get(args.runId)
+            if (run && run.status !== 'completed') {
+              run.status = 'cancelled'
+              run.approval = null
+            }
+            return
+          }
+          if (command === 'ssh_connect') return 'fixture'
+          if (command === 'ssh_open_shell') {
+            setTimeout(
+              () =>
+                emit('ssh://output', {
+                  sessionId: 'fixture',
+                  data: btoa(
+                    'demo@server:~$ systemctl status nginx\r\nnginx.service - Web server\r\nActive: inactive (dead)\r\nError: service unavailable\r\ndemo@server:~$ '
+                  ),
+                  isStderr: false,
+                }),
+              80
+            )
+            return
+          }
+          if (
+            command === 'ssh_resize' ||
+            command === 'ssh_write' ||
+            command === 'ssh_disconnect'
+          )
+            return
+          if (
+            command === 'ssh_shell_history' ||
+            command === 'ssh_shell_complete'
+          )
+            return []
+          throw new Error(`Unexpected fixture command: ${command}`)
+        },
+        { shouldMockEvents: true }
+      )
+
+      const { default: Panel } =
+        await import('/src/components/agent/AiAgentPanel.vue')
+      const { default: Terminal } =
+        await import('/src/components/workspace/TerminalPanel.vue')
+      const { default: Editor } =
+        await import('/src/components/workspace/database/SqlEditor.vue')
+      function ask(content, intent = 'explain') {
+        state.context = {
+          id: crypto.randomUUID(),
+          target: target(),
+          source: state.kind === 'ssh' ? 'terminal' : 'sql',
+          intent,
+          content,
+        }
+      }
+      i18n.global.locale.value = 'zh-CN'
+      createApp({
+        render: () =>
+          h('main', { class: 'fixture' }, [
+            h('div', { class: 'fixture-bar' }, [
+              h('strong', 'AI 执行流程验证 · 全部为模拟数据'),
+              h(
+                'button',
+                {
+                  onClick: () => {
+                    state.kind = state.kind === 'ssh' ? 'database' : 'ssh'
+                    state.context = null
+                  },
+                },
+                '终端 / SQL'
+              ),
+              h(
+                'button',
+                {
+                  onClick: () =>
+                    (state.width = state.width === 350 ? 510 : 350),
+                },
+                '窄 / 标准面板'
+              ),
+              h(
+                'button',
+                {
+                  onClick: () =>
+                    (i18n.global.locale.value =
+                      i18n.global.locale.value === 'zh-CN' ? 'en-US' : 'zh-CN'),
+                },
+                '中 / EN'
+              ),
+            ]),
+            h('div', { class: 'fixture-workspace' }, [
+              h(
+                'div',
+                { class: 'fixture-editor' },
+                state.kind === 'ssh'
+                  ? [
+                      h(Terminal, {
+                        config: {
+                          host: 'demo.invalid',
+                          port: 22,
+                          username: 'demo',
+                          auth: { method: 'password', password: '' },
+                        },
+                        title: 'demo-server',
+                        onAskAgent: ask,
+                      }),
+                    ]
+                  : [
+                      h(Editor, {
+                        modelValue: state.sql,
+                        'onUpdate:modelValue': value => (state.sql = value),
+                        onAskAgent: ask,
+                      }),
+                    ]
+              ),
+              h(
+                'div',
+                {
+                  class: 'fixture-agent',
+                  style: { width: `${state.width}px` },
+                },
+                [
+                  h(Panel, {
+                    target: target(),
+                    title: 'demo-server',
+                    contextRequest: state.context,
+                    onContextConsumed: () => (state.context = null),
+                  }),
+                ]
+              ),
+            ]),
+            h(
+              'pre',
+              { id: 'last-request' },
+              state.sent
+                ? JSON.stringify(state.sent)
+                : '选中终端输出或 SQL，把它附加到草稿后发送；也可输入“检查网站为什么打不开”。'
+            ),
+          ]),
+      })
+        .use(createPinia())
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

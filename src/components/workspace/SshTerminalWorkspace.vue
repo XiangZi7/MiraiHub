@@ -4,6 +4,7 @@ import { nextTick, reactive, toRefs, useTemplateRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import type { SavedConnection } from '@/types/connection'
+import type { AgentContextRequest } from '@/types/agent'
 import {
   MACHINE_MIN_WIDTH,
   useWorkspaceLayoutStore,
@@ -41,8 +42,10 @@ const state = reactive({
   sessionId: '',
   // 侧面板首次访问后保留挂载，收起时不丢失 Agent 草稿
   machineVisited: false,
+  // 从终端显式选择、待加入 AI 草稿的上下文
+  contextRequest: null as AgentContextRequest | null,
 })
-const { split, sessionId, machineVisited } = toRefs(state)
+const { split, sessionId, machineVisited, contextRequest } = toRefs(state)
 const primary = useTemplateRef<InstanceType<typeof TerminalPanel>>('primary')
 const secondary =
   useTemplateRef<InstanceType<typeof TerminalPanel>>('secondary')
@@ -68,6 +71,24 @@ function toggleAgent(): void {
     machineOpen.value = true
   }
 }
+function askAgent(content: string): void {
+  if (!state.sessionId) return
+  state.contextRequest = {
+    id: crypto.randomUUID(),
+    target: { kind: 'ssh', sessionId: state.sessionId, database: '' },
+    source: 'terminal',
+    intent: 'explain',
+    content,
+  }
+  machineView.value = 'agent'
+  machineOpen.value = true
+}
+watch(
+  () => state.sessionId,
+  () => {
+    state.contextRequest = null
+  }
+)
 async function toggleSplit(): Promise<void> {
   state.split = !state.split
   await nextTick()
@@ -112,6 +133,7 @@ defineExpose({
         :split="split"
         @split="toggleSplit"
         @status="statusChanged"
+        @ask-agent="askAgent"
       >
         <template #metrics>
           <ServerStatusBar
@@ -139,6 +161,7 @@ defineExpose({
           :terminal-type="terminalType"
           split
           @split="toggleSplit"
+          @ask-agent="askAgent"
         />
       </Transition>
     </div>
@@ -162,7 +185,9 @@ defineExpose({
         :session-id="sessionId"
         :active="active && machineOpen"
         :width="machineWidth"
+        :context-request="contextRequest"
         @close="machineOpen = false"
+        @context-consumed="state.contextRequest = null"
       />
     </div>
   </div>

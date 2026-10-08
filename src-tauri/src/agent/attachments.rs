@@ -76,6 +76,7 @@ pub(super) fn prepare(prompt: &str, attachments: Vec<Attachment>) -> AppResult<(
         role: "user".into(),
         text: text.into(),
         detail: None,
+        operation: None,
         attachments: attachments
             .iter()
             .map(|file| AttachmentInfo {

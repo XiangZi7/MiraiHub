@@ -1,5 +1,44 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  正在执行: 'Executing',
+  已执行: 'Executed',
+  执行异常: 'Execution error',
+  退出状态未知: 'Exit status unknown',
+  '退出码：{code}': 'Exit code: {code}',
+  本轮已停止: 'Turn stopped',
+  '本轮执行记录 · 请核对结果': 'Execution recorded · Check results',
+  本轮执行完成: 'Turn execution complete',
+  任务结果: 'Task results',
+  实际操作: 'Operations',
+  正常完成: 'Completed normally',
+  工具耗时: 'Tool execution time',
+  '{failed} 项异常，{unknown} 项退出状态未知':
+    '{failed} errors, {unknown} unknown exit statuses',
+  重复检查的退出码变化: 'Exit code changes across repeated checks',
+  '以上为实际工具执行记录，问题是否解决请以验证结果为准。':
+    'Recorded tool executions. Verify the outcome to confirm the issue is resolved.',
+  '已附加：{name}': 'Attached: {name}',
+  '预览已截断，发送时包含完整选区。':
+    'Preview shortened. The full selection will be sent.',
+  移除上下文: 'Remove context',
+  '选区须为非空文本，最多 64 KB': 'Select non-empty text up to 64 KB.',
+  '终端选区.txt': 'Terminal selection.txt',
+  'SQL 选区.sql': 'SQL selection.sql',
+  '请分析附加 SQL 的性能，并给出优化建议。':
+    'Analyze the attached SQL performance and suggest improvements.',
+  '请分析附加的终端输出，解释问题并建议下一步。':
+    'Analyze the attached terminal output, explain the issue, and suggest next steps.',
+  '请解释附加 SQL 的用途，并检查可能的问题。':
+    'Explain the attached SQL and check for potential issues.',
+  正在执行工具: 'Executing a tool',
+  退出演示视图: 'Exit presentation view',
+  '演示视图：放大文字': 'Presentation view: larger text',
+  '已记录 {count} 项操作': '{count} operations recorded',
+  待确认: 'Confirmation needed',
+  '让 AI 分析选区': 'Analyze selection with AI',
+  分析选中内容: 'Analyze selected text',
+  '让 AI 解释选中 SQL': 'Explain selected SQL with AI',
+  '让 AI 优化选中 SQL': 'Optimize selected SQL with AI',
   '最多 {count} 行': 'Up to {count} rows',
   查询返回行数上限: 'Query row limit',
   '{count} 个字段': '{count} columns',
@@ -385,7 +424,8 @@ export const en = {
   '支持 1 MB 以内的 UTF-8 普通文件。保存前检查冲突并备份原内容；保留基本权限、所有者及换行格式。特殊 ACL、扩展属性和硬链接关系不保留。':
     'Supports regular UTF-8 files up to 1 MB. Checks for conflicts and backs up original content before saving. Preserves basic permissions, ownership, and line endings, but not special ACLs, extended attributes, or hard links.',
   '关闭未保存的文件？': 'Close unsaved file?',
-  '当前修改尚未保存，关闭后将丢失。': 'Unsaved changes will be lost when you close this file.',
+  '当前修改尚未保存，关闭后将丢失。':
+    'Unsaved changes will be lost when you close this file.',
   '放弃草稿并重新加载？': 'Discard draft and reload?',
   '当前修改尚未保存。可以取消并复制草稿，避免丢失编辑内容。':
     'Changes have not been saved. Cancel and copy your draft to avoid losing edits.',

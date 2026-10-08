@@ -14,6 +14,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 import { MACHINE_VIEWS } from '@/constants/workspace'
 import type { MachineViewId } from '@/types'
 import type { SavedConnection } from '@/types/connection'
+import type { AgentContextRequest } from '@/types/agent'
 import { cn } from '@/utils/cn'
 import FilesView from './FilesView.vue'
 
@@ -37,6 +38,7 @@ const props = defineProps<{
   sessionId: string
   /** 由主窗口统一管理的面板宽度 */
   width: number
+  contextRequest?: AgentContextRequest | null
 }>()
 
 // 当前视图由 workspace-layout Store 持有，命令面板与服务器页共用。
@@ -45,6 +47,7 @@ const view = defineModel<MachineViewId>('view', { required: true })
 defineEmits<{
   /** 请求收起面板 */
   close: []
+  contextConsumed: [id: string]
 }>()
 
 // 转成 ref 传给子组件的 composable：它们 watch 会话 id 的变化来重新取数
@@ -129,9 +132,11 @@ const target = computed(() => ({
       v-if="agentVisited"
       v-show="view === 'agent'"
       :target="target"
+      :context-request="contextRequest"
       :title="connection?.name || title"
       :active="active && view === 'agent'"
       embedded
+      @context-consumed="$emit('contextConsumed', $event)"
     />
   </section>
 </template>

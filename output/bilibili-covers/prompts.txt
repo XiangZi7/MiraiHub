@@ -1,0 +1,23 @@
+Created with built-in ImageGen.
+
+16:9 cover prompt
+
+Use case: ads-marketing / style-transfer.
+Completely redesign the MiraiHub Bilibili cover from Image 1 into a gentle ANIME / illustrated editorial cover. This is a full stylistic redesign requested by the user, not a small color adjustment. Image 1 is the edit target ONLY for exact promotional wording and recognizable software functionality. Image 2 supplies the current MiraiHub glasses logo identity.
+Output ONE final raster cover, exact 2048 × 1152 pixels, 16:9 landscape, opaque full bleed.
+Primary subject: Mirai Kuriyama / 栗山未来 from Beyond the Boundary / 境界的彼方, recognizable as her canonical anime appearance: soft dusty peach-pink short bob with rounded fringe, distinctive red rectangular glasses, warm golden-brown eyes, oversized cream cardigan over her dark school uniform and red bow. Charming calm expression, slightly shy confidence, one hand gently adjusting her glasses, the other gesturing toward the software interface. Fully dressed, wholesome waist-up portrait, authentic polished 2D anime linework, gentle cel shading, subtle hand-painted watercolor background. This is a developer product cover with an anime character, not a scene from the story.
+Art direction: warm cream/off-white paper background, blush-pink and pale peach graphic shapes, very light lavender accents, soft fine paper grain. Bold modern Japanese-magazine-inspired editorial typography, very clean and relaxed. The character occupies roughly the right 38-42% of the cover; the headline in the upper/middle left is equally prominent. Product interface is a dark rounded desktop window in the lower-left/center, modest in size, front-facing or almost front-facing, with readable terminal, database table, and AI conversation panels. Use generic demo labels demo-server, demo_shop, orders. Never reuse black redaction marks from any screenshot.
+Exact cover copy:
+Small top-left brand beside logo: "MiraiHub"
+Small descriptor: "自研桌面工作台"
+Large headline in two lines, exceptionally clear heavy Chinese sans serif:
+"SSH · 数据库 · AI"
+"一个窗口搞定"
+Small supporting line: "终端 / 文件 / 监控"
+Dark navy/ink headline, coral/pink marker highlight behind "一个窗口". Strong readable typography when reduced to a video thumbnail. The character must not cover or obscure any text. Plenty of deliberate breathing room. Correct Chinese, exact spelling of MiraiHub. Keep all important content inside 6% safe margins, and important lettering out of the bottom-right duration overlay area.
+Replace the entire old sci-fi background. ABSOLUTELY NO sci-fi, futuristic neon, glowing neon border, cyberpunk, glowing server towers, black space, 3D stages, holograms, lasers, circuitry, giant fantasy weapons, blood, dramatic action, dark dramatic lighting, Bilibili logo, watermark, or extra claims. No 'free' or 'open source' badge. The logo stays the purple/pink glasses supplied in Image 2. Finished stylish anime-themed submission cover, with a clear headline and genuine software-tool identity.
+
+4:3 cover prompt
+
+undefined
+

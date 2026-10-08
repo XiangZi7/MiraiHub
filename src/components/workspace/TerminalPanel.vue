@@ -5,8 +5,10 @@ import {
   computed,
   nextTick,
   onBeforeUnmount,
+  reactive,
   ref,
   shallowRef,
+  toRefs,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -21,6 +23,10 @@ import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from './TerminalSuggestions.vue'
 import TerminalActions from './TerminalActions.vue'
+import AppContextMenu from '@/components/ui/AppContextMenu.vue'
+import type { ContextMenuItem } from '@/types/context-menu'
+import { copyText } from '@/utils/clipboard'
+import { toast } from '@/composables/useToast'
 
 const { t } = useI18n()
 
@@ -50,6 +56,7 @@ const emit = defineEmits<{
    * 让机器面板能用它去查系统指标与目录列表。
    */
   status: [status: SshSessionStatus, sessionId: string]
+  askAgent: [content: string]
 }>()
 
 defineSlots<{
@@ -74,6 +81,66 @@ const {
   setInputInterceptor,
   setSubmitHandler,
 } = useSshTerminal()
+
+// 响应式状态
+const state = reactive({
+  // 仅保留用户主动选中的终端文本
+  selectedText: '',
+  // 右键打开时冻结选区，避免菜单抢焦点后丢失
+  contextMenu: { open: false, x: 0, y: 0, text: '' },
+})
+const { selectedText, contextMenu } = toRefs(state)
+watch(
+  term,
+  (terminal, _, cleanup) => {
+    state.selectedText = ''
+    const listener = terminal?.onSelectionChange(() => {
+      state.selectedText = terminal.getSelection()
+    })
+    cleanup(() => listener?.dispose())
+  },
+  { immediate: true }
+)
+watch(status, () => {
+  state.contextMenu.open = false
+  state.selectedText = ''
+})
+const contextItems = computed<ContextMenuItem[]>(() => [
+  {
+    id: 'ask-agent',
+    label: t('让 AI 分析选区'),
+    icon: 'lucide:sparkles',
+    disabled: status.value !== 'connected' || !state.contextMenu.text.trim(),
+  },
+  {
+    id: 'copy',
+    label: t('复制'),
+    icon: 'lucide:copy',
+    separatorBefore: true,
+    disabled: !state.contextMenu.text,
+  },
+])
+function openContextMenu(event: MouseEvent): void {
+  state.contextMenu = {
+    open: true,
+    x: event.clientX,
+    y: event.clientY,
+    text: state.selectedText || term.value?.getSelection() || '',
+  }
+}
+async function contextAction(id: string): Promise<void> {
+  const content = state.contextMenu.text
+  state.contextMenu.open = false
+  if (id === 'ask-agent' && status.value === 'connected' && content.trim())
+    emit('askAgent', content)
+  if (id === 'copy' && content) {
+    try {
+      await copyText(content)
+    } catch {
+      toast.error(t('复制失败，请选中文字后按 Ctrl+C'))
+    }
+  }
+}
 
 const completionEnabled = computed(() => status.value === 'connected')
 const completion = useSshShellCompletion({
@@ -429,11 +496,24 @@ defineExpose({
       v-if="config"
       ref="terminalArea"
       class="relative min-h-0 flex-1 overflow-hidden"
+      @contextmenu.prevent.stop="openContextMenu"
     >
       <div
         ref="terminal"
         class="absolute inset-0 p-2"
       />
+      <button
+        v-if="selectedText.trim() && status === 'connected'"
+        type="button"
+        class="terminal-ask-agent"
+        @pointerdown.prevent
+        @click="emit('askAgent', selectedText)"
+      >
+        <AppIcon
+          name="lucide:sparkles"
+          :size="14"
+        />{{ t('分析选中内容') }}
+      </button>
       <SessionErrorNotice
         v-if="showError && error && status === 'disconnected'"
         class="absolute inset-x-2 top-2 z-10"
@@ -483,10 +563,42 @@ defineExpose({
         </p>
       </div>
     </div>
+    <AppContextMenu
+      :open="contextMenu.open"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :items="contextItems"
+      @select="contextAction"
+      @close="contextMenu.open = false"
+    />
   </section>
 </template>
 
 <style scoped>
+.terminal-ask-agent {
+  position: absolute;
+  top: 10px;
+  right: 18px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  color: var(--color-accent);
+  background: var(--color-panel);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 3px 12px #0003;
+}
+.terminal-ask-agent:hover {
+  background: var(--color-card);
+}
+.terminal-ask-agent:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 /* xterm 默认给容器加内边距的位置不对，且它的滚动条要跟项目其余部分统一 */
 :deep(.xterm-viewport) {
   scrollbar-width: thin;

@@ -1,0 +1,55 @@
+MiraiHub product-first Bilibili cover revision.
+Made with built-in ImageGen. Main product screenshot uses docs/images/database-workspace.png as reference. Mirai Kuriyama retained as small corner accent.
+PNG exports: 1600 x 900 (16:9) and 1440 x 1080 (4:3).
+
+16:9 prompt
+
+Use case: compositing.
+Create a finished PRODUCT-FIRST MiraiHub cover, 1600 x 900 pixels, 16:9 landscape.
+CRITICAL INPUT PRIORITY:
+Image 1 is the authoritative REAL PRODUCT SCREENSHOT and the primary edit base. Keep its actual database app appearance and displayed content faithful. Product window is the main subject.
+Image 2 is only a STYLE/LAYOUT REFERENCE: use its compact cream/pink header and very small Kuriyama Mirai anime sticker. Its generated software UI is incorrect and MUST NOT be reused.
+The real screenshot from Image 1 must occupy approximately 75-80% of the complete cover, nearly edge to edge, directly underneath a compact header. Keep it front-facing, straight, crisp, no perspective. Fit the actual screenshot with appropriate edge trim; show large enough to recognize its original two left sidebar columns, SQL editor above results, and AI panel on the right. Preserve its dark near-black theme and purple accents. Do not merge a terminal into the database workspace.
+Required REAL screenshot invariants:
+- First left navigation contains 工作区 / 服务器 / 数据库, and the Localhost database connection.
+- Next left database object tree contains the database categories 表, 查询, 视图, 存储过程, 函数.
+- Query tab is "Query 1", source SQL demonstrates MiraiHub modules using SELECT CONSTANTS and UNION ALL, not business orders.
+- SQL editor source must show this real demo:
+SELECT 1 AS id, 'MiraiHub' AS project, 'SSH / SFTP' AS module
+UNION ALL SELECT 2, 'MiraiHub', 'MySQL / PostgreSQL'
+UNION ALL SELECT 3, 'MiraiHub', 'Redis'
+UNION ALL SELECT 4, 'MiraiHub', 'Server Monitoring'
+UNION ALL SELECT 5, 'MiraiHub', 'AI Agent / MCP';
+- Result table has only the real columns id, project, module and five rows for those five modules. Do not invent users, orders, products, dates, amounts, order counts, or business data.
+- Right panel shows the source AI Agent (数据库) ONBOARDING: 查看表与字段结构, 编写和分析 SQL 查询, 定位数据库问题, 提出索引及性能优化建议. This panel has suggestion chips and the input box. It is not a made-up completed AI conversation.
+Keep the screenshot as a faithful photographic insert. Do not turn it into an invented generic UI.
+Top header only, about 16-18% of height: supplied glasses logo and "MiraiHub" on left; large bold navy "SSH · 数据库 · AI" on right; smaller "一个窗口搞定" beneath. Cream and soft blush pink, extremely restrained cherry blossom accents only at margins.
+At the lower corner place ONE tiny anime sticker of Mirai Kuriyama, peach-pink bob, red glasses, cream cardigan, at most 8% of canvas width and 18% of height; no giant character. Keep it off editor/results/AI text. No books, mugs, scenic background, extra titles, neon, sci-fi, fake hardware border, or watermark.
+Make the REAL PRODUCT visually dominate. Headline and tiny anime accent are secondary.
+
+4:3 prompt
+
+Use case: compositing.
+Create the MATCHING 4:3 version of the MiraiHub product-first Bilibili cover. Output ONE cover at exact 1440 x 1080 pixels, 4:3 landscape. Intentionally compose for 4:3, not a 16:9 image with letterboxing.
+Input roles:
+Image 1 is the authoritative REAL MiraiHub database screenshot, primary edit base. Preserve the actual product identity and contents.
+Image 2 is the approved new 16:9 composition reference: real product very large, compact cream/pink heading, tiny Kuriyama Mirai sticker. Match this design series.
+Hierarchy and geometry:
+A very compact cream/pink header occupying at most 15-17% of height. Put original glasses logo and "MiraiHub" at upper-left, "一个窗口搞定" at upper-right; "SSH · 数据库 · AI" in a strong clear second header row, or another compact arrangement with all text fitting. No oversized title block.
+Immediately below, show the REAL PRODUCT screenshot nearly edge-to-edge: around x=16 to 1424 and y=175 to 1064. The screenshot should occupy approximately 80% of the canvas and be the dominant visual. Full straight desktop app view, no perspective or hardware mockup. Source screenshot ratio fits 4:3 below a header naturally; resize and modest trim only. Preserve the two left sidebar columns, SQL editor above table, right AI onboarding panel.
+Keep the exact real screenshot structure and demo content:
+Navigation 工作区 / 服务器 / 数据库; Localhost connection; object-tree 表 / 查询 / 视图 / 存储过程 / 函数; "Query 1"; SELECT constant MiraiHub demo with UNION ALL returning five modules.
+Source SQL:
+SELECT 1 AS id, 'MiraiHub' AS project, 'SSH / SFTP' AS module
+UNION ALL SELECT 2, 'MiraiHub', 'MySQL / PostgreSQL'
+UNION ALL SELECT 3, 'MiraiHub', 'Redis'
+UNION ALL SELECT 4, 'MiraiHub', 'Server Monitoring'
+UNION ALL SELECT 5, 'MiraiHub', 'AI Agent / MCP';
+Result table columns id, project, module, five constant rows. Right pane "AI Agent (数据库)" with source onboarding checklist and suggestion chips, not a fabricated completed conversation. Preserve source's black/charcoal UI, violet active indicators, bright syntax.
+At most ONE tiny Kuriyama Mirai anime sticker in a lower corner, maximum 110 pixels wide and 160 pixels tall, under 2% of total cover area. Pink bob, red glasses, cream cardigan. Keep SQL, table and AI checklist unobscured.
+Exact promotional header copy:
+"MiraiHub"
+"SSH · 数据库 · AI"
+"一个窗口搞定"
+Cream background, navy heavy sans-serif, restrained coral brush highlight, sparse blossoms only at edges. No giant character, fictional order data, terminal/database UI mashup, scattered feature cards, books, mugs, classroom, fantasy, sci-fi/neon, added slogans, or watermark. It should immediately read as a SOFTWARE PRODUCT cover with a small anime accent.
+

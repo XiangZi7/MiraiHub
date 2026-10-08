@@ -8,6 +8,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AgentProfileSelect from './AgentProfileSelect.vue'
 import AgentPermissionSelect from './AgentPermissionSelect.vue'
+import AgentContextPreview from './AgentContextPreview.vue'
 
 const props = defineProps<{
   disabled: boolean
@@ -38,6 +39,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
+defineExpose({ focus: () => textarea.value?.focus() })
 const placeholder = computed(() =>
   props.awaitingApproval
     ? t('请先审批或拒绝上方操作…')
@@ -86,30 +88,37 @@ watch(
           v-for="file in attachments"
           :key="file.id"
           class="draft-attachment"
+          :class="file.source === 'context' && 'context-attachment'"
         >
-          <AppIcon
-            name="lucide:file-text"
-            :size="17"
-            class="shrink-0"
-          />
-          <div class="attachment-info">
-            <span
-              class="attachment-name"
-              :title="file.name"
-              >{{ file.name }}</span
-            >
-            <span class="attachment-size"
-              >{{ bytesToSize(file.size) }}</span
-            >
-          </div>
-          <IconButton
-            icon="lucide:x"
-            :size="12"
-            :title="t('移除附件')"
-            :aria-label="`${t('移除附件')} ${file.name}`"
+          <AgentContextPreview
+            v-if="file.source === 'context'"
+            :attachment="file"
             :disabled="disabled"
-            @click="emit('removeAttachment', file.id)"
+            @remove="emit('removeAttachment', file.id)"
           />
+          <template v-else>
+            <AppIcon
+              name="lucide:file-text"
+              :size="17"
+              class="shrink-0"
+            />
+            <div class="attachment-info">
+              <span
+                class="attachment-name"
+                :title="file.name"
+                >{{ file.name }}</span
+              >
+              <span class="attachment-size">{{ bytesToSize(file.size) }}</span>
+            </div>
+            <IconButton
+              icon="lucide:x"
+              :size="12"
+              :title="t('移除附件')"
+              :aria-label="`${t('移除附件')} ${file.name}`"
+              :disabled="disabled"
+              @click="emit('removeAttachment', file.id)"
+            />
+          </template>
         </div>
       </div>
       <textarea
@@ -137,7 +146,9 @@ watch(
         <IconButton
           :icon="reading ? 'lucide:loader-circle' : 'lucide:plus'"
           :size="17"
-          :title="t('上传文件：文本、日志、代码、表格（Excel/CSV 等），每个最多 1 GB')"
+          :title="
+            t('上传文件：文本、日志、代码、表格（Excel/CSV 等），每个最多 1 GB')
+          "
           :aria-label="t('上传文件')"
           :disabled="disabled || reading"
           class="upload-button"
@@ -206,6 +217,13 @@ watch(
 </template>
 
 <style scoped>
+.draft-attachment.context-attachment {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
 .agent-composer-footer {
   flex-shrink: 0;
   padding: 10px 12px 12px;

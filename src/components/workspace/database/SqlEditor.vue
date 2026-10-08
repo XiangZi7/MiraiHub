@@ -43,6 +43,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   run: [sql: string]
   save: []
+  askAgent: [content: string, intent: 'explain' | 'optimize']
 }>()
 
 const sql = defineModel<string>({ required: true })
@@ -78,7 +79,20 @@ const state = reactive({
 const { contextMenu } = toRefs(state)
 const contextItems = computed<ContextMenuItem[]>(() => [
   {
+    id: 'ai-explain',
+    label: t('让 AI 解释选中 SQL'),
+    icon: 'lucide:sparkles',
+    disabled: props.disabled || !state.contextMenu.selected.trim(),
+  },
+  {
+    id: 'ai-optimize',
+    label: t('让 AI 优化选中 SQL'),
+    icon: 'lucide:wand-sparkles',
+    disabled: props.disabled || !state.contextMenu.selected.trim(),
+  },
+  {
     id: 'run-selection',
+    separatorBefore: true,
     label: t('运行选中的 SQL'),
     icon: 'lucide:play',
     shortcut: 'Ctrl+Enter',
@@ -155,6 +169,15 @@ function captureContextSelection(event: PointerEvent): void {
 async function handleContextAction(id: string): Promise<void> {
   const selection = { ...state.contextMenu }
   state.contextMenu.open = false
+  if (id === 'ai-explain' || id === 'ai-optimize') {
+    if (!props.disabled && selection.selected.trim())
+      emit(
+        'askAgent',
+        selection.selected,
+        id === 'ai-optimize' ? 'optimize' : 'explain'
+      )
+    return
+  }
   if (id === 'run-selection' || id === 'run-all') {
     if (props.disabled) return
     const statement =
