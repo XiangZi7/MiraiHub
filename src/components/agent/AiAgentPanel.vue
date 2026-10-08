@@ -31,8 +31,11 @@ import AgentCopyButton from './AgentCopyButton.vue'
 import AgentRetryStatus from './AgentRetryStatus.vue'
 import AgentExecutionCard from './AgentExecutionCard.vue'
 import AgentTaskResult from './AgentTaskResult.vue'
+import AgentQueryResult from './AgentQueryResult.vue'
+import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 
 const { t } = useI18n()
+const layout = useWorkspaceLayoutStore()
 
 const props = withDefaults(
   defineProps<{
@@ -282,8 +285,12 @@ watch(
         :class="target.sessionId && 'online'"
       /><span
         class="text-txt-2 max-w-44 truncate text-[11px]"
-        :title="title"
-        >{{ title || (isDatabase ? t('Database') : t('Server')) }}</span
+        :title="layout.recording ? undefined : title"
+        >{{
+          layout.recording
+            ? t(isDatabase ? '演示数据库' : '演示服务器')
+            : title || (isDatabase ? t('Database') : t('Server'))
+        }}</span
       >
       <span
         v-if="!embedded"
@@ -463,11 +470,17 @@ watch(
           :class="[entry.role, { 'operation-message': entry.operation }]"
           :aria-label="entry.role === 'user' ? t('你的消息') : undefined"
         >
-          <AgentExecutionCard
-            v-if="entry.operation"
-            :operation="entry.operation"
-            :output="entry.detail"
-          />
+          <template v-if="entry.operation">
+            <AgentExecutionCard
+              :operation="entry.operation"
+              :output="entry.detail"
+            />
+            <AgentQueryResult
+              v-for="(result, resultIndex) in entry.operation.results ?? []"
+              :key="resultIndex"
+              :result="result"
+            />
+          </template>
           <template
             v-else-if="entry.role === 'user' || entry.role === 'assistant'"
             ><div

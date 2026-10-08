@@ -52,7 +52,7 @@ fn authorize_document(owner: &str, label: &str) -> AppResult<()> {
 fn sftp_error(error: impl std::fmt::Display) -> AppError {
     AppError::internal(format!("SFTP：{error}"))
 }
-fn decode(bytes: &[u8]) -> AppResult<(String, String, bool)> {
+pub(crate) fn decode(bytes: &[u8]) -> AppResult<(String, String, bool)> {
     if bytes.len() > LIMIT {
         return Err(AppError::invalid_input(
             "内置编辑器仅支持 1 MB 以内的文本文件",
@@ -83,7 +83,7 @@ fn decode(bytes: &[u8]) -> AppResult<(String, String, bool)> {
         bom,
     ))
 }
-fn encode(text: &str, ending: &str, bom: bool) -> AppResult<Vec<u8>> {
+pub(crate) fn encode(text: &str, ending: &str, bom: bool) -> AppResult<Vec<u8>> {
     if text.len() > LIMIT || text.contains('\r') {
         return Err(AppError::invalid_input("文本过长或换行格式无效"));
     }
@@ -108,7 +108,7 @@ fn same_metadata(a: &FileAttributes, b: &FileAttributes) -> bool {
         && a.uid == b.uid
         && a.gid == b.gid
 }
-async fn read_file(sftp: &SftpSession, path: &str) -> AppResult<(Vec<u8>, FileAttributes)> {
+pub(crate) async fn read_file(sftp: &SftpSession, path: &str) -> AppResult<(Vec<u8>, FileAttributes)> {
     let attrs = sftp.symlink_metadata(path).await.map_err(sftp_error)?;
     if !attrs.is_regular() || attrs.is_symlink() {
         return Err(AppError::invalid_input(
@@ -136,7 +136,7 @@ async fn read_file(sftp: &SftpSession, path: &str) -> AppResult<(Vec<u8>, FileAt
     }
     Ok((bytes, after))
 }
-async fn write_file(sftp: &SftpSession, path: &str, bytes: &[u8]) -> AppResult<()> {
+pub(crate) async fn write_file(sftp: &SftpSession, path: &str, bytes: &[u8]) -> AppResult<()> {
     let mut file = sftp
         .open_with_flags(path, OpenFlags::WRITE | OpenFlags::TRUNCATE)
         .await

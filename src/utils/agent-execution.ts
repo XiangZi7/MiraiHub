@@ -30,6 +30,37 @@ export function summarizeAgentTurn(
     0
   )
   const comparisons: { command: string; before: number; after: number }[] = []
+  const metricComparisons: {
+    command: string
+    name: string
+    before: string
+    after: string
+    unit: string
+  }[] = []
+  const firstMetrics = new Map<
+    string,
+    { value: string; command: string; name: string; unit: string }
+  >()
+  const lastMetrics = new Map<string, string>()
+  for (const operation of operations) {
+    for (const metric of operation.metrics ?? []) {
+      const key = JSON.stringify([operation.command, metric.name, metric.unit])
+      if (!firstMetrics.has(key))
+        firstMetrics.set(key, { ...metric, command: operation.command })
+      lastMetrics.set(key, metric.value)
+    }
+  }
+  for (const [key, before] of firstMetrics) {
+    const after = lastMetrics.get(key)!
+    if (before.value !== after)
+      metricComparisons.push({
+        command: before.command,
+        name: before.name,
+        before: before.value,
+        after,
+        unit: before.unit,
+      })
+  }
   const first = new Map<string, AgentOperation>()
   const last = new Map<string, AgentOperation>()
   for (const operation of operations) {
@@ -53,6 +84,7 @@ export function summarizeAgentTurn(
     unknown,
     durationMs,
     comparisons,
+    metricComparisons,
     needsAttention:
       failed > 0 || unknown > 0 || errors > 0 || status === 'failed',
     finished:

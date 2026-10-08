@@ -110,6 +110,29 @@
         startedAt: Date.now(),
         ...(status === 'running' ? {} : { durationMs: 520, exitCode }),
       })
+      const fileChange = {
+        path: '/etc/nginx/conf.d/demo.conf',
+        before:
+          'server {\n    listen 80;\n    server_name demo.local;\n    location / {\n        proxy_pass http://127.0.0.1:3000;\n    }\n}\n',
+        after:
+          'server {\n    listen 8080;\n    server_name demo.local;\n    location / {\n        proxy_pass http://127.0.0.1:3000;\n        proxy_read_timeout 60s;\n    }\n}\n',
+      }
+      const query = {
+        statement: 'SELECT day, orders FROM daily_orders ORDER BY day;',
+        columns: ['day', 'orders'],
+        rows: [
+          ['10-01', '128'],
+          ['10-02', '196'],
+          ['10-03', null],
+          ['10-04', '243'],
+          ['10-05', '218'],
+          ['10-06', '312'],
+          ['10-07', '386'],
+        ],
+        elapsedMs: 24,
+        truncated: false,
+        error: null,
+      }
       mockWindows('main')
       mockIPC(
         async (command, args) => {
@@ -140,6 +163,12 @@
             const run = {
               id,
               kind: state.kind,
+              scenario:
+                state.kind === 'database'
+                  ? 'query'
+                  : args.prompt.includes('配置')
+                    ? 'file'
+                    : 'service',
               stage: 0,
               conversationId: previous?.conversationId || id,
               target: 'demo-server',
@@ -166,6 +195,39 @@
           }
           if (command === 'ai_step') {
             const run = runs.get(args.runId)
+            if (run.scenario === 'file') {
+              run.status = 'approval'
+              run.approval = {
+                id: crypto.randomUUID(),
+                command: `${fileChange.path}\n\n${fileChange.after}`,
+                reason:
+                  '把监听端口改为 8080，并增加代理超时。此流程为模拟数据。',
+                label: '修改远端配置',
+                fileChange,
+                expiresAt: Date.now() + 300000,
+              }
+              return clone(run)
+            }
+            if (run.scenario === 'query') {
+              const tool = {
+                ...operation(crypto.randomUUID(), query.statement, 'completed'),
+                label: '执行 SQL',
+                results: [query],
+                metrics: [{ name: '查询耗时', value: '24', unit: 'ms' }],
+              }
+              run.entries.push({
+                role: 'tool',
+                text: tool.label,
+                operation: tool,
+                detail: JSON.stringify({ statements: [query], elapsedMs: 24 }),
+              })
+              run.entries.push({
+                role: 'assistant',
+                text: '已查询最近 7 天的订单数，并生成图表。10 月 3 日为 NULL，图表保留缺口。\n\n**此页面全部为模拟数据。**',
+              })
+              run.status = 'completed'
+              return clone(run)
+            }
             if (run.stage === 1) {
               run.status = 'approval'
               run.approval = {
@@ -197,6 +259,13 @@
               code ? 'failed' : 'completed',
               code
             )
+            finished.metrics = [
+              {
+                name: '服务状态',
+                value: code ? 'inactive (dead)' : 'active (running)',
+                unit: '',
+              },
+            ]
             run.entries.push({
               role: 'tool',
               text: finished.label,
@@ -240,6 +309,11 @@
               run.approval.command,
               'running'
             )
+            const change = run.approval.fileChange
+            if (change) {
+              tool.label = '修改远端配置'
+              tool.fileChange = clone(change)
+            }
             run.approval = null
             run.status = 'running'
             args.onProgress.onmessage({
@@ -251,12 +325,31 @@
             await wait(520)
             if (run.status === 'cancelled') return clone(run)
             const finished = operation(tool.id, tool.command, 'completed', 0)
+            if (change) {
+              finished.label = tool.label
+              finished.fileChange = clone(change)
+            }
             run.entries.push({
               role: 'tool',
               text: finished.label,
               operation: finished,
-              detail: '{"stdout":"","exitCode":0}',
+              detail: change
+                ? JSON.stringify({
+                    path: change.path,
+                    changed: true,
+                    verified: true,
+                    backupPath: `${change.path}.miraihub-demo.bak`,
+                  })
+                : '{"stdout":"","exitCode":0}',
             })
+            if (change) {
+              run.status = 'completed'
+              run.entries.push({
+                role: 'assistant',
+                text: '配置写入并核对完成，已保留原文备份。此流程为模拟数据，没有修改远端文件。',
+              })
+              return clone(run)
+            }
             run.stage = 2
             return clone(run)
           }
@@ -320,6 +413,26 @@
           h('main', { class: 'fixture' }, [
             h('div', { class: 'fixture-bar' }, [
               h('strong', 'AI 执行流程验证 · 全部为模拟数据'),
+              h(
+                'button',
+                {
+                  onClick: () => {
+                    state.kind = 'ssh'
+                    state.context = {
+                      id: crypto.randomUUID(),
+                      target: target(),
+                      source: 'file',
+                      intent: 'explain',
+                      name: 'demo.conf',
+                      content: JSON.stringify({
+                        path: fileChange.path,
+                        text: fileChange.before,
+                      }),
+                    }
+                  },
+                },
+                '配置差异流程'
+              ),
               h(
                 'button',
                 {

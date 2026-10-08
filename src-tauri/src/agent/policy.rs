@@ -19,7 +19,10 @@ impl ApprovalMode {
                 Action::Sql { sql, .. } => !super::read_only::sql(sql),
                 // An external server's own read-only claim is not trusted, so MCP
                 // tools are approved one by one unless the user picked Full access.
-                Action::RedisCommand { .. } | Action::Mcp { .. } => true,
+                Action::RedisCommand { .. }
+                | Action::Mcp { .. }
+                | Action::FileRead { .. }
+                | Action::FileEdit { .. } => true,
                 _ => false,
             },
             Self::Full => false,
@@ -36,6 +39,15 @@ impl ApprovalMode {
 
 #[derive(Clone, Debug)]
 pub enum Action {
+    FileRead {
+        path: String,
+    },
+    FileEdit {
+        path: String,
+        expected: String,
+        content: String,
+        reason: String,
+    },
     Probe(String),
     Schema {
         schema: String,
@@ -74,6 +86,10 @@ pub enum Action {
 impl Action {
     pub fn approval_details(&self) -> (String, String) {
         match self {
+            Self::FileRead { path } => (path.clone(), "读取选定的远端文本文件".into()),
+            Self::FileEdit { path, content, reason, .. } => {
+                (format!("{}\n\n{}", path, content), reason.clone())
+            }
             Self::Probe(probe) => (
                 probe_command(probe).unwrap_or("").into(),
                 "读取服务器的固定状态信息".into(),
@@ -119,6 +135,8 @@ impl Action {
     }
     pub fn label(&self) -> &'static str {
         match self {
+            Self::FileRead { .. } => "读取远端配置",
+            Self::FileEdit { .. } => "修改远端配置",
             Self::Probe(_) => "读取服务器状态",
             Self::Schema { .. } => "读取数据库结构",
             Self::Shell { .. } => "执行 Shell 命令",
@@ -134,6 +152,19 @@ impl Action {
 #[serde(deny_unknown_fields)]
 struct Probe {
     probe: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileRead {
+    path: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileEdit {
+    path: String,
+    expected: String,
+    content: String,
+    reason: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -176,10 +207,34 @@ pub fn classify(
     name: &str,
     args: &str,
 ) -> AppResult<Action> {
-    if args.len() > 20000 {
+    let max_arguments = if kind == "ssh" && name == "propose_file_edit" {
+        // Two complete 64 KB texts may double in size when JSON-escaped.
+        280000
+    } else {
+        20000
+    };
+    if args.len() > max_arguments {
         return Err(AppError::invalid_input("工具参数过长"));
     }
     match (kind, name) {
+        ("ssh", "read_remote_file") => {
+            let a: FileRead = parse(args)?;
+            super::files::validate_path(&a.path)?;
+            Ok(Action::FileRead { path: a.path })
+        }
+        ("ssh", "propose_file_edit") => {
+            let a: FileEdit = parse(args)?;
+            super::files::validate_path(&a.path)?;
+            super::files::validate_text(&a.expected)?;
+            super::files::validate_text(&a.content)?;
+            bounded(&a.reason, 2000)?;
+            Ok(Action::FileEdit {
+                path: a.path,
+                expected: a.expected,
+                content: a.content,
+                reason: a.reason,
+            })
+        }
         ("ssh", "server_status") => {
             let a: Probe = parse(args)?;
             probe_command(&a.probe)?;

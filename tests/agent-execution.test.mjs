@@ -118,3 +118,45 @@ test('context count, UTF-8 size and content validation reject invalid selections
   assert.equal(draft.addContext(request), true)
   scope.stop()
 })
+
+test('configuration context keeps the full escaped original and table structure waits for submit', async () => {
+  const sent = []
+  const scope = effectScope()
+  const draft = scope.run(() =>
+    useAgentDraft(async (prompt, attachments) => {
+      sent.push({ prompt, attachments })
+      return true
+    })
+  )
+  const text = '"\\\n'.repeat(20000)
+  const content = JSON.stringify({ path: '/etc/demo.conf', text })
+  assert.ok(new TextEncoder().encode(content).length > 64000)
+  assert.equal(
+    draft.addContext({
+      id: 'config',
+      source: 'file',
+      intent: 'explain',
+      name: 'demo.conf',
+      content,
+    }),
+    true
+  )
+  assert.equal(JSON.parse(draft.attachments.value[0].content).text, text)
+  assert.equal(sent.length, 0)
+  draft.prompt.value = '我写好的修改需求'
+  assert.equal(
+    draft.addContext({
+      id: 'schema',
+      source: 'schema',
+      intent: 'explain',
+      name: 'table-structure.json',
+      content: '{"columns":[{"name":"id"}]}',
+    }),
+    true
+  )
+  assert.equal(draft.prompt.value, '我写好的修改需求')
+  await draft.submit()
+  assert.equal(sent[0].attachments.length, 2)
+  assert.equal(sent[0].attachments[0].content, content)
+  scope.stop()
+})

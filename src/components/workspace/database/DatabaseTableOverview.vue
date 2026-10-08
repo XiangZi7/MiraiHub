@@ -22,6 +22,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: [object: DatabaseObject, panel?: 'data' | 'columns']
   inspect: [object: DatabaseObject]
+  askAgent: [object: DatabaseObject]
   query: [object: DatabaseObject]
   copy: [object: DatabaseObject]
   renameObject: [object: DatabaseObject]
@@ -132,7 +133,9 @@ watch([() => props.objects, () => props.loading], () => {
           :style="{ width: `${widthOf(column.name)}px` }"
         />
       </colgroup>
-      <thead class="database-glass-header database-glass-header--sticky text-txt-3">
+      <thead
+        class="database-glass-header database-glass-header--sticky text-txt-3"
+      >
         <tr>
           <th
             v-for="(column, index) in columns"
@@ -214,6 +217,7 @@ watch([() => props.objects, () => props.loading], () => {
       @close="menu.open = false"
       @open="(object, panel) => emit('open', object, panel)"
       @inspect="emit('inspect', $event)"
+      @ask-agent="emit('askAgent', $event)"
       @query="emit('query', $event)"
       @copy="emit('copy', $event)"
       @rename="emit('renameObject', $event)"

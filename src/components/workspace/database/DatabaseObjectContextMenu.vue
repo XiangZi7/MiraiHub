@@ -19,6 +19,7 @@ const emit = defineEmits<{
   close: []
   open: [object: DatabaseObject, panel?: 'data' | 'columns']
   inspect: [object: DatabaseObject]
+  askAgent: [object: DatabaseObject]
   query: [object: DatabaseObject]
   copy: [object: DatabaseObject]
   rename: [object: DatabaseObject]
@@ -68,6 +69,12 @@ const items = computed<ContextMenuItem[]>(() => {
       disabled: !relation,
     },
     {
+      id: 'ask-agent',
+      label: t('让 AI 分析表结构'),
+      icon: 'lucide:sparkles',
+      disabled: !relation,
+    },
+    {
       id: 'truncate-object',
       label: t('清空表数据…'),
       icon: 'lucide:eraser',
@@ -96,6 +103,11 @@ function select(id: string): void {
   const object = props.object
   if (!object) return
   if (id === 'open-object') emit('open', object)
+  else if (
+    id === 'ask-agent' &&
+    (object.kind === 'table' || object.kind === 'view')
+  )
+    emit('askAgent', object)
   else if (id === 'query-object') emit('query', object)
   else if (id === 'design-object' && object.kind === 'table')
     emit('design', object)

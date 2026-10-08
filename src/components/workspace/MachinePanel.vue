@@ -5,7 +5,9 @@ import {
   computed,
   defineAsyncComponent,
   nextTick,
+  reactive,
   shallowRef,
+  toRefs,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -44,7 +46,7 @@ const props = defineProps<{
 // 当前视图由 workspace-layout Store 持有，命令面板与服务器页共用。
 const view = defineModel<MachineViewId>('view', { required: true })
 
-defineEmits<{
+const emit = defineEmits<{
   /** 请求收起面板 */
   close: []
   contextConsumed: [id: string]
@@ -74,6 +76,42 @@ const target = computed(() => ({
   sessionId: props.sessionId,
   database: '',
 }))
+// 响应式状态
+const state = reactive({
+  // 从文件浏览器显式附加到 AI 的配置原文
+  fileContext: null as AgentContextRequest | null,
+})
+const { fileContext } = toRefs(state)
+function contextConsumed(id: string): void {
+  if (state.fileContext?.id === id) state.fileContext = null
+  emit('contextConsumed', id)
+}
+function askAgentFile(request: {
+  sessionId: string
+  path: string
+  text: string
+}): void {
+  if (request.sessionId !== props.sessionId) return
+  state.fileContext = {
+    id: crypto.randomUUID(),
+    target: { ...target.value },
+    source: 'file',
+    intent: 'explain',
+    name: request.path.split('/').at(-1) || 'config.txt',
+    content: JSON.stringify(
+      { path: request.path, text: request.text },
+      null,
+      2
+    ),
+  }
+  view.value = 'agent'
+}
+watch(
+  () => props.sessionId,
+  () => {
+    state.fileContext = null
+  }
+)
 </script>
 
 <template>
@@ -123,6 +161,7 @@ const target = computed(() => ({
       <FilesView
         ref="filesView"
         :session-id="sessionId"
+        @ask-agent="askAgentFile"
         :connection-name="
           connection ? `${connection.name} (${connection.host})` : ''
         "
@@ -132,11 +171,11 @@ const target = computed(() => ({
       v-if="agentVisited"
       v-show="view === 'agent'"
       :target="target"
-      :context-request="contextRequest"
+      :context-request="fileContext || contextRequest"
       :title="connection?.name || title"
       :active="active && view === 'agent'"
       embedded
-      @context-consumed="$emit('contextConsumed', $event)"
+      @context-consumed="contextConsumed"
     />
   </section>
 </template>

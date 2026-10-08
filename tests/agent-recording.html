@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>录屏布局验证 · 模拟数据</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h } from 'vue'
+      import { createPinia } from 'pinia'
+      import { createRouter, createMemoryHistory } from 'vue-router'
+      import { i18n } from '/src/i18n/index.ts'
+      import WorkspaceLayout from '/src/layouts/WorkspaceLayout.vue'
+      import AgentQueryResult from '/src/components/agent/AgentQueryResult.vue'
+      import { useConnectionsStore } from '/src/stores/connections.ts'
+      import { useWorkspaceStore } from '/src/stores/workspace.ts'
+      import { useSettingsStore } from '/src/stores/settings.ts'
+      import '/src/assets/styles/main.css'
+
+      const pinia = createPinia()
+      useSettingsStore(pinia).values.restoreLastSession = false
+      const connection = {
+        id: 'fixture-recording',
+        name: 'production-orders (模拟)',
+        kind: 'postgresql',
+        host: 'demo.invalid',
+        port: 5432,
+        username: 'demo',
+        group: '',
+        tags: [],
+        tagColor: 'green',
+        settings: { database: 'demo', password: '', ssl: false },
+        createdAt: 1,
+        updatedAt: 1,
+      }
+      const connections = useConnectionsStore(pinia)
+      connections.items.push(connection)
+      connections.loaded = true
+      useWorkspaceStore(pinia).open(connection)
+      const result = {
+        statement: 'SELECT day, orders FROM daily_orders ORDER BY day;',
+        columns: ['day', 'orders'],
+        rows: [
+          ['10-01', '128'],
+          ['10-02', '196'],
+          ['10-03', '221'],
+          ['10-04', '243'],
+          ['10-05', '218'],
+          ['10-06', '312'],
+          ['10-07', '386'],
+        ],
+        elapsedMs: 24,
+        truncated: false,
+        error: null,
+      }
+      const view = {
+        render: () =>
+          h(
+            'main',
+            {
+              class: 'agent-panel',
+              style: 'width:100%; padding:20px; overflow:auto',
+            },
+            [
+              h(
+                'p',
+                { style: 'margin-bottom:12px;color:var(--color-txt-2)' },
+                '录屏布局验证 · 全部为模拟数据。点击标题栏摄像机图标切换。'
+              ),
+              h(
+                'h2',
+                { style: 'font-size:20px;margin-bottom:18px;font-weight:600' },
+                '最近 7 天订单趋势'
+              ),
+              h('div', { style: 'max-width:680px' }, [
+                h(AgentQueryResult, { result }),
+              ]),
+            ]
+          ),
+      }
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+          {
+            path: '/',
+            name: 'databases',
+            meta: { nav: 'databases' },
+            component: view,
+          },
+          ...['servers', 'ssh-keys', 'recent'].map(name => ({
+            path: `/${name}`,
+            name,
+            meta: { nav: name },
+            component: view,
+          })),
+        ],
+      })
+      await router.push('/')
+      i18n.global.locale.value = 'zh-CN'
+      createApp(WorkspaceLayout).use(pinia).use(router).use(i18n).mount('#app')
+    </script>
+  </body>
+</html>

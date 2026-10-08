@@ -30,6 +30,8 @@ pub fn specs(kind: &str) -> Vec<ToolSpec> {
                 json!({"command":{"type":"string"},"reason":{"type":"string"}}),
                 json!(["command", "reason"]),
             ),
+            spec("read_remote_file", "Read one existing regular UTF-8 configuration file, up to 64 KB. Absolute path; no symlink files. Ask/Auto requires approval. Preserve returned text exactly for propose_file_edit.", json!({"path":{"type":"string"}}), json!(["path"])),
+            spec("propose_file_edit", "Replace an existing UTF-8 configuration file. Use only when the user asked to edit it. expected MUST match the complete LF-normalized original text from read_remote_file or an attached file. content is the complete replacement (max 64 KB). Backend shows a diff in Ask/Auto, checks original content, retains a backup, preserves BOM/line endings and verifies the write. Do not use shell redirection for text configuration edits. Does not reload services.", json!({"path":{"type":"string"},"expected":{"type":"string"},"content":{"type":"string"},"reason":{"type":"string"}}), json!(["path","expected","content","reason"])),
         ],
         "database" => vec![
             spec(

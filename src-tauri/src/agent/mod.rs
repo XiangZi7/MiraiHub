@@ -3,6 +3,7 @@ mod attachments;
 mod compaction;
 mod config;
 mod execution;
+mod files;
 pub mod history;
 mod limits;
 pub mod mcp;
@@ -60,6 +61,8 @@ pub struct Approval {
     reason: String,
     label: String,
     expires_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file_change: Option<files::FileChange>,
 }
 struct Pending {
     view: Approval,
@@ -317,6 +320,27 @@ async fn execute(
     validate_target(app, run).await?;
     run.check(cell)?;
     let output = match action {
+        Action::FileRead { path } => {
+            let session = app
+                .state::<ssh::SessionManager>()
+                .get(&run.target.session_id)
+                .await?;
+            tokio::time::timeout(Duration::from_secs(20), files::read(&session, path))
+                .await
+                .map_err(|_| AppError::internal("读取配置超时"))??
+        }
+        Action::FileEdit { .. } => {
+            let session = app
+                .state::<ssh::SessionManager>()
+                .get(&run.target.session_id)
+                .await?;
+            tokio::time::timeout(
+                Duration::from_secs(45),
+                files::apply(&session, &action.file_change().unwrap(), cell),
+            )
+            .await
+            .map_err(|_| AppError::internal("配置写入超时，请重新读取核对；若已完成备份，原文保留在 .miraihub-*.bak 文件"))??
+        }
         Action::Probe(probe) => {
             let session = app
                 .state::<ssh::SessionManager>()
@@ -456,10 +480,15 @@ async fn execute(
             return Ok(execution::Output {
                 text: clip(&outcome.text, 16384),
                 exit_code: None,
+                value: None,
             });
         }
     };
-    Ok(execution::Output::from_value(output))
+    let mut result = execution::Output::from_value(output);
+    if matches!(action, Action::FileRead { .. }) {
+        result.text = result.value.as_ref().unwrap().to_string();
+    }
+    Ok(result)
 }
 fn tool_result(
     run: &mut Run,
@@ -505,6 +534,26 @@ async fn execute_tracked(
     tool_result(run, call_id, action, operation, result);
 }
 
+#[tauri::command]
+pub async fn ai_read_file_context(
+    window: WebviewWindow,
+    app: AppHandle,
+    target: Target,
+    path: String,
+) -> AppResult<Value> {
+    guard(&window, false)?;
+    if target.kind != "ssh" {
+        return Err(AppError::invalid_input("仅 SSH 支持配置文件上下文"));
+    }
+    bind(&app, &target).await?;
+    let session = app
+        .state::<ssh::SessionManager>()
+        .get(&target.session_id)
+        .await?;
+    tokio::time::timeout(Duration::from_secs(20), files::read(&session, &path))
+        .await
+        .map_err(|_| AppError::internal("读取配置超时"))?
+}
 #[tauri::command]
 pub async fn ai_get_config(
     window: WebviewWindow,
@@ -887,6 +936,7 @@ async fn step(
                 reason,
                 label: action.label().into(),
                 expires_at: now() + 300000,
+                file_change: action.file_change(),
             };
             run.entry("audit", "等待审批；尚未执行", Some(command));
             run.pending = Some(Pending {
@@ -1175,6 +1225,7 @@ mod tests {
                 reason: "test".into(),
                 label: "Shell".into(),
                 expires_at: now() + 300000,
+                file_change: None,
             },
             action: Action::Shell {
                 command: "touch /tmp/a".into(),

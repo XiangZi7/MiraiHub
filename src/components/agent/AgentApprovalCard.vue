@@ -7,6 +7,7 @@ import type { AgentApproval } from '@/types/agent'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AgentCopyButton from './AgentCopyButton.vue'
+import AgentFileDiff from './AgentFileDiff.vue'
 
 const { t } = useI18n()
 
@@ -71,9 +72,14 @@ const expired = computed(() => seconds.value === 0)
       />
     </div>
     <pre
+      v-if="!approval.fileChange"
       class="command"
       dir="ltr"
       >{{ approval.command }}</pre>
+    <AgentFileDiff
+      v-else
+      :change="approval.fileChange"
+    />
     <div class="text-txt-3 flex items-center justify-between gap-2 text-[11px]">
       <span>{{ t('AI 提议的原因') }}</span>
       <AgentCopyButton

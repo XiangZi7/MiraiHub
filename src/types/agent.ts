@@ -67,11 +67,33 @@ export interface AgentOperation {
   startedAt: number
   durationMs?: number
   exitCode?: number
+  results?: AgentQueryResult[]
+  metrics?: AgentMetric[]
+  fileChange?: AgentFileChange
+}
+export interface AgentFileChange {
+  path: string
+  before: string
+  after: string
+}
+export interface AgentMetric {
+  name: string
+  value: string
+  unit: string
+}
+export interface AgentQueryResult {
+  statement: string
+  columns: string[]
+  rows: Array<Array<string | null>>
+  elapsedMs: number
+  truncated: boolean
+  error: string | null
 }
 export interface AgentContextRequest {
   id: string
   target: AgentTarget
-  source: 'terminal' | 'sql'
+  source: 'terminal' | 'sql' | 'schema' | 'file'
+  name?: string
   intent: 'explain' | 'optimize'
   content: string
 }
@@ -94,6 +116,7 @@ export interface AgentApproval {
   reason: string
   label: string
   expiresAt: number
+  fileChange?: AgentFileChange
 }
 export interface AgentRun {
   id: string

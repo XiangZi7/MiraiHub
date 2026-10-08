@@ -65,7 +65,7 @@ const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
 const { reorder: reorderWorkspaceTabs } = workspace
 const layout = useWorkspaceLayoutStore()
-const { sidebarWidth, sidebarCollapsed } = storeToRefs(layout)
+const { sidebarWidth, sidebarCollapsed, recording } = storeToRefs(layout)
 const { activeNav, selectNav, openConnection, selectTab, followActiveTab } =
   useWorkspaceNavigation()
 const controllers = provideWorkspaceControllers()
@@ -216,7 +216,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 <template>
   <WindowFrame
     ambient
-    class="h-screen w-screen"
+    :class="
+      recording ? 'recording-workspace h-screen w-screen' : 'h-screen w-screen'
+    "
   >
     <!-- 标题栏：Windows 形态 —— 品牌在左，窗口按钮贴右上角。
          带 data-tauri-drag-region 的区域可拖拽，按钮本身不带故不受影响 -->
@@ -239,13 +241,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </h1>
       </div>
 
-      <NavigationControls />
+      <NavigationControls v-show="!recording" />
       <div
         class="flex-1"
         data-tauri-drag-region
       />
 
       <SearchField
+        v-show="!recording"
         ref="search"
         v-model="keyword"
         icon="lucide:search"
@@ -255,6 +258,15 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       />
 
       <div class="flex items-center gap-1.5">
+        <IconButton
+          icon="lucide:video"
+          :title="
+            recording ? t('退出录屏模式') : t('录屏模式：精简布局与连接别名')
+          "
+          :aria-pressed="recording"
+          :class="recording && 'text-accent'"
+          @click="recording = !recording"
+        />
         <IconButton
           icon="lucide:command"
           :title="
@@ -294,17 +306,22 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
     <!-- 主体 -->
     <div class="relative z-10 flex min-h-0 flex-1">
-      <AppSidebar
-        :active="activeNav"
-        v-model:width="sidebarWidth"
-        v-model:collapsed="sidebarCollapsed"
-        @open="openConnection"
-        @new-database-query="newDatabaseQuery"
-        @database-imported="refreshImportedDatabase"
-        @reset-layout="resetLayout"
-      />
+      <div
+        v-show="!recording"
+        class="flex min-h-0 shrink-0"
+      >
+        <AppSidebar
+          :active="activeNav"
+          v-model:width="sidebarWidth"
+          v-model:collapsed="sidebarCollapsed"
+          @open="openConnection"
+          @new-database-query="newDatabaseQuery"
+          @database-imported="refreshImportedDatabase"
+          @reset-layout="resetLayout"
+        />
+      </div>
       <AppResizeHandle
-        v-if="!sidebarCollapsed"
+        v-if="!sidebarCollapsed && !recording"
         v-model="sidebarWidth"
         pane-side="left"
         :min="SIDEBAR_MIN_WIDTH"
@@ -370,6 +387,17 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </template>
 
 <style scoped>
+.recording-workspace :deep(.agent-panel) {
+  --agent-body-font: 15px;
+  --agent-small-font: 12px;
+  font-size: 15px;
+}
+.recording-workspace :deep(.agent-composer textarea) {
+  font-size: 14px;
+}
+.recording-workspace :deep(.agent-scroll) {
+  padding: 20px 16px;
+}
 .palette-enter-active,
 .palette-leave-active {
   transition: background-color 0.15s ease;

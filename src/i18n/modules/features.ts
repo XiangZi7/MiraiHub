@@ -1,5 +1,44 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  读取远端配置: 'Read remote configuration',
+  修改远端配置: 'Edit remote configuration',
+  配置差异预览: 'Configuration diff',
+  配置增删行: 'Configuration added and removed lines',
+  '继续显示差异（剩余 {count} 行）':
+    'Show more changes ({count} lines remaining)',
+  配置内容没有变化: 'Configuration is unchanged',
+  查询结果图表: 'Query result chart',
+  查询结果: 'Query results',
+  行: 'rows',
+  表格: 'Table',
+  自动: 'Auto',
+  折线图: 'Line chart',
+  柱状图: 'Bar chart',
+  查看数据表: 'View data table',
+  '部分查询结果，图表仅包含返回的行。':
+    'Partial results. The chart includes returned rows only.',
+  '图表基于返回数据，按查询结果顺序展示；NULL 不作为零。':
+    'Charts follow the returned row order. NULL is not treated as zero.',
+  '复制 CSV': 'Copy CSV',
+  '请解释附加配置；需要修改时请先展示差异。':
+    'Explain the attached configuration. Show a diff before editing it.',
+  '请分析附加表结构，并给出索引与字段设计建议。':
+    'Analyze the attached table structure and suggest index and column improvements.',
+  '配置上下文须为非空文本，最多 256 KB':
+    'Configuration context must be non-empty text up to 256 KB.',
+  '让 AI 分析表结构': 'Analyze table structure with AI',
+  '让 AI 解释配置': 'Explain configuration with AI',
+  读取配置失败: 'Failed to read configuration',
+  重复检查的指标变化: 'Metric changes across repeated checks',
+  查询耗时: 'Query execution time',
+  服务状态: 'Service status',
+  '磁盘使用率 {mount}': 'Disk usage {mount}',
+  'HTTP 状态码': 'HTTP status code',
+  演示服务器: 'Demo server',
+  演示数据库: 'Demo database',
+  退出录屏模式: 'Exit recording mode',
+  '录屏模式：精简布局与连接别名':
+    'Recording mode: simpler layout and connection aliases',
   正在执行: 'Executing',
   已执行: 'Executed',
   执行异常: 'Execution error',

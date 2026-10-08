@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createRenderer, h, markRaw, nextTick, reactive } from 'vue'
+import { createPinia } from 'pinia'
 import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -129,12 +130,15 @@ test('capacity presets preserve the independently editable retry count', async (
     )
     select.props['onUpdate:modelValue']('enhanced')
     await nextTick()
-    assert.deepEqual({ ...state.limits }, {
-      maxSteps: 64,
-      maxContextKb: 2000,
-      maxMessages: 512,
-      maxRetries: 999,
-    })
+    assert.deepEqual(
+      { ...state.limits },
+      {
+        maxSteps: 64,
+        maxContextKb: 2000,
+        maxMessages: 512,
+        maxRetries: 999,
+      }
+    )
     const retryInput = root.children[0].children
       .flatMap(child => child.children)
       .find(child => child.props.id === 'ai-max-retries')
@@ -181,7 +185,7 @@ test('panel preserves the selected permission across profiles and conversations,
   const app = renderer.createApp({
     render: () => h(Panel, { target: state.target }),
   })
-  app.use(i18n).mount(root)
+  app.use(createPinia()).use(i18n).mount(root)
   const find = predicate => {
     const visit = vnode => {
       if (predicate(vnode)) return vnode

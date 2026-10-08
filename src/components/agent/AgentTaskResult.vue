@@ -14,6 +14,12 @@ const props = defineProps<{
 }>()
 const { t } = useI18n()
 const result = computed(() => summarizeAgentTurn(props.entries, props.status))
+function metricLabel(name: string) {
+  const prefix = '磁盘使用率 '
+  return name.startsWith(prefix)
+    ? t('磁盘使用率 {mount}', { mount: name.slice(prefix.length) })
+    : t(name)
+}
 const title = computed(() =>
   t(
     props.status === 'cancelled'
@@ -67,6 +73,28 @@ const title = computed(() =>
         })
       }}
     </p>
+    <div
+      v-if="result.metricComparisons.length"
+      class="result-comparisons"
+    >
+      <p>{{ t('重复检查的指标变化') }}</p>
+      <div
+        v-for="change in result.metricComparisons"
+        :key="`${change.command}-${change.name}`"
+        class="result-change metric-change"
+        :title="change.command"
+      >
+        <code>{{ metricLabel(change.name) }}</code
+        ><span
+          >{{ change.before }} {{ change.unit }}
+          <AppIcon
+            name="lucide:arrow-right"
+            :size="12"
+          />
+          {{ change.after }} {{ change.unit }}</span
+        >
+      </div>
+    </div>
     <div
       v-if="result.comparisons.length"
       class="result-comparisons"
@@ -181,5 +209,15 @@ const title = computed(() =>
   gap: 7px;
   white-space: nowrap;
   color: var(--color-txt-2);
+}
+.metric-change {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.metric-change span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  flex-wrap: wrap;
 }
 </style>

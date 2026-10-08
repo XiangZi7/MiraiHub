@@ -27,8 +27,10 @@ import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import type { ContextMenuItem } from '@/types/context-menu'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/useToast'
+import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 
 const { t } = useI18n()
+const layout = useWorkspaceLayoutStore()
 
 const { settings } = useSettings()
 
@@ -469,12 +471,12 @@ defineExpose({
       <span
         class="text-txt-2 max-w-36 shrink-0 truncate text-[11px]"
         :title="
-          config
+          config && !layout.recording
             ? `${config.username}@${config.host}:${config.port}`
             : undefined
         "
       >
-        {{ endpoint }}
+        {{ layout.recording ? t('演示服务器') : endpoint }}
       </span>
 
       <slot name="metrics"><div class="flex-1" /></slot>

@@ -69,8 +69,10 @@ import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
 import type { AgentContextRequest } from '@/types/agent'
+import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 
 const { t } = useI18n()
+const layout = useWorkspaceLayoutStore()
 
 interface QueryTab extends TabItem {
   kind: 'query'
@@ -166,6 +168,42 @@ function askAgent(content: string, intent: 'explain' | 'optimize'): void {
   }
   agentState.agentSplit = true
   agentState.agentOpen = true
+}
+async function askAgentStructure(object: DatabaseObject): Promise<void> {
+  const target = { ...agentTarget.value }
+  if (!target.sessionId) return
+  try {
+    const columns = await database.describeObject(
+      target.sessionId,
+      object.schema,
+      object.name
+    )
+    if (JSON.stringify(target) !== JSON.stringify(agentTarget.value)) return
+    agentState.contextRequest = {
+      id: crypto.randomUUID(),
+      target,
+      source: 'schema',
+      intent: 'explain',
+      name: 'table-structure.json',
+      content: JSON.stringify(
+        {
+          database: target.database,
+          schema: object.schema,
+          table: object.name,
+          columns,
+        },
+        null,
+        2
+      ),
+    }
+    agentState.agentSplit = true
+    agentState.agentOpen = true
+  } catch (error) {
+    toast.error({
+      title: t('读取表结构失败'),
+      description: database.errorMessage(error),
+    })
+  }
 }
 watch(
   () => JSON.stringify(agentTarget.value),
@@ -1269,7 +1307,7 @@ watch(
     class="pane flex-1 flex-row"
   >
     <DatabaseObjectTree
-      v-show="!agentOpen || agentSplit"
+      v-show="(!agentOpen || agentSplit) && !layout.recording"
       :style="sidebarStyle"
       :database-name="databaseName"
       :database-kind="databaseKind"
@@ -1284,6 +1322,7 @@ watch(
       :error="objectsError"
       @refresh="refreshAll"
       @inspect="inspectObject"
+      @ask-agent="askAgentStructure"
       @open="openObject"
       @query="createObjectQuery"
       @copy="copyObjectName"
@@ -1317,7 +1356,7 @@ watch(
       @truncate-object="requestTruncateTable"
     />
     <AppResizeHandle
-      v-show="!agentOpen || agentSplit"
+      v-show="(!agentOpen || agentSplit) && !layout.recording"
       v-model="sidebarWidth"
       pane-side="left"
       :min="sidebarMin"
@@ -1458,13 +1497,17 @@ watch(
             <span
               class="database-toolbar-detail text-txt-3 max-w-32 truncate text-[11px]"
               :title="
-                session
-                  ? `${session.endpoint}\n${session.serverVersion}`
-                  : sessionId || connectionError
+                layout.recording
+                  ? undefined
+                  : session
+                    ? `${session.endpoint}\n${session.serverVersion}`
+                    : sessionId || connectionError
               "
               >{{
                 connected
-                  ? `${databaseKind} · ${session?.serverVersion || databaseName}`
+                  ? layout.recording
+                    ? t('演示数据库')
+                    : `${databaseKind} · ${session?.serverVersion || databaseName}`
                   : status === 'connecting'
                     ? 'Connecting…'
                     : 'Disconnected'
@@ -1501,6 +1544,7 @@ watch(
             :error="objectsError"
             @open="openObject"
             @inspect="inspectObject"
+            @ask-agent="askAgentStructure"
             @query="createObjectQuery"
             @copy="copyObjectName"
             @rename-object="showNameDialog('rename-object', $event)"
@@ -1571,7 +1615,7 @@ watch(
         </template>
       </div>
       <AppResizeHandle
-        v-if="agentOpen && agentSplit"
+        v-if="agentOpen && agentSplit && !layout.recording"
         v-model="agentWidth"
         pane-side="right"
         :min="agentMin"

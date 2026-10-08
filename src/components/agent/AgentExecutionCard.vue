@@ -5,6 +5,7 @@ import type { AgentOperation } from '@/types/agent'
 import { formatAgentDuration } from '@/utils/agent-execution'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AgentCopyButton from './AgentCopyButton.vue'
+import AgentFileDiff from './AgentFileDiff.vue'
 
 const props = defineProps<{ operation: AgentOperation; output?: string }>()
 const { t } = useI18n()
@@ -52,7 +53,9 @@ const label = computed(() =>
       /></span>
       <span class="execution-heading">
         <strong>{{ t(operation.label) }}</strong>
-        <span class="execution-command">{{ operation.command }}</span>
+        <span class="execution-command">{{
+          operation.fileChange?.path || operation.command
+        }}</span>
       </span>
       <span class="execution-meta">
         <span>{{ label }}</span>
@@ -73,7 +76,14 @@ const label = computed(() =>
       >
         {{ operation.reason }}
       </p>
-      <pre class="execution-code">{{ operation.command }}</pre>
+      <pre
+        v-if="!operation.fileChange"
+        class="execution-code"
+        >{{ operation.command }}</pre>
+      <AgentFileDiff
+        v-if="operation.fileChange"
+        :change="operation.fileChange"
+      />
       <div
         v-if="operation.exitCode !== undefined"
         class="execution-exit"

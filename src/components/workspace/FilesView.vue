@@ -20,6 +20,7 @@ import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import * as ssh from '@/api/ssh'
+import { readFileContext } from '@/api/agent'
 import { useFileTransfers } from '@/composables/useFileTransfers'
 import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
 import { useRemoteEditor } from '@/composables/useRemoteEditor'
@@ -39,6 +40,9 @@ import RemotePathInput from './RemotePathInput.vue'
 const { t } = useI18n()
 
 const { settings } = useSettings()
+const emit = defineEmits<{
+  askAgent: [request: { sessionId: string; path: string; text: string }]
+}>()
 
 const props = withDefaults(
   defineProps<{
@@ -87,6 +91,8 @@ const state = reactive({
   createMenuX: 0,
   createMenuY: 0,
   creating: null as 'file' | 'directory' | null,
+  // 正在读取将加入 AI 草稿的配置文件
+  readingContext: false,
 })
 
 const {
@@ -175,7 +181,10 @@ async function createRemote(name: string): Promise<void> {
     if (props.sessionId === session && path.value === directory) await refresh()
     toast.success(t('已创建“{value0}”', { value0: name }))
   } catch (createError) {
-    toast.error({ title: t('创建失败'), description: ssh.errorMessage(createError) })
+    toast.error({
+      title: t('创建失败'),
+      description: ssh.errorMessage(createError),
+    })
   }
 }
 
@@ -191,6 +200,12 @@ const contextItems = computed<ContextMenuItem[]>(() => {
           ? t('打开目录')
           : t('编辑文本文件'),
       icon: directory ? 'lucide:folder-open' : 'lucide:file-pen-line',
+    },
+    {
+      id: 'ask-agent',
+      label: t('让 AI 解释配置'),
+      icon: 'lucide:sparkles',
+      disabled: file.kind !== 'file' || state.readingContext,
     },
     {
       id: 'external',
@@ -330,6 +345,7 @@ function runContextAction(action: string): void {
   const file = state.menuFile
   if (!file) return
   if (action === 'open') void openRemote(file)
+  else if (action === 'ask-agent') void askAgentFile(file)
   else if (action === 'external')
     void openExternal(file).catch(error =>
       toast.error({
@@ -342,6 +358,26 @@ function runContextAction(action: string): void {
   else if (action === 'delete') {
     if (settings.confirmFileDelete) state.pendingDelete = file
     else void deleteFile(file)
+  }
+}
+async function askAgentFile(file: SshRemoteFile): Promise<void> {
+  if (state.readingContext || file.kind !== 'file') return
+  const sessionId = props.sessionId
+  state.readingContext = true
+  try {
+    const result = await readFileContext(
+      { kind: 'ssh', sessionId, database: '' },
+      file.path
+    )
+    if (sessionId === props.sessionId)
+      emit('askAgent', { sessionId, ...result })
+  } catch (error) {
+    toast.error({
+      title: t('读取配置失败'),
+      description: ssh.errorMessage(error),
+    })
+  } finally {
+    state.readingContext = false
   }
 }
 

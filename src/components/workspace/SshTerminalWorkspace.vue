@@ -31,9 +31,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string]
 }>()
-const { machineWidth, machineOpen, machineView, machineMaxWidth } = storeToRefs(
-  useWorkspaceLayoutStore()
-)
+const { machineWidth, machineOpen, machineView, machineMaxWidth, recording } =
+  storeToRefs(useWorkspaceLayoutStore())
 // 响应式状态
 const state = reactive({
   // 是否打开独立的第二个 SSH 终端
@@ -171,6 +170,7 @@ defineExpose({
       class="machine-panel-shell"
     >
       <AppResizeHandle
+        v-show="!recording"
         v-model="machineWidth"
         pane-side="right"
         :min="MACHINE_MIN_WIDTH"

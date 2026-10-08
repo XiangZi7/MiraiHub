@@ -81,10 +81,14 @@ export function useAgentDraft(
     const size = new TextEncoder().encode(content).length
     if (
       !content.trim() ||
-      size > 64000 ||
+      size > (request.source === 'file' ? 256000 : 64000) ||
       /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(content)
     ) {
-      state.attachmentError = i18n.global.t('选区须为非空文本，最多 64 KB')
+      state.attachmentError = i18n.global.t(
+        request.source === 'file'
+          ? '配置上下文须为非空文本，最多 256 KB'
+          : '选区须为非空文本，最多 64 KB'
+      )
       return false
     }
     if (
@@ -96,20 +100,26 @@ export function useAgentDraft(
     }
     state.attachments.push({
       id: request.id,
-      name: i18n.global.t(
-        request.source === 'terminal' ? '终端选区.txt' : 'SQL 选区.sql'
-      ),
+      name:
+        request.name ||
+        i18n.global.t(
+          request.source === 'terminal' ? '终端选区.txt' : 'SQL 选区.sql'
+        ),
       content,
       size,
       source: 'context',
     })
     if (!state.prompt.trim())
       state.prompt = i18n.global.t(
-        request.intent === 'optimize'
-          ? '请分析附加 SQL 的性能，并给出优化建议。'
-          : request.source === 'terminal'
-            ? '请分析附加的终端输出，解释问题并建议下一步。'
-            : '请解释附加 SQL 的用途，并检查可能的问题。'
+        request.source === 'file'
+          ? '请解释附加配置；需要修改时请先展示差异。'
+          : request.source === 'schema'
+            ? '请分析附加表结构，并给出索引与字段设计建议。'
+            : request.intent === 'optimize'
+              ? '请分析附加 SQL 的性能，并给出优化建议。'
+              : request.source === 'terminal'
+                ? '请分析附加的终端输出，解释问题并建议下一步。'
+                : '请解释附加 SQL 的用途，并检查可能的问题。'
       )
     return true
   }

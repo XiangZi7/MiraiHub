@@ -23,6 +23,8 @@ export const useWorkspaceLayoutStore = defineStore('workspace-layout', () => {
     machineWidth: defaultMachineWidth,
     machineOpen: true,
     machineView: 'files' as MachineViewId,
+    // 当前窗口录屏模式，仅在内存保留
+    recording: false,
   })
   const machineMaxWidth = computed(() =>
     Math.max(

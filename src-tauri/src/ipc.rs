@@ -36,6 +36,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ssh::batch::ssh_batch_cancel,
         ssh::batch::ssh_batch_forget,
         agent::ai_get_config,
+        agent::ai_read_file_context,
         agent::ai_list_models,
         agent::ai_save_config,
         agent::ai_activate_config,

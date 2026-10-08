@@ -40,6 +40,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   refresh: []
   inspect: [object: DatabaseObject]
+  askAgent: [object: DatabaseObject]
   open: [object: DatabaseObject, panel?: 'data' | 'columns']
   query: [object: DatabaseObject]
   copy: [object: DatabaseObject]
@@ -722,6 +723,7 @@ function handleContextAction(id: string): void {
       @close="context.open = false"
       @open="(object, panel) => emit('open', object, panel)"
       @inspect="emit('inspect', $event)"
+      @ask-agent="emit('askAgent', $event)"
       @query="emit('query', $event)"
       @copy="emit('copy', $event)"
       @rename="emit('renameObject', $event)"

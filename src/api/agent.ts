@@ -24,6 +24,8 @@ function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args)
 }
 export const getConfig = () => call<AgentSettings>('ai_get_config')
+export const readFileContext = (target: AgentTarget, path: string) =>
+  call<{ path: string; text: string }>('ai_read_file_context', { target, path })
 export const listModels = (input: AgentModelListInput) =>
   call<string[]>('ai_list_models', { input })
 export const saveConfig = (input: AgentProfileInput, clearKey: boolean) =>
