@@ -67,6 +67,7 @@ import DatabaseTransferDialog, {
 import SqlEditor from './database/SqlEditor.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
+import AppSidePane from '@/components/ui/AppSidePane.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
 import type { AgentContextRequest } from '@/types/agent'
 import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
@@ -118,6 +119,7 @@ const emit = defineEmits<{
 }>()
 
 const databaseContainer = useTemplateRef<HTMLElement>('databaseContainer')
+const historyTrigger = shallowRef<HTMLElement | null>(null)
 const {
   width: sidebarWidth,
   min: sidebarMin,
@@ -1209,9 +1211,14 @@ async function runQuery(sqlOverride?: string): Promise<void> {
 }
 
 function showHistory(event: MouseEvent): void {
+  if (historyMenu.open) {
+    historyMenu.open = false
+    return
+  }
   if (props.connection)
     historyEntries.value = listQueryHistory(props.connection.id)
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  historyTrigger.value = event.currentTarget as HTMLElement
+  const rect = historyTrigger.value.getBoundingClientRect()
   historyMenu.x = rect.right
   historyMenu.y = rect.bottom + 5
   historyMenu.open = true
@@ -1432,6 +1439,8 @@ watch(
               icon="lucide:history"
               :size="13"
               :title="t('查询历史')"
+              aria-haspopup="menu"
+              :aria-expanded="historyMenu.open"
               @click="showHistory"
             />
             <IconButton
@@ -1616,26 +1625,32 @@ watch(
           />
         </template>
       </div>
-      <AppResizeHandle
-        v-if="agentOpen && agentSplit && !layout.recording"
-        v-model="agentWidth"
-        pane-side="right"
-        :min="agentMin"
-        :max="agentMax"
-        :label="t('调整数据库 AI Agent 宽度')"
-      />
-      <AiAgentPanel
-        v-show="agentOpen"
-        :target="agentTarget"
-        :context-request="contextRequest"
-        :title="databaseName"
-        :active="active !== false && agentOpen"
-        :split="agentSplit"
-        :style="agentSplit ? agentStyle : undefined"
-        @split="toggleAgentSplit"
-        @close="agentOpen = false"
-        @context-consumed="agentState.contextRequest = null"
-      />
+      <AppSidePane
+        :open="agentOpen"
+        :width="
+          agentSplit ? agentWidth + (layout.recording ? 0 : 10) : undefined
+        "
+      >
+        <AppResizeHandle
+          v-if="agentSplit && !layout.recording"
+          v-model="agentWidth"
+          pane-side="right"
+          :min="agentMin"
+          :max="agentMax"
+          :label="t('调整数据库 AI Agent 宽度')"
+        />
+        <AiAgentPanel
+          :target="agentTarget"
+          :context-request="contextRequest"
+          :title="databaseName"
+          :active="active !== false && agentOpen"
+          :split="agentSplit"
+          :style="agentSplit ? agentStyle : undefined"
+          @split="toggleAgentSplit"
+          @close="agentOpen = false"
+          @context-consumed="agentState.contextRequest = null"
+        />
+      </AppSidePane>
     </div>
 
     <AppContextMenu
@@ -1644,6 +1659,7 @@ watch(
       :y="historyMenu.y"
       :items="historyItems"
       :label="t('查询历史')"
+      :trigger="historyTrigger"
       @close="historyMenu.open = false"
       @select="handleHistoryAction"
     />

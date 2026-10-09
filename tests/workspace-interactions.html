@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>工作区菜单和侧栏回归验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, markRaw, nextTick, reactive } from 'vue'
+      import { i18n } from '/src/i18n/index.ts'
+      import TerminalActions from '/src/components/workspace/TerminalActions.vue'
+      import ConnectionListTools from '/src/components/workspace/ConnectionListTools.vue'
+      import AppSidePane from '/src/components/ui/AppSidePane.vue'
+      import '/src/assets/styles/main.css'
+
+      i18n.global.locale.value = 'zh-CN'
+      const disposable = () => ({ dispose() {} })
+      const terminal = markRaw({
+        hasSelection: () => false,
+        attachCustomKeyEventHandler() {},
+        onWriteParsed: disposable,
+        onResize: disposable,
+        onSelectionChange: disposable,
+        focus() {},
+      })
+      const state = reactive({
+        keyword: '',
+        sort: 'manual',
+        creatingGroup: false,
+        open: false,
+        width: 340,
+        results: [],
+        complete: false,
+      })
+      createApp({
+        render: () =>
+          h('main', { style: 'padding:24px' }, [
+            h('h1', {}, '工作区菜单和侧栏回归验证'),
+            h('p', { id: 'status' }, state.complete ? '验证完成' : '验证中'),
+            h(
+              'ul',
+              { id: 'results' },
+              state.results.map(result => h('li', result))
+            ),
+            h(
+              'div',
+              {
+                id: 'terminal',
+                style: 'display:flex;justify-content:flex-end',
+              },
+              [
+                h(TerminalActions, {
+                  terminal,
+                  status: 'connected',
+                  available: true,
+                  local: true,
+                }),
+              ]
+            ),
+            h('div', { id: 'connections', style: 'width:240px' }, [
+              h(ConnectionListTools, {
+                label: '连接',
+                expanded: true,
+                keyword: state.keyword,
+                sort: state.sort,
+                creatingGroup: state.creatingGroup,
+                'onUpdate:keyword': value => (state.keyword = value),
+                'onUpdate:sort': value => (state.sort = value),
+                'onUpdate:creatingGroup': value =>
+                  (state.creatingGroup = value),
+              }),
+            ]),
+            h(
+              'div',
+              {
+                id: 'layout',
+                style:
+                  'display:flex;width:900px;height:200px;border:1px solid var(--color-line)',
+              },
+              [
+                h('div', { style: 'flex:1;min-width:0' }, '编辑区'),
+                h(
+                  AppSidePane,
+                  { open: state.open, width: state.width },
+                  {
+                    default: () =>
+                      h('textarea', {
+                        'aria-label': 'Agent 草稿',
+                        style: 'flex:1;min-width:0',
+                      }),
+                  }
+                ),
+              ]
+            ),
+          ]),
+      })
+        .use(i18n)
+        .mount('#app')
+
+      const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+      function assert(value, message) {
+        if (!value) throw new Error(message)
+      }
+      async function check(name, action) {
+        try {
+          await action()
+          state.results.push('PASS · ' + name)
+        } catch (error) {
+          state.results.push('FAIL · ' + name + ': ' + error.message)
+        }
+      }
+      async function click(button) {
+        const target = button.querySelector('svg') ?? button
+        target.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0 })
+        )
+        target.dispatchEvent(
+          new PointerEvent('pointerup', { bubbles: true, button: 0 })
+        )
+        target.dispatchEvent(
+          new MouseEvent('click', { bubbles: true, button: 0 })
+        )
+        await nextTick()
+      }
+      await nextTick()
+      for (const [id, title, label] of [
+        ['terminal', '更多', '终端操作'],
+        ['connections', '排序连接', '连接排序'],
+      ]) {
+        await check(title + '：连续点击开关、外部关闭、键盘操作', async () => {
+          const trigger = document.querySelector(
+            `#${id} button[title="${title}"]`
+          )
+          const visible = () => trigger.getAttribute('aria-expanded') === 'true'
+          await click(trigger)
+          assert(visible(), '首次点击未打开')
+          await wait(300)
+          await click(trigger)
+          assert(!visible(), '再次点击重新打开了菜单')
+          await wait(300)
+          await click(trigger)
+          assert(visible(), '第三次点击未打开')
+          document
+            .querySelector('h1')
+            .dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+          await nextTick()
+          assert(!visible(), '外部点击未关闭')
+          await wait(300)
+          trigger.click()
+          await nextTick()
+          assert(visible(), '键盘点击未打开')
+          await wait(300)
+          const menu = document.querySelector(
+            `[role="menu"][aria-label="${label}"]`
+          )
+          menu.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+          )
+          await nextTick()
+          assert(!visible(), 'Escape 未关闭')
+        })
+      }
+      await check('侧栏宽度连续收展、草稿保留和调宽即时响应', async () => {
+        const pane = document.querySelector('[data-side-pane]')
+        const draft = document.querySelector('textarea')
+        draft.value = '保留这个草稿'
+        state.open = true
+        await nextTick()
+        await wait(60)
+        const opening = pane.getBoundingClientRect().width
+        assert(opening > 0 && opening < state.width, '展开没有宽度过渡')
+        await wait(300)
+        assert(
+          Math.abs(pane.getBoundingClientRect().width - state.width) < 1,
+          '展开宽度错误'
+        )
+        state.open = false
+        await nextTick()
+        await wait(60)
+        const closing = pane.getBoundingClientRect().width
+        assert(closing > 0 && closing < state.width, '收起没有宽度过渡')
+        assert(pane.inert, '收起过程中仍可聚焦')
+        await wait(300)
+        assert(getComputedStyle(pane).display === 'none', '收起仍占空间')
+        state.open = true
+        await nextTick()
+        await wait(300)
+        assert(
+          document.querySelector('textarea') === draft &&
+            draft.value === '保留这个草稿',
+          '草稿丢失'
+        )
+        state.width = 420
+        await nextTick()
+        assert(
+          Math.abs(pane.getBoundingClientRect().width - 420) < 1,
+          '调宽出现动画延迟'
+        )
+      })
+      await check('快速反向切换及全宽模式', async () => {
+        state.open = false
+        await nextTick()
+        await wait(40)
+        state.open = true
+        await nextTick()
+        await wait(300)
+        const pane = document.querySelector('[data-side-pane]')
+        assert(
+          getComputedStyle(pane).display !== 'none' && !pane.inert,
+          '快速反向后未展开'
+        )
+        state.width = undefined
+        await nextTick()
+        assert(
+          Math.abs(
+            pane.getBoundingClientRect().width -
+              document.querySelector('#layout').clientWidth
+          ) < 1,
+          '全宽模式未铺满'
+        )
+      })
+      state.complete = true
+    </script>
+  </body>
+</html>

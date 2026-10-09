@@ -73,6 +73,7 @@ const {
 
 const { save: saveSettings } = useSettings()
 const filterText = shallowRef('')
+const createMenuTrigger = shallowRef<HTMLElement | null>(null)
 function toggleHidden(): void {
   saveSettings({ ...settings, showHiddenFiles: !settings.showHiddenFiles })
 }
@@ -163,8 +164,12 @@ const createItems = computed<ContextMenuItem[]>(() => [
 ])
 
 function openCreateMenu(event: MouseEvent): void {
-  const button = event.currentTarget as HTMLElement
-  const rect = button.getBoundingClientRect()
+  if (state.createMenuOpen) {
+    state.createMenuOpen = false
+    return
+  }
+  createMenuTrigger.value = event.currentTarget as HTMLElement
+  const rect = createMenuTrigger.value.getBoundingClientRect()
   state.createMenuX = rect.left
   state.createMenuY = rect.bottom + 4
   state.createMenuOpen = true
@@ -481,6 +486,8 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         :size="14"
         :title="t('新建文件或文件夹')"
         :disabled="!connected || !path"
+        aria-haspopup="menu"
+        :aria-expanded="state.createMenuOpen"
         @click="openCreateMenu"
       />
       <IconButton
@@ -647,6 +654,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     :y="state.createMenuY"
     :items="createItems"
     :label="t('新建文件或文件夹')"
+    :trigger="createMenuTrigger"
     @select="state.creating = $event as 'file' | 'directory'"
     @close="state.createMenuOpen = false"
   />

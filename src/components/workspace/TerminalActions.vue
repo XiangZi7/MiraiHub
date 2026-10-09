@@ -5,6 +5,7 @@ import {
   computed,
   nextTick,
   reactive,
+  shallowRef,
   toRefs,
   useTemplateRef,
   watch,
@@ -30,6 +31,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ split: []; reconnect: []; disconnect: [] }>()
 const input = useTemplateRef<HTMLInputElement>('input')
+const menuTrigger = shallowRef<HTMLElement | null>(null)
 // 响应式状态
 const state = reactive({
   // 是否展开搜索栏
@@ -85,7 +87,12 @@ const items = computed(() => {
 })
 
 function openMenu(event: MouseEvent): void {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  if (state.menuOpen && menuTrigger.value === event.currentTarget) {
+    closeMenu()
+    return
+  }
+  menuTrigger.value = event.currentTarget as HTMLElement
+  const rect = menuTrigger.value.getBoundingClientRect()
   state.menuX = rect.left
   state.menuY = rect.bottom + 4
   state.menuOpen = true
@@ -99,6 +106,7 @@ useEventListener(
   (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
+    menuTrigger.value = null
     state.menuX = event.clientX
     state.menuY = event.clientY
     state.menuOpen = true
@@ -190,6 +198,7 @@ watch(
         if (event.type === 'keydown') {
           const rect = terminalContainer.value?.getBoundingClientRect()
           if (rect) {
+            menuTrigger.value = null
             state.menuX = rect.left + 12
             state.menuY = rect.top + 12
             state.menuOpen = true
@@ -303,6 +312,8 @@ function insertCommand(command: string): void {
       :size="14"
       :title="t('更多')"
       :disabled="!terminal"
+      aria-haspopup="menu"
+      :aria-expanded="menuOpen"
       @click="openMenu"
     />
     <div
@@ -351,6 +362,7 @@ function insertCommand(command: string): void {
       :y="menuY"
       :items="items"
       :label="t('终端操作')"
+      :trigger="menuTrigger"
       @close="closeMenu"
       @select="runAction"
     />

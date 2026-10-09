@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, reactive, toRaw, toRef } from 'vue'
+import { computed, reactive, shallowRef, toRaw, toRef } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
@@ -31,6 +31,7 @@ const { t } = useI18n()
 // 当前选中项来自路由；导航由 RouterLink 提交。
 const props = defineProps<{ active: NavId }>()
 const active = toRef(props, 'active')
+const addMenuTrigger = shallowRef<HTMLElement | null>(null)
 const width = defineModel<number>('width', { required: true })
 const collapsed = defineModel<boolean>('collapsed', { default: false })
 
@@ -128,7 +129,12 @@ function addConnection(group?: string): void {
 }
 
 function openAddMenu(event: MouseEvent): void {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  if (state.addMenuOpen) {
+    state.addMenuOpen = false
+    return
+  }
+  addMenuTrigger.value = event.currentTarget as HTMLElement
+  const rect = addMenuTrigger.value.getBoundingClientRect()
   state.addMenuX = rect.left
   state.addMenuY = rect.top - 112
   state.addMenuOpen = true
@@ -419,6 +425,8 @@ async function confirmRemoval(): Promise<void> {
         type="button"
         :class="['btn', collapsed ? 'size-7 px-0' : 'flex-1']"
         :title="collapsed ? t('Add Connection') : undefined"
+        aria-haspopup="menu"
+        :aria-expanded="state.addMenuOpen"
         @click="openAddMenu"
       >
         <AppIcon
@@ -461,6 +469,7 @@ async function confirmRemoval(): Promise<void> {
     :y="state.addMenuY"
     :items="addMenuItems"
     :label="t('新建连接')"
+    :trigger="addMenuTrigger"
     @select="selectConnectionKind"
     @close="state.addMenuOpen = false"
   />

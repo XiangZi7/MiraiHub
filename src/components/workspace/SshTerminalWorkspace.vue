@@ -14,6 +14,7 @@ import MachinePanel from './MachinePanel.vue'
 import ServerStatusBar from './ServerStatusBar.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
+import AppSidePane from '@/components/ui/AppSidePane.vue'
 
 const { t } = useI18n()
 const props = withDefaults(
@@ -142,7 +143,7 @@ defineExpose({
         </template>
         <template #actions>
           <IconButton
-            icon="lucide:columns-2"
+            icon="lucide:bot"
             :size="14"
             :title="t('AI Agent 分屏')"
             :class="machineOpen && machineView === 'agent' && 'text-accent'"
@@ -164,10 +165,10 @@ defineExpose({
         />
       </Transition>
     </div>
-    <div
+    <AppSidePane
       v-if="machineVisited"
-      v-show="machineOpen"
-      class="machine-panel-shell"
+      :open="machineOpen"
+      :width="machineWidth + (recording ? 0 : 10)"
     >
       <AppResizeHandle
         v-show="!recording"
@@ -189,7 +190,7 @@ defineExpose({
         @close="machineOpen = false"
         @context-consumed="state.contextRequest = null"
       />
-    </div>
+    </AppSidePane>
   </div>
 </template>
 
@@ -207,12 +208,6 @@ defineExpose({
   min-width: 0;
   min-height: 0;
   gap: 8px;
-}
-.machine-panel-shell {
-  display: flex;
-  min-height: 0;
-  flex-shrink: 0;
-  overflow: hidden;
 }
 .terminal-split-enter-active,
 .terminal-split-leave-active {

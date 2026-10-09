@@ -46,6 +46,7 @@ const searchInput = useTemplateRef<HTMLInputElement>('searchInput')
 const groupInput = useTemplateRef<HTMLInputElement>('groupInput')
 const searchId = useId()
 const groupName = shallowRef('')
+const sortTrigger = shallowRef<HTMLElement | null>(null)
 // 响应式状态
 const state = reactive({
   // 搜索行是否展开
@@ -107,7 +108,12 @@ const options = computed(() =>
   }))
 )
 function showSort(event: MouseEvent): void {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  if (state.open) {
+    state.open = false
+    return
+  }
+  sortTrigger.value = event.currentTarget as HTMLElement
+  const rect = sortTrigger.value.getBoundingClientRect()
   state.x = rect.left
   state.y = rect.bottom + 4
   state.open = true
@@ -227,6 +233,8 @@ function selectSort(id: string): void {
           icon="lucide:arrow-down-up"
           :size="13"
           :title="t('排序连接')"
+          aria-haspopup="menu"
+          :aria-expanded="open"
           @click="showSort"
         />
         <IconButton
@@ -257,6 +265,7 @@ function selectSort(id: string): void {
       :y="y"
       :items="options"
       :label="t('连接排序')"
+      :trigger="sortTrigger"
       @close="open = false"
       @select="selectSort"
     />

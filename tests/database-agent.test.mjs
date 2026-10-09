@@ -8,6 +8,15 @@ import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 // as the desktop. Only IPC and child presentation components are replaced.
 const load = sourceLoader(
   {
+    '@/components/ui/AppSidePane.vue': dataModule(`
+      import {h,withDirectives,vShow} from ${JSON.stringify(import.meta.resolve('vue'))}
+      export default {
+        props:['open','width'],
+        setup(props,{slots}) {
+          return ()=>withDirectives(h('div',{'data-side-pane':true},slots.default?.()),[[vShow,props.open]])
+        }
+      }
+    `),
     '@/components/agent/AiAgentPanel.vue': dataModule(`
       import {h} from ${JSON.stringify(import.meta.resolve('vue'))}
       export default {
@@ -123,14 +132,21 @@ test('database view initializes its AI context watcher with and without a saved 
         )
         if (target) {
           const panel = () => find(root, el => el.props['data-ai-panel'])
-          assert.equal(panel().style.display, 'none')
+          const shell = () => find(root, el => el.props['data-side-pane'])
+          const originalPanel = panel()
+          assert.equal(shell().style.display, 'none')
           find(root, el => el.props.title === '打开 AI Agent').props.onClick()
           await nextTick()
-          assert.notEqual(panel().style.display, 'none')
+          assert.notEqual(shell().style.display, 'none')
           assert.equal(panel().props['data-session'], 'fixture-db')
           find(root, el => el.text === 'Close agent fixture').props.onClick()
           await nextTick()
-          assert.equal(panel().style.display, 'none')
+          assert.equal(shell().style.display, 'none')
+          assert.equal(
+            panel(),
+            originalPanel,
+            'Folding must retain the agent instance'
+          )
         } else assert.match(textContent(root), /还没有打开数据库/)
       } finally {
         app.unmount()

@@ -13,6 +13,8 @@ const props = defineProps<{
   items: readonly ContextMenuItem[]
   label?: string
   scrollable?: boolean
+  /** 点击触发按钮由调用方切换，避免 pointerdown 先关闭、click 又打开。 */
+  trigger?: HTMLElement | null
 }>()
 
 const emit = defineEmits<{
@@ -137,7 +139,13 @@ useEventListener(
   document,
   'pointerdown',
   (event: PointerEvent) => {
-    if (props.open && !menu.value?.contains(event.target as Node)) emit('close')
+    const target = event.target as Node
+    if (
+      props.open &&
+      !menu.value?.contains(target) &&
+      !props.trigger?.contains(target)
+    )
+      emit('close')
   },
   { capture: true }
 )
