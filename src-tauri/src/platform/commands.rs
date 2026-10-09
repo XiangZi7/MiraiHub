@@ -1,11 +1,8 @@
 //! 平台能力的 Tauri 命令层。
 
-use std::{
-    process::Command,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -133,6 +130,22 @@ const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 #[cfg(windows)]
 const RUN_VALUE: &str = "MiraiHub";
 
+/// 后台读写启动项时不要创建控制台；主程序的 GUI 子系统设置不会传给子进程。
+#[cfg(windows)]
+fn registry_command() -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut command = Command::new("reg");
+    command
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command
+}
+
 /// 写入或移除当前用户的 Windows 开机启动项。
 #[tauri::command]
 pub async fn set_launch_at_startup(enabled: bool) -> AppResult<()> {
@@ -141,20 +154,20 @@ pub async fn set_launch_at_startup(enabled: bool) -> AppResult<()> {
         let status = if enabled {
             let executable = std::env::current_exe()?;
             let value = format!("\"{}\"", executable.display());
-            Command::new("reg")
+            registry_command()
                 .args([
                     "ADD", RUN_KEY, "/v", RUN_VALUE, "/t", "REG_SZ", "/d", &value, "/f",
                 ])
                 .status()?
         } else {
-            let exists = Command::new("reg")
+            let exists = registry_command()
                 .args(["QUERY", RUN_KEY, "/v", RUN_VALUE])
                 .status()?
                 .success();
             if !exists {
                 return Ok(());
             }
-            Command::new("reg")
+            registry_command()
                 .args(["DELETE", RUN_KEY, "/v", RUN_VALUE, "/f"])
                 .status()?
         };
@@ -175,7 +188,7 @@ pub async fn set_launch_at_startup(enabled: bool) -> AppResult<()> {
 pub async fn launch_at_startup_enabled() -> AppResult<bool> {
     #[cfg(windows)]
     {
-        return Ok(Command::new("reg")
+        return Ok(registry_command()
             .args(["QUERY", RUN_KEY, "/v", RUN_VALUE])
             .status()?
             .success());
