@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -153,16 +153,6 @@ const schemas = computed<SchemaGroup[]>(() => {
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 })
-
-watch(
-  schemas,
-  next => {
-    const preferred =
-      next.find(schema => schema.name === props.activeDatabase) ?? next[0]
-    if (preferred) expanded.add(`schema:${preferred.name}`)
-  },
-  { immediate: true }
-)
 
 function createObjectItems(schema: string): ContextMenuItem[] {
   return [
