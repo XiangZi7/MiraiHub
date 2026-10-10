@@ -23,6 +23,7 @@ import { loadSettings } from '@/api/settings'
 import { i18n, translateLabel } from '@/i18n'
 import { startLanguageRuntime } from '@/i18n/runtime'
 import { startMainToastReceiver } from '@/composables/useToast'
+import { useAppUpdaterStore } from '@/stores/app-updater'
 
 // 构建时自动收集实际使用的图标，保留离线能力而不加载整套图标集。
 addCollection(lucideIcons as IconifyJSON)
@@ -68,6 +69,8 @@ Promise.all([
 ])
   .then(async () => {
     app.mount('#app')
+    if (IS_TAURI && entry.surface === 'workspace')
+      void useAppUpdaterStore(pinia).start()
     if (IS_TAURI && entry.surface === 'settings') {
       await getCurrentWindow().listen('settings-hidden', () => {
         window.dispatchEvent(new Event('miraihub:settings-hidden'))

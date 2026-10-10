@@ -339,7 +339,11 @@ async fn execute(
                 files::apply(&session, &action.file_change().unwrap(), cell),
             )
             .await
-            .map_err(|_| AppError::internal("配置写入超时，请重新读取核对；若已完成备份，原文保留在 .miraihub-*.bak 文件"))??
+            .map_err(|_| {
+                AppError::internal(
+                    "配置写入超时，请重新读取核对；若已完成备份，原文保留在 .miraihub-*.bak 文件",
+                )
+            })??
         }
         Action::Probe(probe) => {
             let session = app

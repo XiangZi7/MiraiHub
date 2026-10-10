@@ -17,6 +17,7 @@ import type {
 import { IS_TAURI } from '@/utils/window'
 import ScaleControl from './ScaleControl.vue'
 import ShortcutRecorder from './ShortcutRecorder.vue'
+import AppUpdateStatus from './AppUpdateStatus.vue'
 
 const { t } = useI18n()
 
@@ -116,6 +117,7 @@ function displayValue(field: SettingField): string {
     </header>
 
     <div class="scroll-thin min-h-0 flex-1 overflow-y-auto">
+      <AppUpdateStatus v-if="page.id === 'about'" />
       <section
         v-for="group in page.groups"
         :key="group.title"

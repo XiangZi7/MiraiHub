@@ -18,6 +18,8 @@ use crate::{agent, db, local_terminal, platform, redis_db, ssh};
 /// 这样命令清单与应用装配彻底分离，两边各自演进互不干扰。
 pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
+        crate::updater::updater_environment,
+        crate::updater::updater_can_install,
         crate::backup::connection_backup_write,
         crate::backup::connection_backup_read,
         ssh::config_transfer::ssh_config_backup_preview,

@@ -9,6 +9,7 @@ export type SettingValue = string | boolean
 export const DEFAULT_SETTINGS = {
   language: 'system',
   launchAtStartup: false,
+  autoUpdate: true,
   restoreLastSession: true,
   timeFormat: '24-hour',
   dateFormat: 'YYYY-MM-DD',

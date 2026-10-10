@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Tag,
-    [Parameter(Mandatory = $true)][string]$Commit
+    [Parameter(Mandatory = $true)][string]$Commit,
+    [string]$Repository = 'XiangZi7/MiraiHub'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,7 +18,7 @@ try {
     $installer = Join-Path $buildDir "bundle/nsis/MiraiHub_${version}_x64-setup.exe"
     # 皮肤目录由 tauri-build 从 src-tauri/skins 复制到 exe 旁边（bundle.resources）。
     $skinsDir = Join-Path $buildDir 'skins'
-    foreach ($file in @($appExe, $installer)) {
+    foreach ($file in @($appExe, $installer, "$installer.sig")) {
         if (!(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
             throw "Missing build output: $file"
         }
@@ -37,6 +38,9 @@ try {
     $setupName = "MiraiHub_${version}_windows_x64_setup.exe"
     $zipName = "MiraiHub_${version}_windows_x64_portable.zip"
     Copy-Item -LiteralPath $installer -Destination (Join-Path $outputDir $setupName)
+    Copy-Item -LiteralPath "$installer.sig" -Destination (Join-Path $outputDir "$setupName.sig")
+    node scripts/updater-manifest.mjs $Tag $Repository $outputDir
+    if ($LASTEXITCODE -ne 0) { throw 'Updater manifest generation failed.' }
 
     # Only the executable and the skins folder are archived; never include local connection data, keys or source files.
     # 便携版解压后 miraihub.exe 旁边就是 skins/，与安装版的目录布局一致。
@@ -51,7 +55,7 @@ try {
         prerelease = $version.Contains('-')
     }
     $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputDir 'version.json') -Encoding utf8NoBOM
-    $checksums = foreach ($name in @($setupName, $zipName, 'version.json')) {
+    $checksums = foreach ($name in @($setupName, "$setupName.sig", $zipName, 'version.json', 'latest.json')) {
         $hash = (Get-FileHash -LiteralPath (Join-Path $outputDir $name) -Algorithm SHA256).Hash.ToLowerInvariant()
         "$hash  $name"
     }

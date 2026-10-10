@@ -87,9 +87,12 @@ impl Action {
     pub fn approval_details(&self) -> (String, String) {
         match self {
             Self::FileRead { path } => (path.clone(), "读取选定的远端文本文件".into()),
-            Self::FileEdit { path, content, reason, .. } => {
-                (format!("{}\n\n{}", path, content), reason.clone())
-            }
+            Self::FileEdit {
+                path,
+                content,
+                reason,
+                ..
+            } => (format!("{}\n\n{}", path, content), reason.clone()),
             Self::Probe(probe) => (
                 probe_command(probe).unwrap_or("").into(),
                 "读取服务器的固定状态信息".into(),

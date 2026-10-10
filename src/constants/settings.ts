@@ -580,6 +580,10 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     icon: 'lucide:info',
     groups: [
       {
+        title: '应用更新',
+        fields: [{ key: 'autoUpdate', label: '自动下载并安装更新', description: '启动时及每 6 小时检查正式版；关闭连接标签和其他窗口后自动安装并重启。', control: 'switch' }],
+      },
+      {
         title: 'MiraiHub',
         fields: [
           {

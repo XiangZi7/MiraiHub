@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Only the main window checks, downloads and installs signed updates",
+  "windows": ["main"],
+  "permissions": ["updater:default"]
+}

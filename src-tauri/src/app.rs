@@ -33,6 +33,7 @@ fn register_plugins(builder: Builder<Wry>) -> Builder<Wry> {
         // 系统原生文件选择器：SSH 私钥输入框通过它选择一个或多个密钥文件。
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // debug 构建输出到 stdout 与 webview 控制台，release 只写文件
         .plugin(
             tauri_plugin_log::Builder::new()

@@ -58,6 +58,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve release commit' }
           "sha=$commit" >> $env:GITHUB_OUTPUT
 
+      - name: Require updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw 'Configure the TAURI_SIGNING_PRIVATE_KEY repository secret before releasing. See docs/RELEASING.md.'
+          }
+
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
@@ -90,12 +98,16 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
 
       - name: Build application and NSIS installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm release:build
 
       - name: Collect installer, portable archive and checksums
         env:
           RELEASE_COMMIT: ${{ steps.commit.outputs.sha }}
-        run: ./scripts/package-windows.ps1 -Tag $env:RELEASE_TAG -Commit $env:RELEASE_COMMIT
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: ./scripts/package-windows.ps1 -Tag $env:RELEASE_TAG -Commit $env:RELEASE_COMMIT -Repository $env:RELEASE_REPOSITORY
 
       - name: Upload release files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -135,12 +147,16 @@ jobs:
           cd release-output
           setup="MiraiHub_${RELEASE_VERSION}_windows_x64_setup.exe"
           portable="MiraiHub_${RELEASE_VERSION}_windows_x64_portable.zip"
-          for asset in "$setup" "$portable" version.json SHA256SUMS.txt; do
+          for asset in "$setup" "$setup.sig" "$portable" version.json latest.json SHA256SUMS.txt; do
             test -s "$asset"
           done
           sha256sum --check --strict SHA256SUMS.txt
           jq -e --arg tag "$RELEASE_TAG" --arg version "$RELEASE_VERSION" --arg commit "$RELEASE_COMMIT" \
             '.tag == $tag and .version == $version and .commit == $commit and .platform == "windows" and .arch == "x64"' version.json
+          jq -e --arg version "$RELEASE_VERSION" \
+            --arg url "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$setup" \
+            --arg signature "$(cat "$setup.sig" | tr -d '\r\n')" \
+            '.version == $version and .platforms["windows-x86_64"].url == $url and .platforms["windows-x86_64"].signature == $signature' latest.json
 
           # Check the remote tag still identifies the tested commit (including annotated tags).
           object=$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq '.object')
@@ -164,7 +180,7 @@ jobs:
               --prerelease="$RELEASE_PRERELEASE" \
               --notes 'Windows x64：setup.exe 为安装版；portable.zip 解压后运行 miraihub.exe（需要 WebView2 Runtime）。SHA256SUMS.txt 用于校验下载文件，version.json 记录版本与源码提交。'
           fi
-          gh release upload "$RELEASE_TAG" "$setup" "$portable" version.json SHA256SUMS.txt --clobber
+          gh release upload "$RELEASE_TAG" "$setup" "$setup.sig" "$portable" version.json latest.json SHA256SUMS.txt --clobber
           latest=true
           if [ "$RELEASE_PRERELEASE" = true ]; then latest=false; fi
           gh release edit "$RELEASE_TAG" --draft=false --prerelease="$RELEASE_PRERELEASE" --latest="$latest"
