@@ -217,7 +217,9 @@ pnpm release [patch|minor|major] [--dry-run]                     # 发版：同�
 
 ## 许可证
 
-仓库暂未添加 `LICENSE` 文件，许可证待维护者确认。
+本项目采用 [MIT 许可证](LICENSE)，Copyright (c) 2026 XiangZi。
+
+允许商业使用、修改、分发及闭源使用，但须保留版权声明和许可声明。软件按“原样”提供，不附带任何担保，完整条款见 [LICENSE](LICENSE)。第三方依赖及资源仍遵循各自的许可证。
 
 <div align="center">
   <sub>Made with ❤️ by <a href="https://github.com/XiangZi7">XiangZi</a></sub>

@@ -219,7 +219,9 @@ Use [Issues](https://github.com/XiangZi7/MiraiHub/issues) for bugs and feature r
 
 ## License
 
-A `LICENSE` file has not been added yet; the license is pending confirmation by the maintainer.
+This project is licensed under the [MIT License](LICENSE), Copyright (c) 2026 XiangZi.
+
+Commercial use, modification, distribution, and closed-source use are permitted, provided the copyright and permission notices are retained. The software is provided "as is", without warranty; see [LICENSE](LICENSE) for the full terms. Third-party dependencies and assets remain subject to their respective licenses.
 
 <div align="center">
   <sub>Made with ❤️ by <a href="https://github.com/XiangZi7">XiangZi</a></sub>
