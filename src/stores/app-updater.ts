@@ -1,4 +1,4 @@
-import { onScopeDispose, reactive } from 'vue'
+import { onScopeDispose, reactive, watch } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { emit, emitTo, listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -16,7 +16,7 @@ import { useTransfersStore } from './transfers'
 
 const STATE_EVENT = 'miraihub://update-state'
 const COMMAND_EVENT = 'miraihub://update-command'
-type Command = 'status' | 'check' | 'defer' | 'resume'
+type Command = 'status' | 'check' | 'defer' | 'resume' | 'dismiss'
 
 export const useAppUpdaterStore = defineStore('app-updater', () => {
   const state = reactive(initialUpdateState())
@@ -57,6 +57,7 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
           if (event.payload === 'check') void controller?.check()
           else if (event.payload === 'defer') controller?.defer()
           else if (event.payload === 'resume') controller?.resume()
+          else if (event.payload === 'dismiss') controller?.dismiss()
           else if (event.payload === 'status') broadcast()
         })
       : await listen<UpdateState>(STATE_EVENT, event =>
@@ -82,20 +83,23 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
     }
     state.phase = 'idle'
     broadcast()
-    // Leave startup/restore alone, then check every six hours. Failed checks
-    // also use this interval; there is no request storm when GitHub is offline.
-    const autoCheck = () => {
-      if (settings.values.autoUpdate) void controller?.check()
+    controller?.startAutoChecks()
+    cleanup.push(
+      watch(
+        () => settings.values.autoUpdate,
+        () => controller?.refreshAutoChecks()
+      )
+    )
+    if (typeof window !== 'undefined') {
+      const online = () => controller?.retryOnReconnect()
+      window.addEventListener('online', online)
+      cleanup.push(() => window.removeEventListener('online', online))
     }
-    const first = setTimeout(autoCheck, 15_000)
-    const recurring = setInterval(autoCheck, 6 * 60 * 60 * 1000)
     const install = setInterval(
       () => void controller?.installWhenIdle(),
       10_000
     )
     cleanup.push(() => {
-      clearTimeout(first)
-      clearInterval(recurring)
       clearInterval(install)
     })
   }

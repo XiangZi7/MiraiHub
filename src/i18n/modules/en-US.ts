@@ -17,8 +17,16 @@ export default {
   已暂停本次自动安装: 'Installation postponed for this session',
   更新已就绪: 'Update ready',
   '正在安装，即将重启…': 'Installing and restarting…',
-  '更新失败，请检查网络后重试':
-    'Update failed. Check your connection and retry',
+  '更新服务暂不可用，请稍后重试':
+    'The update service is temporarily unavailable. Please retry later',
+  '检查更新失败，请检查网络或代理设置':
+    'Could not check for updates. Check your connection or proxy settings',
+  '更新下载或校验失败，请重试':
+    'Update download or verification failed. Please retry',
+  '更新安装失败，请重试': 'Update installation failed. Please retry',
+  '更新失败，请重试': 'Update failed. Please retry',
+  '将自动重试，也可手动重试。':
+    'Will retry automatically. You can also retry now.',
   '免安装版请从 Releases 下载更新': 'Download portable updates from Releases',
   '自动更新仅支持 Windows x64 正式安装版':
     'Automatic updates require a Windows x64 production installation',

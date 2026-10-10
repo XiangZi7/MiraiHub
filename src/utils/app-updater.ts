@@ -15,8 +15,10 @@ export interface UpdateState {
   downloaded: number
   total: number
   error: string
+  errorStage: '' | 'check' | 'download' | 'install'
   reason: string
   deferred: boolean
+  dismissed: boolean
 }
 export const initialUpdateState = (): UpdateState => ({
   phase: 'idle',
@@ -24,8 +26,10 @@ export const initialUpdateState = (): UpdateState => ({
   downloaded: 0,
   total: 0,
   error: '',
+  errorStage: '',
   reason: '',
   deferred: false,
+  dismissed: false,
 })
 
 export interface UpdatePackage {
@@ -51,6 +55,11 @@ export function createUpdateController(options: {
   let busy = false
   let disposed = false
   let requested = false
+  let automatic = false
+  let checkFailures = 0
+  let checkTimer: ReturnType<typeof setTimeout> | undefined
+  const normalInterval = 6 * 60 * 60 * 1000
+  const retryIntervals = [60_000, 5 * 60_000, 15 * 60_000]
   const change = (patch: Partial<UpdateState>) => {
     Object.assign(state, patch)
     options.changed()
@@ -59,6 +68,18 @@ export function createUpdateController(options: {
     const update = pending
     pending = null
     await update?.close().catch(() => {})
+  }
+  function clearCheckTimer() {
+    clearTimeout(checkTimer)
+    checkTimer = undefined
+  }
+  function scheduleCheck(delay: number) {
+    clearCheckTimer()
+    if (!automatic || disposed || !options.enabled()) return
+    checkTimer = setTimeout(() => {
+      checkTimer = undefined
+      if (options.enabled()) void check()
+    }, delay)
   }
   async function check() {
     if (
@@ -69,10 +90,12 @@ export function createUpdateController(options: {
       state.phase === 'installing'
     )
       return
+    clearCheckTimer()
     busy = true
     change({
       phase: 'checking',
       error: '',
+      errorStage: '',
       version: '',
       downloaded: 0,
       total: 0,
@@ -81,10 +104,14 @@ export function createUpdateController(options: {
       pending = await options.check()
       if (disposed) return
       if (!pending) {
-        change({ phase: 'latest' })
+        change({ phase: 'latest', dismissed: false })
         return
       }
-      change({ phase: 'downloading', version: pending.version })
+      change({
+        phase: 'downloading',
+        version: pending.version,
+        dismissed: false,
+      })
       await pending.download(
         event => {
           if (disposed) return
@@ -97,13 +124,26 @@ export function createUpdateController(options: {
         },
         { timeout: 10 * 60 * 1000 }
       )
-      if (!disposed) change({ phase: 'ready' })
+      if (!disposed) change({ phase: 'ready', dismissed: false })
     } catch (error) {
+      const errorStage = state.phase === 'downloading' ? 'download' : 'check'
       await release()
-      if (!disposed) change({ phase: 'error', error: String(error) })
+      if (!disposed)
+        change({ phase: 'error', error: String(error), errorStage })
     } finally {
       if (disposed) await release()
       busy = false
+      if (state.phase === 'error' && state.errorStage === 'check') {
+        // A release can briefly lack its manifest, or GitHub can be offline.
+        // Retry with backoff, then return to the normal interval.
+        scheduleCheck(retryIntervals[checkFailures++] ?? normalInterval)
+      } else {
+        checkFailures = 0
+        // Download/verification failures keep the normal cadence; only manifest
+        // checks get fast retries. A retry always obtains a fresh signed package.
+        if (state.phase === 'latest' || state.phase === 'error')
+          scheduleCheck(normalInterval)
+      }
     }
   }
   async function installWhenIdle() {
@@ -127,11 +167,13 @@ export function createUpdateController(options: {
         (!options.enabled() && !requested)
       )
         return
-      change({ phase: 'installing' })
+      change({ phase: 'installing', dismissed: false })
       await pending.install()
     } catch (error) {
       await release()
-      change({ phase: 'error', error: String(error) })
+      if (!disposed)
+        change({ phase: 'error', error: String(error), errorStage: 'install' })
+      scheduleCheck(normalInterval)
     } finally {
       if (disposed) await release()
       busy = false
@@ -140,6 +182,24 @@ export function createUpdateController(options: {
   return {
     check,
     installWhenIdle,
+    startAutoChecks: () => {
+      automatic = true
+      scheduleCheck(15_000)
+    },
+    refreshAutoChecks: () => {
+      checkFailures = 0
+      clearCheckTimer()
+      if (state.phase === 'error' && state.errorStage !== 'check') {
+        scheduleCheck(normalInterval)
+        return
+      }
+      scheduleCheck(0)
+    },
+    retryOnReconnect: () => {
+      if (state.phase === 'error' && state.errorStage === 'check')
+        scheduleCheck(0)
+    },
+    dismiss: () => change({ dismissed: true }),
     defer: () => {
       requested = false
       change({ deferred: true })
@@ -150,6 +210,7 @@ export function createUpdateController(options: {
     },
     async dispose() {
       disposed = true
+      clearCheckTimer()
       if (!busy) await release()
     },
   }

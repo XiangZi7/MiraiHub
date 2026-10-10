@@ -48,3 +48,45 @@ pub fn updater_can_install(app: AppHandle, window: WebviewWindow) -> bool {
         .iter()
         .all(|(label, window)| label == "main" || !window.is_visible().unwrap_or(true))
 }
+
+#[cfg(test)]
+mod tests {
+    /// Opt-in network smoke test: use the same HTTP stack and release parser as
+    /// the updater. This checks availability only; it never runs an installer.
+    #[tokio::test]
+    #[ignore = "requires access to GitHub Releases"]
+    async fn published_update_manifest_is_accessible() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let endpoint = config["plugins"]["updater"]["endpoints"][0]
+            .as_str()
+            .unwrap();
+        let client = reqwest::Client::builder()
+            .user_agent("tauri-plugin-updater/2.10.1")
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let release = client
+            .get(endpoint)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await
+            .expect("update manifest request")
+            .error_for_status()
+            .expect("update manifest HTTP status")
+            .json::<tauri_plugin_updater::RemoteRelease>()
+            .await
+            .expect("Tauri-compatible release manifest");
+        let installer = release.download_url("windows-x86_64").unwrap();
+        assert!(!release.signature("windows-x86_64").unwrap().is_empty());
+        assert_eq!(installer.scheme(), "https");
+        client
+            .head(installer.clone())
+            .send()
+            .await
+            .expect("installer availability request")
+            .error_for_status()
+            .expect("installer HTTP status");
+    }
+}

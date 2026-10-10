@@ -29,7 +29,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 aes-gcm = "0.10"
 argon2 = "0.5"
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls-no-provider"] }
+# The updater shares this reqwest instance. Disabling defaults also disables
+# Windows/macOS proxy discovery unless system-proxy is explicitly restored.
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls-no-provider", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 # 异步运行时。Tauri 内部已用 tokio，这里显式声明是因为 ssh 模块直接用了

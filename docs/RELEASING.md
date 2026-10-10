@@ -51,6 +51,8 @@ pnpm release
 
 应用的 Windows x64 安装版默认在启动 15 秒后、此后每 6 小时检查 GitHub 最新正式版。发现新版后自动下载，Tauri 使用内置公钥验证安装包签名。下载完成后每 10 秒检查是否可以安装：所有连接标签已关闭、没有排队/运行/暂停的文件传输、没有可见的设置/连接/编辑窗口，也没有未保存的远端编辑内容。满足条件便自动启动安装器，显示进度，完成后重新打开应用。
 
+检查失败时按 1 分钟、5 分钟、15 分钟重试，连续失败后回到 6 小时间隔；联网恢复或重新开启自动更新会立即重试检查。下载、签名校验和安装失败保持 6 小时检查间隔，也可手动重试；每次重新获取并校验安装包，校验失败绝不安装。更新请求支持系统代理，保持 HTTPS 和签名校验。主窗口提示可通过右上角关闭；同类检查失败的重试不会重新弹出，新的下载、下载就绪或安装状态会再次提示，完整状态始终可在“设置 → 关于”查看。
+
 “设置 → 关于”可以关闭自动更新、手动检查下载、查看进度或重试。下载就绪时主窗口也有状态卡片，可选择“本次暂不安装”或恢复。关闭自动更新后仍可手动下载，并选择“空闲后安装本次更新”。安装版的连接配置与用户数据保存在原应用数据目录，更新不删除它们。
 
 更新地址为 `https://github.com/XiangZi7/MiraiHub/releases/latest/download/latest.json`。预发布版本不替换 Latest，不会推送给正式版用户。开发模式、其他平台和免安装版不运行自动更新；免安装版从 Releases 下载新 ZIP 后手动替换。
@@ -125,6 +127,7 @@ Get-FileHash .\MiraiHub_0.2.0_windows_x64_setup.exe -Algorithm SHA256
 
 ## 失败重试
 
+- `Could not fetch a valid release JSON from the remote`：更新接口没有返回成功状态，不等同于本机断网。确认 GitHub **Latest 正式版**的附件中有 `latest.json`；旧版缺少清单或发布尚未完成时可能出现。清单恢复后应用会按上述间隔重试，也可手动点“重试”。可运行 `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib updater::tests::published_update_manifest_is_accessible -- --ignored --exact`，使用应用的 Rust HTTP 栈检查已发布清单和安装包地址（不会下载安装）。
 - 提示 `Configure the TAURI_SIGNING_PRIVATE_KEY repository secret`：到仓库 **Settings → Secrets and variables → Actions → Repository secrets** 配置 `TAURI_SIGNING_PRIVATE_KEY`，值为原签名私钥文件的完整内容，不是文件路径或公钥。只补齐 Secret 时，可直接重跑失败任务，无需修改源码或重新生成密钥。
 - 提示 updater 版本不匹配：`@tauri-apps/plugin-updater` 和 Rust `tauri-plugin-updater` 必须使用相同的主、次版本；当前两端限定为 `2.10.x`，升级时一起调整并更新锁文件。若失败标签已包含错误依赖，修复后发布新的补丁版本；重跑旧标签仍会检出旧依赖。本地签名打包使用 `pnpm release:build`，它会自动读取本机私钥。
 - 构建失败：在 Actions 查看报错。依赖下载等临时失败可用 **Re-run failed jobs** 重试。

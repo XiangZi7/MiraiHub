@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { useAppUpdaterStore } from '@/stores/app-updater'
 import { useSettingsStore } from '@/stores/settings'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 defineProps<{ floating?: boolean }>()
 const { t } = useI18n()
@@ -39,7 +40,16 @@ const label = computed(() => {
     case 'installing':
       return t('正在安装，即将重启…')
     case 'error':
-      return t('更新失败，请检查网络后重试')
+      if (state.value.errorStage === 'check')
+        return state.value.error.includes(
+          'Could not fetch a valid release JSON'
+        )
+          ? t('更新服务暂不可用，请稍后重试')
+          : t('检查更新失败，请检查网络或代理设置')
+      if (state.value.errorStage === 'download')
+        return t('更新下载或校验失败，请重试')
+      if (state.value.errorStage === 'install') return t('更新安装失败，请重试')
+      return t('更新失败，请重试')
     case 'unsupported':
       return state.value.reason === 'portable'
         ? t('免安装版请从 Releases 下载更新')
@@ -57,16 +67,39 @@ function openReleases() {
 
 <template>
   <section
-    v-if="!floating || noticeable"
+    v-if="!floating || (noticeable && !state.dismissed)"
     :class="['update-status', { 'update-floating': floating }]"
     :aria-label="t('应用更新')"
   >
+    <button
+      v-if="floating"
+      type="button"
+      class="update-close"
+      :aria-label="t('关闭提示')"
+      :title="t('关闭提示')"
+      @click="updater.command('dismiss')"
+    >
+      <AppIcon
+        name="lucide:x"
+        :size="14"
+      />
+    </button>
     <div
       role="status"
       aria-live="polite"
     >
       <p class="text-txt text-[11.5px] font-medium">
         {{ label }} <span v-if="state.version">v{{ state.version }}</span>
+      </p>
+      <p
+        v-if="
+          state.phase === 'error' &&
+          state.errorStage === 'check' &&
+          settings.values.autoUpdate
+        "
+        class="text-txt-2 mt-1 text-[10.5px]"
+      >
+        {{ t('将自动重试，也可手动重试。') }}
       </p>
       <p
         v-if="state.phase === 'ready'"
@@ -91,7 +124,7 @@ function openReleases() {
     </div>
     <details
       v-if="state.error"
-      class="text-txt-3 mt-1 text-[10px]"
+      class="text-txt-2 mt-1 text-[10px]"
     >
       <summary>{{ t('错误详情') }}</summary>
       <p class="max-h-24 overflow-auto break-all">{{ state.error }}</p>
@@ -144,10 +177,36 @@ function openReleases() {
   bottom: 18px;
   z-index: 60;
   width: min(360px, calc(100vw - 36px));
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  padding: 16px 44px 16px 16px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--color-panel) 94%, transparent);
+  box-shadow: var(--shadow-pop);
+  -webkit-backdrop-filter: blur(30px) saturate(175%);
+  backdrop-filter: blur(30px) saturate(175%);
+}
+.update-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--color-txt-2);
+  cursor: pointer;
+}
+.update-close:hover {
+  color: var(--color-txt);
+  background: var(--color-hover);
+}
+html.material-solid .update-floating {
   background: var(--color-panel);
-  box-shadow: var(--shadow-card);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .update-action {
   color: var(--color-violet);
@@ -160,8 +219,14 @@ function openReleases() {
   opacity: 0.45;
   cursor: default;
 }
-.update-action:focus-visible {
+.update-action:focus-visible,
+.update-close:focus-visible {
   outline: 2px solid var(--color-violet);
   outline-offset: 3px;
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .update-floating {
+    background: var(--color-canvas);
+  }
 }
 </style>
