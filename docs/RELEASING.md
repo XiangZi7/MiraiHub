@@ -125,6 +125,8 @@ Get-FileHash .\MiraiHub_0.2.0_windows_x64_setup.exe -Algorithm SHA256
 
 ## 失败重试
 
+- 提示 `Configure the TAURI_SIGNING_PRIVATE_KEY repository secret`：到仓库 **Settings → Secrets and variables → Actions → Repository secrets** 配置 `TAURI_SIGNING_PRIVATE_KEY`，值为原签名私钥文件的完整内容，不是文件路径或公钥。只补齐 Secret 时，可直接重跑失败任务，无需修改源码或重新生成密钥。
+- 提示 updater 版本不匹配：`@tauri-apps/plugin-updater` 和 Rust `tauri-plugin-updater` 必须使用相同的主、次版本；当前两端限定为 `2.10.x`，升级时一起调整并更新锁文件。若失败标签已包含错误依赖，修复后发布新的补丁版本；重跑旧标签仍会检出旧依赖。本地签名打包使用 `pnpm release:build`，它会自动读取本机私钥。
 - 构建失败：在 Actions 查看报错。依赖下载等临时失败可用 **Re-run failed jobs** 重试。
 - 标签已存在但未成功发布：也可在 **Actions → Release → Run workflow** 输入这个已推送的标签。工作流文件必须已上传到默认分支才能显示手动运行入口。
 - 附件上传中断：Release 会保持草稿，重试会补齐并替换该草稿的同名附件。
