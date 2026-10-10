@@ -8,6 +8,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppCollapse from '@/components/ui/AppCollapse.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { useConnections } from '@/composables/useConnections'
+import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { NAV_ITEMS } from '@/constants/workspace'
@@ -27,6 +28,7 @@ import SidebarProjects from './SidebarProjects.vue'
 import SshConfigTransferDialog from '@/components/connection/SshConfigTransferDialog.vue'
 
 const { t } = useI18n()
+const { settings } = useSettings()
 
 // 当前选中项来自路由；导航由 RouterLink 提交。
 const props = defineProps<{ active: NavId }>()
@@ -396,6 +398,7 @@ async function confirmRemoval(): Promise<void> {
           :active-id="activeId"
           :connected-ids="connectedIds"
           :open-ids="openIds"
+          :show-address="settings.showConnectionAddress"
           @open="emit('open', $event)"
           @add-connection="addConnection"
           @create-group="handleCreateGroup"

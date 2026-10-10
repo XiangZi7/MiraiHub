@@ -134,6 +134,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         title: '界面',
         fields: [
           {
+            key: 'showConnectionAddress',
+            label: '显示连接地址',
+            description: '在侧栏显示 SSH 和数据库连接的 IP 地址或域名',
+            control: 'switch',
+          },
+          {
             key: 'compactLayout',
             label: '紧凑布局',
             description: '收紧列表行高与按钮间距，一屏显示更多内容',
@@ -581,7 +587,15 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     groups: [
       {
         title: '应用更新',
-        fields: [{ key: 'autoUpdate', label: '自动下载并安装更新', description: '启动时及每 6 小时检查正式版；关闭连接标签和其他窗口后自动安装并重启。', control: 'switch' }],
+        fields: [
+          {
+            key: 'autoUpdate',
+            label: '自动下载并安装更新',
+            description:
+              '启动时及每 6 小时检查正式版；关闭连接标签和其他窗口后自动安装并重启。',
+            control: 'switch',
+          },
+        ],
       },
       {
         title: 'MiraiHub',

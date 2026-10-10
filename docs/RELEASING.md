@@ -34,7 +34,7 @@ pnpm release
 
 当前仓库的远程地址为 `https://github.com/XiangZi7/MiraiHub.git`，开发分支为 `master`。
 
-1. 在 GitHub 仓库的 Actions 页面确认工作流已启用。工作流使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需个人 Token 或额外 Secret。
+1. 在 GitHub 仓库的 Actions 页面确认工作流已启用。上传 Release 使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需个人 Token；构建自动更新包需要按下节配置一次签名 Secret。
 2. 检查本地改动，将准备发布的源码、锁文件、`scripts`、`tests` 和 `.github/workflows/release.yml` 一起提交。不要上传本地连接备份、SSH 私钥或 AI API Key。`node_modules`、`dist`、Rust `target` 和 `release-output` 已被忽略。
 3. 提交后运行一键发版命令；它会一并上传当前分支并创建新版本标签。
 
@@ -46,6 +46,26 @@ pnpm release
 ```
 
 如果你克隆到了另一仓库，先通过 `git remote -v` 确认 `origin`，再推送。工作流从 GitHub 上下文读取仓库名，不写死发布目标。
+
+## 自动更新：首次配置
+
+应用的 Windows x64 安装版默认在启动 15 秒后、此后每 6 小时检查 GitHub 最新正式版。发现新版后自动下载，Tauri 使用内置公钥验证安装包签名。下载完成后每 10 秒检查是否可以安装：所有连接标签已关闭、没有排队/运行/暂停的文件传输、没有可见的设置/连接/编辑窗口，也没有未保存的远端编辑内容。满足条件便自动启动安装器，显示进度，完成后重新打开应用。
+
+“设置 → 关于”可以关闭自动更新、手动检查下载、查看进度或重试。下载就绪时主窗口也有状态卡片，可选择“本次暂不安装”或恢复。关闭自动更新后仍可手动下载，并选择“空闲后安装本次更新”。安装版的连接配置与用户数据保存在原应用数据目录，更新不删除它们。
+
+更新地址为 `https://github.com/XiangZi7/MiraiHub/releases/latest/download/latest.json`。预发布版本不替换 Latest，不会推送给正式版用户。开发模式、其他平台和免安装版不运行自动更新；免安装版从 Releases 下载新 ZIP 后手动替换。
+
+本次接入已生成公钥并写入 `src-tauri/tauri.conf.json`。私钥保存在本机 `.tauri/updater.key`，这个目录已被 Git 忽略；请另行备份，不能提交到仓库或附加到 Release。
+
+1. 打开 [仓库 Actions Secrets](https://github.com/XiangZi7/MiraiHub/settings/secrets/actions)，新建 **Repository secret**：名称为 `TAURI_SIGNING_PRIVATE_KEY`，值为本机 `.tauri/updater.key` 文件的完整内容。
+2. 当前生成的私钥没有密码，无需添加密码 Secret；如果使用加密私钥，再设置 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。
+3. 提交本次源码和公钥配置，然后照常运行 `pnpm release`。Actions 会生成安装包、`.sig` 和 `latest.json`，校验并一起发布。
+
+其他开发机请恢复原私钥，或通过环境变量 `TAURI_SIGNING_PRIVATE_KEY` 提供密钥内容/文件路径。本地 `pnpm release:build` 会优先使用环境变量，再读取 `.tauri/updater.key`。`pnpm updater:setup` 可以检查本机公钥对应关系；已有公钥但缺失私钥时会拒绝生成新密钥，防止破坏现有客户端的信任关系。只有尚未配置过公钥的新项目才会生成密钥。
+
+签名私钥必须长期保留，后续所有版本使用同一把密钥。Tauri 更新签名与 Windows Authenticode 代码签名是两个独立机制。若 fork 到其他仓库，请同时修改应用配置中的更新地址；附件下载地址由 Actions 的实际仓库名生成。
+
+**已有旧客户端没有更新器，首次仍需手动安装一次带此功能的版本；之后才会自动升级。** 首个新版本自身和以后每个版本都必须携带上述三个更新附件。仅 `version.json` 和 SHA-256 文件不足以触发自动更新。
 
 ## 手动标签与版本号
 
@@ -92,6 +112,8 @@ pnpm version:check
 - `MiraiHub_0.2.0_windows_x64_portable.zip`：解压后运行 `miraihub.exe`；系统需有 WebView2 Runtime，用户数据仍保存在应用数据目录。
 - `SHA256SUMS.txt`：下载文件的 SHA-256。
 - `version.json`：版本、标签、源码 commit、平台与架构。
+- `MiraiHub_0.2.0_windows_x64_setup.exe.sig`：安装包的更新签名。
+- `latest.json`：供应用检查的版本、Windows x64 下载地址及签名。
 
 构建附件也会在该次 Actions 运行中保留 14 天；Release 附件不会因这个保留期自动删除。
 
@@ -126,6 +148,6 @@ pnpm release:build
 
 脚本需要 PowerShell 7，结果位于 `release-output`。如该目录已存在，先将它移动到其他位置再重新打包。归档仅收集编译产物，不会收集连接配置或用户文件。
 
-当前工作流打包 Windows x64；应用内自动下载更新、macOS/Linux 构建和签名证书不在此工作流中。
+当前工作流打包 Windows x64 并发布签名自动更新附件；macOS/Linux 构建和 Windows 代码签名证书暂未配置。
 
 实现参考：[Tauri GitHub 分发文档](https://v2.tauri.app/distribute/pipelines/github/)、[GitHub 标签推送事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)、[GitHub CLI Release](https://cli.github.com/manual/gh_release_create)。

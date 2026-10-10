@@ -37,5 +37,8 @@ useEventListener(window, 'miraihub:settings-reopen', () => {
     />
   </RouterView>
   <ToastHost v-if="shouldHostToasts" />
-  <AppUpdateStatus v-if="IS_TAURI && route.meta.surface === 'workspace'" floating />
+  <AppUpdateStatus
+    v-if="IS_TAURI && route.meta.surface === 'workspace'"
+    floating
+  />
 </template>

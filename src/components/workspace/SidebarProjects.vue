@@ -30,15 +30,19 @@ import {
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  label: string
-  kind?: 'ssh' | 'database'
-  groups: readonly ConnectionGroupView[]
-  loaded: boolean
-  activeId?: string
-  connectedIds: ReadonlySet<string>
-  openIds: ReadonlySet<string>
-}>()
+const props = withDefaults(
+  defineProps<{
+    label: string
+    kind?: 'ssh' | 'database'
+    groups: readonly ConnectionGroupView[]
+    loaded: boolean
+    activeId?: string
+    connectedIds: ReadonlySet<string>
+    openIds: ReadonlySet<string>
+    showAddress?: boolean
+  }>(),
+  { showAddress: true }
+)
 
 const emit = defineEmits<{
   open: [connection: SavedConnection]
@@ -486,7 +490,9 @@ function runContextAction(action: string): void {
               :title="
                 node.kind === 'local'
                   ? endpointOf(node)
-                  : t('{value0} · 双击连接', { value0: endpointOf(node) })
+                  : t('{value0} · 双击连接', {
+                      value0: showAddress ? endpointOf(node) : node.name,
+                    })
               "
               @click="selectConnection($event, node)"
               @dblclick="openConnection(node)"
@@ -502,13 +508,14 @@ function runContextAction(action: string): void {
                 :tone="toneOf(node)"
                 :size="6"
                 :glow="toneOf(node) !== 'txt-3'"
-                class="mt-1.5 self-start"
+                :class="(node.kind === 'local' || showAddress) && 'mt-1.5 self-start'"
               />
               <span class="min-w-0 flex-1 text-left">
                 <span class="text-txt block truncate text-[11.5px]">{{
                   node.name
                 }}</span>
                 <span
+                  v-if="node.kind === 'local' || showAddress"
                   class="text-txt-4 mt-0.5 block truncate font-mono text-[9.5px]"
                 >
                   {{ node.kind === 'local' ? endpointOf(node) : node.host }}

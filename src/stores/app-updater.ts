@@ -5,7 +5,11 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { check } from '@tauri-apps/plugin-updater'
 import { IS_TAURI } from '@/utils/window'
-import { createUpdateController, initialUpdateState, type UpdateState } from '@/utils/app-updater'
+import {
+  createUpdateController,
+  initialUpdateState,
+  type UpdateState,
+} from '@/utils/app-updater'
 import { useWorkspaceStore } from './workspace'
 import { useSettingsStore } from './settings'
 import { useTransfersStore } from './transfers'
@@ -26,16 +30,22 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
   const broadcast = () => {
     void emit(STATE_EVENT, { ...state }).catch(console.warn)
   }
-  const controller = owner ? createUpdateController({
-    state,
-    check: () => check({ timeout: 30_000 }),
-    enabled: () => settings.values.autoUpdate,
-    canInstall: async () => {
-      const idle = () => !useWorkspaceStore().tabs.length && !useTransfersStore().activeTasks.length
-      return idle() && await invoke<boolean>('updater_can_install') && idle()
-    },
-    changed: broadcast,
-  }) : undefined
+  const controller = owner
+    ? createUpdateController({
+        state,
+        check: () => check({ timeout: 30_000 }),
+        enabled: () => settings.values.autoUpdate,
+        canInstall: async () => {
+          const idle = () =>
+            !useWorkspaceStore().tabs.length &&
+            !useTransfersStore().activeTasks.length
+          return (
+            idle() && (await invoke<boolean>('updater_can_install')) && idle()
+          )
+        },
+        changed: broadcast,
+      })
+    : undefined
 
   async function subscribe() {
     if (!IS_TAURI) {
@@ -44,19 +54,26 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
     }
     const unlisten = owner
       ? await listen<Command>(COMMAND_EVENT, event => {
-        if (event.payload === 'check') void controller?.check()
-        else if (event.payload === 'defer') controller?.defer()
-        else if (event.payload === 'resume') controller?.resume()
-        else if (event.payload === 'status') broadcast()
-      })
-      : await listen<UpdateState>(STATE_EVENT, event => Object.assign(state, event.payload))
-    if (disposed) { unlisten(); return }
+          if (event.payload === 'check') void controller?.check()
+          else if (event.payload === 'defer') controller?.defer()
+          else if (event.payload === 'resume') controller?.resume()
+          else if (event.payload === 'status') broadcast()
+        })
+      : await listen<UpdateState>(STATE_EVENT, event =>
+          Object.assign(state, event.payload)
+        )
+    if (disposed) {
+      unlisten()
+      return
+    }
     cleanup.push(unlisten)
     if (!owner) {
       await emitTo('main', COMMAND_EVENT, 'status')
       return
     }
-    const environment = await invoke<{ supported: boolean; reason: string }>('updater_environment')
+    const environment = await invoke<{ supported: boolean; reason: string }>(
+      'updater_environment'
+    )
     if (disposed) return
     if (!environment.supported) {
       Object.assign(state, { phase: 'unsupported', reason: environment.reason })
@@ -67,22 +84,34 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
     broadcast()
     // Leave startup/restore alone, then check every six hours. Failed checks
     // also use this interval; there is no request storm when GitHub is offline.
-    const autoCheck = () => { if (settings.values.autoUpdate) void controller?.check() }
+    const autoCheck = () => {
+      if (settings.values.autoUpdate) void controller?.check()
+    }
     const first = setTimeout(autoCheck, 15_000)
     const recurring = setInterval(autoCheck, 6 * 60 * 60 * 1000)
-    const install = setInterval(() => void controller?.installWhenIdle(), 10_000)
-    cleanup.push(() => { clearTimeout(first); clearInterval(recurring); clearInterval(install) })
+    const install = setInterval(
+      () => void controller?.installWhenIdle(),
+      10_000
+    )
+    cleanup.push(() => {
+      clearTimeout(first)
+      clearInterval(recurring)
+      clearInterval(install)
+    })
   }
   function start() {
-    return startup ??= subscribe().catch(error => {
+    return (startup ??= subscribe().catch(error => {
       Object.assign(state, { phase: 'error', error: String(error) })
-    })
+    }))
   }
   async function command(command: Command) {
     await start()
     if (!IS_TAURI) return
-    try { await emitTo('main', COMMAND_EVENT, command) }
-    catch (error) { Object.assign(state, { phase: 'error', error: String(error) }) }
+    try {
+      await emitTo('main', COMMAND_EVENT, command)
+    } catch (error) {
+      Object.assign(state, { phase: 'error', error: String(error) })
+    }
   }
   onScopeDispose(() => {
     disposed = true

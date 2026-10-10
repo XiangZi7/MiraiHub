@@ -4,19 +4,28 @@ import { en as native } from './native'
 import { en as redis } from './redis'
 export default {
   应用更新: 'Application updates',
+  显示连接地址: 'Show connection addresses',
+  '在侧栏显示 SSH 和数据库连接的 IP 地址或域名':
+    'Show IP addresses or hostnames for SSH and database connections in the sidebar',
+  错误详情: 'Error details',
   自动下载并安装更新: 'Automatically download and install updates',
-  '启动时及每 6 小时检查正式版；关闭连接标签和其他窗口后自动安装并重启。': 'Check stable releases at startup and every 6 hours. Install and restart after connection tabs and other windows are closed.',
+  '启动时及每 6 小时检查正式版；关闭连接标签和其他窗口后自动安装并重启。':
+    'Check stable releases at startup and every 6 hours. Install and restart after connection tabs and other windows are closed.',
   '正在检查更新…': 'Checking for updates…',
   当前已是最新版本: 'You are up to date',
   正在下载更新: 'Downloading update',
   已暂停本次自动安装: 'Installation postponed for this session',
   更新已就绪: 'Update ready',
   '正在安装，即将重启…': 'Installing and restarting…',
-  '更新失败，请检查网络后重试': 'Update failed. Check your connection and retry',
+  '更新失败，请检查网络后重试':
+    'Update failed. Check your connection and retry',
   '免安装版请从 Releases 下载更新': 'Download portable updates from Releases',
-  '自动更新仅支持 Windows x64 正式安装版': 'Automatic updates require a Windows x64 production installation',
-  '从 GitHub Releases 获取最新正式版': 'Get the latest stable version from GitHub Releases',
-  '请关闭连接标签和其他窗口，随后将自动安装并重启。': 'Close connection tabs and other windows to allow installation and restart.',
+  '自动更新仅支持 Windows x64 正式安装版':
+    'Automatic updates require a Windows x64 production installation',
+  '从 GitHub Releases 获取最新正式版':
+    'Get the latest stable version from GitHub Releases',
+  '请关闭连接标签和其他窗口，随后将自动安装并重启。':
+    'Close connection tabs and other windows to allow installation and restart.',
   更新下载进度: 'Update download progress',
   检查并下载更新: 'Check and download update',
   恢复自动安装: 'Resume automatic installation',

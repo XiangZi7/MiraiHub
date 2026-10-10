@@ -108,10 +108,7 @@ fn same_metadata(a: &FileAttributes, b: &FileAttributes) -> bool {
         && a.uid == b.uid
         && a.gid == b.gid
 }
-pub(crate) async fn read_file(
-    sftp: &SftpSession,
-    path: &str,
-) -> AppResult<(Vec<u8>, FileAttributes)> {
+pub(crate) async fn read_file(sftp: &SftpSession, path: &str) -> AppResult<(Vec<u8>, FileAttributes)> {
     let attrs = sftp.symlink_metadata(path).await.map_err(sftp_error)?;
     if !attrs.is_regular() || attrs.is_symlink() {
         return Err(AppError::invalid_input(
