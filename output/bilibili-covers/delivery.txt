@@ -1,5 +1,0 @@
-MiraiHub Bilibili covers
-Theme: Mirai Kuriyama / Beyond the Boundary, cream and blush pink.
-Artwork generation and redesign: built-in ImageGen.
-PNG delivery export: 1600 x 900 (16:9), 1440 x 1080 (4:3).
-Generation prompt set: prompts.txt.
