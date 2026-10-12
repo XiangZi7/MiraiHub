@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>统一气泡回归预览</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, reactive } from 'vue'
+      import { addCollection } from '@iconify/vue'
+      import icons from 'virtual:mirai-icons'
+      import AppTooltip from '/src/components/ui/AppTooltip.vue'
+      import AppButton from '/src/components/ui/AppButton.vue'
+      import IconButton from '/src/components/ui/IconButton.vue'
+      import '/src/assets/styles/main.css'
+      addCollection(icons)
+      const state = reactive({
+        title: '动态备注',
+        extra: true,
+        reversed: false,
+        zoom: 1,
+      })
+      const changeZoom = () => {
+        state.zoom = state.zoom === 1 ? 1.5 : 1
+        document.documentElement.style.zoom = String(state.zoom)
+        document.documentElement.style.setProperty(
+          '--preview-zoom',
+          String(state.zoom)
+        )
+      }
+      createApp({
+        render: () =>
+          h('div', { class: 'flex h-full flex-col gap-4 p-4' }, [
+            h('div', { class: 'flex flex-wrap items-center gap-2' }, [
+              h(AppButton, { title: '保存配置' }, () => '普通按钮'),
+              h(IconButton, { icon: 'lucide:refresh-cw', title: '刷新数据' }),
+              h(
+                'button',
+                { class: 'btn', title: state.title, 'data-testid': 'dynamic' },
+                '动态提示'
+              ),
+              h(
+                'button',
+                { class: 'btn', onClick: () => (state.title = '更新后的备注') },
+                '更新提示'
+              ),
+              h(
+                'button',
+                { class: 'btn', onClick: () => (state.title = '') },
+                '清空提示'
+              ),
+              h(
+                'button',
+                { class: 'btn', onClick: () => (state.title = undefined) },
+                '移除提示'
+              ),
+              h(
+                'button',
+                { class: 'btn', onClick: () => (state.extra = !state.extra) },
+                '切换节点'
+              ),
+              h(
+                'button',
+                {
+                  class: 'btn',
+                  onClick: () => (state.reversed = !state.reversed),
+                },
+                '调整顺序'
+              ),
+              h('button', { class: 'btn', onClick: changeZoom }, '切换缩放'),
+            ]),
+            h('table', { class: 'w-full font-mono text-xs' }, [
+              h('thead', [
+                h('tr', [
+                  h(
+                    'th',
+                    {
+                      tabindex: 0,
+                      'data-tooltip': '字段备注：演示宽表头的鼠标跟随',
+                      'data-testid': 'header',
+                      class: 'border-line bg-panel h-12 border px-3 text-left',
+                    },
+                    'title VARCHAR'
+                  ),
+                ]),
+              ]),
+            ]),
+            h(
+              'div',
+              { class: 'flex gap-2' },
+              (state.reversed ? ['乙', '甲'] : ['甲', '乙']).map(name =>
+                h(
+                  'button',
+                  { key: name, class: 'btn', title: `节点 ${name} 提示` },
+                  `节点 ${name}`
+                )
+              )
+            ),
+            state.extra
+              ? h(
+                  'button',
+                  { class: 'btn self-start', title: '新挂载节点也自动接入' },
+                  '新增节点'
+                )
+              : null,
+            h(
+              'svg',
+              {
+                width: 160,
+                height: 70,
+                'aria-label': '图表',
+                'data-tooltip': '图表说明',
+              },
+              [
+                h('circle', {
+                  cx: 40,
+                  cy: 35,
+                  r: 16,
+                  tabindex: 0,
+                  'data-tooltip': '图表点：42',
+                }),
+              ]
+            ),
+            h('div', {
+              innerHTML:
+                '<a href="#preview" title="动态 HTML 的提示">动态 HTML 链接</a>',
+            }),
+            h(
+              'button',
+              {
+                class: 'btn self-end',
+                title:
+                  '窗口边缘的长备注。\n' +
+                  '长内容会自动换行并保持在窗口内。'.repeat(20),
+                style: { marginTop: 'auto' },
+              },
+              '长备注'
+            ),
+            h(AppTooltip),
+          ]),
+      }).mount('#app')
+    </script>
+  </body>
+</html>

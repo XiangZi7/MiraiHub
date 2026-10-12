@@ -123,8 +123,8 @@ const yOptions = computed(() => [
         viewBox="0 0 440 220"
         role="img"
         :aria-label="`${result.columns[Number(x)]} / ${result.columns[selectedY]}`"
+        :data-tooltip="result.columns[selectedY]"
       >
-        <title>{{ result.columns[selectedY] }}</title>
         <line
           x1="44"
           x2="396"
@@ -162,9 +162,9 @@ const yOptions = computed(() => [
               :cy="point.y"
               r="3"
               class="chart-point"
-            >
-              <title>{{ point.label }}: {{ point.value }}</title>
-            </circle>
+              :data-tooltip="`${point.label}: ${point.value}`"
+              :aria-label="`${point.label}: ${point.value}`"
+            ></circle>
             <rect
               v-else
               :x="point.x - geometry.barWidth / 2"
@@ -173,9 +173,9 @@ const yOptions = computed(() => [
               :height="Math.max(1, Math.abs(point.y - geometry.baseline))"
               rx="2"
               class="chart-point"
-            >
-              <title>{{ point.label }}: {{ point.value }}</title>
-            </rect>
+              :data-tooltip="`${point.label}: ${point.value}`"
+              :aria-label="`${point.label}: ${point.value}`"
+            ></rect>
           </template>
         </template>
         <text

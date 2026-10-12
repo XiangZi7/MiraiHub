@@ -3,6 +3,7 @@ import { RouterView, useRoute } from 'vue-router'
 import { computed, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import ToastHost from '@/components/ui/ToastHost.vue'
+import AppTooltip from '@/components/ui/AppTooltip.vue'
 import AppUpdateStatus from '@/components/settings/AppUpdateStatus.vue'
 import { IS_TAURI } from '@/utils/window'
 const route = useRoute()
@@ -37,6 +38,7 @@ useEventListener(window, 'miraihub:settings-reopen', () => {
     />
   </RouterView>
   <ToastHost v-if="shouldHostToasts" />
+  <AppTooltip />
   <AppUpdateStatus
     v-if="IS_TAURI && route.meta.surface === 'workspace'"
     floating

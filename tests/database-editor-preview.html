@@ -132,6 +132,8 @@
         await import('/src/components/workspace/database/DatabaseQueryResults.vue')
       const { default: TableView } =
         await import('/src/components/workspace/database/DatabaseTableView.vue')
+      const { default: Tooltip } =
+        await import('/src/components/ui/AppTooltip.vue')
       i18n.global.locale.value = 'zh-CN'
       const columns = [
         'id',
@@ -176,6 +178,7 @@
       createApp({
         render: () =>
           h('div', { class: 'h-screen flex flex-col p-3 gap-2' }, [
+            h(Tooltip),
             h('nav', { class: 'flex gap-4 text-xs' }, [
               h(
                 'button',

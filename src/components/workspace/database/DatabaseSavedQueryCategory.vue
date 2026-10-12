@@ -64,9 +64,13 @@ watch(
       class="nav-item text-txt-4 h-7 w-full gap-1.5 pl-10 text-[10.5px]"
       @click="emit('create', database)"
     >
+      <span
+        aria-hidden="true"
+        class="w-[11px] shrink-0"
+      />
       <AppIcon
         name="lucide:plus"
-        :size="11"
+        :size="12"
       /><span> {{ t('新建已保存查询') }} </span>
     </AppButton>
     <AppButton
@@ -88,6 +92,10 @@ watch(
       @click="emit('open', query)"
       @contextmenu.prevent.stop="emit('context', $event, query)"
     >
+      <span
+        aria-hidden="true"
+        class="w-[11px] shrink-0"
+      />
       <AppIcon
         name="lucide:file-code-2"
         :size="12"

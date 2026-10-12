@@ -140,6 +140,15 @@ const gridColumns = computed(() =>
         dataType: column.dataType,
       }))
 )
+const columnComments = computed(
+  () =>
+    new Map(
+      (state.detail?.columns ?? []).map(column => [
+        column.name,
+        column.comment?.trim() ?? '',
+      ])
+    )
+)
 // 列宽跟着这张表走，切换表或重开连接后仍然保留。
 const columnScope = computed(() => `table:${props.object.identity}`)
 const { resized, widthOf, beginResize, autoFit, keyboardResize, resetWidths } =
@@ -866,15 +875,28 @@ watch(
                   <th
                     v-for="(column, columnIndex) in gridColumns"
                     :key="`${column.name}:${columnIndex}`"
+                    :data-tooltip="
+                      columnComments.get(column.name) ||
+                      t('按 {value0} 排序', { value0: column.name })
+                    "
                     :data-column="column.name"
                     :class="
                       cn(
-                        'border-line-soft hover:bg-hover cursor-pointer border-r border-b px-2.5 py-1.5 font-medium select-none',
+                        'border-line-soft hover:bg-hover focus-visible:ring-violet/45 cursor-pointer border-r border-b px-2.5 py-1.5 font-medium outline-none select-none focus-visible:ring-1 focus-visible:ring-inset',
                         !resized && 'min-w-36'
                       )
                     "
-                    :title="t('按 {value0} 排序', { value0: column.name })"
+                    tabindex="0"
+                    :aria-sort="
+                      state.sort?.column === column.name
+                        ? state.sort.descending
+                          ? 'descending'
+                          : 'ascending'
+                        : 'none'
+                    "
                     @click="toggleSort(column.name)"
+                    @keydown.enter.self.prevent="toggleSort(column.name)"
+                    @keydown.space.self.prevent="toggleSort(column.name)"
                     @contextmenu.prevent="openColumnMenu($event, column.name)"
                   >
                     <span class="block truncate">
@@ -899,7 +921,7 @@ watch(
                             tagsVisible ? 'text-violet' : 'text-txt-4'
                           )
                         "
-                        :title="t('已启用标签化显示，右键可修改')"
+                        :aria-label="t('已启用标签化显示，右键可修改')"
                       />
                       <span class="text-txt-4 ml-1.5 text-[9px] font-normal">{{
                         column.dataType

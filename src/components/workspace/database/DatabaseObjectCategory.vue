@@ -131,7 +131,8 @@ watch(
         />
         <span
           v-else
-          class="w-[11px]"
+          aria-hidden="true"
+          class="w-2.75 shrink-0"
         />
         <AppIcon
           :name="icon"

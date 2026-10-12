@@ -7,7 +7,7 @@ withDefaults(
     icon: string
     /** 图标尺寸 */
     size?: number
-    /** 原生 title 提示 */
+    /** 由应用统一气泡接管的提示文案 */
     title?: string
     /** 禁用。用于"没有上一级可回"这类当前不可用的动作 */
     disabled?: boolean
@@ -23,6 +23,7 @@ withDefaults(
     type="button"
     class="icon-btn disabled:pointer-events-none disabled:opacity-35"
     :title="title"
+    :aria-label="title"
     :disabled="disabled"
   >
     <AppIcon
