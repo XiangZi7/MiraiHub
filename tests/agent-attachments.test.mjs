@@ -10,9 +10,105 @@ const {
   AGENT_MAX_FILE_BYTES,
   AGENT_MAX_ATTACHMENT_BYTES,
   bytesToSize,
+  AGENT_MAX_IMAGE_BYTES,
+  AGENT_FILE_ACCEPT,
+  agentImageUrl,
+  clipboardImages,
 } = await load('src/utils/agent-attachments.ts')
 const { useAgentDraft } = await load('src/composables/useAgentDraft.ts')
 const file = (content, name = 'server.log') => new File([content], name)
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+  'base64'
+)
+const image = () => new File([png], 'screenshot.png', { type: 'image/png' })
+
+test('reads images as base64 with MIME type and original byte size, including files without a MIME type', async () => {
+  for (const input of [image(), new File([png], 'screenshot.PNG')]) {
+    const attachment = await readAgentAttachment(input)
+    assert.equal(attachment.mimeType, 'image/png')
+    assert.equal(attachment.content, png.toString('base64'))
+    assert.equal(attachment.size, png.length)
+    assert.equal(
+      agentImageUrl(attachment),
+      `data:image/png;base64,${png.toString('base64')}`
+    )
+  }
+  assert.match(AGENT_FILE_ACCEPT, /image\/png/)
+  assert.equal(agentImageUrl(await readAgentAttachment(file('hello'))), '')
+  await assert.rejects(
+    readAgentAttachment(
+      new File(['<svg/>'], 'picture.svg', { type: 'image/svg+xml' })
+    )
+  )
+  await assert.rejects(
+    readAgentAttachment({
+      name: 'huge.png',
+      type: 'image/png',
+      size: AGENT_MAX_IMAGE_BYTES + 1,
+      arrayBuffer: () => {
+        throw new Error('Oversized images must not be read')
+      },
+    }),
+    /5 MB/
+  )
+})
+
+test('clipboard image extraction handles screenshots, multiple images and file-list fallback without reading text', () => {
+  const input = image()
+  const item = { kind: 'file', type: input.type, getAsFile: () => input }
+  const text = { kind: 'string', type: 'text/plain', getAsFile: () => null }
+  assert.deepEqual(clipboardImages(null), [])
+  assert.deepEqual(clipboardImages({ items: [text], files: [] }), [])
+  assert.deepEqual(
+    clipboardImages({ items: [text, item, item], files: [input] }),
+    [input, input]
+  )
+  assert.deepEqual(
+    clipboardImages({ items: [], files: [input, file('hello')] }),
+    [input]
+  )
+  assert.deepEqual(
+    clipboardImages({
+      items: [{ kind: 'file', getAsFile: () => null }],
+      files: [input],
+    }),
+    [input]
+  )
+})
+
+test('image-only and mixed drafts send MIME type, restore failed sends, and can remove images', async () => {
+  const scope = effectScope()
+  let payload
+  let accepted = false
+  const draft = scope.run(() =>
+    useAgentDraft(async (prompt, attachments) => {
+      payload = { prompt, attachments }
+      return accepted
+    })
+  )
+  try {
+    await draft.addFiles([image()])
+    await draft.submit()
+    assert.equal(payload.attachments[0].mimeType, 'image/png')
+    assert.equal(payload.attachments[0].content, png.toString('base64'))
+    assert.equal(draft.attachments.value.length, 1)
+    await draft.addFiles([file('error: connection refused')])
+    draft.prompt.value = 'Explain this screenshot and log'
+    accepted = true
+    await draft.submit()
+    assert.equal(payload.attachments.length, 2)
+    assert.equal(payload.prompt, 'Explain this screenshot and log')
+    assert.equal(payload.attachments[1].content, 'error: connection refused')
+    assert.equal('mimeType' in payload.attachments[1], false)
+    assert.equal(draft.attachments.value.length, 0)
+    await draft.addFiles([image()])
+    draft.removeFile(draft.attachments.value[0].id)
+    assert.equal(draft.attachments.value.length, 0)
+  } finally {
+    scope.stop()
+  }
+})
 
 test('reads UTF-8 attachments without truncation and rejects empty, binary and oversized files', async () => {
   const result = await readAgentAttachment(

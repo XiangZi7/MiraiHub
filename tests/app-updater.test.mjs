@@ -61,6 +61,66 @@ test('downloads one update, tracks bytes and installs only after idle preflight'
   assert.equal(state.phase, 'installing')
 })
 
+test('update now installs a verified package without waiting for idle, even after postponing or disabling auto-update', async () => {
+  let preflights = 0
+  const { controller, state, calls } = fixture({
+    enabled: () => false,
+    canInstall: async () => {
+      preflights++
+      return false
+    },
+  })
+  await controller.installNow()
+  assert.equal(calls.install, 0)
+  await controller.check()
+  controller.defer()
+  assert.equal(state.dismissed, true)
+  assert.equal(state.deferred, true)
+  await Promise.all([controller.installNow(), controller.installNow()])
+  assert.equal(calls.install, 1)
+  assert.equal(preflights, 0)
+  assert.equal(state.phase, 'installing')
+  assert.equal(state.deferred, false)
+  assert.equal(state.dismissed, false)
+})
+
+test('update now during automatic preflight is not lost and installs only once', async () => {
+  let finish
+  const { controller, calls } = fixture({
+    canInstall: () =>
+      new Promise(resolve => {
+        finish = resolve
+      }),
+  })
+  await controller.check()
+  const automatic = controller.installWhenIdle()
+  await controller.installNow()
+  finish(false)
+  await automatic
+  assert.equal(calls.install, 1)
+  await controller.installNow()
+  assert.equal(calls.install, 1)
+})
+
+test('not now cancels an immediate request while automatic preflight is pending', async () => {
+  let finish
+  const { controller, calls, state } = fixture({
+    canInstall: () =>
+      new Promise(resolve => {
+        finish = resolve
+      }),
+  })
+  await controller.check()
+  const automatic = controller.installWhenIdle()
+  await controller.installNow()
+  controller.defer()
+  finish(true)
+  await automatic
+  assert.equal(calls.install, 0)
+  assert.equal(state.deferred, true)
+  assert.equal(state.dismissed, true)
+})
+
 test('latest and network errors never start an installer; checks can be retried', async () => {
   let failed = true
   const { controller, state, calls } = fixture({
@@ -86,6 +146,7 @@ test('Finished event followed by a bad signature never makes the update installa
   const { controller, update, state, calls } = fixture()
   update.download = async report => {
     report({ event: 'Finished' })
+    await controller.installNow()
     await controller.installWhenIdle()
     assert.equal(state.phase, 'downloading')
     throw new Error('signature verification failed')
@@ -95,6 +156,7 @@ test('Finished event followed by a bad signature never makes the update installa
   assert.equal(state.errorStage, 'download')
   assert.equal(calls.close, 1)
   await controller.installWhenIdle()
+  await controller.installNow()
   assert.equal(calls.install, 0)
 })
 
@@ -393,11 +455,20 @@ test('only the main window schedules updates; settings routes actions and receiv
     assert.equal(data.installs, 0)
     await settings.command('defer')
     assert.equal(main.state.deferred, true)
-    data.tabs = []
+    assert.equal(main.state.dismissed, true)
     context.mock.timers.tick(10_000)
     await flush()
     assert.equal(data.installs, 0)
-    await settings.command('resume')
+    await settings.command('install')
+    await flush()
+    assert.equal(data.installs, 1)
+    assert.deepEqual(
+      data.tabs,
+      [1],
+      'install now works while connection tabs are open'
+    )
+    assert.equal(settings.state.phase, 'installing')
+    assert.equal(settings.state.deferred, false)
     context.mock.timers.tick(10_000)
     await flush()
     assert.equal(data.installs, 1)

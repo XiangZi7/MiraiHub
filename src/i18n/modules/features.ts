@@ -1,5 +1,20 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  '上传图片（每张最多 5 MB）或文件（每个最多 1 GB）；支持 Ctrl+V 粘贴图片':
+    'Upload images (up to 5 MB each) or files (up to 1 GB each); paste images with Ctrl+V',
+  '{value0}：单张图片不能超过 5 MB':
+    '{value0}: each image must be 5 MB or smaller',
+  '{value0}：请选择 PNG、JPEG、GIF 或 WebP 图片':
+    '{value0}: select a PNG, JPEG, GIF, or WebP image',
+  '单张图片不能超过 5 MB': 'Each image must be 5 MB or smaller',
+  '请选择 PNG、JPEG、GIF 或 WebP 图片':
+    'Select a PNG, JPEG, GIF, or WebP image',
+  '图片内容无效，请重新复制或选择图片':
+    'Invalid image data. Copy or select the image again.',
+  '上下文中的图片过多，请新建会话后重试':
+    'Too many images in the conversation. Start a new chat and retry.',
+  '请输入不超过 16000 字节的消息，或添加附件':
+    'Enter a message up to 16000 bytes or add an attachment',
   读取远端配置: 'Read remote configuration',
   修改远端配置: 'Edit remote configuration',
   配置差异预览: 'Configuration diff',

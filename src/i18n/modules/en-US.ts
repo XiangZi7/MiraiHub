@@ -9,8 +9,8 @@ export default {
     'Show IP addresses or hostnames for SSH and database connections in the sidebar',
   错误详情: 'Error details',
   自动下载并安装更新: 'Automatically download and install updates',
-  '启动时及每 6 小时检查正式版；关闭连接标签和其他窗口后自动安装并重启。':
-    'Check stable releases at startup and every 6 hours. Install and restart after connection tabs and other windows are closed.',
+  '启动时及每 6 小时检查正式版并自动下载，空闲时安装；也可选择立即更新或暂不更新。':
+    'Check stable releases at startup and every 6 hours, download automatically, and install when idle. You can also choose Update now or Not now.',
   '正在检查更新…': 'Checking for updates…',
   当前已是最新版本: 'You are up to date',
   正在下载更新: 'Downloading update',
@@ -32,14 +32,11 @@ export default {
     'Automatic updates require a Windows x64 production installation',
   '从 GitHub Releases 获取最新正式版':
     'Get the latest stable version from GitHub Releases',
-  '请关闭连接标签和其他窗口，随后将自动安装并重启。':
-    'Close connection tabs and other windows to allow installation and restart.',
   更新下载进度: 'Update download progress',
   检查并下载更新: 'Check and download update',
-  恢复自动安装: 'Resume automatic installation',
-  本次暂不安装: 'Postpone this installation',
+  立即更新: 'Update now',
+  暂不更新: 'Not now',
   查看发行说明: 'View release notes',
-  空闲后安装本次更新: 'Install this update when idle',
   ...features,
   ...parameterized,
   ...native,

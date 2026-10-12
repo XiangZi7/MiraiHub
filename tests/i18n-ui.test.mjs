@@ -72,6 +72,157 @@ const visible = el =>
     ...el.children.map(visible),
   ].join(' ')
 
+test('ready updates show Update now and Not now in About and the floating notice, with no close-connection instructions', async () => {
+  const boundary = dataModule(`
+    import { defineStore } from ${JSON.stringify(import.meta.resolve('pinia'))};
+    import { reactive } from ${JSON.stringify(import.meta.resolve('vue'))};
+    export const state = reactive({ phase:'ready', version:'2.1.0', downloaded:100, total:100, error:'', errorStage:'', reason:'', deferred:false, dismissed:false });
+    export const values = reactive({ autoUpdate:true });
+    export const commands = [];
+    export const useAppUpdaterStore = defineStore('update-ui', () => ({ state, start:async () => {}, command:value => commands.push(value) }));
+    export const useSettingsStore = defineStore('update-ui-settings', () => ({ values }));
+    export const openUrl = async () => {};
+  `)
+  const { state, values, commands } = await import(boundary)
+  const file = 'src/components/settings/AppUpdateStatus.vue'
+  const updateLoad = sourceLoader(
+    {
+      '@/stores/app-updater': boundary,
+      '@/stores/settings': boundary,
+      '@tauri-apps/plugin-opener': boundary,
+    },
+    [file, 'src/components/ui/AppButton.vue']
+  )
+  const { default: UpdateStatus } = await updateLoad(file)
+  const props = reactive({ floating: false })
+  const root = node('root')
+  const app = renderer.createApp({ render: () => h(UpdateStatus, props) })
+  const buttons = el => [
+    ...(el.type === 'button' && el.props.class?.includes('update-action')
+      ? [el]
+      : []),
+    ...el.children.flatMap(buttons),
+  ]
+  const pinia = createPinia()
+  i18n.global.locale.value = 'zh-CN'
+  app.use(pinia).use(i18n).mount(root)
+  try {
+    for (const autoUpdate of [true, false]) {
+      values.autoUpdate = autoUpdate
+      await nextTick()
+      const actions = buttons(root)
+      assert.equal(actions.length, 2)
+      assert.match(visible(actions[0]), /立即更新/)
+      assert.match(visible(actions[1]), /暂不更新/)
+      assert.doesNotMatch(visible(root), /关闭连接|空闲后安装|恢复自动安装/)
+    }
+    buttons(root)[0].props.onClick()
+    buttons(root)[1].props.onClick()
+    assert.deepEqual(commands, ['install', 'defer'])
+    state.deferred = true
+    await nextTick()
+    assert.match(visible(buttons(root)[0]), /立即更新/)
+    assert.equal(buttons(root)[1].props.disabled, true)
+    i18n.global.locale.value = 'en-US'
+    props.floating = true
+    await nextTick()
+    assert.match(visible(buttons(root)[0]), /Update now/)
+    assert.match(visible(buttons(root)[1]), /Not now/)
+    state.dismissed = true
+    await nextTick()
+    assert.equal(buttons(root).length, 0)
+    props.floating = false
+    await nextTick()
+    assert.equal(
+      buttons(root).length,
+      2,
+      'postponed updates remain available in About'
+    )
+  } finally {
+    app.unmount()
+  }
+})
+
+test('agent composer pastes images, leaves text paste native, previews images and respects disabled or reading state', async () => {
+  const { default: Composer } = await load(components[3])
+  const { readAgentAttachment } = await load('src/utils/agent-attachments.ts')
+  const attached = []
+  const props = reactive({
+    modelValue: 'Existing prompt',
+    approvalMode: 'auto',
+    isDatabase: false,
+    attachments: [],
+    disabled: false,
+    awaitingApproval: false,
+    busy: false,
+    canSend: true,
+    reading: false,
+    attachmentError: '',
+    activeId: '',
+    profileOptions: [],
+    profileDisabled: false,
+    profileError: '',
+    onAttach: files => attached.push(files),
+  })
+  const input = new File(
+    [
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+        'base64'
+      ),
+    ],
+    'screenshot.png',
+    { type: 'image/png' }
+  )
+  const find = (el, type) =>
+    el.type === type
+      ? el
+      : el.children.map(child => find(child, type)).find(Boolean)
+  const root = node('root')
+  const app = renderer.createApp({ render: () => h(Composer, props) })
+  app.use(i18n).mount(root)
+  try {
+    const textarea = find(root, 'textarea')
+    let prevented = 0
+    const event = (files, text = '') => ({
+      clipboardData: {
+        items: files.map(file => ({
+          kind: 'file',
+          type: file.type,
+          getAsFile: () => file,
+        })),
+        files,
+        getData: () => text,
+      },
+      preventDefault: () => prevented++,
+    })
+    textarea.props.onPaste(event([input]))
+    assert.equal(prevented, 1)
+    assert.deepEqual(attached, [[input]])
+    assert.equal(props.modelValue, 'Existing prompt')
+    textarea.props.onPaste(event([], 'Pasted text'))
+    assert.equal(prevented, 1)
+    assert.equal(attached.length, 1)
+    textarea.props.onPaste(event([input], 'Image caption'))
+    assert.equal(prevented, 1)
+    assert.equal(attached.length, 2)
+    for (const key of ['disabled', 'reading']) {
+      props[key] = true
+      await nextTick()
+      textarea.props.onPaste(event([input]))
+      assert.equal(attached.length, 2)
+      props[key] = false
+    }
+    props.attachments = [await readAgentAttachment(input)]
+    await nextTick()
+    const preview = find(root, 'img')
+    assert.match(preview.props.src, /^data:image\/png;base64,/)
+    assert.equal(preview.props.alt, 'screenshot.png')
+  } finally {
+    app.unmount()
+  }
+})
+
 test('retry status counts down, translates diagnostics, and updates for the next attempt', async context => {
   context.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 10000 })
   const { default: RetryStatus } = await load(components[6])

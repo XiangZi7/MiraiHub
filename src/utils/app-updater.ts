@@ -55,6 +55,7 @@ export function createUpdateController(options: {
   let busy = false
   let disposed = false
   let requested = false
+  let immediateRequested = false
   let automatic = false
   let checkFailures = 0
   let checkTimer: ReturnType<typeof setTimeout> | undefined
@@ -65,6 +66,7 @@ export function createUpdateController(options: {
     options.changed()
   }
   async function release() {
+    immediateRequested = false
     const update = pending
     pending = null
     await update?.close().catch(() => {})
@@ -158,15 +160,19 @@ export function createUpdateController(options: {
       return
     busy = true
     try {
+      // A deliberate install-now action also wins if it arrives while the
+      // automatic installer is awaiting its idle preflight.
+      const idle = immediateRequested || (await options.canInstall())
       // Recheck preferences after the native round trip: the user may have
       // paused installation while the window/session preflight was pending.
       if (
-        !(await options.canInstall()) ||
+        (!idle && !immediateRequested) ||
         disposed ||
         state.deferred ||
         (!options.enabled() && !requested)
       )
         return
+      immediateRequested = false
       change({ phase: 'installing', dismissed: false })
       await pending.install()
     } catch (error) {
@@ -182,6 +188,14 @@ export function createUpdateController(options: {
   return {
     check,
     installWhenIdle,
+    installNow: async () => {
+      // Only a fully downloaded, signature-verified package can reach ready.
+      if (disposed || !pending || state.phase !== 'ready') return
+      requested = true
+      immediateRequested = true
+      change({ deferred: false, dismissed: false })
+      await installWhenIdle()
+    },
     startAutoChecks: () => {
       automatic = true
       scheduleCheck(15_000)
@@ -202,7 +216,8 @@ export function createUpdateController(options: {
     dismiss: () => change({ dismissed: true }),
     defer: () => {
       requested = false
-      change({ deferred: true })
+      immediateRequested = false
+      change({ deferred: true, dismissed: true })
     },
     resume: () => {
       requested = true

@@ -52,9 +52,14 @@ impl Limits {
             return Err(AppError::invalid_input(format!("已达到 {} 条历史消息上限（含工具结果）。请在设置 → AI Agent → 任务容量中调高，或新建会话。", self.max_messages)));
         }
         let context: Vec<&Value> = messages.iter().chain(next).collect();
-        let bytes = serde_json::to_vec(&context)
-            .map_err(|_| AppError::internal("无法计算上下文大小"))?
-            .len();
+        let bytes = super::context::text_bytes(context.iter().copied())?;
+        if super::context::image_bytes(context.iter().copied())
+            > super::context::MAX_IMAGE_CONTEXT_BYTES
+        {
+            return Err(AppError::invalid_input(
+                "上下文中的图片过多，请新建会话后重试",
+            ));
+        }
         // KB uses decimal bytes, matching the settings control and the previous 180,000-byte limit.
         if bytes > self.max_context_kb * 1000 {
             return Err(AppError::invalid_input(format!("已达到 {} KB 本地上下文容量上限。请在设置 → AI Agent → 任务容量中调高，或新建会话；模型服务仍可能有自己的上下文限制。", self.max_context_kb)));

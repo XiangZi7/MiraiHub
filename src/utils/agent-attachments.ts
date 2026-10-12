@@ -8,8 +8,59 @@ import {
 export const AGENT_MAX_FILES = 4
 export const AGENT_MAX_FILE_BYTES = 1_000_000_000
 export const AGENT_MAX_ATTACHMENT_BYTES = 1_000_000_000
+export const AGENT_MAX_IMAGE_BYTES = 5_000_000
 export const AGENT_FILE_ACCEPT =
-  '.txt,.md,.log,.json,.csv,.tsv,.yaml,.yml,.xml,.sql,.sh,.bash,.zsh,.ps1,.conf,.ini,.toml,.properties,.js,.jsx,.ts,.tsx,.vue,.py,.rs,.go,.java,.c,.h,.cpp,.css,.html,.env,.gitignore,.dockerfile,.xlsx,.xlsm,.xls,.docx,.pptx,.ods,text/*'
+  '.txt,.md,.log,.json,.csv,.tsv,.yaml,.yml,.xml,.sql,.sh,.bash,.zsh,.ps1,.conf,.ini,.toml,.properties,.js,.jsx,.ts,.tsx,.vue,.py,.rs,.go,.java,.c,.h,.cpp,.css,.html,.env,.gitignore,.dockerfile,.xlsx,.xlsm,.xls,.docx,.pptx,.ods,text/*,image/png,image/jpeg,image/gif,image/webp'
+
+const imageTypes: Record<
+  string,
+  NonNullable<AgentDraftAttachment['mimeType']>
+> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+}
+
+/** Use paste-event data directly; plain text keeps the browser's normal paste behavior. */
+export function clipboardImages(data: DataTransfer | null): File[] {
+  if (!data) return []
+  const files = Array.from(data.items ?? [])
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter((file): file is File => file !== null)
+  return (files.length ? files : Array.from(data.files ?? [])).filter(
+    file =>
+      file.type.startsWith('image/') ||
+      !!imageTypes[file.name.split('.').pop()?.toLowerCase() ?? '']
+  )
+}
+
+export function agentImageUrl(file: AgentDraftAttachment): string {
+  return file.mimeType ? `data:${file.mimeType};base64,${file.content}` : ''
+}
+
+async function readImageAttachment(
+  file: File,
+  mimeType: NonNullable<AgentDraftAttachment['mimeType']>
+): Promise<AgentDraftAttachment> {
+  if (file.size > AGENT_MAX_IMAGE_BYTES)
+    throw new Error(
+      i18n.global.t('{value0}：单张图片不能超过 5 MB', { value0: file.name })
+    )
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
+  return {
+    id: crypto.randomUUID(),
+    name: file.name,
+    content: btoa(binary),
+    size: bytes.length,
+    mimeType,
+  }
+}
 
 /** Human-readable byte count (KB/MB/GB), shared by the composer and errors. */
 export function bytesToSize(bytes: number): string {
@@ -56,6 +107,20 @@ export async function readAgentAttachment(
     throw new Error(i18n.global.t('附件文件名无效'))
 
   const name = file.name
+
+  const imageType = imageTypes[name.split('.').pop()?.toLowerCase() ?? '']
+  if (file.type?.startsWith('image/') || imageType) {
+    const mimeType = Object.values(imageTypes).find(
+      type => type === (file.type || imageType)
+    )
+    if (!mimeType)
+      throw new Error(
+        i18n.global.t('{value0}：请选择 PNG、JPEG、GIF 或 WebP 图片', {
+          value0: name,
+        })
+      )
+    return readImageAttachment(file, mimeType)
+  }
 
   // Office containers (.xlsx/.xlsm/.docx/.pptx/.ods and common .xls) get
   // parsed into readable text so the agent can actually use their content.

@@ -132,7 +132,11 @@ export function useAgentDraft(
     const token = version
     const accepted = await send(
       prompt.trim() ? prompt : i18n.global.t('agent.analyzeAttachments'),
-      attachments.map(({ name, content }) => ({ name, content }))
+      attachments.map(({ name, content, mimeType }) => ({
+        name,
+        content,
+        ...(mimeType ? { mimeType } : {}),
+      }))
     )
     if (
       !accepted &&

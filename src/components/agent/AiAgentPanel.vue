@@ -487,7 +487,7 @@ watch(
                   :title="file.name"
                 >
                   <AppIcon
-                    name="lucide:file-text"
+                    :name="file.mimeType ? 'lucide:image' : 'lucide:file-text'"
                     :size="13"
                   />
                   <span>{{ file.name }}</span>

@@ -592,7 +592,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'autoUpdate',
             label: '自动下载并安装更新',
             description:
-              '启动时及每 6 小时检查正式版；关闭连接标签和其他窗口后自动安装并重启。',
+              '启动时及每 6 小时检查正式版并自动下载，空闲时安装；也可选择立即更新或暂不更新。',
             control: 'switch',
           },
         ],

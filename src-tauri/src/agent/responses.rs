@@ -30,7 +30,22 @@ pub(super) fn body(config: &Config, messages: &[Value], tools: Option<Value>) ->
                     }
                 }
             }
-            "user" => input.push(json!({"role":"user", "content":text})),
+            "user" => {
+                let content = if let Some(parts) = message["content"].as_array() {
+                    let mut blocks = Vec::new();
+                    for part in parts {
+                        blocks.push(match part["type"].as_str() {
+                            Some("text") => json!({"type":"input_text", "text":part["text"]}),
+                            Some("image_url") => json!({"type":"input_image", "image_url":part["image_url"]["url"], "detail":"auto"}),
+                            _ => return Err(AppError::invalid_input("不支持的消息类型")),
+                        });
+                    }
+                    Value::Array(blocks)
+                } else {
+                    Value::String(text.into())
+                };
+                input.push(json!({"role":"user", "content":content}));
+            }
             _ => return Err(AppError::invalid_input("不支持的消息类型")),
         }
     }

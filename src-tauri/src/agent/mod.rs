@@ -2,6 +2,7 @@
 mod attachments;
 mod compaction;
 mod config;
+mod context;
 mod execution;
 mod files;
 pub mod history;

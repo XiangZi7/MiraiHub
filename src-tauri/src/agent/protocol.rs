@@ -56,7 +56,30 @@ fn anthropic_body(config: &Config, messages: &[Value], tools: Option<Value>) -> 
                 "user"
             }
             "user" => {
-                blocks.push(json!({"type":"text", "text":text}));
+                if let Some(parts) = message["content"].as_array() {
+                    for part in parts {
+                        match part["type"].as_str() {
+                            Some("text") => blocks.push(part.clone()),
+                            Some("image_url") => {
+                                let url = part["image_url"]["url"].as_str().ok_or_else(|| {
+                                    AppError::invalid_input("图片内容无效，请重新复制或选择图片")
+                                })?;
+                                let (mime_type, data) = url
+                                    .strip_prefix("data:")
+                                    .and_then(|value| value.split_once(";base64,"))
+                                    .ok_or_else(|| {
+                                        AppError::invalid_input(
+                                            "图片内容无效，请重新复制或选择图片",
+                                        )
+                                    })?;
+                                blocks.push(json!({"type":"image", "source":{"type":"base64", "media_type":mime_type, "data":data}}));
+                            }
+                            _ => return Err(AppError::invalid_input("不支持的消息类型")),
+                        }
+                    }
+                } else {
+                    blocks.push(json!({"type":"text", "text":text}));
+                }
                 "user"
             }
             "assistant" => {
@@ -254,6 +277,48 @@ pub(super) fn history_message(message: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn every_protocol_sends_images_and_text_in_its_native_format() {
+        let url = "data:image/png;base64,iVBORw0KGgo=";
+        let messages = vec![json!({"role":"user", "content":[
+            {"type":"text", "text":"Analyze the screenshot and attached log"},
+            {"type":"image_url", "image_url":{"url":url}}
+        ]})];
+        for api_format in [
+            ApiFormat::Openai,
+            ApiFormat::Responses,
+            ApiFormat::Anthropic,
+        ] {
+            let config = Config {
+                enabled: true,
+                model: "vision-model".into(),
+                api_format,
+                ..Config::default()
+            };
+            let (_, body) = completion_body(&config, &messages, None).unwrap();
+            match api_format {
+                ApiFormat::Openai => assert_eq!(body["messages"], json!(messages)),
+                ApiFormat::Responses => {
+                    assert_eq!(body["input"][0]["content"][0]["type"], "input_text");
+                    assert_eq!(
+                        body["input"][0]["content"][0]["text"],
+                        messages[0]["content"][0]["text"]
+                    );
+                    assert_eq!(
+                        body["input"][0]["content"][1],
+                        json!({"type":"input_image", "image_url":url, "detail":"auto"})
+                    );
+                }
+                ApiFormat::Anthropic => {
+                    assert_eq!(body["messages"][0]["content"][0], messages[0]["content"][0]);
+                    assert_eq!(
+                        body["messages"][0]["content"][1],
+                        json!({"type":"image", "source":{"type":"base64", "media_type":"image/png", "data":"iVBORw0KGgo="}})
+                    );
+                }
+            }
+        }
+    }
     #[test]
     fn every_protocol_keeps_the_current_approval_instruction() {
         let instruction = super::super::policy::ApprovalMode::Full.instruction();

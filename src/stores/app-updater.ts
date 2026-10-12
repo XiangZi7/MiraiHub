@@ -16,7 +16,7 @@ import { useTransfersStore } from './transfers'
 
 const STATE_EVENT = 'miraihub://update-state'
 const COMMAND_EVENT = 'miraihub://update-command'
-type Command = 'status' | 'check' | 'defer' | 'resume' | 'dismiss'
+type Command = 'status' | 'check' | 'install' | 'defer' | 'resume' | 'dismiss'
 
 export const useAppUpdaterStore = defineStore('app-updater', () => {
   const state = reactive(initialUpdateState())
@@ -55,6 +55,7 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
     const unlisten = owner
       ? await listen<Command>(COMMAND_EVENT, event => {
           if (event.payload === 'check') void controller?.check()
+          else if (event.payload === 'install') void controller?.installNow()
           else if (event.payload === 'defer') controller?.defer()
           else if (event.payload === 'resume') controller?.resume()
           else if (event.payload === 'dismiss') controller?.dismiss()

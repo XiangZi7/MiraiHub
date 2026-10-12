@@ -3,7 +3,12 @@ import { translateNativeMessage } from '@/i18n/native'
 import { computed, nextTick, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AgentApprovalMode, AgentDraftAttachment } from '@/types/agent'
-import { AGENT_FILE_ACCEPT, bytesToSize } from '@/utils/agent-attachments'
+import {
+  AGENT_FILE_ACCEPT,
+  agentImageUrl,
+  bytesToSize,
+  clipboardImages,
+} from '@/utils/agent-attachments'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AgentProfileSelect from './AgentProfileSelect.vue'
@@ -61,6 +66,12 @@ function selectFiles(event: Event): void {
   if (!props.disabled) emit('attach', Array.from(input.files ?? []))
   input.value = ''
 }
+function paste(event: ClipboardEvent): void {
+  const files = clipboardImages(event.clipboardData)
+  if (!files.length) return
+  if (!event.clipboardData?.getData('text/plain')) event.preventDefault()
+  if (!props.disabled && !props.reading) emit('attach', files)
+}
 watch(
   prompt,
   async () => {
@@ -97,7 +108,14 @@ watch(
             @remove="emit('removeAttachment', file.id)"
           />
           <template v-else>
+            <img
+              v-if="file.mimeType"
+              :src="agentImageUrl(file)"
+              :alt="file.name"
+              class="attachment-thumbnail"
+            />
             <AppIcon
+              v-else
               name="lucide:file-text"
               :size="17"
               class="shrink-0"
@@ -130,6 +148,7 @@ watch(
         :aria-label="t('发送给 AI 的消息')"
         :disabled="disabled"
         @keydown="keydown"
+        @paste="paste"
       />
       <div class="composer-toolbar">
         <input
@@ -147,7 +166,9 @@ watch(
           :icon="reading ? 'lucide:loader-circle' : 'lucide:plus'"
           :size="17"
           :title="
-            t('上传文件：文本、日志、代码、表格（Excel/CSV 等），每个最多 1 GB')
+            t(
+              '上传图片（每张最多 5 MB）或文件（每个最多 1 GB）；支持 Ctrl+V 粘贴图片'
+            )
           "
           :aria-label="t('上传文件')"
           :disabled="disabled || reading"
@@ -327,6 +348,14 @@ watch(
   display: grid;
   min-width: 0;
   gap: 2px;
+}
+.attachment-thumbnail {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 5px;
+  background: var(--color-input);
 }
 .attachment-name {
   overflow: hidden;

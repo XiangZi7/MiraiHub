@@ -150,12 +150,6 @@ function openReleases() {
           {{ t('将自动重试，也可手动重试。') }}
         </p>
         <p
-          v-if="state.phase === 'ready'"
-          class="update-description"
-        >
-          {{ t('请关闭连接标签和其他窗口，随后将自动安装并重启。') }}
-        </p>
-        <p
           v-if="state.phase === 'downloading'"
           class="update-description update-download"
         >
@@ -184,32 +178,33 @@ function openReleases() {
       <AppButton
         v-if="state.phase === 'ready'"
         size="sm"
-        :variant="state.deferred ? 'primary' : 'default'"
-        class="update-action"
-        @click="updater.command(state.deferred ? 'resume' : 'defer')"
-      >
-        <AppIcon
-          :name="state.deferred ? 'lucide:play' : 'lucide:pause'"
-          :size="12"
-          aria-hidden="true"
-        />
-        {{ state.deferred ? t('恢复自动安装') : t('本次暂不安装') }}
-      </AppButton>
-      <AppButton
-        v-if="state.phase === 'ready' && !settings.values.autoUpdate"
-        size="sm"
         variant="primary"
         class="update-action"
-        @click="updater.command('resume')"
+        @click="updater.command('install')"
       >
         <AppIcon
           name="lucide:download"
           :size="12"
           aria-hidden="true"
         />
-        {{ t('空闲后安装本次更新') }}
+        {{ t('立即更新') }}
       </AppButton>
       <AppButton
+        v-if="state.phase === 'ready'"
+        size="sm"
+        :disabled="state.deferred"
+        class="update-action"
+        @click="updater.command('defer')"
+      >
+        <AppIcon
+          name="lucide:pause"
+          :size="12"
+          aria-hidden="true"
+        />
+        {{ t('暂不更新') }}
+      </AppButton>
+      <AppButton
+        v-if="state.phase !== 'ready'"
         size="sm"
         class="update-action"
         @click="openReleases"

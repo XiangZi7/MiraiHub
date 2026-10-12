@@ -100,10 +100,12 @@ export interface AgentContextRequest {
 export interface AgentAttachment {
   name: string
   content: string
+  mimeType?: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
 }
 export interface AgentAttachmentInfo {
   name: string
   size: number
+  mimeType?: AgentAttachment['mimeType']
 }
 export interface AgentDraftAttachment
   extends AgentAttachment, AgentAttachmentInfo {

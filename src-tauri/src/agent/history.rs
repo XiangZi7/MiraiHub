@@ -13,6 +13,9 @@ pub(super) struct Identity {
     pub created_at: i64,
 }
 
+// Image inputs need a larger encrypted-record cap; opening and listing share it.
+const MAX_RECORD_BYTES: u64 = 64 * 1024 * 1024;
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
@@ -109,7 +112,7 @@ fn record_path(dir: &Path, id: &str) -> AppResult<PathBuf> {
 }
 fn read(dir: &Path, id: &str, scope: &str) -> AppResult<Record> {
     let path = record_path(dir, id)?;
-    if std::fs::metadata(&path)?.len() > 16 * 1024 * 1024 {
+    if std::fs::metadata(&path)?.len() > MAX_RECORD_BYTES {
         return Err(AppError::invalid_input("聊天记录文件过大"));
     }
     let bytes = config::protect(&std::fs::read(path)?, false)?;
@@ -267,7 +270,7 @@ pub async fn ai_list_conversations(
         if path.extension().and_then(|v| v.to_str()) != Some("bin") {
             continue;
         }
-        if std::fs::metadata(&path)?.len() > 16 * 1024 * 1024 {
+        if std::fs::metadata(&path)?.len() > MAX_RECORD_BYTES {
             return Err(AppError::invalid_input("聊天记录文件过大"));
         }
         let bytes = config::protect(&std::fs::read(&path)?, false)?;
