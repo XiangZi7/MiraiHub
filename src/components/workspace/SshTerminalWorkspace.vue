@@ -8,7 +8,6 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
-import { storeToRefs } from 'pinia'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import type { SavedConnection } from '@/types/connection'
 import type { AgentContextRequest } from '@/types/agent'
@@ -50,7 +49,6 @@ const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string]
 }>()
 const layout = useWorkspaceLayoutStore()
-const { recording } = storeToRefs(layout)
 const machineKey = props.connectionId || crypto.randomUUID()
 const {
   width: preferredMachineWidth,
@@ -313,10 +311,9 @@ defineExpose({
     <AppSidePane
       v-if="machineVisited"
       :open="machineOpen"
-      :width="machineWidth + (recording ? 0 : 10)"
+      :width="machineWidth + 10"
     >
       <AppResizeHandle
-        v-show="!recording"
         v-model="machineWidth"
         pane-side="right"
         :min="machineMinWidth"

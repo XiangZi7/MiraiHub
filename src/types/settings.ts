@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS = {
 
   windowMaterial: 'acrylic',
   windowBackgroundOpacity: '50',
+  colorMode: 'dark',
   compactLayout: false,
   showConnectionAddress: true,
   uiScale: '100',

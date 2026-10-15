@@ -343,6 +343,11 @@ export default {
   '窗口材质、界面密度与动效。':
     'Window material, interface density, and motion.',
   窗口: 'Window',
+  外观模式: 'Appearance',
+  '深色是默认外观；跟随系统会随操作系统的浅色/深色设置切换。自带配色的皮肤不受此项影响':
+    'Dark is the default. Follow system switches with the operating system light/dark setting. Skins that ship their own colors are not affected.',
+  深色: 'Dark',
+  浅色: 'Light',
   窗口材质: 'Window material',
   'Mica 仅 Windows 11 可用，其他系统会退回到模糊效果':
     'Mica requires Windows 11; other systems fall back to blur',

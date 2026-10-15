@@ -250,7 +250,7 @@ watch(
 
         <div
           v-else-if="state.detail"
-          class="scroll-thin relative min-h-0 flex-1 overflow-auto bg-[#0d0f14] p-4"
+          class="scroll-thin bg-terminal relative min-h-0 flex-1 overflow-auto p-4"
         >
           <AppButton
             size="sm"
@@ -278,7 +278,9 @@ watch(
         </h3>
         <div class="border-line-soft overflow-hidden rounded-lg border">
           <table class="w-full border-collapse text-left text-[10.5px]">
-            <thead class="database-glass-header database-glass-header--card text-txt-3">
+            <thead
+              class="database-glass-header database-glass-header--card text-txt-3"
+            >
               <tr>
                 <th class="border-line-soft border-b px-2 py-1.5 font-medium">
                   {{ t('参数名') }}

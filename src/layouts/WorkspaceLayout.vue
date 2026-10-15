@@ -5,6 +5,7 @@ import {
   nextTick,
   onMounted,
   reactive,
+  ref,
   toRefs,
   useTemplateRef,
   watch,
@@ -47,8 +48,10 @@ import { COMMAND_TARGETS } from '@/constants/workspace'
 import type { CommandItem } from '@/types'
 import { isDatabaseConnection, type SavedConnection } from '@/types/connection'
 import { formatShortcut, matchesShortcut } from '@/utils/shortcut'
+import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
 import {
   appReady,
+  documentPrefersLight,
   launchAtStartupEnabled,
   openConnectionWindow,
   openSettingsWindow,
@@ -61,13 +64,14 @@ import {
 
 const { t } = useI18n()
 
-const settings = useSettingsStore().values
+const settingsStore = useSettingsStore()
+const settings = settingsStore.values
 const connections = useConnectionsStore()
 const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
 const layout = useWorkspaceLayoutStore()
-const { sidebarWidth, sidebarCollapsed, recording } = storeToRefs(layout)
+const { sidebarWidth, sidebarCollapsed } = storeToRefs(layout)
 const { activeNav, selectNav, openConnection, selectTab, followActiveTab } =
   useWorkspaceNavigation()
 const controllers = provideWorkspaceControllers()
@@ -89,11 +93,35 @@ const activeSshTab = computed(() =>
 onMounted(() => {
   void appReady()
 })
-watch(
-  () => settings.windowMaterial,
-  material => void setWindowMaterial(material),
-  { immediate: true }
-)
+/**
+ * 原生材质的明暗跟着文档实际生效的配色走。
+ *
+ * 不自己再算一遍 usesLightScheme：applySkin 每次改明暗都会写
+ * data-skin-scheme 并广播 SKIN_CHANGE_EVENT，读那一处才不会和 CSS 打架 ——
+ * 跟随系统、切皮肤、改模式三条路径都汇总在同一个事件里。
+ */
+const syncWindowMaterial = () =>
+  void setWindowMaterial(settings.windowMaterial, documentPrefersLight())
+watch(() => settings.windowMaterial, syncWindowMaterial, { immediate: true })
+useEventListener(window, SKIN_CHANGE_EVENT, syncWindowMaterial)
+
+/**
+ * 标题栏的明暗开关。
+ *
+ * 读的是 data-skin-scheme 而不是 settings.colorMode：跟随系统时模式是 'system'，
+ * 图标得反映此刻真正生效的那一面。同一个事件里刷新，和原生材质走同一条路径。
+ */
+const lightScheme = ref(documentPrefersLight())
+useEventListener(window, SKIN_CHANGE_EVENT, () => {
+  lightScheme.value = documentPrefersLight()
+})
+/** 一个图标只切明暗两态；"跟随系统"留在设置里选。 */
+function toggleColorMode(): void {
+  settingsStore.save({
+    ...settings,
+    colorMode: lightScheme.value ? 'dark' : 'light',
+  })
+}
 watch(
   () => [settings.showTrayIcon, settings.minimizeToTray] as const,
   ([showTray, minimize]) => {
@@ -227,9 +255,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 <template>
   <WindowFrame
     ambient
-    :class="
-      recording ? 'recording-workspace h-screen w-screen' : 'h-screen w-screen'
-    "
+    class="h-screen w-screen"
   >
     <!-- 标题栏：Windows 形态 —— 品牌在左，窗口按钮贴右上角。
          带 data-tauri-drag-region 的区域可拖拽，按钮本身不带故不受影响 -->
@@ -252,14 +278,13 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </h1>
       </div>
 
-      <NavigationControls v-show="!recording" />
+      <NavigationControls />
       <div
         class="flex-1"
         data-tauri-drag-region
       />
 
       <SearchField
-        v-show="!recording"
         ref="search"
         v-model="keyword"
         icon="lucide:search"
@@ -270,13 +295,9 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
       <div class="flex items-center gap-1.5">
         <IconButton
-          icon="lucide:video"
-          :title="
-            recording ? t('退出录屏模式') : t('录屏模式：精简布局与连接别名')
-          "
-          :aria-pressed="recording"
-          :class="recording && 'text-accent'"
-          @click="recording = !recording"
+          :icon="lightScheme ? 'lucide:sun' : 'lucide:moon'"
+          :title="lightScheme ? t('切换到深色外观') : t('切换到浅色外观')"
+          @click="toggleColorMode"
         />
         <IconButton
           icon="lucide:command"
@@ -318,7 +339,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     <!-- 主体 -->
     <div class="relative z-10 flex min-h-0 flex-1">
       <div
-        v-show="!recording"
         class="flex min-h-0 shrink-0"
       >
         <AppSidebar
@@ -332,7 +352,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         />
       </div>
       <AppResizeHandle
-        v-if="!sidebarCollapsed && !recording"
+        v-if="!sidebarCollapsed"
         v-model="sidebarWidth"
         pane-side="left"
         :min="SIDEBAR_MIN_WIDTH"
@@ -384,17 +404,6 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 </template>
 
 <style scoped>
-.recording-workspace :deep(.agent-panel) {
-  --agent-body-font: 15px;
-  --agent-small-font: 12px;
-  font-size: 15px;
-}
-.recording-workspace :deep(.agent-composer textarea) {
-  font-size: 14px;
-}
-.recording-workspace :deep(.agent-scroll) {
-  padding: 20px 16px;
-}
 .palette-enter-active,
 .palette-leave-active {
   transition: background-color 0.15s ease;

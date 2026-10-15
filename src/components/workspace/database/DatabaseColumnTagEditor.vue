@@ -337,7 +337,9 @@ watch(() => props.column, reset, { immediate: true })
             <col />
             <col style="width: 32px" />
           </colgroup>
-          <thead class="database-glass-header database-glass-header--card database-glass-header--sticky text-txt-3">
+          <thead
+            class="database-glass-header database-glass-header--card database-glass-header--sticky text-txt-3"
+          >
             <tr>
               <th
                 class="border-line-soft border-b px-2.5 py-1.5 font-medium whitespace-nowrap"

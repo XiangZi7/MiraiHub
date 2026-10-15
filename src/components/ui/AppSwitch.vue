@@ -87,7 +87,7 @@ const descriptionId = useId()
   border-color: color-mix(in oklch, var(--color-violet) 72%, white 6%);
   background-color: var(--color-violet);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    inset 0 1px 0 var(--glass-highlight-strong),
     0 3px 9px color-mix(in oklch, var(--color-violet) 20%, transparent);
 }
 

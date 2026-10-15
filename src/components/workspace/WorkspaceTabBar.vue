@@ -10,11 +10,9 @@ import { openConnectionWindow } from '@/utils/window'
 import { toast } from '@/composables/useToast'
 import { isDatabaseConnection } from '@/types/connection'
 import { DATABASE_CONNECTION_ICONS } from '@/constants/connection'
-import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 import type { TabDragEvent } from '@/composables/useTabReorder'
 
 const { t } = useI18n()
-const layout = useWorkspaceLayoutStore()
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{
   tabs: readonly WorkspaceTab[]
@@ -33,11 +31,9 @@ const emit = defineEmits<{
 }>()
 const state = reactive({ closingIds: [] as string[], warning: '' })
 const items = computed<TabItem[]>(() =>
-  props.tabs.map((tab, index) => ({
+  props.tabs.map(tab => ({
     id: tab.id,
-    label: layout.recording
-      ? `${t(isDatabaseConnection(tab.connection) ? '演示数据库' : '演示服务器')} ${String(index + 1).padStart(2, '0')}`
-      : tab.connection.name,
+    label: tab.connection.name,
     ...(isDatabaseConnection(tab.connection)
       ? {
           icon: DATABASE_CONNECTION_ICONS[tab.connection.kind].name,

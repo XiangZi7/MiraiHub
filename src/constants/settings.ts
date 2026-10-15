@@ -109,6 +109,19 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         title: '窗口',
         fields: [
           {
+            key: 'colorMode',
+            label: '外观模式',
+            description:
+              '深色是默认外观；跟随系统会随操作系统的浅色/深色设置切换。自带配色的皮肤不受此项影响',
+            control: 'select',
+            size: 'md',
+            options: [
+              { value: 'dark', label: '深色' },
+              { value: 'light', label: '浅色' },
+              { value: 'system', label: '跟随系统' },
+            ],
+          },
+          {
             key: 'windowMaterial',
             label: '窗口材质',
             description: 'Mica 仅 Windows 11 可用，其他系统会退回到模糊效果',

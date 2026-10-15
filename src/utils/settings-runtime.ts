@@ -8,7 +8,8 @@ import { applySkin } from '@/utils/skin-runtime'
 import { loadSkinRegistry, skinRegistry } from '@/utils/skin-registry'
 import { loadSettings } from '@/api/settings'
 import { subscribeSkinPreview } from '@/api/skin-preview'
-import type { SkinSettings } from '@/utils/skin'
+import type { AppearanceSettings, SkinSettings } from '@/utils/skin'
+import { watchSystemColorScheme } from '@/utils/color-mode'
 import { applyWindowBackgroundOpacity } from '@/utils/window-appearance'
 
 let started = false
@@ -26,11 +27,17 @@ export function startSettingsRuntime(
   started = true
   const settings = useSettingsStore(pinia).values
   let preview: SkinSettings | null = null
+  /**
+   * 设置窗口预览的是皮肤，不是外观模式；预览值里没有 colorMode，
+   * 补上用户当前的，免得预览期间整个窗口的明暗跟着跳。
+   */
+  const previewWithMode = (): AppearanceSettings =>
+    preview ? { ...preview, colorMode: settings.colorMode } : settings
   if (options.skinPreview) {
     const stop = subscribeSkinPreview(skin => {
       preview = skin
       // Read durable values on rollback, even if the save notification is still in flight.
-      applySkin(skin ?? loadSettings())
+      applySkin(skin ? previewWithMode() : loadSettings())
     })
     import.meta.hot?.dispose(stop)
   }
@@ -58,6 +65,7 @@ export function startSettingsRuntime(
   watch(
     () => [
       skinRegistry.version,
+      settings.colorMode,
       settings.skinTheme,
       settings.skinLibrary,
       settings.skinBase,
@@ -71,9 +79,15 @@ export function startSettingsRuntime(
       settings.skinBackgroundFit,
       settings.skinBackgroundPosition,
     ],
-    () => applySkin(preview ?? settings),
+    () => applySkin(previewWithMode()),
     { immediate: true }
   )
+
+  // 跟随系统时，Windows 那边切明暗不会动我们的设置，得自己听媒体查询。
+  const stopSystemScheme = watchSystemColorScheme(() => {
+    if (settings.colorMode === 'system') applySkin(previewWithMode())
+  })
+  import.meta.hot?.dispose(stopSystemScheme)
 
   watch(
     () => settings.uiScale,

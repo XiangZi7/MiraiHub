@@ -29,8 +29,6 @@ export const useWorkspaceLayoutStore = defineStore('workspace-layout', () => {
     machineWidth: defaultMachineWidth,
     machineOpen: true,
     machineView: 'files' as MachineViewId,
-    // 当前窗口录屏模式，仅在内存保留
-    recording: false,
   })
   // 每个连接独立持有文件/Agent 的宽度、视图和开关，移动分屏时仍绑定原连接。
   const machinePanes = reactive<Record<string, MachinePaneLayout>>(

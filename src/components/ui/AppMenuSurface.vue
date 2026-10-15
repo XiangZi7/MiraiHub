@@ -68,7 +68,7 @@ const filterId = `menu-backdrop-${useId()}`
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 3%), transparent 32%),
+    linear-gradient(180deg, var(--glass-highlight), transparent 32%),
     color-mix(in oklch, var(--color-panel) 94%, transparent);
   -webkit-backdrop-filter: blur(28px) saturate(175%);
   backdrop-filter: blur(28px) saturate(175%);

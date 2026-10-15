@@ -745,7 +745,7 @@ const editorDisabled = computed(
   border-bottom: 1px solid var(--color-line-soft);
   padding: 6px 12px;
   background:
-    linear-gradient(110deg, rgb(255 255 255 / 2.5%), transparent 45%),
+    linear-gradient(110deg, var(--glass-highlight), transparent 45%),
     color-mix(in oklch, var(--color-card) 66%, transparent);
 }
 .general-field {
@@ -861,7 +861,7 @@ const editorDisabled = computed(
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.7;
-  box-shadow: inset 0 1px rgb(255 255 255 / 3%);
+  box-shadow: inset 0 1px var(--glass-highlight);
 }
 .designer-footer {
   display: flex;

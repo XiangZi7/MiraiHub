@@ -7,11 +7,15 @@ import {
   readSkinColors,
   type SkinColorKey,
 } from '@/utils/skin-colors'
-import { usesLightScheme, type SkinSettings } from '@/utils/skin'
+import {
+  usesLightScheme,
+  type AppearanceSettings,
+  type SkinSettings,
+} from '@/utils/skin'
 
 const { t } = useI18n()
 
-const props = defineProps<{ values: SkinSettings }>()
+const props = defineProps<{ values: AppearanceSettings }>()
 const emit = defineEmits<{ update: [patch: Partial<SkinSettings>] }>()
 const colors = computed(() => readSkinColors(props.values.skinCustomColors))
 const fields = computed(() => {

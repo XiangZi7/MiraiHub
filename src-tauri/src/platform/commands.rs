@@ -57,7 +57,7 @@ pub async fn open_settings_window(
 
 /// Child windows are revealed only after their first usable frame is ready.
 #[tauri::command]
-pub async fn window_ready(window: WebviewWindow, material: String) -> AppResult<()> {
+pub async fn window_ready(window: WebviewWindow, material: String, light: bool) -> AppResult<()> {
     let label = window.label();
     if label != "settings"
         && label != "connection"
@@ -67,7 +67,7 @@ pub async fn window_ready(window: WebviewWindow, material: String) -> AppResult<
         return Err(crate::error::AppError::invalid_input("不是子窗口"));
     }
     // A material failure must never leave an otherwise usable window hidden.
-    if let Err(error) = window::set_window_material(&window, &material) {
+    if let Err(error) = window::set_window_material(&window, &material, light) {
         log::warn!("应用子窗口材质失败: {error}");
     }
     window::show_child_window(&window)
@@ -92,12 +92,12 @@ pub async fn app_ready(app: AppHandle) -> AppResult<()> {
     Ok(())
 }
 
-/// 切换所有业务窗口的原生材质（启动画面单独使用 Blur）。
+/// 切换所有业务窗口的原生材质与明暗（启动画面单独使用 Blur）。
 #[tauri::command]
-pub async fn set_window_material(app: AppHandle, material: String) -> AppResult<()> {
+pub async fn set_window_material(app: AppHandle, material: String, light: bool) -> AppResult<()> {
     for (label, webview) in app.webview_windows() {
         if label != window::SPLASH_WINDOW {
-            window::set_window_material(&webview, &material)?;
+            window::set_window_material(&webview, &material, light)?;
         }
     }
     Ok(())

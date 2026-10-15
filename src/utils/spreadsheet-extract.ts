@@ -59,12 +59,7 @@ export async function readZipEntries(
       const commentLen = u16(bytes, pos + 32)
       const localOffset = u32(bytes, pos + 42)
       const name = decodeName(bytes, pos + 46, nameLen)
-      const data = extractLocalData(
-        bytes,
-        localOffset,
-        compSize,
-        name
-      )
+      const data = extractLocalData(bytes, localOffset, compSize, name)
       if (data) entries.set(name, { name, data, method, size: uncompSize })
       pos += 46 + nameLen + extraLen + commentLen
     }
@@ -82,10 +77,12 @@ export async function readZipEntries(
     const name = decodeName(bytes, nameStart, nameLen)
     const dataStart = nameStart + nameLen + extraLen
     if (dataStart + compSize > bytes.length) break
-    entries.set(
+    entries.set(name, {
       name,
-      { name, data: bytes.subarray(dataStart, dataStart + compSize), method, size: uncompSize }
-    )
+      data: bytes.subarray(dataStart, dataStart + compSize),
+      method,
+      size: uncompSize,
+    })
     cursor = dataStart + compSize
   }
   return entries
@@ -130,7 +127,9 @@ function findEocd(bytes: Uint8Array): number | null {
 
 async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
   const stream = new Response(
-    new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
+    new Blob([data])
+      .stream()
+      .pipeThrough(new DecompressionStream('deflate-raw'))
   )
   const decoded = await stream.arrayBuffer()
   return new Uint8Array(decoded)
@@ -139,9 +138,7 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
 /** Upper bound for a single inflated archive entry (office docs stay far below). */
 const MAX_ENTRY_BYTES = 128 * 1024 * 1024
 
-export async function extractZipEntry(
-  entry: ZipEntry
-): Promise<Uint8Array> {
+export async function extractZipEntry(entry: ZipEntry): Promise<Uint8Array> {
   if (entry.method === ZIP_STORED) return entry.data
   if (entry.method === ZIP_DEFLATE) {
     const inflated = await inflateRaw(entry.data)
@@ -167,9 +164,7 @@ function unescapeXml(text: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
-      codePoint(parseInt(hex, 16))
-    )
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => codePoint(parseInt(hex, 16)))
     .replace(/&#(\d+);/g, (_, dec) => codePoint(Number(dec)))
     .replace(/&amp;/g, '&')
 }
@@ -194,7 +189,8 @@ function tText(xml: string): string {
 
 function colToIndex(letters: string): number {
   let index = 0
-  for (const ch of letters.toUpperCase()) index = index * 26 + (ch.charCodeAt(0) - 64)
+  for (const ch of letters.toUpperCase())
+    index = index * 26 + (ch.charCodeAt(0) - 64)
   return index - 1
 }
 
@@ -295,9 +291,7 @@ function sheetNamesFromWorkbook(
 }
 
 function tableToText(name: string | undefined, rows: string[][]): string {
-  const used = rows.map(row =>
-    row.reduce((n, cell) => (cell ? n + 1 : n), 0)
-  )
+  const used = rows.map(row => row.reduce((n, cell) => (cell ? n + 1 : n), 0))
   const liveRows = rows.filter((_, i) => used[i] > 0)
   if (!liveRows.length) return ''
   const cols = rows.reduce((max, row) => Math.max(max, row.length), 0)
@@ -325,13 +319,13 @@ export function isOfficeExtension(name: string): boolean {
   return ['xlsx', 'xlsm', 'xls', 'docx', 'pptx', 'ods'].includes(ext)
 }
 
-async function extractXlsx(
-  entries: Map<string, ZipEntry>
-): Promise<string> {
+async function extractXlsx(entries: Map<string, ZipEntry>): Promise<string> {
   const workbookEntry = entries.get('xl/workbook.xml')
   const relsEntry = entries.get('xl/_rels/workbook.xml.rels')
   const sharedEntry = entries.get('xl/sharedStrings.xml')
-  const shared = sharedEntry ? parseSharedStrings(await extractZipText(sharedEntry)) : []
+  const shared = sharedEntry
+    ? parseSharedStrings(await extractZipText(sharedEntry))
+    : []
   let nameMap = new Map<string, string>()
   if (workbookEntry && relsEntry) {
     nameMap = sheetNamesFromWorkbook(
@@ -397,8 +391,7 @@ function extractOds(entries: Map<string, ZipEntry>): Promise<string> {
   if (!content) return Promise.resolve('')
   return extractZipText(content).then(xml => {
     const tables: string[] = []
-    const tableRe =
-      /<table:table\b[^>]*>([\s\S]*?)<\/table:table>/gi
+    const tableRe = /<table:table\b[^>]*>([\s\S]*?)<\/table:table>/gi
     let tm
     while ((tm = tableRe.exec(xml))) {
       const tableHtml = tm[1]
@@ -414,7 +407,9 @@ function extractOds(entries: Map<string, ZipEntry>): Promise<string> {
           const repeats = Number(
             /table:number-columns-repeated="(\d+)"/.exec(cm[0])?.[1] ?? 1
           )
-          const cellText = [...cm[1].matchAll(/<text:p\b[^>]*>([\s\S]*?)<\/text:p>/gi)]
+          const cellText = [
+            ...cm[1].matchAll(/<text:p\b[^>]*>([\s\S]*?)<\/text:p>/gi),
+          ]
             .map(x => unescapeXml(x[1]))
             .join(' ')
           for (let k = 0; k < Math.min(repeats, 64); k++)
@@ -454,9 +449,9 @@ function extractHtmlTable(text: string): string {
     const rowRe = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi
     let rm
     while ((rm = rowRe.exec(tm[1]))) {
-      const cells = [...rm[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(x =>
-        normalizeCell(x[1].replace(/<[^>]+>/g, '').trim())
-      )
+      const cells = [
+        ...rm[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi),
+      ].map(x => normalizeCell(x[1].replace(/<[^>]+>/g, '').trim()))
       if (cells.some(Boolean)) rows.push(cells)
     }
     parts.push(tableToText(undefined, rows))

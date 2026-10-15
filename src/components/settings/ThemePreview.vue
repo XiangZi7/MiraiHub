@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import type { SkinSettings } from '@/utils/skin'
+import type { AppearanceSettings } from '@/utils/skin'
 import { skinPreviewDocument } from '@/utils/skin-preview'
 import { translateLabel } from '@/i18n'
 
 const { t, locale } = useI18n()
 
-const props = defineProps<{ values: SkinSettings }>()
+const props = defineProps<{ values: AppearanceSettings }>()
 const document = computed(() =>
   skinPreviewDocument(props.values, translateLabel, locale.value)
 )

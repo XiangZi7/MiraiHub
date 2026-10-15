@@ -38,7 +38,9 @@ import { skinRuntime } from '@/utils/skin-runtime'
   content: '';
   position: absolute;
   inset: 0;
-  background: var(--skin-wallpaper-wash, #10101766);
+  /* 壁纸压一层与当前明暗匹配的薄纱，否则图片上的文字读不出来。
+     fallback 走窗口底色，浅色模式由 main.css 覆盖成白纱。 */
+  background: var(--skin-wallpaper-wash, oklch(16% 0.01 285 / 0.4));
 }
 .skin-background-enter-active,
 .skin-background-leave-active {

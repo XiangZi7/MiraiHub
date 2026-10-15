@@ -6,6 +6,7 @@ import {
   resolveSkinSettings,
   usesBuiltinStyle,
   usesLightScheme,
+  type AppearanceSettings,
   type SkinSettings,
 } from './skin'
 
@@ -33,7 +34,9 @@ export function skinBackground(settings: SkinSettings): string {
 export function skinCss(settings: SkinSettings, includeCustom = true): string {
   settings = resolveSkinSettings(settings)
   return [
-    usesBuiltinStyle(settings) ? (builtinSkin(settings.skinBase)?.css ?? '') : '',
+    usesBuiltinStyle(settings)
+      ? (builtinSkin(settings.skinBase)?.css ?? '')
+      : '',
     includeCustom && settings.skinStyle === 'custom'
       ? settings.skinCustomCss
       : '',
@@ -45,17 +48,26 @@ export function skinCss(settings: SkinSettings, includeCustom = true): string {
 
 /** Each WebView applies its own theme. Settings can preview without saving. */
 export function applySkin(
-  values: SkinSettings,
+  values: AppearanceSettings,
   options: { animate?: boolean; includeCustom?: boolean } = {}
 ): void {
   const settings = resolveSkinSettings(normalizeSkinSettings(values))
   const css = skinCss(settings, options.includeCustom !== false)
   const background = skinBackground(settings)
+  // 终端配色只关心明暗：浅色皮肤换一套适合浅底的 ANSI 色。
+  // 明暗进签名，这样切外观模式也能走下面的 View Transition 交叉淡入。
+  const nextScheme = usesLightScheme({
+    ...settings,
+    colorMode: values.colorMode,
+  })
+    ? 'light'
+    : 'dark'
   const signature = JSON.stringify([
     settings.skinTheme,
     settings.skinStyle,
     css,
     background,
+    nextScheme,
     settings.skinBackgroundOpacity,
     settings.skinBackgroundBlur,
     settings.skinBackgroundFit,
@@ -63,7 +75,7 @@ export function applySkin(
   ])
   if (signature === previousSignature) return
   const initialized = Boolean(previousSignature)
-  const appearance = JSON.stringify([css, background])
+  const appearance = JSON.stringify([css, background, nextScheme])
   const appearanceChanged = appearance !== previousAppearance
   previousSignature = signature
   previousAppearance = appearance
@@ -82,8 +94,6 @@ export function applySkin(
       style.id = 'miraihub-skin'
       document.head.append(style)
     }
-    // 终端配色只关心明暗：浅色皮肤换一套适合浅底的 ANSI 色。
-    const nextScheme = usesLightScheme(settings) ? 'light' : 'dark'
     const colorsChanged =
       style.textContent !== css ||
       root.dataset.skin !== settings.skinTheme ||

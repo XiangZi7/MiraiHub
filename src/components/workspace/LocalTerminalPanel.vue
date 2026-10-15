@@ -120,12 +120,18 @@ defineExpose({
     </div>
     <div
       ref="terminal"
-      class="min-h-0 flex-1 p-2"
+      class="bg-terminal min-h-0 flex-1 p-2"
     />
   </section>
 </template>
 
 <style scoped>
+/* 盖掉 xterm 自带的 #000 底色，选择器带 .xterm 提一级特异性，
+   见 TerminalPanel 里的同一处注释。 */
+:deep(.xterm .xterm-viewport) {
+  background-color: transparent;
+}
+
 :deep(.xterm-viewport) {
   scrollbar-width: thin;
   scrollbar-color: var(--color-line-strong) transparent;

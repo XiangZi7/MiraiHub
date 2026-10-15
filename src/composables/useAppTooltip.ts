@@ -4,6 +4,9 @@ import { useEventListener, useResizeObserver, useTimeoutFn } from '@vueuse/core'
 import { startNativeTooltipBridge } from '@/utils/native-tooltip-bridge'
 import { tooltipPosition } from '@/utils/tooltip-position'
 
+/** 触发区超过这个宽度就跟随光标：再宽的行居中会把气泡甩到离光标很远的地方。 */
+const ANCHOR_MAX_WIDTH = 160
+
 /** 每个窗口只挂一个气泡，通过事件委托接管已有 title 与显式 data-tooltip。 */
 export function useAppTooltip(
   bubble: Ref<HTMLElement | null>,
@@ -74,10 +77,17 @@ export function useAppTooltip(
     if (!state.open || !active?.isConnected || !bubble.value) return
     const rect = active.getBoundingClientRect()
     const scale = windowScale()
+    /**
+     * 窄控件（图标按钮、标签页）锚到自身下方居中，箭头才对得准，
+     * 位置也不会随光标微动而漂移；
+     * 宽触发区（表格行、长列表项）居中会把气泡甩到离光标很远的行中央，仍跟随光标。
+     * 键盘焦点没有光标可用，一律锚元素。
+     */
+    const anchored = mode === 'focus' || rect.width <= ANCHOR_MAX_WIDTH
     const result = tooltipPosition(
-      mode === 'pointer'
-        ? pointer
-        : { x: (rect.left + rect.right) / 2, y: rect.bottom, top: rect.top },
+      anchored
+        ? { x: (rect.left + rect.right) / 2, y: rect.bottom, top: rect.top }
+        : pointer,
       bubble.value.getBoundingClientRect(),
       { width: window.innerWidth, height: window.innerHeight, scale }
     )

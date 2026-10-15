@@ -25,6 +25,7 @@ import {
   readSkinLibrary,
   resolveSkinSettings,
   skinPreset,
+  type AppearanceSettings,
   type SkinSettings,
   type SkinAppearance,
   type CustomSkin,
@@ -32,7 +33,7 @@ import {
 
 const { t } = useI18n()
 
-const props = defineProps<{ values: SkinSettings }>()
+const props = defineProps<{ values: AppearanceSettings }>()
 const emit = defineEmits<{ update: [patch: Partial<SkinSettings>] }>()
 const library = computed(() => readSkinLibrary(props.values.skinLibrary))
 const selected = computed(() =>
@@ -360,7 +361,11 @@ watch(
         v-if="IS_TAURI"
         class="skins-hint"
       >
-        {{ t('皮肤文件放在安装目录的 skins 文件夹，修改后点「重新加载皮肤」生效。') }}
+        {{
+          t(
+            '皮肤文件放在安装目录的 skins 文件夹，修改后点「重新加载皮肤」生效。'
+          )
+        }}
       </p>
       <div
         v-if="selected"

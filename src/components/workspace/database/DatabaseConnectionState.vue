@@ -40,22 +40,30 @@ const description = computed(() => {
     ? t('连接后即可浏览键值并执行命令。')
     : t('连接后即可浏览数据库对象并运行查询。')
 })
-
-function reconnect() {
-  emit('connect', props.needsPassword ? password.value : undefined)
-}
 </script>
 
 <template>
-  <div class="connection-state-wrap">
+  <div
+    class="flex min-h-0 min-w-0 flex-1 overflow-auto p-[clamp(16px,3vw,36px)] [container:connection-state/inline-size]"
+  >
+    <!-- 与 Toast / 会话错误提示同构：角落辉光标示语义，--tone 一处定调。 -->
     <section
-      class="connection-state"
+      class="connection-state border-line bg-pane rounded-pane glass relative m-auto w-[min(100%,400px)] overflow-hidden border px-6 py-5.5 shadow-(--shadow-notice)"
+      :class="
+        hasError
+          ? '[--tone:var(--color-danger)]'
+          : '[--tone:var(--color-violet)]'
+      "
       :role="hasError ? 'alert' : 'status'"
     >
-      <div class="connection-state-heading">
+      <span
+        class="tone-glow"
+        aria-hidden="true"
+      />
+
+      <div class="relative flex items-start gap-3.5">
         <div
-          class="connection-state-icon"
-          :class="hasError ? 'connection-state-icon-error' : ''"
+          class="grid size-8.5 flex-none place-items-center rounded-full bg-(--tone)/15 text-(--tone) ring-1 ring-(--tone)/35 ring-inset"
           aria-hidden="true"
         >
           <AppIcon
@@ -66,36 +74,40 @@ function reconnect() {
                   ? 'lucide:plug-zap'
                   : 'lucide:database-zap'
             "
-            :size="21"
+            :size="17"
             :class="connecting && 'animate-spin'"
           />
         </div>
-        <div class="connection-state-copy">
-          <h2 class="connection-state-title">{{ title }}</h2>
-          <p class="connection-state-description">{{ description }}</p>
+        <div class="min-w-0 pt-px">
+          <h2 class="text-txt text-[15px] leading-normal font-semibold">
+            {{ title }}
+          </h2>
+          <p class="text-txt-2 mt-1.5 text-xs leading-relaxed">
+            {{ description }}
+          </p>
         </div>
       </div>
 
       <AppTextField
         v-if="needsPassword"
         v-model="password"
-        class="connection-state-password"
+        class="relative mt-5"
         :label="t('Password')"
         type="password"
         autocomplete="current-password"
         :disabled="connecting"
         :placeholder="t('输入本次连接使用的密码')"
-        @keyup.enter="!connecting && reconnect()"
+        @keyup.enter="!connecting && emit('connect', password)"
       />
 
       <div
         v-if="!connecting"
-        class="connection-state-actions"
+        class="relative mt-5 flex"
       >
         <AppButton
           variant="primary"
-          class="connection-state-action"
-          @click="reconnect"
+          class="connection-state-action min-h-9"
+          @click="emit('connect', needsPassword ? password : undefined)"
         >
           <AppIcon
             name="lucide:plug-zap"
@@ -105,11 +117,14 @@ function reconnect() {
         </AppButton>
       </div>
 
+      <!-- 技术详情默认收起：它是给排查用的原始报错，不该占掉卡片的主视线 -->
       <details
         v-if="hasError"
-        class="connection-state-details"
+        class="group border-line-soft relative mt-4 border-t pt-2.5"
       >
-        <summary>
+        <summary
+          class="text-txt-3 hover:text-txt focus-visible:text-txt outline-accent flex h-7 cursor-pointer list-none items-center gap-2 rounded-sm text-[11px] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 [&::-webkit-details-marker]:hidden"
+        >
           <AppIcon
             name="lucide:info"
             :size="13"
@@ -118,174 +133,33 @@ function reconnect() {
           <AppIcon
             name="lucide:chevron-down"
             :size="13"
-            class="connection-state-chevron"
+            class="ml-auto transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none"
           />
         </summary>
-        <pre>{{ error }}</pre>
+        <pre
+          class="scroll-thin border-line-soft bg-window text-txt-2 mt-2.5 max-h-35 overflow-auto rounded-lg border p-3 font-mono text-[10.5px] leading-relaxed wrap-anywhere whitespace-pre-wrap"
+          >{{ error }}</pre>
       </details>
     </section>
   </div>
 </template>
 
 <style scoped>
-.connection-state-wrap {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: clamp(16px, 3vw, 36px);
-  container: connection-state / inline-size;
-}
-
-.connection-state {
-  width: min(100%, 420px);
-  margin: auto;
-  padding: 22px 24px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-pane);
-  background: var(--color-pane);
-  box-shadow: var(--shadow-pane);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
-}
-
-.connection-state-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 13px;
-}
-
-.connection-state-icon {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  flex: none;
-  place-items: center;
-  border: 1px solid color-mix(in oklch, var(--color-violet) 25%, var(--color-line));
-  border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--color-violet) 10%, transparent);
-  color: var(--color-violet);
-}
-
-.connection-state-icon-error {
-  border-color: color-mix(in oklch, var(--color-danger) 25%, var(--color-line));
-  background: color-mix(in oklch, var(--color-danger) 9%, transparent);
-  color: var(--color-danger);
-}
-
-.connection-state-copy {
-  min-width: 0;
-  padding-top: 1px;
-}
-
-.connection-state-title {
-  color: var(--color-txt);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.connection-state-description {
-  margin-top: 5px;
-  color: var(--color-txt-2);
-  font-size: 12px;
-  line-height: 1.65;
-}
-
-.connection-state-password {
-  margin-top: 20px;
-}
-
-.connection-state-actions {
-  display: flex;
-  margin-top: 20px;
-}
-
-.connection-state-action {
-  min-height: 36px;
-}
-
-.connection-state-details {
-  margin-top: 24px;
-  padding-top: 14px;
-  border-top: 1px solid var(--color-line-soft);
-}
-
-.connection-state-details summary {
-  display: flex;
-  min-height: 36px;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-txt-3);
-  cursor: pointer;
-  font-size: 11px;
-  list-style: none;
-}
-
-.connection-state-details summary::-webkit-details-marker {
-  display: none;
-}
-
-.connection-state-details summary:hover,
-.connection-state-details summary:focus-visible {
-  color: var(--color-txt);
-}
-
-.connection-state-details summary:focus-visible {
-  border-radius: 4px;
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.connection-state-chevron {
-  margin-left: auto;
-  transition: transform 150ms ease;
-}
-
-.connection-state-details[open] .connection-state-chevron {
-  transform: rotate(180deg);
-}
-
-.connection-state-details pre {
-  max-height: 140px;
-  margin-top: 10px;
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--color-line-soft);
-  border-radius: 8px;
-  background: var(--color-window);
-  color: var(--color-txt-2);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-:global(html.material-solid) .connection-state {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
+/* 窄容器下按钮撑满：卡片已经窄到 400px 以下，左对齐的小按钮会显得没分量。 */
 @container connection-state (max-width: 420px) {
   .connection-state {
     padding: 20px;
   }
 
-  .connection-state-actions,
   .connection-state-action {
     width: 100%;
-  }
-
-  .connection-state-action {
     justify-content: center;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .connection-state-chevron {
-    transition: none;
-  }
+/* 关掉透明材质时不再自绘模糊，交给纯色层级。 */
+:global(html.material-solid) .connection-state {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 </style>

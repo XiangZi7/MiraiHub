@@ -14,7 +14,12 @@ const title = props.isDirectory ? t('新建文件夹') : t('新建文件')
 
 function submit(): void {
   const value = name.value.trim()
-  if (!value || value === '.' || value === '..' || /[\\/\x00-\x1f]/.test(value)) {
+  if (
+    !value ||
+    value === '.' ||
+    value === '..' ||
+    /[\\/\x00-\x1f]/.test(value)
+  ) {
     toast.warning(t('请输入不含斜杠的有效文件名'))
     return
   }
@@ -25,7 +30,10 @@ onMounted(() => void nextTick(() => input.value?.focus()))
 </script>
 
 <template>
-  <AppDialog :title="title" @close="emit('close')">
+  <AppDialog
+    :title="title"
+    @close="emit('close')"
+  >
     <form @submit.prevent="submit">
       <input
         ref="input"
@@ -38,8 +46,17 @@ onMounted(() => void nextTick(() => input.value?.focus()))
     </form>
     <template #footer>
       <div class="flex-1" />
-      <AppButton size="sm" @click="emit('close')">{{ t('取消') }}</AppButton>
-      <AppButton size="sm" variant="primary" @click="submit">{{ t('创建') }}</AppButton>
+      <AppButton
+        size="sm"
+        @click="emit('close')"
+        >{{ t('取消') }}</AppButton
+      >
+      <AppButton
+        size="sm"
+        variant="primary"
+        @click="submit"
+        >{{ t('创建') }}</AppButton
+      >
     </template>
   </AppDialog>
 </template>

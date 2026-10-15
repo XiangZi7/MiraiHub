@@ -8,6 +8,7 @@ import { normalizeUiScale } from '@/utils/ui-scale'
 import { IS_TAURI } from '@/utils/window'
 import { normalizeSkinSettings } from '@/utils/skin'
 import { normalizeLanguage } from '@/utils/locale'
+import { normalizeColorMode } from '@/utils/color-mode'
 import { normalizeWindowBackgroundOpacity } from '@/utils/window-appearance'
 
 const STORAGE_KEY = 'miraihub.settings.v1'
@@ -44,6 +45,7 @@ export function loadSettings(): SettingsValues {
     defaults.windowBackgroundOpacity
   )
   defaults.language = normalizeLanguage(defaults.language)
+  defaults.colorMode = normalizeColorMode(defaults.colorMode)
   // 上传并发上限从 8 提到 12（v2.0.13）：'4' 是旧默认值，视为未配置并提升到新默认，
   // 已手动调过的其他值保持不变。
   if (defaults.folderUploadConcurrency === '4')

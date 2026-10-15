@@ -57,11 +57,6 @@ export const en = {
   服务状态: 'Service status',
   '磁盘使用率 {mount}': 'Disk usage {mount}',
   'HTTP 状态码': 'HTTP status code',
-  演示服务器: 'Demo server',
-  演示数据库: 'Demo database',
-  退出录屏模式: 'Exit recording mode',
-  '录屏模式：精简布局与连接别名':
-    'Recording mode: simpler layout and connection aliases',
   正在执行: 'Executing',
   已执行: 'Executed',
   执行异常: 'Execution error',
@@ -554,6 +549,9 @@ export const en = {
   数据库连接未建立: 'Database is not connected',
   'Redis 连接未建立': 'Redis is not connected',
   'Redis 连接失败': 'Could not connect to Redis',
+  'Redis 命令执行失败': 'Redis command failed',
+  切换到浅色外观: 'Switch to light appearance',
+  切换到深色外观: 'Switch to dark appearance',
   '请检查网络、主机和认证信息，然后重试。':
     'Check the network, host, and credentials, then try again.',
   '连接后即可浏览数据库对象并运行查询。':

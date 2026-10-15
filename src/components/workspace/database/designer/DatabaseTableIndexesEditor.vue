@@ -217,10 +217,10 @@ defineExpose({ add: addIndex })
   border: 1px solid var(--color-line-soft);
   border-radius: 9px;
   background:
-    linear-gradient(145deg, rgb(255 255 255 / 3%), transparent),
+    linear-gradient(145deg, var(--glass-highlight), transparent),
     color-mix(in oklch, var(--color-card) 72%, transparent);
   padding: 11px;
-  box-shadow: inset 0 1px rgb(255 255 255 / 3%);
+  box-shadow: inset 0 1px var(--glass-highlight);
 }
 .index-card-heading {
   display: grid;

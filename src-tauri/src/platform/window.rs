@@ -74,16 +74,30 @@ pub fn enable_splash_material(window: &WebviewWindow) {
 }
 
 /// 按用户设置切换窗口材质。
+///
+/// `light` 来自前端实际生效的明暗（含皮肤自带的配色），不是设置项原值。
+/// Mica 有独立的明暗变体；Acrylic / Blur 则靠 tint 色 —— 不给 tint 时系统默认偏深，
+/// 浅色界面下会从边缘透出一圈灰。深色保持不传 color，维持现有观感。
 #[cfg(windows)]
-pub fn set_window_material(window: &WebviewWindow, material: &str) -> AppResult<()> {
+pub fn set_window_material(window: &WebviewWindow, material: &str, light: bool) -> AppResult<()> {
     let effects = match material {
         "solid" => None,
-        "mica" => Some(EffectsBuilder::new().effect(Effect::Mica).build()),
-        "acrylic" => Some(
+        "mica" => Some(
             EffectsBuilder::new()
-                .effect(windows_window_effect())
+                .effect(if light {
+                    Effect::MicaLight
+                } else {
+                    Effect::MicaDark
+                })
                 .build(),
         ),
+        "acrylic" => {
+            let mut builder = EffectsBuilder::new().effect(windows_window_effect());
+            if light {
+                builder = builder.color(tauri::webview::Color(252, 250, 254, 120));
+            }
+            Some(builder.build())
+        }
         other => {
             return Err(AppError::invalid_input(format!(
                 "不支持的窗口材质：{other}"
@@ -91,12 +105,23 @@ pub fn set_window_material(window: &WebviewWindow, material: &str) -> AppResult<
         }
     };
 
+    // WebView2 的默认滚动条与原生控件跟着窗口主题走，CSS 的 color-scheme 管不到。
+    let _ = window.set_theme(Some(if light {
+        tauri::Theme::Light
+    } else {
+        tauri::Theme::Dark
+    }));
     window.set_effects(effects).map_err(to_app_error)
 }
 
-/// 非 Windows 平台没有对应材质，保留命令为安全的空操作。
+/// 非 Windows 平台没有对应材质，只同步窗口主题。
 #[cfg(not(windows))]
-pub fn set_window_material(_window: &WebviewWindow, _material: &str) -> AppResult<()> {
+pub fn set_window_material(window: &WebviewWindow, _material: &str, light: bool) -> AppResult<()> {
+    let _ = window.set_theme(Some(if light {
+        tauri::Theme::Light
+    } else {
+        tauri::Theme::Dark
+    }));
     Ok(())
 }
 

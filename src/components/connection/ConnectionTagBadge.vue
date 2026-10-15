@@ -69,11 +69,11 @@ const emit = defineEmits<{
   border: 1px solid color-mix(in oklch, var(--tag-color) 12%, var(--color-line));
   border-radius: 5px;
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 2.5%), transparent),
+    linear-gradient(180deg, var(--glass-highlight), transparent),
     color-mix(in oklch, var(--tag-color) 6%, var(--color-card));
   padding: 0 4px 0 6px;
   color: var(--color-txt-2);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 3%);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   font-size: 10px;
   line-height: 1;
 }

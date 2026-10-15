@@ -5,6 +5,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import TabBar from '@/components/ui/TabBar.vue'
+import SessionErrorNotice from '@/components/ui/SessionErrorNotice.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import DatabaseConnectionState from './database/DatabaseConnectionState.vue'
 import DatabaseConnectingSkeleton from './database/DatabaseConnectingSkeleton.vue'
@@ -214,7 +215,7 @@ defineExpose({
     >
       <div
         v-show="!agentOpen || agentSplit"
-        class="redis-workspace flex min-h-0 min-w-0 flex-1 flex-col"
+        class="redis-workspace relative flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div
           class="border-line-soft flex h-10 min-w-0 shrink-0 items-center gap-1.5 border-b px-2"
@@ -295,13 +296,15 @@ defineExpose({
             @click="toggleAgent"
           />
         </div>
-        <p
+        <!-- 已连上之后的命令级报错：浮在内容上方的小卡，不把布局顶下去 -->
+        <SessionErrorNotice
           v-if="connected && error"
-          role="alert"
-          class="text-danger bg-card shrink-0 px-3 py-2 text-xs break-words"
-        >
-          {{ error }}
-        </p>
+          class="absolute top-2 right-2 z-20 w-[min(380px,calc(100%-1rem))]"
+          :message="error"
+          :title="t('Redis 命令执行失败')"
+          @retry="connect(needsPassword ? password : undefined)"
+          @dismiss="error = ''"
+        />
         <DatabaseConnectingSkeleton
           v-if="status === 'connecting'"
           kind="redis"

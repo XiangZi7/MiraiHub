@@ -76,7 +76,9 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
     if (groupId)
       return options
         .groups()
-        .find(group => group.id === groupId && group.kind === payload?.groupKind)
+        .find(
+          group => group.id === groupId && group.kind === payload?.groupKind
+        )
 
     // 分组之外的列表空白（含已平铺的未分组节点）算作"移出分组"。
     const root = element?.closest<HTMLElement>('[data-connection-root-drop]')
@@ -138,7 +140,8 @@ export function useConnectionGroupDrag(options: ConnectionGroupDragOptions) {
 
     event.preventDefault()
     const group = groupAtPoint(event.clientX, event.clientY)
-    const target = group && group.id !== payload.sourceGroupId ? group : undefined
+    const target =
+      group && group.id !== payload.sourceGroupId ? group : undefined
     // 未分组没有自己的文件夹容器，改为高亮整个列表区域。
     targetGroupId.value = target && !target.loose ? target.id : ''
     rootActive.value = Boolean(target?.loose)

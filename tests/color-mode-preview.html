@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>外观模式与错误态回归预览</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, reactive, onMounted } from 'vue'
+      import { createI18n } from 'vue-i18n'
+      import { addCollection } from '@iconify/vue'
+      import icons from 'virtual:mirai-icons'
+      import SessionErrorNotice from '/src/components/ui/SessionErrorNotice.vue'
+      import ToastHost from '/src/components/ui/ToastHost.vue'
+      import ThemePreview from '/src/components/settings/ThemePreview.vue'
+      import DatabaseConnectionState from '/src/components/workspace/database/DatabaseConnectionState.vue'
+      import { messages } from '/src/i18n/messages.ts'
+      import { toast } from '/src/composables/useToast.ts'
+      import { pinia } from '/src/stores/index.ts'
+      import { DEFAULT_SETTINGS } from '/src/types/settings.ts'
+      import '/src/assets/styles/main.css'
+
+      addCollection(icons)
+      const i18n = createI18n({
+        legacy: false,
+        locale: 'zh-CN',
+        fallbackLocale: 'zh-CN',
+        messages,
+        missingWarn: false,
+        fallbackWarn: false,
+      })
+
+      const SCHEMES = ['dark', 'light']
+      const state = reactive({
+        scheme:
+          new URLSearchParams(location.search).get('scheme') === 'light'
+            ? 'light'
+            : 'dark',
+        password: '',
+      })
+      // 这个页面不跑 settings-runtime，自己写明暗；真实应用由 applySkin 写入。
+      const applyScheme = () => {
+        document.documentElement.dataset.skinScheme = state.scheme
+      }
+      applyScheme()
+
+      const switcher = () =>
+        h(
+          'div',
+          { class: 'flex shrink-0 items-center gap-2' },
+          SCHEMES.map(scheme =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: ['seg', state.scheme === scheme && 'seg-active'],
+                onClick: () => {
+                  state.scheme = scheme
+                  applyScheme()
+                },
+              },
+              scheme
+            )
+          )
+        )
+
+      const section = (title, body, extra = '') =>
+        h('section', { class: ['pane min-h-0', extra] }, [
+          h(
+            'header',
+            { class: 'win-bar text-txt-2 shrink-0 pr-3 text-xs' },
+            title
+          ),
+          body,
+        ])
+
+      createApp({
+        setup() {
+          // 语义辉光改成共用 utility 后，Toast 的三种语气都要还在。
+          onMounted(() => {
+            toast.error({
+              title: '数据库连接失败',
+              description: 'Access denied for user "mirai"@"10.0.0.2"',
+              duration: 0,
+            })
+            toast.success({ title: '连接已建立', duration: 0 })
+          })
+          return () =>
+            h('div', { class: 'win ambient h-screen w-screen' }, [
+              h('header', { class: 'win-bar gap-4 pr-3' }, [
+                h('span', { class: 'text-txt text-xs' }, '外观模式回归'),
+                switcher(),
+              ]),
+              h('div', { class: 'flex min-h-0 flex-1 gap-3 p-3' }, [
+                h('div', { class: 'flex min-h-0 flex-1 flex-col gap-3' }, [
+                  section(
+                    'SSH 终端错误（浮在终端输出之上）',
+                    h(
+                      'div',
+                      { class: 'bg-terminal relative min-h-0 flex-1 p-2' },
+                      [
+                        h(
+                          'pre',
+                          {
+                            class:
+                              'text-term-fg font-mono text-[11px] leading-[1.5]',
+                          },
+                          'user@host:~$ ssh jac\nLast login: Wed Oct 15 09:12:04\nuser@host:~$ '
+                        ),
+                        h(SessionErrorNotice, {
+                          class:
+                            'absolute top-2 right-2 z-10 w-[min(380px,calc(100%-1rem))]',
+                          title: 'SSH 终端连接失败',
+                          message: '认证失败：服务器拒绝了 password 方式',
+                        }),
+                      ]
+                    ),
+                    'flex-1'
+                  ),
+                  // 设置页的皮肤预览 iframe：验证 skin-preview 也注入了浅色令牌
+                  section(
+                    '主题预览（设置页内嵌的 iframe）',
+                    h(
+                      'div',
+                      { class: 'p-3' },
+                      h(ThemePreview, {
+                        values: {
+                          ...DEFAULT_SETTINGS,
+                          colorMode: state.scheme,
+                        },
+                      })
+                    ),
+                    'shrink-0'
+                  ),
+                ]),
+                section(
+                  '数据库连接失败（居中卡片）',
+                  h(DatabaseConnectionState, {
+                    status: 'disconnected',
+                    needsPassword: true,
+                    error:
+                      'Error 1045 (28000): Access denied for user "mirai"@"10.0.0.2" (using password: YES)',
+                    password: state.password,
+                    'onUpdate:password': value => (state.password = value),
+                  }),
+                  'flex-1'
+                ),
+              ]),
+              h(ToastHost),
+            ])
+        },
+      })
+        .use(pinia)
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

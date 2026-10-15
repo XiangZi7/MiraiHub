@@ -10,8 +10,21 @@ import type { McpSecretDraft, McpTarget } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
 
 const { t } = useI18n()
-const { servers, draft, selectedId, loading, busy, error, message, probe, select, create, save, remove, test } =
-  useMcpServers()
+const {
+  servers,
+  draft,
+  selectedId,
+  loading,
+  busy,
+  error,
+  message,
+  probe,
+  select,
+  create,
+  save,
+  remove,
+  test,
+} = useMcpServers()
 
 const transports = [
   { value: 'stdio', label: t('本地程序（stdio）') },
@@ -71,7 +84,11 @@ function addSecret(list: McpSecretDraft[]): void {
             @click="select(server)"
           >
             <span>{{ server.name }}</span>
-            <small>{{ server.enabled ? server.tools.length + ' ' + t('个工具') : t('已停用') }}</small>
+            <small>{{
+              server.enabled
+                ? server.tools.length + ' ' + t('个工具')
+                : t('已停用')
+            }}</small>
           </button>
         </li>
         <li v-if="!servers.length && !loading">
@@ -151,7 +168,9 @@ function addSecret(list: McpSecretDraft[]): void {
           {{ draft.transport === 'stdio' ? t('环境变量') : t('请求头') }}
         </legend>
         <div
-          v-for="(secret, index) in draft.transport === 'stdio' ? draft.env : draft.headers"
+          v-for="(secret, index) in draft.transport === 'stdio'
+            ? draft.env
+            : draft.headers"
           :key="index"
           class="mcp-secret"
         >
@@ -173,14 +192,21 @@ function addSecret(list: McpSecretDraft[]): void {
           <AppButton
             size="sm"
             variant="ghost"
-            @click="(draft.transport === 'stdio' ? draft.env : draft.headers).splice(index, 1)"
+            @click="
+              (draft.transport === 'stdio' ? draft.env : draft.headers).splice(
+                index,
+                1
+              )
+            "
             >{{ t('移除') }}</AppButton
           >
         </div>
         <AppButton
           size="sm"
           variant="ghost"
-          @click="addSecret(draft.transport === 'stdio' ? draft.env : draft.headers)"
+          @click="
+            addSecret(draft.transport === 'stdio' ? draft.env : draft.headers)
+          "
           >{{ t('添加一项') }}</AppButton
         >
       </fieldset>

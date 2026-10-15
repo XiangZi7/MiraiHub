@@ -3,11 +3,17 @@ import { skinBackground, skinCss } from './skin-runtime'
 import {
   normalizeSkinSettings,
   resolveSkinSettings,
-  type SkinSettings,
+  usesLightScheme,
+  type AppearanceSettings,
 } from './skin'
 
 // Use the app's actual tokens, so preview and workspace stay in sync.
 const tokens = mainCss.match(/@theme\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
+// 同一份浅色令牌，标记注释见 main.css —— 否则浅色模式下预览框还是深的。
+const lightTokens =
+  mainCss.match(
+    /\/\* light-tokens:start \*\/([\s\S]*?)\/\* light-tokens:end \*\//
+  )?.[1] ?? ''
 const previewCss = `
 *{box-sizing:border-box}html,body{height:100%;margin:0;overflow:hidden}
 body{font:12px 'Segoe UI','Microsoft YaHei',sans-serif;color:var(--color-txt);background:var(--color-canvas)}
@@ -33,7 +39,7 @@ table{width:100%;border-collapse:collapse;text-align:left;font-size:11px}td,th{f
 `
 
 export function skinPreviewDocument(
-  values: SkinSettings,
+  values: AppearanceSettings,
   translate: (text: string) => string = text => text,
   locale = 'zh-CN'
 ): string {
@@ -51,9 +57,11 @@ export function skinPreviewDocument(
     )
   const settings = resolveSkinSettings(normalizeSkinSettings(values))
   const image = skinBackground(settings)
-  const css = `:root {${tokens}}\n${previewCss}\n${skinCss(settings)}\n.wallpaper{background-image:${image ? `url(${JSON.stringify(image)})` : 'none'};opacity:${Number(settings.skinBackgroundOpacity) / 100};filter:blur(${Number(settings.skinBackgroundBlur)}px);inset:-${Number(settings.skinBackgroundBlur) * 2}px;background-size:${settings.skinBackgroundFit};background-position:${settings.skinBackgroundPosition}}`
+  // 浅色令牌必须排在皮肤 CSS 之前，顺序与运行时一致：皮肤自带配色压在最上面。
+  const scheme = usesLightScheme(values) ? 'light' : 'dark'
+  const css = `:root {${tokens}}\n${scheme === 'light' ? lightTokens : ''}\n${previewCss}\n${skinCss(settings)}\n.wallpaper{background-image:${image ? `url(${JSON.stringify(image)})` : 'none'};opacity:${Number(settings.skinBackgroundOpacity) / 100};filter:blur(${Number(settings.skinBackgroundBlur)}px);inset:-${Number(settings.skinBackgroundBlur) * 2}px;background-size:${settings.skinBackgroundFit};background-position:${settings.skinBackgroundPosition}}`
   // CSS is text, never markup; the sandbox also disallows scripts/navigation.
-  return `<!doctype html><html lang="${locale === 'zh-CN' ? 'zh-CN' : 'en-US'}"><head><meta charset="UTF-8"><meta name="color-scheme" content="dark light"><style>${css.replace(/</g, '\\3c ')}</style></head><body>
+  return `<!doctype html><html lang="${locale === 'zh-CN' ? 'zh-CN' : 'en-US'}" data-skin-scheme="${scheme}"><head><meta charset="UTF-8"><meta name="color-scheme" content="dark light"><style>${css.replace(/</g, '\\3c ')}</style></head><body>
 <section class="win"><div class="wallpaper"></div><header class="win-bar"><span class="brand">M</span><span>MiraiHub</span><span class="spacer"></span><span class="muted">‹　↗　−　□　×</span></header>
 <div class="layout"><aside class="app-sidebar"><div class="tools muted">◫　⊞ <span class="spacer"></span>«</div><div class="label">${text('Workspace')}</div><div class="nav-item">▤　${text('Servers')}</div><div class="nav-item nav-item-active">▥　${text('Databases')}</div><div class="nav-item">♧　${text('SSH Keys')}</div><div class="nav-item">◷　${text('Recent')}</div><div class="label">${text('Databases')}</div><div class="nav-item">⌄　Development</div><div class="nav-item nav-item-active"><span class="dot"></span>　Localhost</div></aside>
 <main class="main"><div class="tabs"><div class="tab"><span class="dot"></span>Localhost　×</div><span class="muted">+</span><span class="spacer"></span><span class="muted">♧　⊙　⚙</span></div><div class="content">

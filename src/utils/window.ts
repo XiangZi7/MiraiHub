@@ -2,8 +2,21 @@ import { readonly, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
+/**
+ * 文档当前实际生效的明暗。
+ *
+ * `applySkin` 把最终明暗写进 data-skin-scheme（已经把外观模式、跟随系统、
+ * 皮肤自带配色三者合流），原生材质与子窗口显示都读这一处，不各算一遍。
+ */
+export function documentPrefersLight(): boolean {
+  return document.documentElement.dataset.skinScheme === 'light'
+}
+
 /** Wait for layout and a paint opportunity before revealing a native child window. */
-export async function windowReady(material: string): Promise<void> {
+export async function windowReady(
+  material: string,
+  light: boolean
+): Promise<void> {
   if (!IS_TAURI) return
   // Hidden WebViews may throttle animation frames, so retain a bounded fallback.
   await new Promise<void>(resolve => {
@@ -20,7 +33,7 @@ export async function windowReady(material: string): Promise<void> {
       second = requestAnimationFrame(finish)
     })
   })
-  await invoke('window_ready', { material })
+  await invoke('window_ready', { material, light })
 }
 
 /**
@@ -132,12 +145,19 @@ export async function appReady(): Promise<void> {
   }
 }
 
-/** 切换所有窗口的原生材质：acrylic / mica / solid。 */
-export async function setWindowMaterial(material: string): Promise<void> {
+/**
+ * 切换所有窗口的原生材质与明暗：acrylic / mica / solid。
+ *
+ * `light` 传的是实际生效的明暗，不是外观模式原值 —— 皮肤自带配色时由皮肤决定。
+ */
+export async function setWindowMaterial(
+  material: string,
+  light: boolean
+): Promise<void> {
   if (!IS_TAURI) return
 
   try {
-    await invoke('set_window_material', { material })
+    await invoke('set_window_material', { material, light })
   } catch (error) {
     console.warn('切换窗口材质失败：', error)
   }

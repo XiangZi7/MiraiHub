@@ -43,7 +43,7 @@ const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
           @mouseleave="resume(item.id)"
         >
           <span
-            class="toast-glow"
+            class="tone-glow"
             aria-hidden="true"
           />
 
@@ -113,7 +113,7 @@ const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
 }
 
 .toast-card {
-  --toast-tone: var(--color-violet);
+  --tone: var(--color-violet);
 
   position: relative;
   display: grid;
@@ -122,13 +122,10 @@ const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
   column-gap: 10px;
   overflow: hidden;
   border: 1px solid
-    color-mix(in oklch, var(--toast-tone) 24%, var(--color-line-strong));
+    color-mix(in oklch, var(--tone) 24%, var(--color-line-strong));
   border-radius: 12px;
   background: color-mix(in oklch, var(--color-panel) 94%, transparent);
-  box-shadow:
-    0 22px 44px -18px rgb(0 0 0 / 0.72),
-    0 2px 8px rgb(0 0 0 / 0.28),
-    inset 0 1px 0 rgb(255 255 255 / 0.07);
+  box-shadow: var(--shadow-notice);
   padding: 11px 10px 12px 12px;
   pointer-events: auto;
   -webkit-backdrop-filter: blur(30px) saturate(175%);
@@ -136,29 +133,13 @@ const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
 }
 
 .toast-card-success {
-  --toast-tone: var(--color-success);
+  --tone: var(--color-success);
 }
 .toast-card-error {
-  --toast-tone: var(--color-danger);
+  --tone: var(--color-danger);
 }
 .toast-card-warning {
-  --toast-tone: var(--color-amber);
-}
-
-/* 左上角一抹同色辉光，替代粗重的左边框来标示语义 */
-.toast-glow {
-  position: absolute;
-  top: -40px;
-  left: -30px;
-  width: 150px;
-  height: 120px;
-  pointer-events: none;
-  border-radius: 999px;
-  background: radial-gradient(
-    closest-side,
-    color-mix(in oklch, var(--toast-tone) 22%, transparent),
-    transparent
-  );
+  --tone: var(--color-amber);
 }
 
 .toast-icon {
@@ -169,11 +150,11 @@ const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
   margin-top: 1px;
   place-items: center;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--toast-tone) 18%, transparent);
-  color: var(--toast-tone);
+  background: color-mix(in oklch, var(--tone) 18%, transparent);
+  color: var(--tone);
   box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--toast-tone) 34%, transparent),
-    0 0 14px color-mix(in oklch, var(--toast-tone) 22%, transparent);
+    inset 0 0 0 1px color-mix(in oklch, var(--tone) 34%, transparent),
+    0 0 14px color-mix(in oklch, var(--tone) 22%, transparent);
 }
 
 .toast-copy {
@@ -240,8 +221,8 @@ const toneMeta = computed<Record<ToastTone, { icon: string; label: string }>>(
   height: 2px;
   background: linear-gradient(
     90deg,
-    var(--toast-tone),
-    color-mix(in oklch, var(--toast-tone) 55%, transparent)
+    var(--tone),
+    color-mix(in oklch, var(--tone) 55%, transparent)
   );
   transform-origin: left center;
   animation: toast-drain var(--toast-duration, 4000ms) linear forwards;

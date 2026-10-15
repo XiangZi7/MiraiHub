@@ -1235,7 +1235,7 @@ watch(
 
         <div
           v-else
-          class="scroll-thin relative min-h-0 flex-1 overflow-auto bg-[#0d0f14] p-4"
+          class="scroll-thin bg-terminal relative min-h-0 flex-1 overflow-auto p-4"
         >
           <AppButton
             size="sm"

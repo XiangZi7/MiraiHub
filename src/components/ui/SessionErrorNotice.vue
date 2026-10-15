@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
 withDefaults(
@@ -21,76 +20,72 @@ const { t } = useI18n()
 </script>
 
 <template>
+  <!-- 与 ToastHost 同一套语义卡片。
+       这套界面颜色用得省（工具栏、标签页全是中性灰，只有状态点带色），
+       所以这里也只让图标带语义色：边框中性、辉光极淡、不铺底色。
+       错误压在终端输出上方，越像一条状态提示越好，越像报错弹窗越糟。 -->
   <div
-    class="session-error"
+    class="border-line-strong bg-panel/95 glass relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 overflow-hidden rounded-[10px] border py-2.5 pr-2 pl-3 shadow-(--shadow-notice) [--tone:var(--color-danger)] motion-safe:animate-[session-error-reveal_200ms_cubic-bezier(0.2,0.8,0.2,1)]"
     role="alert"
   >
+    <span
+      class="tone-glow"
+      aria-hidden="true"
+    />
+
     <AppIcon
       name="lucide:triangle-alert"
-      :size="16"
-      class="session-error-icon"
+      :size="14"
+      class="relative mt-px shrink-0 text-(--tone)"
+      aria-hidden="true"
     />
-    <div class="session-error-body">
-      <p class="session-error-title">{{ title || t('连接失败') }}</p>
-      <p class="session-error-message">{{ message }}</p>
-    </div>
-    <div class="session-error-actions">
-      <AppButton
-        size="sm"
-        variant="danger"
-        @click="$emit('retry')"
-        >{{ retryLabel || t('重试') }}</AppButton
+
+    <div class="relative min-w-0">
+      <p class="text-txt text-[11.5px] leading-[1.45] font-semibold wrap-anywhere">
+        {{ title || t('连接失败') }}
+      </p>
+      <p
+        class="scroll-thin text-txt-3 max-h-20 overflow-y-auto text-[11px] leading-[1.5] wrap-anywhere whitespace-pre-wrap"
       >
-      <AppButton
-        size="sm"
-        variant="ghost"
+        {{ message }}
+      </p>
+    </div>
+
+    <!-- 操作贴着标题行，不另起一行：卡片越矮，越不像挡在终端前面的弹窗。
+         重试和关闭都是中性色，跟工具栏按钮同一体系，hover 才亮起来。 -->
+    <div class="relative -mt-0.5 flex shrink-0 items-center gap-0.5">
+      <button
+        type="button"
+        class="text-txt-2 hover:bg-hover hover:text-txt focus-visible:bg-hover focus-visible:text-txt inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[11px] transition-colors duration-150 outline-none"
+        @click="$emit('retry')"
+      >
+        <AppIcon
+          name="lucide:rotate-cw"
+          :size="11"
+        />{{ retryLabel || t('重试') }}
+      </button>
+      <!-- 不像 Toast 那样 hover 才浮现：这条错误不会自动消失，关闭入口得一直看得见 -->
+      <button
+        type="button"
+        class="text-txt-4 hover:bg-hover hover:text-txt focus-visible:bg-hover focus-visible:text-txt grid size-6 cursor-pointer place-items-center rounded-md transition-colors duration-150 outline-none"
         :aria-label="t('关闭提示')"
+        :title="t('关闭')"
         @click="$emit('dismiss')"
-        ><AppIcon
+      >
+        <AppIcon
           name="lucide:x"
           :size="12"
-      /></AppButton>
+        />
+      </button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.session-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  max-height: 9rem;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in oklch, var(--color-danger) 40%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--color-danger) 10%, var(--color-panel));
-  color: var(--color-txt-1);
-  font-size: 12px;
-  line-height: 1.6;
-}
-.session-error-icon {
-  flex: none;
-  margin-top: 2px;
-  color: var(--color-danger);
-}
-.session-error-body {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-  overflow-y: auto;
-}
-.session-error-title {
-  font-weight: 600;
-}
-.session-error-message {
-  color: var(--color-txt-2);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-.session-error-actions {
-  display: flex;
-  flex: none;
-  gap: 4px;
+@keyframes session-error-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.98);
+  }
 }
 </style>

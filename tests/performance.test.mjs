@@ -214,7 +214,7 @@ test('child-window readiness waits for paint and has a single bounded fallback f
     '@tauri-apps/api/window': windowUrl,
   })
   const { windowReady } = await readyLoad('src/utils/window.ts')
-  const promise = windowReady('mica')
+  const promise = windowReady('mica', false)
   assert.equal(native.calls.length, 0)
   const first = [...frames.values()][0]
   frames.clear()
@@ -224,13 +224,19 @@ test('child-window readiness waits for paint and has a single bounded fallback f
   frames.clear()
   second()
   await promise
-  assert.deepEqual(native.calls, [['window_ready', { material: 'mica' }]])
+  assert.deepEqual(native.calls, [
+    ['window_ready', { material: 'mica', light: false }],
+  ])
   t.mock.timers.tick(100)
   await flush()
   assert.equal(native.calls.length, 1)
-  const hidden = windowReady('acrylic')
+  // 浅色模式下子窗口首帧就得带上明暗，否则原生材质会先闪一下深色。
+  const hidden = windowReady('acrylic', true)
   t.mock.timers.tick(100)
   await hidden
   assert.equal(frames.size, 0)
-  assert.deepEqual(native.calls[1], ['window_ready', { material: 'acrylic' }])
+  assert.deepEqual(native.calls[1], [
+    'window_ready',
+    { material: 'acrylic', light: true },
+  ])
 })

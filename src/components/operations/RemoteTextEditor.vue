@@ -13,12 +13,13 @@ const emit = defineEmits<{
   close: []
   status: [dirty: boolean, busy: boolean]
 }>()
-const { state, dirty, requestClose, confirmDiscard, save } = useRemoteTextDocument(
-  props,
-  !!props.standalone,
-  () => emit('close'),
-  (isDirty, isBusy) => emit('status', isDirty, isBusy)
-)
+const { state, dirty, requestClose, confirmDiscard, save } =
+  useRemoteTextDocument(
+    props,
+    !!props.standalone,
+    () => emit('close'),
+    (isDirty, isBusy) => emit('status', isDirty, isBusy)
+  )
 const { document: remote, draft, busy, error, message, discard } = toRefs(state)
 const fileName = computed(() => props.path.split('/').pop() || t('远端文件'))
 defineExpose({ requestClose })
@@ -33,19 +34,40 @@ defineExpose({ requestClose })
     @close="requestClose"
   >
     <div class="editor-bar">
-      <span class="editor-name" :title="`${connectionName} · ${remote?.path || path}`">
-        {{ fileName }}<span v-if="dirty" aria-label="未保存"> *</span>
+      <span
+        class="editor-name"
+        :title="`${connectionName} · ${remote?.path || path}`"
+      >
+        {{ fileName
+        }}<span
+          v-if="dirty"
+          aria-label="未保存"
+        >
+          *</span
+        >
       </span>
-      <span v-if="message" class="text-success" role="status">{{ message }}</span>
+      <span
+        v-if="message"
+        class="text-success"
+        role="status"
+        >{{ message }}</span
+      >
       <AppButton
         variant="primary"
         size="sm"
         :title="t('保存') + ' (Ctrl+S)'"
         :disabled="!dirty || busy"
         @click="save"
-      >{{ t('保存') }}</AppButton>
+        >{{ t('保存') }}</AppButton
+      >
     </div>
-    <p v-if="error" role="alert" class="editor-error">{{ error }}</p>
+    <p
+      v-if="error"
+      role="alert"
+      class="editor-error"
+    >
+      {{ error }}
+    </p>
     <textarea
       v-model="draft"
       class="editor-input"

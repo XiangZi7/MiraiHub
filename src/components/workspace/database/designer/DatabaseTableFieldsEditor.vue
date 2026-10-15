@@ -431,19 +431,13 @@ defineExpose({ add: addColumn })
 }
 /* 落点指示线：与标签栏同款的紫色线条，横贯整行标出插入位置 */
 .designer-table tr.field-drop-before td {
-  background-image: linear-gradient(
-    var(--color-violet),
-    var(--color-violet)
-  );
+  background-image: linear-gradient(var(--color-violet), var(--color-violet));
   background-position: 0 0;
   background-repeat: no-repeat;
   background-size: 100% 2px;
 }
 .designer-table tr.field-drop-after td {
-  background-image: linear-gradient(
-    var(--color-violet),
-    var(--color-violet)
-  );
+  background-image: linear-gradient(var(--color-violet), var(--color-violet));
   background-position: 0 100%;
   background-repeat: no-repeat;
   background-size: 100% 2px;

@@ -38,28 +38,37 @@ export const TERMINAL_THEME: ITheme = {
   brightWhite: '#f0f0f2',
 }
 
+/**
+ * 浅色底的 ANSI 配色。
+ *
+ * 色相跟着 main.css 的浅色令牌走冷调（紫蓝一侧），亮度压在 35%–50%：
+ * 深色那套的高亮度值放在白底上基本读不出来。
+ * foreground / cursor / green / blue / cyan 会被 `currentTerminalTheme` 用
+ * CSS 令牌覆盖，所以自带配色的皮肤仍能把自己的色相带回来。
+ */
 const LIGHT_TERMINAL_THEME: ITheme = {
   ...TERMINAL_THEME,
-  foreground: '#664654',
-  cursor: '#c93478',
-  cursorAccent: '#fff9fb',
-  selectionBackground: '#c9347833',
-  black: '#593a49',
-  red: '#bb3652',
-  green: '#327758',
-  yellow: '#94691f',
-  blue: '#3c70a5',
-  magenta: '#9f4e94',
-  cyan: '#247b84',
-  white: '#927885',
-  brightBlack: '#a37e8c',
-  brightRed: '#c43d5d',
-  brightGreen: '#398060',
-  brightYellow: '#9c7523',
-  brightBlue: '#427bac',
-  brightMagenta: '#b654a0',
-  brightCyan: '#28828c',
-  brightWhite: '#593a49',
+  foreground: '#3b3744',
+  cursor: '#6d3fc4',
+  cursorAccent: '#fbfaff',
+  selectionBackground: '#6d3fc433',
+  black: '#413d4a',
+  red: '#b03030',
+  green: '#2f7350',
+  yellow: '#8a6514',
+  blue: '#2f5fa8',
+  magenta: '#8c3f99',
+  cyan: '#1f6f80',
+  white: '#8a8696',
+
+  brightBlack: '#6f6a7c',
+  brightRed: '#c23a3a',
+  brightGreen: '#357f59',
+  brightYellow: '#96701c',
+  brightBlue: '#3a6cb8',
+  brightMagenta: '#9a48a8',
+  brightCyan: '#257a8c',
+  brightWhite: '#413d4a',
 }
 
 /** Resolve CSS tokens to sRGB for xterm's canvas, including custom CSS colors. */

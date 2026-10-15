@@ -508,7 +508,9 @@ function runContextAction(action: string): void {
                 :tone="toneOf(node)"
                 :size="6"
                 :glow="toneOf(node) !== 'txt-3'"
-                :class="(node.kind === 'local' || showAddress) && 'mt-1.5 self-start'"
+                :class="
+                  (node.kind === 'local' || showAddress) && 'mt-1.5 self-start'
+                "
               />
               <span class="min-w-0 flex-1 text-left">
                 <span class="text-txt block truncate text-[11.5px]">{{

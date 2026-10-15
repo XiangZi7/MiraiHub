@@ -1,5 +1,6 @@
 import { i18n } from '@/i18n'
 import { DEFAULT_SETTINGS, type SettingsValues } from '@/types/settings'
+import { resolveColorScheme } from './color-mode'
 import { readSkinColors } from './skin-colors'
 import { builtinSkin, isBuiltinSkinId } from './skin-registry'
 
@@ -29,6 +30,17 @@ export interface CustomSkin {
   name: string
   values: SkinAppearance
 }
+
+/**
+ * 皮肤设置 + 外观模式。
+ *
+ * `colorMode` 刻意不并进 `SkinSettings`：它是全局偏好，
+ * 而 `SkinAppearance` 会被整份存进每张皮肤卡片，模式不该跟着复制进去。
+ * 设为可选是给设置窗口的皮肤编辑流程留的口子 —— 那里手上只有一份草稿皮肤，
+ * 缺模式时沿用文档当前的明暗即可，见 `usesLightScheme`。
+ */
+export type AppearanceSettings = SkinSettings &
+  Partial<Pick<SettingsValues, 'colorMode'>>
 
 /** 基础主题只能是 default 或皮肤目录里的某个 id。 */
 function normalizeBase(base: string): string {
@@ -87,7 +99,8 @@ export function readSkinLibrary(raw: string): CustomSkin[] {
   }
 }
 
-export function resolveSkinSettings(settings: SkinSettings): SkinSettings {
+/** 泛型保留调用方多带的字段（如 colorMode），展开实现本来就不会丢它们。 */
+export function resolveSkinSettings<T extends SkinSettings>(settings: T): T {
   const custom = readSkinLibrary(settings.skinLibrary).find(
     item => item.id === settings.skinTheme
   )
@@ -182,11 +195,25 @@ export function usesBuiltinStyle(settings: SkinSettings): boolean {
   return resolved.skinBase !== 'default' && resolved.skinStyle !== 'default'
 }
 
-/** 当前皮肤是否按浅色处理：终端配色、取色器默认值都据此切换。 */
-export function usesLightScheme(settings: SkinSettings): boolean {
+/**
+ * 当前皮肤是否按浅色处理：CSS 令牌、终端配色、取色器默认值都据此切换。
+ *
+ * 皮肤 CSS 本身就是一整套完整配色（skin.json 自报 colorScheme），强行翻转它
+ * 只会让深色表面配上浅色文字；所以皮肤自带样式时听皮肤的，
+ * 只有项目默认样式才由用户的外观模式决定。
+ */
+export function usesLightScheme(settings: AppearanceSettings): boolean {
+  if (usesBuiltinStyle(settings))
+    return (
+      builtinSkin(resolveSkinSettings(settings).skinBase)?.colorScheme ===
+      'light'
+    )
+  if (settings.colorMode)
+    return resolveColorScheme(settings.colorMode) === 'light'
+  // 编辑皮肤草稿时不带模式：沿用文档当前的明暗，取色器默认值才跟眼前看到的一致。
   return (
-    usesBuiltinStyle(settings) &&
-    builtinSkin(resolveSkinSettings(settings).skinBase)?.colorScheme === 'light'
+    typeof document !== 'undefined' &&
+    document.documentElement.dataset.skinScheme === 'light'
   )
 }
 

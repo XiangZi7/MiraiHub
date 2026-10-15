@@ -317,7 +317,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
   box-shadow:
     0 18px 48px rgb(0 0 0 / 34%),
     0 3px 12px rgb(0 0 0 / 22%),
-    inset 0 1px rgb(255 255 255 / 4%);
+    inset 0 1px var(--glass-highlight);
   padding: 6px;
 }
 

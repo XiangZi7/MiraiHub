@@ -292,7 +292,6 @@ const missingSession = computed(
   font-size: 12px;
   line-height: 20px;
   outline: none;
-  color-scheme: dark;
 }
 .tunnel-control:focus-visible {
   border-color: var(--color-violet);

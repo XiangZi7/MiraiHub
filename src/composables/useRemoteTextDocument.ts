@@ -1,11 +1,5 @@
 import { i18n } from '@/i18n'
-import {
-  computed,
-  onBeforeUnmount,
-  onMounted,
-  reactive,
-  watch,
-} from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import * as api from '@/api/operations'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'

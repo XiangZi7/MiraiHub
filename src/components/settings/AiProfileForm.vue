@@ -16,7 +16,8 @@ const formats = [
 ]
 const formatHelp: Record<AgentApiFormat, string> = {
   openai: 'OpenAI Chat Completions 格式；可连接官网或兼容的中转站。',
-  responses: 'OpenAI Responses 格式；适用于使用 /responses 接口的模型或中转站。',
+  responses:
+    'OpenAI Responses 格式；适用于使用 /responses 接口的模型或中转站。',
   anthropic: 'Claude Messages 格式；例如 https://api.anthropic.com/v1。',
 }
 </script>

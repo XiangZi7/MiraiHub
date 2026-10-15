@@ -71,10 +71,8 @@ import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppSidePane from '@/components/ui/AppSidePane.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
 import type { AgentContextRequest } from '@/types/agent'
-import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 
 const { t } = useI18n()
-const layout = useWorkspaceLayoutStore()
 
 interface QueryTab extends TabItem {
   kind: 'query'
@@ -1317,7 +1315,7 @@ watch(
     class="pane flex-1 flex-row"
   >
     <DatabaseObjectTree
-      v-show="(!agentOpen || agentSplit) && !layout.recording"
+      v-show="!agentOpen || agentSplit"
       :style="sidebarStyle"
       :database-name="databaseName"
       :database-kind="databaseKind"
@@ -1366,7 +1364,7 @@ watch(
       @truncate-object="requestTruncateTable"
     />
     <AppResizeHandle
-      v-show="(!agentOpen || agentSplit) && !layout.recording"
+      v-show="!agentOpen || agentSplit"
       v-model="sidebarWidth"
       pane-side="left"
       :min="sidebarMin"
@@ -1509,17 +1507,13 @@ watch(
             <span
               class="database-toolbar-detail text-txt-3 max-w-32 truncate text-[11px]"
               :title="
-                layout.recording
-                  ? undefined
-                  : session
-                    ? `${session.endpoint}\n${session.serverVersion}`
-                    : sessionId || connectionError
+                session
+                  ? `${session.endpoint}\n${session.serverVersion}`
+                  : sessionId || connectionError
               "
               >{{
                 connected
-                  ? layout.recording
-                    ? t('演示数据库')
-                    : `${databaseKind} · ${session?.serverVersion || databaseName}`
+                  ? `${databaseKind} · ${session?.serverVersion || databaseName}`
                   : status === 'connecting'
                     ? 'Connecting…'
                     : 'Disconnected'
@@ -1632,11 +1626,11 @@ watch(
       <AppSidePane
         :open="agentOpen"
         :width="
-          agentSplit ? agentWidth + (layout.recording ? 0 : 10) : undefined
+          agentSplit ? agentWidth + 10 : undefined
         "
       >
         <AppResizeHandle
-          v-if="agentSplit && !layout.recording"
+          v-if="agentSplit"
           v-model="agentWidth"
           pane-side="right"
           :min="agentMin"

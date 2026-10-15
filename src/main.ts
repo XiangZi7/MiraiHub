@@ -14,7 +14,12 @@ import '@/assets/styles/main.css'
 import { MIRAI_ICONS } from '@/constants/icons'
 import databaseIcons from '@/constants/database-icons.json'
 import { startSettingsRuntime } from '@/utils/settings-runtime'
-import { appReady, windowReady, IS_TAURI } from '@/utils/window'
+import {
+  appReady,
+  documentPrefersLight,
+  windowReady,
+  IS_TAURI,
+} from '@/utils/window'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { pinia } from '@/stores'
 import { createAppRouter } from '@/router'
@@ -79,11 +84,11 @@ Promise.all([
         await router.replace('/settings/general')
         window.dispatchEvent(new Event('miraihub:settings-reopen'))
         await nextTick()
-        await windowReady(loadSettings().windowMaterial)
+        await windowReady(loadSettings().windowMaterial, documentPrefersLight())
       })
     }
     if (entry.surface !== 'workspace' && entry.surface !== 'splash')
-      await windowReady(loadSettings().windowMaterial)
+      await windowReady(loadSettings().windowMaterial, documentPrefersLight())
   })
   .catch(() => {
     const root = document.getElementById('app')
@@ -93,6 +98,6 @@ Promise.all([
       // 启动失败也显示可读错误，避免主窗口一直隐藏在启动画面后。
       if (entry.surface === 'workspace') void appReady()
       else if (entry.surface !== 'splash')
-        void windowReady(loadSettings().windowMaterial)
+        void windowReady(loadSettings().windowMaterial, documentPrefersLight())
     }
   })

@@ -5,13 +5,17 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import ThemeColorControls from './ThemeColorControls.vue'
 import AppSlider from '@/components/ui/AppSlider.vue'
-import { readBackgroundImage, type SkinSettings } from '@/utils/skin'
+import {
+  readBackgroundImage,
+  type AppearanceSettings,
+  type SkinSettings,
+} from '@/utils/skin'
 import { DEFAULT_SETTINGS } from '@/types/settings'
 import { translateLabel } from '@/i18n'
 
 const { t } = useI18n()
 
-const props = defineProps<{ values: SkinSettings }>()
+const props = defineProps<{ values: AppearanceSettings }>()
 const emit = defineEmits<{ update: [patch: Partial<SkinSettings>] }>()
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 // Upload feedback stays local; the settings page owns the complete draft.

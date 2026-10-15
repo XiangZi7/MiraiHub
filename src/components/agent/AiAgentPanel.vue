@@ -31,10 +31,8 @@ import AgentRetryStatus from './AgentRetryStatus.vue'
 import AgentExecutionCard from './AgentExecutionCard.vue'
 import AgentTaskResult from './AgentTaskResult.vue'
 import AgentQueryResult from './AgentQueryResult.vue'
-import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 
 const { t } = useI18n()
-const layout = useWorkspaceLayoutStore()
 
 const props = withDefaults(
   defineProps<{
@@ -280,12 +278,8 @@ watch(
         :class="target.sessionId && 'online'"
       /><span
         class="text-txt-2 max-w-44 truncate text-[11px]"
-        :title="layout.recording ? undefined : title"
-        >{{
-          layout.recording
-            ? t(isDatabase ? '演示数据库' : '演示服务器')
-            : title || (isDatabase ? t('Database') : t('Server'))
-        }}</span
+        :title="title"
+        >{{ title || (isDatabase ? t('Database') : t('Server')) }}</span
       >
       <span
         v-if="!embedded"
