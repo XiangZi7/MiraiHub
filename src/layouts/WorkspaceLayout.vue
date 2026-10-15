@@ -72,13 +72,19 @@ const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
 const layout = useWorkspaceLayoutStore()
 const { sidebarWidth, sidebarCollapsed } = storeToRefs(layout)
-const { activeNav, selectNav, openConnection, selectTab, followActiveTab } =
-  useWorkspaceNavigation()
+const {
+  activeNav,
+  hasOpenSectionTabs,
+  selectNav,
+  openConnection,
+  selectTab,
+  followActiveTab,
+} = useWorkspaceNavigation()
 const controllers = provideWorkspaceControllers()
 const tabSplit = useWorkspaceTabSplit({
   tabs: () => openTabs,
   activeId: () => activeId.value,
-  enabled: () => ['servers', 'databases'].includes(activeNav.value),
+  enabled: () => hasOpenSectionTabs.value,
 })
 provideWorkspaceTabSplit(tabSplit)
 // 标签栏不再放全屏按钮，但 F11 / Esc 仍然要能用，所以这里只挂监听不取返回值。
@@ -338,9 +344,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
     <!-- 主体 -->
     <div class="relative z-10 flex min-h-0 flex-1">
-      <div
-        class="flex min-h-0 shrink-0"
-      >
+      <div class="flex min-h-0 shrink-0">
         <AppSidebar
           :active="activeNav"
           v-model:width="sidebarWidth"

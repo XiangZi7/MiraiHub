@@ -130,7 +130,11 @@
       }))
       connections.items.push(...saved)
       connections.loaded = true
-      saved.forEach(connection => workspace.open(connection))
+      const onlyServers =
+        new URLSearchParams(location.search).get('open') === 'servers'
+      saved
+        .filter(connection => !onlyServers || connection.kind === 'ssh')
+        .forEach(connection => workspace.open(connection))
       workspace.activate('b')
       const router = createRouter({
         history: createMemoryHistory(),

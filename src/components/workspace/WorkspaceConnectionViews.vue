@@ -6,6 +6,13 @@ import { injectWorkspaceTabSplit } from '@/composables/useWorkspaceTabSplit'
 import { isDatabaseConnection } from '@/types/connection'
 import WorkspaceSplitNode from './WorkspaceSplitNode.vue'
 
+const TerminalPanel = defineAsyncComponent(
+  () => import('@/components/workspace/TerminalPanel.vue')
+)
+const DatabaseView = defineAsyncComponent(
+  () => import('@/components/workspace/DatabaseView.vue')
+)
+
 const ServersPage = defineAsyncComponent(
   () => import('@/pages/workspace/ServersPage.vue')
 )
@@ -19,7 +26,7 @@ const emit = defineEmits<{
   action: [id: string, action: string]
 }>()
 const workspace = useWorkspaceStore()
-const { activeNav, selectTab } = useWorkspaceNavigation()
+const { activeNav, hasOpenSectionTabs, selectTab } = useWorkspaceNavigation()
 const layout = injectWorkspaceTabSplit()!
 const state = reactive({ serversVisited: false, databasesVisited: false })
 const connectionPage = computed(() =>
@@ -51,6 +58,7 @@ function activate(id: string): void {
     class="flex min-h-0 min-w-0 flex-1"
   >
     <WorkspaceSplitNode
+      v-show="hasOpenSectionTabs"
       :node="layout.tree.value"
       :tabs="workspace.tabs"
       :close-warning="closeWarning"
@@ -59,6 +67,14 @@ function activate(id: string): void {
       @close-many="emit('closeMany', $event)"
       @action="(id, action) => emit('action', id, action)"
     />
+    <!-- 分类没有打开的连接时，空状态独占内容区；原分屏只隐藏，保留会话。 -->
+    <div
+      v-if="connectionPage && !hasOpenSectionTabs"
+      class="flex min-h-0 min-w-0 flex-1 p-2"
+    >
+      <TerminalPanel v-if="activeNav === 'servers'" />
+      <DatabaseView v-else />
+    </div>
   </div>
   <!-- 会话组件始终位于缓存宿主中，嵌套分屏、移动标签、折叠空分组只移动 DOM。 -->
   <div class="hidden">

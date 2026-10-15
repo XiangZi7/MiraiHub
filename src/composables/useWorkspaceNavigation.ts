@@ -4,7 +4,7 @@ import { useConnectionsStore } from '@/stores/connections'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { connectionLocation } from '@/router'
 import type { NavId } from '@/types'
-import type { SavedConnection } from '@/types/connection'
+import { isDatabaseConnection, type SavedConnection } from '@/types/connection'
 
 export function useWorkspaceNavigation() {
   const route = useRoute()
@@ -12,6 +12,13 @@ export function useWorkspaceNavigation() {
   const connections = useConnectionsStore()
   const workspace = useWorkspaceStore()
   const activeNav = computed(() => route.meta.nav ?? 'servers')
+  const hasOpenSectionTabs = computed(() =>
+    workspace.tabs.some(tab =>
+      activeNav.value === 'databases'
+        ? isDatabaseConnection(tab.connection)
+        : activeNav.value === 'servers' && !isDatabaseConnection(tab.connection)
+    )
+  )
   async function selectNav(nav: NavId): Promise<void> {
     await router.push({ name: nav })
   }
@@ -34,5 +41,12 @@ export function useWorkspaceNavigation() {
         : { name: activeNav.value, params: {} }
     )
   }
-  return { activeNav, selectNav, openConnection, selectTab, followActiveTab }
+  return {
+    activeNav,
+    hasOpenSectionTabs,
+    selectNav,
+    openConnection,
+    selectTab,
+    followActiveTab,
+  }
 }

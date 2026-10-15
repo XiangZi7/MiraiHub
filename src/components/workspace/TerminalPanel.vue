@@ -218,6 +218,419 @@ const endpoint = computed(() => {
   return props.title || `${props.config.username}@${props.config.host}`
 })
 
+/**
+ * 连接提示是瞬时界面状态，不写入 xterm 缓冲区。
+ * 这样连接完成后提示会真正移除，重连也不会把它夹在远端输出中间。
+ */
+const connectingText = computed(() => {
+  if (!props.config) return ''
+
+  return t('正在连接 {value0}@{value1}:{value2} …', {
+    value0: props.config.username,
+    value1: props.config.host,
+    value2: props.config.port,
+  })
+})
+
+/**
+ * 挂载并连接。
+ * 同时等待配置与容器就位，避免首次挂载或新建分屏时漏掉初始化。
+ * 比较配置内容，避免标签列表重新计算出的同值对象触发其他终端重连。
+ */
+watch(
+  [
+    // 通过 getter 比较容器身份；直接传模板 shallowRef 会在生产模式强制触发整个监听器。
+    () => containerRef.value,
+    () =>
+      JSON.stringify([props.config, props.terminalType, props.startupCommand]),
+  ],
+  async ([container]) => {
+    const config = props.config
+    if (!config || !container) return
+
+    if (!mounted) {
+      mount(container)
+      mounted = true
+    }
+
+    intentionalReconnect = true
+    try {
+      await connect(config, {
+        terminalType: props.terminalType,
+        startupCommand: props.startupCommand,
+      })
+    } catch {
+      // 失败原因已经写进终端并存到 composable 的 error，这里只是别让 rejection 逃逸
+    } finally {
+      intentionalReconnect = false
+    }
+  },
+  { immediate: true, flush: 'post' }
+)
+
+/**
+ * 容器尺寸变化时重新适配。
+ * 光靠 window resize 不够：收起机器面板会让终端变宽，但窗口尺寸没变，
+ * 不重算的话右侧会留一大片空白。
+ */
+useResizeObserver(containerRef, () => {
+  resize()
+  scheduleCompletionAnchorUpdate()
+})
+
+function scheduleCompletionAnchorUpdate(): void {
+  cancelAnimationFrame(anchorFrame)
+  anchorFrame = requestAnimationFrame(updateCompletionAnchor)
+}
+
+/** 把建议框贴到当前输入 token，而不是固定压在终端底部。 */
+function updateCompletionAnchor(): void {
+  const terminal = term.value
+  const area = terminalAreaRef.value
+  const screen = terminal?.element?.querySelector<HTMLElement>('.xterm-screen')
+  if (!terminal || !area || !screen || !completion.open.value) return
+
+  const areaRect = area.getBoundingClientRect()
+  const screenRect = screen.getBoundingClientRect()
+  const cellWidth = screenRect.width / Math.max(terminal.cols, 1)
+  const cellHeight = screenRect.height / Math.max(terminal.rows, 1)
+  const tokenLength = [...currentToken(inputLine.value)].length
+  const tokenColumn = Math.max(0, terminal.buffer.active.cursorX - tokenLength)
+  const cursorTop =
+    screenRect.top - areaRect.top + terminal.buffer.active.cursorY * cellHeight
+  const desiredWidth = Math.min(440, Math.max(260, areaRect.width - 24))
+  const left = Math.min(
+    Math.max(12, screenRect.left - areaRect.left + tokenColumn * cellWidth),
+    Math.max(12, areaRect.width - desiredWidth - 12)
+  )
+  const belowTop = cursorTop + cellHeight + 5
+  const roomBelow = areaRect.height - belowTop - 10
+  const roomAbove = cursorTop - 10
+  const placeBelow = roomBelow >= 140 || roomBelow >= roomAbove
+  const availableHeight = Math.max(92, placeBelow ? roomBelow : roomAbove)
+
+  completionAnchor.value = {
+    left,
+    top: placeBelow ? belowTop : undefined,
+    bottom: placeBelow ? undefined : areaRect.height - cursorTop + 5,
+    width: desiredWidth,
+    maxHeight: Math.min(260, availableHeight),
+  }
+}
+
+watch(
+  [
+    () => completion.open.value,
+    inputLine,
+    () => completion.suggestions.value.length,
+  ],
+  ([isOpen]) => {
+    if (isOpen) void nextTick(scheduleCompletionAnchorUpdate)
+  }
+)
+
+watch(
+  term,
+  (terminal, _previous, onCleanup) => {
+    const disposable = terminal?.onCursorMove(scheduleCompletionAnchorUpdate)
+    onCleanup(() => disposable?.dispose())
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  disposed = true
+  cancelAnimationFrame(anchorFrame)
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+})
+
+function scheduleAutoReconnect(): void {
+  if (
+    disposed ||
+    !settings.autoReconnect ||
+    !props.config ||
+    reconnectAttempts >= 3 ||
+    reconnectTimer
+  )
+    return
+
+  reconnectAttempts += 1
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = undefined
+    if (disposed || !settings.autoReconnect || !props.config) return
+    await connect(props.config, {
+      terminalType: props.terminalType,
+      startupCommand: props.startupCommand,
+    }).catch(scheduleAutoReconnect)
+  }, reconnectAttempts * 1500)
+}
+
+/** 重连：先断干净再按原配置连一次 */
+async function reconnect(): Promise<void> {
+  if (!props.config) return
+
+  reconnectAttempts = 0
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = undefined
+
+  intentionalReconnect = true
+  try {
+    await connect(props.config, {
+      terminalType: props.terminalType,
+      startupCommand: props.startupCommand,
+    })
+  } catch {
+  } finally {
+    intentionalReconnect = false
+  }
+}
+
+async function disconnectSession(): Promise<void> {
+  intentionalReconnect = true
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = undefined
+  try {
+    await disconnect()
+  } finally {
+    intentionalReconnect = false
+  }
+}
+
+function currentToken(line: string): string {
+  return line.match(/\S+$/)?.[0] ?? ''
+}
+
+function acceptSuggestion(item = completion.activeSuggestion.value): void {
+  if (!item) return
+
+  const token = currentToken(inputLine.value)
+  if (!item.value.toLocaleLowerCase().startsWith(token.toLocaleLowerCase()))
+    return
+
+  const suffix =
+    item.value.slice(token.length) + (item.kind === 'directory' ? '' : ' ')
+  sendInput(suffix)
+  completion.close()
+  term.value?.focus()
+}
+
+function interceptTerminalInput(data: string): boolean {
+  if (!completion.open.value) return false
+
+  if (data === '\t') {
+    acceptSuggestion()
+    return true
+  }
+  if (data === '\x1b[A') {
+    completion.move(-1)
+    return true
+  }
+  if (data === '\x1b[B') {
+    completion.move(1)
+    return true
+  }
+  if (data === '\x1b') {
+    completion.close()
+    return true
+  }
+
+  return false
+}
+
+setInputInterceptor(interceptTerminalInput)
+setSubmitHandler(line => void completion.trackSubmittedCommand(line))
+defineExpose({
+  focus: () => term.value?.focus(),
+  reconnect,
+  disconnect: disconnectSession,
+})
+</script>
+
+<template>
+  <section class="terminal-pane pane bg-terminal min-w-0 flex-1">
+    <!-- 会话工具条 -->
+    <div
+      class="terminal-header border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
+    >
+      <span
+        :class="[
+          'flex shrink-0 items-center gap-1.5 text-[11px]',
+          statusMeta.tone,
+        ]"
+      >
+        <StatusDot
+          :tone="statusMeta.dot"
+          :size="6"
+          :glow="status === 'connected'"
+        />
+        <span class="terminal-state-label">{{ statusMeta.text }}</span>
+      </span>
+
+      <span
+        class="terminal-kind border-line bg-card text-txt-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+      >
+        SSH
+      </span>
+
+      <span
+        class="terminal-endpoint text-txt-2 max-w-36 shrink-0 truncate text-[11px]"
+        :title="
+          config
+            ? `${config.username}@${config.host}:${config.port}`
+            : undefined
+        "
+      >
+        {{ endpoint }}
+      </span>
+
+      <div class="terminal-metrics min-w-0 flex-1">
+        <slot name="metrics"><div class="flex-1" /></slot>
+      </div>
+
+      <TerminalActions
+        :terminal="term"
+        :status="status"
+        :split="split"
+        :closable="closable"
+        :available="Boolean(config)"
+        @split="emit('split')"
+        @split-pointer-down="emit('splitPointerDown', $event)"
+        @close="emit('close')"
+        @reconnect="reconnect"
+        @disconnect="disconnectSession"
+        ><slot name="actions"
+      /></TerminalActions>
+    </div>
+
+    <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染，底色由这里给 -->
+    <div
+      v-if="config"
+      ref="terminalArea"
+      class="bg-terminal relative min-h-0 flex-1 overflow-hidden"
+      @contextmenu.prevent.stop="openContextMenu"
+    >
+      <div
+        ref="terminal"
+        class="absolute inset-0 p-2"
+      />
+      <button
+        v-if="selectedText.trim() && status === 'connected'"
+        type="button"
+        class="terminal-ask-agent"
+        @pointerdown.prevent
+        @click="emit('askAgent', selectedText)"
+      >
+        <AppIcon
+          name="lucide:sparkles"
+          :size="14"
+        />{{ t('分析选中内容') }}
+      </button>
+      <SessionErrorNotice
+        v-if="showError && error && status === 'disconnected'"
+        class="absolute top-2 right-2 z-10 w-[min(380px,calc(100%-1rem))]"
+        :message="error"
+        :title="t('SSH 终端连接失败')"
+        @retry="reconnect"
+        @dismiss="showError = false"
+      />
+      <p
+        v-if="status === 'connecting'"
+        class="text-txt-3 pointer-events-none absolute top-2 left-2 z-10 font-mono text-xs leading-[1.4]"
+        role="status"
+        aria-live="polite"
+      >
+        {{ connectingText }}
+      </p>
+      <Transition name="terminal-completion">
+        <TerminalSuggestions
+          v-if="completion.open.value"
+          :items="completion.suggestions.value"
+          :active-index="completion.activeIndex.value"
+          :loading="completion.loading.value"
+          :anchor="completionAnchor"
+          @hover="completion.activeIndex.value = $event"
+          @select="acceptSuggestion"
+        />
+      </Transition>
+    </div>
+
+    <!-- 还没选服务器 -->
+    <div
+      v-else
+      class="flex min-h-0 flex-1 items-center justify-center"
+    >
+      <div class="flex flex-col items-center gap-3 text-center">
+        <div
+          class="border-line bg-card text-txt-3 grid size-14 place-items-center rounded-2xl border"
+        >
+          <AppIcon
+            name="lucide:square-terminal"
+            :size="26"
+          />
+        </div>
+        <p class="text-txt-2 text-sm">{{ t('还没有打开终端') }}</p>
+        <p class="text-txt-4 max-w-70 text-xs">
+          {{ t('从左侧选一台服务器，或新建一个连接') }}
+        </p>
+      </div>
+    </div>
+    <AppContextMenu
+      :open="contextMenu.open"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :items="contextItems"
+      @select="contextAction"
+      @close="contextMenu.open = false"
+    />
+  </section>
+</template>
+
+<style scoped>
+.terminal-pane {
+  container-type: inline-size;
+  container-name: terminal;
+}
+@container terminal (max-width: 640px) {
+  .terminal-endpoint,
+  .terminal-metrics {
+    display: none;
+  }
+}
+@container terminal (max-width: 360px) {
+  .terminal-header {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+  .terminal-state-label,
+  .terminal-kind {
+    display: none;
+  }
+}
+
+.terminal-ask-agent {
+  position: absolute;
+  top: 10px;
+  right: 18px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  color: var(--color-accent);
+  background: var(--color-panel);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 3px 12px #0003;
+}
+.terminal-ask-agent:hover {
+  background: var(--color-card);
+}
+.terminal-ask-agent:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 /* xterm 自带 .xterm .xterm-viewport{background-color:#000}，而终端主题的 background
    是全透明，不盖掉它的话终端永远是纯黑 —— 浅色模式下整块黑面糊在白界面中间。
    选择器必须带上 .xterm 才比它高一级：xterm 的样式表被打包成独立 chunk，

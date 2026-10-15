@@ -153,7 +153,7 @@ registerWorkspaceController('servers', { action })
       :disabled="!tabSplit?.targetFor(activeId)"
     >
       <TerminalPanel
-        v-if="!activeTerminalTab"
+        v-if="!tabSplit && !activeTerminalTab"
         v-show="activeNav === 'servers'"
         key="empty-terminal"
       />

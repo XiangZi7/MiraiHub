@@ -86,7 +86,7 @@ registerWorkspaceController('databases', {
       :disabled="!tabSplit?.targetFor(activeId)"
     >
       <DatabaseView
-        v-if="!activeDatabaseConnection"
+        v-if="!tabSplit && !activeDatabaseConnection"
         v-show="activeNav === 'databases'"
       />
     </Teleport>
