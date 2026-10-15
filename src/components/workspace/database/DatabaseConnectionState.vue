@@ -139,11 +139,11 @@ function reconnect() {
 }
 
 .connection-state {
-  width: min(100%, 500px);
+  width: min(100%, 420px);
   margin: auto;
-  padding: 26px 28px;
+  padding: 22px 24px;
   border: 1px solid var(--color-line);
-  border-radius: 16px;
+  border-radius: var(--radius-pane);
   background: var(--color-pane);
   box-shadow: var(--shadow-pane);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
@@ -153,17 +153,17 @@ function reconnect() {
 .connection-state-heading {
   display: flex;
   align-items: flex-start;
-  gap: 15px;
+  gap: 13px;
 }
 
 .connection-state-icon {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   flex: none;
   place-items: center;
   border: 1px solid color-mix(in oklch, var(--color-violet) 25%, var(--color-line));
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--color-violet) 10%, transparent);
   color: var(--color-violet);
 }
@@ -194,12 +194,12 @@ function reconnect() {
 }
 
 .connection-state-password {
-  margin-top: 24px;
+  margin-top: 20px;
 }
 
 .connection-state-actions {
   display: flex;
-  margin-top: 24px;
+  margin-top: 20px;
 }
 
 .connection-state-action {

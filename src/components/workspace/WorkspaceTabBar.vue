@@ -11,6 +11,7 @@ import { toast } from '@/composables/useToast'
 import { isDatabaseConnection } from '@/types/connection'
 import { DATABASE_CONNECTION_ICONS } from '@/constants/connection'
 import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
+import type { TabDragEvent } from '@/composables/useTabReorder'
 
 const { t } = useI18n()
 const layout = useWorkspaceLayoutStore()
@@ -26,6 +27,9 @@ const emit = defineEmits<{
   closeMany: [ids: string[]]
   reorder: [from: number, to: number]
   action: [id: string, action: string]
+  tabDragMove: [drag: TabDragEvent]
+  tabDrop: [drag: TabDragEvent]
+  tabDragEnd: []
 }>()
 const state = reactive({ closingIds: [] as string[], warning: '' })
 const items = computed<TabItem[]>(() =>
@@ -78,7 +82,7 @@ function contextItems(id: string): ContextMenuItem[] {
       ? [
           {
             id: 'split',
-            label: t('新建 / 关闭分屏终端'),
+            label: t('新建分屏终端'),
             icon: 'lucide:columns-2',
           },
           { id: 'files', label: t('打开远端文件'), icon: 'lucide:folder-open' },
@@ -157,12 +161,16 @@ function confirmClose(): void {
     :active="active"
     :context-items="contextItems"
     addable
+    split-draggable
     @update:active="emit('update:active', $event)"
     @add="emit('add')"
     @close="requestClose([$event])"
     @close-many="requestClose"
     @reorder="(from, to) => emit('reorder', from, to)"
     @context-action="action"
+    @tab-drag-move="emit('tabDragMove', $event)"
+    @tab-drop="emit('tabDrop', $event)"
+    @tab-drag-end="emit('tabDragEnd')"
   />
   <AppConfirmDialog
     :open="!!state.closingIds.length"

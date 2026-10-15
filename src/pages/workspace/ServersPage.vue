@@ -5,6 +5,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { registerWorkspaceController } from '@/composables/useWorkspaceControllers'
+import { injectWorkspaceTabSplit } from '@/composables/useWorkspaceTabSplit'
 import { type SshSessionStatus } from '@/types/ssh'
 import {
   isLocalConnection,
@@ -18,8 +19,12 @@ import SshTerminalWorkspace from '@/components/workspace/SshTerminalWorkspace.vu
 const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
-const { machineOpen, machineView } = storeToRefs(useWorkspaceLayoutStore())
+const layout = useWorkspaceLayoutStore()
 const { activeNav } = useWorkspaceNavigation()
+const tabSplit = injectWorkspaceTabSplit()
+function visible(id: string): boolean {
+  return tabSplit ? tabSplit.isVisible(id) : activeId.value === id
+}
 const sshWorkspaces =
   useTemplateRef<Array<InstanceType<typeof SshTerminalWorkspace>>>(
     'sshWorkspaces'
@@ -76,8 +81,9 @@ const activeTerminalTab = computed(() => {
 
 async function action(id: string, action: string): Promise<void> {
   if (action === 'files' || action === 'upload') {
-    machineOpen.value = true
-    machineView.value = 'files'
+    if (!openTabs.some(tab => tab.id === id && tab.connection.kind === 'ssh'))
+      return
+    layout.openMachinePane(id, 'files')
     if (action === 'upload') {
       for (const view of sshWorkspaces.value ?? []) await view.uploadFor(id)
     }
@@ -100,39 +106,57 @@ registerWorkspaceController('servers', { action })
 <template>
   <div class="contents">
     <!-- SSH 标签保持挂载，只隐藏非活动项；关闭标签时才真正卸载并断开 -->
-    <SshTerminalWorkspace
+    <Teleport
       v-for="tab in sshTabViews"
-      ref="sshWorkspaces"
-      :connection-id="tab.id"
-      :connection="tab.connection"
-      :active="activeId === tab.id && activeNav === 'servers'"
-      v-show="activeId === tab.id"
       :key="tab.id"
-      :config="tab.config"
-      :title="tab.title"
-      :terminal-type="tab.terminalType"
-      :startup-command="tab.startupCommand"
-      @status="
-        (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
-      "
-    />
+      :to="tabSplit?.targetFor(tab.id) ?? 'body'"
+      :disabled="!tabSplit?.targetFor(tab.id)"
+    >
+      <SshTerminalWorkspace
+        ref="sshWorkspaces"
+        :connection-id="tab.id"
+        :connection="tab.connection"
+        :active="
+          visible(tab.id) && (Boolean(tabSplit) || activeNav === 'servers')
+        "
+        v-show="visible(tab.id)"
+        :config="tab.config"
+        :title="tab.title"
+        :terminal-type="tab.terminalType"
+        :startup-command="tab.startupCommand"
+        @status="
+          (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
+        "
+      />
+    </Teleport>
 
-    <LocalTerminalPanel
-      ref="localTerminals"
-      :connection-id="tab.id"
+    <Teleport
       v-for="tab in localTabViews"
-      v-show="activeId === tab.id"
       :key="tab.id"
-      :title="tab.title"
-      :settings="tab.settings"
-      @status="
-        (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
-      "
-    />
+      :to="tabSplit?.targetFor(tab.id) ?? 'body'"
+      :disabled="!tabSplit?.targetFor(tab.id)"
+    >
+      <LocalTerminalPanel
+        ref="localTerminals"
+        :connection-id="tab.id"
+        v-show="visible(tab.id)"
+        :title="tab.title"
+        :settings="tab.settings"
+        @status="
+          (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
+        "
+      />
+    </Teleport>
 
-    <TerminalPanel
-      v-if="!activeTerminalTab"
-      key="empty-terminal"
-    />
+    <Teleport
+      :to="tabSplit?.targetFor(activeId) ?? 'body'"
+      :disabled="!tabSplit?.targetFor(activeId)"
+    >
+      <TerminalPanel
+        v-if="!activeTerminalTab"
+        v-show="activeNav === 'servers'"
+        key="empty-terminal"
+      />
+    </Teleport>
   </div>
 </template>

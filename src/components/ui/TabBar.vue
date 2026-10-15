@@ -7,7 +7,7 @@ import AppContextMenu from './AppContextMenu.vue'
 import type { ContextMenuItem } from '@/types/context-menu'
 import { useTabContextMenu } from '@/composables/useTabContextMenu'
 import StatusDot from './StatusDot.vue'
-import { useTabReorder } from '@/composables/useTabReorder'
+import { useTabReorder, type TabDragEvent } from '@/composables/useTabReorder'
 import { cn } from '@/utils/cn'
 
 const { t } = useI18n()
@@ -34,6 +34,7 @@ const props = defineProps<{
   /** 是否显示新建按钮 */
   addable?: boolean
   contextItems?: (id: string) => readonly ContextMenuItem[]
+  splitDraggable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -44,6 +45,9 @@ const emit = defineEmits<{
   contextAction: [id: string, action: string]
   /** 请求父组件将标签从一个索引移动到另一个索引 */
   reorder: [fromIndex: number, toIndex: number]
+  tabDragMove: [drag: TabDragEvent]
+  tabDrop: [drag: TabDragEvent]
+  tabDragEnd: []
 }>()
 
 const active = defineModel<string>('active', { required: true })
@@ -52,6 +56,15 @@ const reorder = useTabReorder({
   tabs: () => props.tabs,
   container: () => tabList.value,
   onReorder: (fromIndex, toIndex) => emit('reorder', fromIndex, toIndex),
+  onDragMove: drag => {
+    if (props.splitDraggable) emit('tabDragMove', drag)
+  },
+  onDrop: drag => {
+    if (props.splitDraggable) emit('tabDrop', drag)
+  },
+  onDragEnd: () => {
+    if (props.splitDraggable) emit('tabDragEnd')
+  },
 })
 const menu = useTabContextMenu({
   tabs: () => props.tabs,
@@ -141,9 +154,14 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       :aria-posinset="index + 1"
       :aria-setsize="tabs.length"
       :title="
-        t('{value0} · 右键操作，中键关闭；拖动或 Alt + ←/→ 排序', {
-          value0: tab.label,
-        })
+        t(
+          splitDraggable
+            ? '{value0} · 拖到内容区边缘分屏；拖动或 Alt + ←/→ 排序'
+            : '{value0} · 右键操作，中键关闭；拖动或 Alt + ←/→ 排序',
+          {
+            value0: tab.label,
+          }
+        )
       "
       :style="
         active === tab.id
@@ -253,7 +271,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
 <style scoped>
 .tab-item {
   position: relative;
-  touch-action: pan-y;
+  touch-action: none;
   user-select: none;
 }
 

@@ -1,5 +1,10 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  移动到此标签分组: 'Move to this tab group',
+  '合并分组（保留全部连接标签）': 'Merge group (keep all connection tabs)',
+  '{value0} · 拖到内容区边缘分屏；拖动或 Alt + ←/→ 排序':
+    '{value0} · Drag to a content edge to split; drag or Alt + ←/→ to reorder',
+  '退出分屏（保留连接标签）': 'Remove from split (keep connection tab)',
   '上传图片（每张最多 5 MB）或文件（每个最多 1 GB）；支持 Ctrl+V 粘贴图片':
     'Upload images (up to 5 MB each) or files (up to 1 GB each); paste images with Ctrl+V',
   '{value0}：单张图片不能超过 5 MB':
@@ -904,8 +909,19 @@ export const en = {
   清除回滚内容: 'Clear scrollback',
   已复制终端选中内容: 'Terminal selection copied',
   终端操作失败: 'Terminal operation failed',
-  关闭分屏: 'Close split view',
-  '分屏（独立 SSH 会话）': 'Split view (independent SSH session)',
+  关闭此分屏: 'Close this split',
+  改为左右分屏: 'Switch to side-by-side split',
+  改为上下分屏: 'Switch to stacked split',
+  '分屏：点击在下方新开，按住拖到边缘可选方向':
+    'Split: click to add below, or drag to an edge to choose a direction',
+  调整分屏比例: 'Adjust split ratio',
+  '拖动调整分屏比例；双击均分':
+    'Drag to adjust the split ratio; double-click to distribute evenly',
+  '前一个面板占 {value0}%': 'Leading pane takes {value0}%',
+  在左侧分屏: 'Split to the left',
+  在右侧分屏: 'Split to the right',
+  在上方分屏: 'Split above',
+  在下方分屏: 'Split below',
   '复制选中内容 (Ctrl+Shift+C)': 'Copy selection (Ctrl+Shift+C)',
   '搜索终端 (Ctrl+F)': 'Search terminal (Ctrl+F)',
   重新启动: 'Restart',
@@ -1204,7 +1220,7 @@ export const en = {
   '{value0} 操作': 'Actions for {value0}',
   '{value0} 核 · 负载 {value1}': '{value0} cores · Load {value1}',
   '{value0} 行/页': '{value0} rows/page',
-  '{value0} · 分屏': '{value0} · Split view',
+  '{value0} · 分屏 {value1}': '{value0} · Split {value1}',
   '{value0} · 双击连接': '{value0} · Double-click to connect',
   '{value0} · 右键操作，中键关闭；拖动或 Alt + ←/→ 排序':
     '{value0} · Right-click for actions, middle-click to close; drag or Alt + ←/→ to reorder',

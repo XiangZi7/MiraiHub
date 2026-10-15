@@ -37,6 +37,8 @@ const { settings } = useSettings()
 const props = defineProps<{
   /** 当前工作区是否已开启分屏 */
   split?: boolean
+  /** 这一块是分屏出来的副面板，可以单独关掉 */
+  closable?: boolean
   /**
    * 要连接的目标。为空表示还没选服务器，此时展示空状态而不是一个连不上的终端。
    * 由上层在用户选中连接后传入。
@@ -51,8 +53,12 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** 请求打开或关闭副终端 */
+  /** 请求新增一个分屏面板 */
   split: []
+  /** 分屏按钮按下。交给上层区分这是点击还是拖拽选方向 */
+  splitPointerDown: [event: PointerEvent]
+  /** 关闭这个分屏面板 */
+  close: []
   /**
    * 连接状态变化。带上后端会话 id，
    * 让机器面板能用它去查系统指标与目录列表。
@@ -443,10 +449,10 @@ defineExpose({
 </script>
 
 <template>
-  <section class="pane bg-terminal min-w-0 flex-1">
+  <section class="terminal-pane pane bg-terminal min-w-0 flex-1">
     <!-- 会话工具条 -->
     <div
-      class="border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
+      class="terminal-header border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
     >
       <span
         :class="[
@@ -459,17 +465,17 @@ defineExpose({
           :size="6"
           :glow="status === 'connected'"
         />
-        <span>{{ statusMeta.text }}</span>
+        <span class="terminal-state-label">{{ statusMeta.text }}</span>
       </span>
 
       <span
-        class="border-line bg-card text-txt-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+        class="terminal-kind border-line bg-card text-txt-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium"
       >
         SSH
       </span>
 
       <span
-        class="text-txt-2 max-w-36 shrink-0 truncate text-[11px]"
+        class="terminal-endpoint text-txt-2 max-w-36 shrink-0 truncate text-[11px]"
         :title="
           config && !layout.recording
             ? `${config.username}@${config.host}:${config.port}`
@@ -479,14 +485,19 @@ defineExpose({
         {{ layout.recording ? t('演示服务器') : endpoint }}
       </span>
 
-      <slot name="metrics"><div class="flex-1" /></slot>
+      <div class="terminal-metrics min-w-0 flex-1">
+        <slot name="metrics"><div class="flex-1" /></slot>
+      </div>
 
       <TerminalActions
         :terminal="term"
         :status="status"
         :split="split"
+        :closable="closable"
         :available="Boolean(config)"
         @split="emit('split')"
+        @split-pointer-down="emit('splitPointerDown', $event)"
+        @close="emit('close')"
         @reconnect="reconnect"
         @disconnect="disconnectSession"
         ><slot name="actions"
@@ -577,6 +588,27 @@ defineExpose({
 </template>
 
 <style scoped>
+.terminal-pane {
+  container-type: inline-size;
+  container-name: terminal;
+}
+@container terminal (max-width: 640px) {
+  .terminal-endpoint,
+  .terminal-metrics {
+    display: none;
+  }
+}
+@container terminal (max-width: 360px) {
+  .terminal-header {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+  .terminal-state-label,
+  .terminal-kind {
+    display: none;
+  }
+}
+
 .terminal-ask-agent {
   position: absolute;
   top: 10px;

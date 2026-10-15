@@ -53,6 +53,7 @@ import type { SshSessionStatus } from '@/types/ssh'
 import { copyText } from '@/utils/clipboard'
 import { openConnectionWindow } from '@/utils/window'
 import DatabaseConnectionState from './database/DatabaseConnectionState.vue'
+import DatabaseConnectingSkeleton from './database/DatabaseConnectingSkeleton.vue'
 import DatabaseObjectNameDialog from './database/DatabaseObjectNameDialog.vue'
 import DatabaseObjectTree from './database/DatabaseObjectTree.vue'
 import DatabaseQueryResults from './database/DatabaseQueryResults.vue'
@@ -125,7 +126,7 @@ const {
   min: sidebarMin,
   max: sidebarMax,
   style: sidebarStyle,
-} = useDatabaseSidebarWidth(databaseContainer)
+} = useDatabaseSidebarWidth(databaseContainer, () => props.connection?.id)
 
 // AI 面板从标签工具栏打开，默认停靠在工作区右侧；面板标题栏可切换为全宽显示或关闭。
 // 布局与查询编辑器独立，审批始终绑定后端会话及活动库。
@@ -142,7 +143,7 @@ const {
   min: agentMin,
   max: agentMax,
   style: agentStyle,
-} = useAgentPaneWidth(agentContainer, 'database')
+} = useAgentPaneWidth(agentContainer, 'database', () => props.connection?.id)
 function toggleAgent(): void {
   if (agentState.agentOpen) {
     agentState.agentOpen = false
@@ -1539,8 +1540,11 @@ watch(
           />
         </div>
 
+        <!-- 连接中只铺骨架：等待时就能看出界面即将长成什么样，
+             真正需要用户操作的失败/未连接态才用居中卡片 -->
+        <DatabaseConnectingSkeleton v-if="status === 'connecting'" />
         <DatabaseConnectionState
-          v-if="!connected"
+          v-else-if="!connected"
           v-model:password="password"
           :status="status"
           :needs-password="needsPassword"

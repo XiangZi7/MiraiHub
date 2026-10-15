@@ -38,12 +38,12 @@ const props = defineProps<{
   active: boolean
   /** 后端 SSH 会话 id，未连上时为空串 */
   sessionId: string
-  /** 由主窗口统一管理的面板宽度 */
+  /** 当前连接独立管理并适配当前分屏的面板宽度 */
   width: number
   contextRequest?: AgentContextRequest | null
 }>()
 
-// 当前视图由 workspace-layout Store 持有，命令面板与服务器页共用。
+// 当前视图属于这条连接，文件/Agent 的切换不会影响其他分屏。
 const view = defineModel<MachineViewId>('view', { required: true })
 
 const emit = defineEmits<{
@@ -116,7 +116,8 @@ watch(
 
 <template>
   <section
-    class="pane min-w-0 shrink-0"
+    data-machine-panel
+    class="machine-pane pane min-w-0 shrink-0"
     :style="{ width: `${props.width}px` }"
   >
     <!-- 视图切换 -->
@@ -128,6 +129,8 @@ watch(
         :key="item.id"
         type="button"
         :class="cn('seg', view === item.id && 'seg-active')"
+        :title="t(item.label)"
+        :aria-label="t(item.label)"
         :aria-pressed="view === item.id"
         @click="view = item.id"
       >
@@ -135,9 +138,9 @@ watch(
           :name="item.icon"
           :size="13"
         />
-        <span>{{ t(item.label) }}</span>
+        <span v-if="width >= 300">{{ t(item.label) }}</span>
         <span
-          v-if="item.id === 'agent'"
+          v-if="item.id === 'agent' && width >= 300"
           class="text-blue bg-blue/10 rounded px-1 text-[8px]"
           >BETA</span
         >
@@ -179,3 +182,19 @@ watch(
     />
   </section>
 </template>
+
+<style scoped>
+.machine-pane {
+  container-type: inline-size;
+  container-name: machine-pane;
+}
+@container machine-pane (max-width: 360px) {
+  :deep(.remote-file-columns) {
+    grid-template-columns: minmax(0, 1fr) 60px;
+    gap: 8px;
+  }
+  :deep(.remote-file-modified) {
+    display: none;
+  }
+}
+</style>

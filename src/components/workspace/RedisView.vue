@@ -7,6 +7,7 @@ import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import TabBar from '@/components/ui/TabBar.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import DatabaseConnectionState from './database/DatabaseConnectionState.vue'
+import DatabaseConnectingSkeleton from './database/DatabaseConnectingSkeleton.vue'
 import RedisKeyBrowser from './redis/RedisKeyBrowser.vue'
 import RedisKeyDetail from './redis/RedisKeyDetail.vue'
 import RedisConsole from './redis/RedisConsole.vue'
@@ -78,13 +79,13 @@ const {
   min: sidebarMin,
   max: sidebarMax,
   style: sidebarStyle,
-} = useDatabaseSidebarWidth(container)
+} = useDatabaseSidebarWidth(container, () => props.connection.id)
 const {
   width: agentWidth,
   min: agentMin,
   max: agentMax,
   style: agentStyle,
-} = useAgentPaneWidth(agentContainer, 'database')
+} = useAgentPaneWidth(agentContainer, 'database', () => props.connection.id)
 const agentTarget = computed<AgentTarget>(() => ({
   kind: 'redis',
   sessionId: connected.value ? (session.value?.sessionId ?? '') : '',
@@ -301,8 +302,12 @@ defineExpose({
         >
           {{ error }}
         </p>
+        <DatabaseConnectingSkeleton
+          v-if="status === 'connecting'"
+          kind="redis"
+        />
         <DatabaseConnectionState
-          v-if="!connected"
+          v-else-if="!connected"
           v-model:password="password"
           kind="redis"
           :status="status"

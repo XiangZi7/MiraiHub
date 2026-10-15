@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1"
+    />
+    <title>Workspace tab split preview</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      mockWindows('main')
+      const nativeEvents = []
+      mockIPC(
+        (command, args) => {
+          if (
+            [
+              'ssh_connect',
+              'ssh_disconnect',
+              'redis_connect',
+              'redis_disconnect',
+            ].includes(command)
+          )
+            nativeEvents.push({ command, args })
+          if (command === 'ssh_list_directory') {
+            const path = args.path || '/home/' + args.sessionId
+            return {
+              path,
+              entries: [
+                {
+                  name: 'README.md',
+                  path: path + '/README.md',
+                  kind: 'file',
+                  size: 1024,
+                  modifiedAt: 1710000000,
+                  permissions: '-rw-r--r--',
+                  owner: 'preview',
+                  group: 'preview',
+                },
+              ],
+            }
+          }
+          if (command === 'ssh_connect') return 'preview-' + nativeEvents.length
+          if (command === 'redis_connect')
+            return {
+              id: 'preview-redis',
+              database: '0',
+              databases: ['0'],
+              version: '7.4',
+            }
+          if (command === 'redis_scan') return { cursor: '0', keys: [] }
+          if (command === 'settings_load') return {}
+          if (command === 'ai_get_config') return { activeId: '', profiles: [] }
+          if (
+            command.endsWith('_list') ||
+            command.endsWith('_list_conversations')
+          )
+            return []
+        },
+        { shouldMockEvents: true }
+      )
+      const [
+        { createApp, h },
+        { createPinia },
+        { createRouter, createMemoryHistory, RouterView },
+        { i18n },
+        { addCollection },
+        { default: icons },
+        { MIRAI_ICONS },
+        { default: databaseIcons },
+        { default: WorkspaceLayout },
+        { default: ServersPage },
+        { default: DatabasesPage },
+        { useWorkspaceStore },
+        { useWorkspaceLayoutStore },
+        { useConnectionsStore },
+        { useSettingsStore },
+      ] = await Promise.all([
+        import('vue'),
+        import('pinia'),
+        import('vue-router'),
+        import('/src/i18n/index.ts'),
+        import('@iconify/vue'),
+        import('virtual:mirai-icons'),
+        import('/src/constants/icons.ts'),
+        import('/src/constants/database-icons.json'),
+        import('/src/layouts/WorkspaceLayout.vue'),
+        import('/src/pages/workspace/ServersPage.vue'),
+        import('/src/pages/workspace/DatabasesPage.vue'),
+        import('/src/stores/workspace.ts'),
+        import('/src/stores/workspace-layout.ts'),
+        import('/src/stores/connections.ts'),
+        import('/src/stores/settings.ts'),
+      ])
+      await import('/src/assets/styles/main.css')
+      addCollection(icons)
+      addCollection(MIRAI_ICONS)
+      addCollection(databaseIcons)
+      i18n.global.locale.value = 'zh-CN'
+      const pinia = createPinia()
+      const workspace = useWorkspaceStore(pinia)
+      const connections = useConnectionsStore(pinia)
+      useSettingsStore(pinia).values.restoreLastSession = false
+      useWorkspaceLayoutStore(pinia).machineOpen = true
+      const saved = ['a', 'b', 'c', 'cache'].map(id => ({
+        id,
+        name: id === 'cache' ? '缓存数据库' : '服务器 ' + id.toUpperCase(),
+        kind: id === 'cache' ? 'redis' : 'ssh',
+        host: 'preview-' + id + '.invalid',
+        port: 22,
+        username: 'preview',
+        group: '',
+        tags: [],
+        tagColor: 'gray',
+        createdAt: 1,
+        lastUsedAt: 1,
+        settings:
+          id === 'cache'
+            ? { database: '0', password: '', timeoutSecs: 10 }
+            : {
+                auth: { type: 'password', password: '' },
+                timeoutSecs: 10,
+                keepaliveSecs: 30,
+                terminalType: 'xterm-256color',
+                startupCommand: '',
+              },
+      }))
+      connections.items.push(...saved)
+      connections.loaded = true
+      saved.forEach(connection => workspace.open(connection))
+      workspace.activate('b')
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+          {
+            path: '/',
+            component: WorkspaceLayout,
+            children: [
+              {
+                path: 'servers/:connectionId?',
+                name: 'servers',
+                component: ServersPage,
+                meta: { nav: 'servers' },
+              },
+              {
+                path: 'databases/:connectionId?',
+                name: 'databases',
+                component: DatabasesPage,
+                meta: { nav: 'databases' },
+              },
+            ],
+          },
+        ],
+      })
+      router.beforeEach(to => {
+        if (to.params.connectionId) workspace.activate(to.params.connectionId)
+      })
+      await router.push('/servers/b')
+      await router.isReady()
+      createApp({ render: () => h(RouterView) })
+        .use(pinia)
+        .use(router)
+        .use(i18n)
+        .mount('#app')
+      window.splitPreview = {
+        workspace,
+        router,
+        nativeEvents,
+        layout: useWorkspaceLayoutStore(pinia),
+      }
+    </script>
+  </body>
+</html>

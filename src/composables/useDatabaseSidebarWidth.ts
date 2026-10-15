@@ -1,9 +1,16 @@
-import { computed, type Ref } from 'vue'
+import { computed, toValue, type MaybeRefOrGetter, type Ref } from 'vue'
 import { useElementSize, useStorage } from '@vueuse/core'
 
 /** 记住侧栏宽度，并在窗口变窄时为右侧工作区保留空间。 */
-export function useDatabaseSidebarWidth(container: Ref<HTMLElement | null>) {
-  const preferred = useStorage('miraihub:database-sidebar-width', 248)
+export function useDatabaseSidebarWidth(
+  container: Ref<HTMLElement | null>,
+  connectionId?: MaybeRefOrGetter<string | undefined>
+) {
+  const key = computed(
+    () =>
+      `miraihub:database-sidebar-width${toValue(connectionId) ? ':' + toValue(connectionId) : ''}`
+  )
+  const preferred = useStorage(key, 248)
   const { width: containerWidth } = useElementSize(container)
   const available = computed(() => Math.max(0, containerWidth.value || 900))
   const min = computed(() => Math.round(Math.min(180, available.value * 0.4)))

@@ -579,6 +579,19 @@ body.app-resizing-columns .app-sidebar,
 body.app-resizing-columns .app-collapse {
   transition: none !important;
 }
+/* 拖分隔条期间锁定整页光标与选区。
+   放在全局而不是各个 handle 组件里：分屏的 handle 可能先于其他 handle 出现，
+   规则跟着组件走就会在只开终端分屏时丢失。 */
+body.app-resizing-columns,
+body.app-resizing-columns * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+body.app-resizing-rows,
+body.app-resizing-rows * {
+  cursor: row-resize !important;
+  user-select: none !important;
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -1,20 +1,37 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { nextTick, reactive, toRefs, useTemplateRef, watch } from 'vue'
+import {
+  nextTick,
+  onScopeDispose,
+  reactive,
+  toRefs,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import { storeToRefs } from 'pinia'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import type { SavedConnection } from '@/types/connection'
 import type { AgentContextRequest } from '@/types/agent'
-import {
-  MACHINE_MIN_WIDTH,
-  useWorkspaceLayoutStore,
-} from '@/stores/workspace-layout'
+import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
+import { useMachinePaneWidth } from '@/composables/useMachinePaneWidth'
+import { useSplitPanes, type SplitDirection } from '@/composables/useSplitPanes'
+import { useSplitDropZone } from '@/composables/useSplitDropZone'
 import TerminalPanel from './TerminalPanel.vue'
 import MachinePanel from './MachinePanel.vue'
 import ServerStatusBar from './ServerStatusBar.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppSidePane from '@/components/ui/AppSidePane.vue'
+import SplitPaneGroup from '@/components/ui/SplitPaneGroup.vue'
+import SplitDropIndicator from '@/components/ui/SplitDropIndicator.vue'
+
+/**
+ * 主面板的固定 id。
+ *
+ * Agent、服务器指标和对外上报的会话状态都绑在它身上，所以它既不换 id
+ * 也不能被关掉 —— 否则这些消费方会突然失去会话。分屏出来的都是副面板。
+ */
+const ROOT_PANE_ID = 'primary'
 
 const { t } = useI18n()
 const props = withDefaults(
@@ -32,12 +49,23 @@ const props = withDefaults(
 const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string]
 }>()
-const { machineWidth, machineOpen, machineView, machineMaxWidth, recording } =
-  storeToRefs(useWorkspaceLayoutStore())
+const layout = useWorkspaceLayoutStore()
+const { recording } = storeToRefs(layout)
+const machineKey = props.connectionId || crypto.randomUUID()
+const {
+  width: preferredMachineWidth,
+  open: machineOpen,
+  view: machineView,
+} = toRefs(layout.machinePaneFor(machineKey))
+const workspaceContainer = useTemplateRef<HTMLElement>('workspaceContainer')
+const {
+  width: machineWidth,
+  min: machineMinWidth,
+  max: machineMaxWidth,
+} = useMachinePaneWidth(workspaceContainer, preferredMachineWidth)
+onScopeDispose(() => layout.removeMachinePane(machineKey))
 // 响应式状态
 const state = reactive({
-  // 是否打开独立的第二个 SSH 终端
-  split: false,
   // 主终端会话，Agent 和服务器指标始终绑定这个会话
   sessionId: '',
   // 侧面板首次访问后保留挂载，收起时不丢失 Agent 草稿
@@ -45,12 +73,34 @@ const state = reactive({
   // 从终端显式选择、待加入 AI 草稿的上下文
   contextRequest: null as AgentContextRequest | null,
 })
-const { split, sessionId, machineVisited, contextRequest } = toRefs(state)
-const primary = useTemplateRef<InstanceType<typeof TerminalPanel>>('primary')
-const secondary =
-  useTemplateRef<InstanceType<typeof TerminalPanel>>('secondary')
+const { sessionId, machineVisited, contextRequest } = toRefs(state)
+
+const {
+  panes,
+  ratios,
+  orientation,
+  activeId: activePaneId,
+  split,
+  add: addPane,
+  remove: removePane,
+  resize: resizePane,
+  focus: focusPane,
+  toggleOrientation,
+  distributeEvenly,
+} = useSplitPanes({ rootId: ROOT_PANE_ID })
+
+type TerminalPanelInstance = InstanceType<typeof TerminalPanel>
+// 面板实例按 pane id 存取。只用于命令式调用（聚焦 / 重连），无需响应式
+const panels = new Map<string, TerminalPanelInstance>()
+function setPanelRef(id: string, el: unknown): void {
+  if (el) panels.set(id, el as TerminalPanelInstance)
+  else panels.delete(id)
+}
+
+const stack = useTemplateRef<HTMLElement>('stack')
 const machinePanel =
   useTemplateRef<InstanceType<typeof MachinePanel>>('machinePanel')
+
 watch(
   () => props.active && machineOpen.value,
   open => {
@@ -59,9 +109,24 @@ watch(
   { immediate: true }
 )
 
-function statusChanged(status: SshSessionStatus, sessionId: string): void {
-  state.sessionId = status === 'connected' ? sessionId : ''
-  emit('status', status, sessionId)
+/** 副面板只是额外的 SSH 会话，不参与对外的状态上报 */
+function statusChanged(
+  paneId: string,
+  status: SshSessionStatus,
+  session: string
+): void {
+  if (paneId !== ROOT_PANE_ID) return
+
+  state.sessionId = status === 'connected' ? session : ''
+  emit('status', status, session)
+}
+function toggleFiles(): void {
+  if (machineOpen.value && machineView.value === 'files')
+    machineOpen.value = false
+  else {
+    machineView.value = 'files'
+    machineOpen.value = true
+  }
 }
 function toggleAgent(): void {
   if (machineOpen.value && machineView.value === 'agent')
@@ -89,27 +154,59 @@ watch(
     state.contextRequest = null
   }
 )
-async function toggleSplit(): Promise<void> {
-  state.split = !state.split
+
+/** 新开一块分屏，并把焦点交给它 */
+async function openPane(direction: SplitDirection = 'down'): Promise<void> {
+  const id = addPane(direction)
   await nextTick()
-  primary.value?.focus()
+  panels.get(id)?.focus()
 }
+
+async function closePane(id: string): Promise<void> {
+  if (id === ROOT_PANE_ID) return
+
+  removePane(id)
+  await nextTick()
+  panels.get(activePaneId.value)?.focus()
+}
+
+const {
+  direction: dropDirection,
+  start: startSplitDrag,
+  consumeSuppressedClick,
+} = useSplitDropZone({
+  container: () => stack.value,
+  onDrop: direction => void openPane(direction),
+})
+
+/** 分屏按钮的点击分支。拖拽结束后浏览器补的那次 click 要忽略掉 */
+function splitClicked(): void {
+  if (consumeSuppressedClick()) return
+  void openPane('down')
+}
+
+function paneTitle(id: string, index: number): string {
+  const base = props.title || props.config.host
+  if (id === ROOT_PANE_ID) return props.title ?? base
+
+  return t('{value0} · 分屏 {value1}', { value0: base, value1: index + 1 })
+}
+
 defineExpose({
   reconnectFor: async (id: string) => {
     if (props.connectionId !== id) return
-    await primary.value?.reconnect()
-    await secondary.value?.reconnect()
+    for (const panel of panels.values()) await panel.reconnect()
   },
   disconnectFor: async (id: string) => {
     if (props.connectionId !== id) return
-    await primary.value?.disconnect()
-    await secondary.value?.disconnect()
+    for (const panel of panels.values()) await panel.disconnect()
   },
   focusFor: (id: string) => {
-    if (props.connectionId === id) primary.value?.focus()
+    if (props.connectionId !== id) return
+    ;(panels.get(activePaneId.value) ?? panels.get(ROOT_PANE_ID))?.focus()
   },
   splitFor: async (id: string) => {
-    if (props.connectionId === id) await toggleSplit()
+    if (props.connectionId === id) await openPane('down')
   },
   uploadFor: async (id: string) => {
     if (props.connectionId !== id) return
@@ -122,48 +219,96 @@ defineExpose({
 </script>
 
 <template>
-  <div class="ssh-workspace">
-    <div class="terminal-stack">
-      <TerminalPanel
-        ref="primary"
-        :config="config"
-        :title="title"
-        :terminal-type="terminalType"
-        :startup-command="startupCommand"
-        :split="split"
-        @split="toggleSplit"
-        @status="statusChanged"
-        @ask-agent="askAgent"
+  <div
+    ref="workspaceContainer"
+    :data-ssh-workspace="machineKey"
+    class="flex min-h-0 min-w-0 flex-1"
+  >
+    <!-- 投放提示绝对定位在这一层，所以它得是分屏组的定位父级 -->
+    <div
+      ref="stack"
+      class="relative flex min-h-0 min-w-0 flex-1"
+    >
+      <SplitPaneGroup
+        :panes="panes"
+        :ratios="ratios"
+        :orientation="orientation"
+        :active-id="activePaneId"
+        @resize="resizePane"
+        @reset="distributeEvenly"
       >
-        <template #metrics>
-          <ServerStatusBar
-            :session-id="sessionId"
-            :active="active"
-          />
+        <template #pane="{ pane, index }">
+          <TerminalPanel
+            :ref="el => setPanelRef(pane.id, el)"
+            :config="config"
+            :title="paneTitle(pane.id, index)"
+            :terminal-type="terminalType"
+            :startup-command="
+              pane.id === ROOT_PANE_ID ? startupCommand : undefined
+            "
+            :split="split"
+            :closable="pane.id !== ROOT_PANE_ID"
+            @pointerdown.capture="focusPane(pane.id)"
+            @split="splitClicked"
+            @split-pointer-down="startSplitDrag"
+            @close="closePane(pane.id)"
+            @status="
+              (status, session) => statusChanged(pane.id, status, session)
+            "
+            @ask-agent="askAgent"
+          >
+            <template
+              v-if="pane.id === ROOT_PANE_ID"
+              #metrics
+            >
+              <ServerStatusBar
+                :session-id="sessionId"
+                :active="active"
+              />
+            </template>
+            <template
+              v-if="pane.id === ROOT_PANE_ID"
+              #actions
+            >
+              <IconButton
+                v-if="split"
+                :icon="
+                  orientation === 'vertical'
+                    ? 'lucide:columns-2'
+                    : 'lucide:rows-2'
+                "
+                :size="14"
+                :title="
+                  orientation === 'vertical'
+                    ? t('改为左右分屏')
+                    : t('改为上下分屏')
+                "
+                @click="toggleOrientation"
+              />
+              <IconButton
+                icon="lucide:folder-open"
+                :size="14"
+                :title="t('远端文件')"
+                :class="machineOpen && machineView === 'files' && 'text-accent'"
+                :aria-pressed="machineOpen && machineView === 'files'"
+                @click="toggleFiles"
+              />
+              <IconButton
+                icon="lucide:bot"
+                :size="14"
+                :title="t('AI Agent 分屏')"
+                :class="machineOpen && machineView === 'agent' && 'text-accent'"
+                :aria-pressed="machineOpen && machineView === 'agent'"
+                @click="toggleAgent"
+              />
+            </template>
+          </TerminalPanel>
         </template>
-        <template #actions>
-          <IconButton
-            icon="lucide:bot"
-            :size="14"
-            :title="t('AI Agent 分屏')"
-            :class="machineOpen && machineView === 'agent' && 'text-accent'"
-            :aria-pressed="machineOpen && machineView === 'agent'"
-            @click="toggleAgent"
-          />
-        </template>
-      </TerminalPanel>
-      <Transition name="terminal-split">
-        <TerminalPanel
-          ref="secondary"
-          v-if="split"
-          :config="config"
-          :title="t('{value0} · 分屏', { value0: title || config.host })"
-          :terminal-type="terminalType"
-          split
-          @split="toggleSplit"
-          @ask-agent="askAgent"
-        />
-      </Transition>
+      </SplitPaneGroup>
+      <SplitDropIndicator
+        v-if="dropDirection"
+        :direction="dropDirection"
+      />
     </div>
     <AppSidePane
       v-if="machineVisited"
@@ -174,7 +319,7 @@ defineExpose({
         v-show="!recording"
         v-model="machineWidth"
         pane-side="right"
-        :min="MACHINE_MIN_WIDTH"
+        :min="machineMinWidth"
         :max="machineMaxWidth"
         :label="t('调整机器面板宽度')"
       />
@@ -193,33 +338,3 @@ defineExpose({
     </AppSidePane>
   </div>
 </template>
-
-<style scoped>
-.ssh-workspace {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-.terminal-stack {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  gap: 8px;
-}
-.terminal-split-enter-active,
-.terminal-split-leave-active {
-  transition:
-    flex-grow var(--motion-panel),
-    opacity var(--motion-panel),
-    transform var(--motion-panel);
-}
-.terminal-split-enter-from,
-.terminal-split-leave-to {
-  flex-grow: 0 !important;
-  opacity: 0;
-  transform: translateY(8px);
-}
-</style>

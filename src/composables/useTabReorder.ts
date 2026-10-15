@@ -1,4 +1,4 @@
-import { computed, shallowRef } from 'vue'
+import { computed, onScopeDispose, shallowRef } from 'vue'
 import { useEventListener } from '@vueuse/core'
 
 interface ReorderableTab {
@@ -7,10 +7,19 @@ interface ReorderableTab {
 
 type DropPosition = 'before' | 'after'
 
+export interface TabDragEvent {
+  id: string
+  clientX: number
+  clientY: number
+}
+
 interface TabReorderOptions<T extends ReorderableTab> {
   tabs: () => readonly T[]
   container: () => HTMLElement | null
   onReorder: (fromIndex: number, toIndex: number) => void
+  onDragMove?: (drag: TabDragEvent) => void
+  onDrop?: (drag: TabDragEvent) => void
+  onDragEnd?: () => void
 }
 
 interface DropTarget {
@@ -108,12 +117,14 @@ export function useTabReorder<T extends ReorderableTab>(
   }
 
   function reset(): void {
+    const wasDragging = dragging.value
     activePointerId = -1
     sourceId = ''
     dragging.value = false
     draggedId.value = ''
     targetId.value = ''
     targetPosition.value = ''
+    if (wasDragging) options.onDragEnd?.()
   }
 
   function start(event: PointerEvent, id: string): void {
@@ -127,6 +138,8 @@ export function useTabReorder<T extends ReorderableTab>(
     )
       return
 
+    suppressedClickId = ''
+    clearTimeout(suppressClickTimer)
     activePointerId = event.pointerId
     startX = event.clientX
     startY = event.clientY
@@ -153,6 +166,11 @@ export function useTabReorder<T extends ReorderableTab>(
     }
 
     event.preventDefault()
+    options.onDragMove?.({
+      id: sourceId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+    })
     const target = dropTargetAtPoint(event.clientX, event.clientY)
     if (!target || target.id === sourceId) {
       targetId.value = ''
@@ -180,6 +198,12 @@ export function useTabReorder<T extends ReorderableTab>(
       }, 0)
     }
 
+    if (wasDragging)
+      options.onDrop?.({
+        id: currentSourceId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      })
     reset()
     if (!target || target.id === currentSourceId) return
 
@@ -195,6 +219,10 @@ export function useTabReorder<T extends ReorderableTab>(
 
   function cancel(event?: PointerEvent): void {
     if (event && event.pointerId !== activePointerId) return
+    if (dragging.value) {
+      suppressedClickId = sourceId
+      clearTimeout(suppressClickTimer)
+    }
     reset()
   }
 
@@ -212,10 +240,17 @@ export function useTabReorder<T extends ReorderableTab>(
     options.onReorder(fromIndex, toIndex)
   }
 
-  useEventListener(window, 'pointermove', move, { passive: false })
-  useEventListener(window, 'pointerup', finish)
-  useEventListener(window, 'pointercancel', cancel)
-  useEventListener(window, 'blur', () => cancel())
+  useEventListener('pointermove', move, { passive: false })
+  useEventListener('pointerup', finish)
+  useEventListener('pointercancel', cancel)
+  useEventListener('blur', () => cancel())
+  useEventListener('keydown', event => {
+    if (event.key === 'Escape') cancel()
+  })
+  onScopeDispose(() => {
+    reset()
+    clearTimeout(suppressClickTimer)
+  })
 
   return {
     dragging,

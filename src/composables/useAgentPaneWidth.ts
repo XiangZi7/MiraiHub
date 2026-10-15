@@ -1,12 +1,17 @@
-import { computed, type Ref } from 'vue'
+import { computed, toValue, type MaybeRefOrGetter, type Ref } from 'vue'
 import { useElementSize, useStorage } from '@vueuse/core'
 
 /** Remember the user's width while fitting both panes into the current container. */
 export function useAgentPaneWidth(
   container: Ref<HTMLElement | null>,
-  kind: 'ssh' | 'database'
+  kind: 'ssh' | 'database',
+  connectionId?: MaybeRefOrGetter<string | undefined>
 ) {
-  const preferred = useStorage(`miraihub:agent-pane-width:${kind}`, 400)
+  const key = computed(
+    () =>
+      `miraihub:agent-pane-width:${kind}${toValue(connectionId) ? ':' + toValue(connectionId) : ''}`
+  )
+  const preferred = useStorage(key, 400)
   const { width: containerWidth } = useElementSize(container)
   const available = computed(() =>
     Math.max(0, (containerWidth.value || 900) - 10)

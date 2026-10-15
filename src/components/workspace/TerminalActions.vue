@@ -25,11 +25,21 @@ const { t } = useI18n()
 const props = defineProps<{
   terminal?: Terminal
   status: SshSessionStatus
+  /** 当前工作区是否已分屏，仅用于按钮高亮 */
   split?: boolean
+  /** 这一块是分屏出来的副面板，可以单独关掉 */
+  closable?: boolean
   local?: boolean
   available: boolean
 }>()
-const emit = defineEmits<{ split: []; reconnect: []; disconnect: [] }>()
+const emit = defineEmits<{
+  split: []
+  /** 分屏按钮按下。交给上层判断是点击还是拖拽选方向 */
+  splitPointerDown: [event: PointerEvent]
+  close: []
+  reconnect: []
+  disconnect: []
+}>()
 const input = useTemplateRef<HTMLInputElement>('input')
 const menuTrigger = shallowRef<HTMLElement | null>(null)
 // 响应式状态
@@ -269,25 +279,37 @@ function insertCommand(command: string): void {
 </script>
 
 <template>
-  <div class="relative flex shrink-0 items-center gap-1">
-    <TerminalCommandMenu
+  <div class="relative ml-auto flex shrink-0 items-center gap-1">
+    <div
       v-if="!local"
-      :connected="status === 'connected' && Boolean(terminal)"
-      @insert="insertCommand"
-    />
+      class="terminal-secondary-action"
+    >
+      <TerminalCommandMenu
+        :connected="status === 'connected' && Boolean(terminal)"
+        @insert="insertCommand"
+      />
+    </div>
     <IconButton
       v-if="!local"
       icon="lucide:rows-2"
       :size="14"
-      :title="split ? t('关闭分屏') : t('分屏（独立 SSH 会话）')"
+      :title="t('分屏：点击在下方新开，按住拖到边缘可选方向')"
       :disabled="!available"
       :class="split && 'text-accent'"
-      :aria-pressed="Boolean(split)"
+      @pointerdown="emit('splitPointerDown', $event)"
       @click="emit('split')"
+    />
+    <IconButton
+      v-if="closable"
+      icon="lucide:x"
+      :size="14"
+      :title="t('关闭此分屏')"
+      @click="emit('close')"
     />
     <slot />
     <IconButton
       icon="lucide:copy"
+      class="terminal-secondary-action"
       :size="14"
       :title="t('复制选中内容 (Ctrl+Shift+C)')"
       :disabled="!state.hasSelection"
@@ -295,6 +317,7 @@ function insertCommand(command: string): void {
     />
     <IconButton
       icon="lucide:search"
+      class="terminal-secondary-action"
       :size="14"
       :title="t('搜索终端 (Ctrl+F)')"
       :disabled="!terminal"
@@ -368,3 +391,11 @@ function insertCommand(command: string): void {
     />
   </div>
 </template>
+
+<style scoped>
+@container terminal (max-width: 640px) {
+  .terminal-secondary-action {
+    display: none;
+  }
+}
+</style>

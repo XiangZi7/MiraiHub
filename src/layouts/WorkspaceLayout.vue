@@ -19,7 +19,7 @@ import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import WindowControls from '@/components/ui/WindowControls.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
-import WorkspaceTabBar from '@/components/workspace/WorkspaceTabBar.vue'
+import WorkspaceConnectionViews from '@/components/workspace/WorkspaceConnectionViews.vue'
 import NavigationControls from '@/components/workspace/NavigationControls.vue'
 import AppSidebar from '@/components/workspace/AppSidebar.vue'
 import CommandPalette from '@/components/workspace/CommandPalette.vue'
@@ -27,10 +27,13 @@ import NotificationCenter from '@/components/workspace/NotificationCenter.vue'
 import WorkspaceHelp from '@/components/workspace/WorkspaceHelp.vue'
 import TransferCenter from '@/components/workspace/TransferCenter.vue'
 import RemoteEditorHost from '@/components/operations/RemoteEditorHost.vue'
-import ServerOperations from '@/components/operations/ServerOperations.vue'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { provideWorkspaceControllers } from '@/composables/useWorkspaceControllers'
+import {
+  provideWorkspaceTabSplit,
+  useWorkspaceTabSplit,
+} from '@/composables/useWorkspaceTabSplit'
 import { useSettingsStore } from '@/stores/settings'
 import { useConnectionsStore } from '@/stores/connections'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -63,12 +66,17 @@ const connections = useConnectionsStore()
 const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
-const { reorder: reorderWorkspaceTabs } = workspace
 const layout = useWorkspaceLayoutStore()
 const { sidebarWidth, sidebarCollapsed, recording } = storeToRefs(layout)
 const { activeNav, selectNav, openConnection, selectTab, followActiveTab } =
   useWorkspaceNavigation()
 const controllers = provideWorkspaceControllers()
+const tabSplit = useWorkspaceTabSplit({
+  tabs: () => openTabs,
+  activeId: () => activeId.value,
+  enabled: () => ['servers', 'databases'].includes(activeNav.value),
+})
+provideWorkspaceTabSplit(tabSplit)
 // 标签栏不再放全屏按钮，但 F11 / Esc 仍然要能用，所以这里只挂监听不取返回值。
 useFullscreen()
 const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
@@ -128,7 +136,9 @@ function addConnection(): void {
 }
 function closeTabs(ids: string[]): void {
   const wasActive = ids.includes(activeId.value)
+  const preferred = tabSplit.preferredAfterClose(ids)
   workspace.closeMany(ids)
+  if (preferred) workspace.activate(preferred)
   if (wasActive) void followActiveTab()
 }
 function closeWarning(ids: string[]): string {
@@ -187,8 +197,9 @@ async function runCommand(item: CommandItem): Promise<void> {
   }
   if (target.nav) await selectNav(target.nav)
   if (target.machineView) {
-    layout.machineOpen = true
-    layout.machineView = target.machineView
+    const tab = activeSshTab.value
+    if (tab) layout.openMachinePane(tab.id, target.machineView)
+    else toast.info(t('请先打开一个 SSH 连接'))
   }
   if (target.focusSearch) await nextTick(() => searchRef.value?.focus())
 }
@@ -331,34 +342,20 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       />
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <!-- 连接标签栏 -->
-        <div
-          class="border-line-soft flex h-11 shrink-0 items-end gap-2 border-b px-2.5"
-        >
-          <WorkspaceTabBar
-            :active="activeId"
-            :tabs="openTabs"
+        <!-- 主视图：跟随侧栏切换。各视图自带 .pane，浮在窗口底色上 -->
+        <div class="flex min-h-0 flex-1">
+          <WorkspaceConnectionViews
             :close-warning="closeWarning"
-            addable
-            class="flex-1"
-            @update:active="selectTab"
             @add="addConnection"
             @close-many="closeTabs"
             @action="tabAction"
-            @reorder="reorderWorkspaceTabs"
           />
-          <div class="flex items-center gap-0.5 pb-1.5">
-            <ServerOperations :session-id="activeSshTab?.sessionId" />
-          </div>
-        </div>
-
-        <!-- 主视图：跟随侧栏切换。各视图自带 .pane，浮在窗口底色上 -->
-        <div class="flex min-h-0 flex-1 p-2.5">
           <RouterView v-slot="{ Component, route }">
             <KeepAlive>
               <component
                 :is="Component"
                 :key="route.name"
+                v-if="route.name !== 'servers' && route.name !== 'databases'"
               />
             </KeepAlive>
           </RouterView>

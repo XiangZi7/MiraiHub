@@ -114,7 +114,7 @@ async function navigate(event: KeyboardEvent): Promise<void> {
         :aria-selected="selected === row.file.path"
         :aria-posinset="row.index + 1"
         :aria-setsize="files.length"
-        class="grid w-full cursor-default grid-cols-[1fr_80px_130px] items-center gap-3 px-3 text-left text-xs"
+        class="remote-file-columns grid w-full cursor-default grid-cols-[1fr_80px_130px] items-center gap-3 px-3 text-left text-xs"
         :class="selected === row.file.path ? 'bg-raised' : 'hover:bg-hover'"
         :style="{ height: `${rowHeight}px` }"
         :title="`${row.file.permissions}  ${row.file.owner}:${row.file.group}`"
@@ -136,7 +136,9 @@ async function navigate(event: KeyboardEvent): Promise<void> {
           >
         </span>
         <span class="text-txt-3 text-right">{{ row.size }}</span>
-        <span class="text-txt-3 truncate">{{ row.modified }}</span>
+        <span class="remote-file-modified text-txt-3 truncate">{{
+          row.modified
+        }}</span>
       </div>
     </div>
     <slot />

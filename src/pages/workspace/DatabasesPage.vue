@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { registerWorkspaceController } from '@/composables/useWorkspaceControllers'
+import { injectWorkspaceTabSplit } from '@/composables/useWorkspaceTabSplit'
 import { isDatabaseConnection } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
 import DatabaseView from '@/components/workspace/DatabaseView.vue'
@@ -12,6 +13,10 @@ const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
 const { activeNav } = useWorkspaceNavigation()
+const tabSplit = injectWorkspaceTabSplit()
+function visible(id: string): boolean {
+  return tabSplit ? tabSplit.isVisible(id) : activeId.value === id
+}
 const views =
   useTemplateRef<
     Array<InstanceType<typeof DatabaseView> | InstanceType<typeof RedisView>>
@@ -57,18 +62,33 @@ registerWorkspaceController('databases', {
 </script>
 <template>
   <div class="contents">
-    <component
+    <Teleport
       v-for="tab in databaseTabViews"
-      :is="tab.connection.kind === 'redis' ? RedisView : DatabaseView"
-      v-show="activeId === tab.id"
-      ref="databaseViews"
       :key="tab.id"
-      :connection="tab.connection"
-      :active="activeId === tab.id && activeNav === 'databases'"
-      @status="
-        (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
-      "
-    />
-    <DatabaseView v-if="!activeDatabaseConnection" />
+      :to="tabSplit?.targetFor(tab.id) ?? 'body'"
+      :disabled="!tabSplit?.targetFor(tab.id)"
+    >
+      <component
+        :is="tab.connection.kind === 'redis' ? RedisView : DatabaseView"
+        v-show="visible(tab.id)"
+        ref="databaseViews"
+        :connection="tab.connection"
+        :active="
+          visible(tab.id) && (Boolean(tabSplit) || activeNav === 'databases')
+        "
+        @status="
+          (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
+        "
+      />
+    </Teleport>
+    <Teleport
+      :to="tabSplit?.targetFor(activeId) ?? 'body'"
+      :disabled="!tabSplit?.targetFor(activeId)"
+    >
+      <DatabaseView
+        v-if="!activeDatabaseConnection"
+        v-show="activeNav === 'databases'"
+      />
+    </Teleport>
   </div>
 </template>

@@ -441,7 +441,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     @drop.prevent="handleBrowserDrop"
   >
     <div
-      class="border-line-soft flex h-9 shrink-0 items-center gap-0.5 border-b px-2"
+      class="scroll-none border-line-soft flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2"
     >
       <IconButton
         icon="lucide:house"
@@ -561,11 +561,11 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     </div>
 
     <div
-      class="border-line-soft text-txt-3 grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b px-3 py-1.5 text-[11px] font-medium"
+      class="remote-file-columns border-line-soft text-txt-3 grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b px-3 py-1.5 text-[11px] font-medium"
     >
       <span> {{ t('Name') }} </span>
       <span class="text-right"> {{ t('Size') }} </span>
-      <span> {{ t('Modified') }} </span>
+      <span class="remote-file-modified"> {{ t('Modified') }} </span>
     </div>
 
     <RemoteFileList

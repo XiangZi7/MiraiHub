@@ -39,8 +39,18 @@ const sessionsUrl = dataModule(`
   export const useLocalTerminal = () => useTerminal('local')
 `)
 const { sessions } = await import(sessionsUrl)
+const gesturesUrl = dataModule(`
+  import { shallowRef } from ${vueUrl}
+  export const drops = []
+  export function useSplitDropZone(options) {
+    drops.push(options.onDrop)
+    return { direction: shallowRef(null), start() {}, consumeSuppressedClick: () => false }
+  }
+`)
+const { drops } = await import(gesturesUrl)
 const load = sourceLoader(
   {
+    '@/composables/useSplitDropZone': gesturesUrl,
     '@/composables/useSshTerminal': sessionsUrl,
     '@/composables/useLocalTerminal': sessionsUrl,
     '@/composables/useSshShellCompletion': dataModule(`
@@ -52,6 +62,7 @@ const load = sourceLoader(
     '@vueuse/core': dataModule(`
       import { shallowRef } from ${vueUrl}
       export function useResizeObserver() {}
+      export function useEventListener() {}
       export const useWindowSize = () => ({ width: shallowRef(1400) })
       export const useElementSize = () => ({ width: shallowRef(900) })
       export const useStorage = (_key, value) => shallowRef(value)
@@ -80,6 +91,8 @@ const load = sourceLoader(
   [
     'src/pages/workspace/ServersPage.vue',
     'src/components/workspace/SshTerminalWorkspace.vue',
+    // 终端面板现在挂在分屏组的插槽里，这层不真实渲染就拿不到会话
+    'src/components/ui/SplitPaneGroup.vue',
     'src/components/workspace/TerminalPanel.vue',
     'src/components/workspace/LocalTerminalPanel.vue',
   ]
@@ -117,6 +130,7 @@ function connection(id, kind = 'ssh') {
 
 async function fixture(t, connections) {
   sessions.length = 0
+  drops.length = 0
   const pinia = createPinia()
   setActivePinia(pinia)
   const workspace = useWorkspaceStore()
@@ -259,4 +273,23 @@ test('本地终端同值配置不重启，修改工作目录仍启动新会话',
   assert.equal(session.connects.at(-1).config.workingDirectory, 'D:/other')
   assert.deepEqual(session.closed, [id])
   assert.equal(session.mounts, 1)
+})
+
+test('向左和向上分屏保持主会话、启动命令和状态绑定，副面板不重复执行启动命令', async t => {
+  const original = connection('a')
+  original.settings.startupCommand = 'pwd'
+  const workspace = await fixture(t, [original])
+  const primary = sessions[0]
+  const id = primary.sessionId.value
+  for (const direction of ['left', 'up']) {
+    drops[0](direction)
+    await flush()
+    assertConnectedOnce(primary, id)
+    assert.equal(workspace.tabs[0].sessionId, id)
+  }
+  assert.equal(sessions.length, 3)
+  for (const secondary of sessions.slice(1)) {
+    assert.equal(secondary.connects.length, 1)
+    assert.equal(secondary.connects[0].options.startupCommand, undefined)
+  }
 })

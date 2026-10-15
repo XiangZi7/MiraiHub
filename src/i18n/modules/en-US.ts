@@ -141,7 +141,7 @@ export default {
   启动本地终端: 'Start local terminal',
   停止本地终端: 'Stop local terminal',
   断开连接: 'Disconnect',
-  '新建 / 关闭分屏终端': 'Open / close split terminal',
+  新建分屏终端: 'New split terminal',
   打开远端文件: 'Open remote files',
   编辑连接配置: 'Edit connection',
   复制连接信息: 'Copy connection details',
