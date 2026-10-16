@@ -1,5 +1,5 @@
 import type { ITheme } from '@xterm/xterm'
-import { rgba } from '@/utils/color'
+import { parseColor, rgba } from '@/utils/color'
 
 /**
  * xterm.js 配色。
@@ -51,7 +51,6 @@ const LIGHT_TERMINAL_THEME: ITheme = {
   foreground: '#3b3744',
   cursor: '#6d3fc4',
   cursorAccent: '#fbfaff',
-  selectionBackground: '#6d3fc433',
   black: '#413d4a',
   red: '#b03030',
   green: '#2f7350',
@@ -71,6 +70,17 @@ const LIGHT_TERMINAL_THEME: ITheme = {
   brightWhite: '#413d4a',
 }
 
+function lightSelectionBackground(opacity: number): string {
+  const background = parseColor('var(--color-terminal)')
+  const accent = parseColor('var(--color-accent)')
+  // xterm 会把半透明选区与 theme.background 的透明黑色混合，生成深色实底。
+  // 先与浅色终端底色混合，再传入不透明色，保留 ANSI 文字颜色与透明终端背景。
+  const channels = background.map((channel, index) =>
+    Math.round(channel + (accent[index]! - channel) * opacity)
+  )
+  return `rgb(${channels.join(', ')})`
+}
+
 /** Resolve CSS tokens to sRGB for xterm's canvas, including custom CSS colors. */
 export function currentTerminalTheme(): ITheme {
   const light = document.documentElement.dataset.skinScheme === 'light'
@@ -81,6 +91,11 @@ export function currentTerminalTheme(): ITheme {
     green: rgba('var(--color-term-green)', 1),
     blue: rgba('var(--color-term-blue)', 1),
     cyan: rgba('var(--color-term-cyan)', 1),
-    selectionBackground: rgba('var(--color-accent)', 0.24),
+    selectionBackground: light
+      ? lightSelectionBackground(0.16)
+      : rgba('var(--color-accent)', 0.24),
+    selectionInactiveBackground: light
+      ? lightSelectionBackground(0.1)
+      : undefined,
   }
 }
