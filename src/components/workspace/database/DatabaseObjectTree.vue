@@ -45,6 +45,7 @@ const emit = defineEmits<{
   query: [object: DatabaseObject]
   copy: [object: DatabaseObject]
   selectDatabase: [name: string]
+  selectSchema: [name: string]
   createDatabase: []
   createObject: [schema: string, kind: DatabaseObjectKind]
   newQuery: [schema?: string]
@@ -395,6 +396,11 @@ function toggle(key: string): void {
   else expanded.add(key)
 }
 
+function selectSchema(name: string): void {
+  toggle(`schema:${name}`)
+  emit('selectSchema', name)
+}
+
 function selectObject(object: DatabaseObject): void {
   selectedKey.value = databaseObjectKey(object)
   if (object.kind === 'table' || object.kind === 'view') emit('inspect', object)
@@ -508,19 +514,13 @@ function handleContextAction(id: string): void {
 
     <div class="scroll-thin flex-1 overflow-y-auto p-1.5">
       <div
-        v-if="loading && !objects.length && !savedQueries.length"
-        class="text-txt-4 px-2 py-3 text-[11px]"
-      >
-        {{ t('正在读取数据库结构…') }}
-      </div>
-      <div
-        v-else-if="error && !objects.length && !savedQueries.length"
+        v-if="error && !objects.length && !savedQueries.length"
         class="text-txt-4 px-2 py-3 text-[11px] leading-5"
       >
         {{ t('对象列表加载失败，请刷新重试') }}
       </div>
       <div
-        v-else-if="!schemas.length"
+        v-else-if="!loading && !schemas.length"
         class="text-txt-4 px-2 py-3 text-[11px]"
       >
         {{ t('当前连接中没有可显示的数据库对象') }}
@@ -539,10 +539,7 @@ function handleContextAction(id: string): void {
             )
           "
           :aria-expanded="expanded.has(`schema:${schema.name}`)"
-          @click.stop="toggle(`schema:${schema.name}`)"
-          @dblclick.stop="
-            databaseKind === 'mysql' && emit('selectDatabase', schema.name)
-          "
+          @click.stop="selectSchema(schema.name)"
           @contextmenu.prevent.stop="
             showContext($event, 'database', { database: schema.name })
           "

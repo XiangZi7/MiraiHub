@@ -291,6 +291,7 @@ const state = reactive({
   transferMode: null as DatabaseTransferMode | null,
   // 正在切换到右键选中的目标库，防止重复打开弹窗。
   preparingTransfer: false,
+  overviewSchema: '',
 })
 const { transferMode } = toRefs(state)
 
@@ -302,6 +303,7 @@ const {
   needsPassword,
   databases,
   databasesLoading,
+  selectedDatabase: browsedDatabase,
   objects,
   objectsLoading,
   objectsError,
@@ -352,9 +354,24 @@ const databaseOptions = computed(() =>
   databases.value.map(name => ({ value: name, label: name }))
 )
 const selectedDatabase = computed({
-  get: () => session.value?.database ?? '',
+  get: () => browsedDatabase.value,
   set: (value: string) => void changeDatabase(value),
 })
+
+const overviewSchema = computed(() =>
+  databaseKind.value === 'mysql' ? browsedDatabase.value : state.overviewSchema
+)
+const overviewObjects = computed(() =>
+  objects.value.filter(object => object.schema === overviewSchema.value)
+)
+watch(sessionId, () => {
+  state.overviewSchema = ''
+})
+
+function selectSchema(name: string): void {
+  if (databaseKind.value === 'mysql') void changeDatabase(name)
+  else state.overviewSchema = name
+}
 
 watch(objectsError, error => {
   if (error) toast.error({ title: t('读取数据库对象失败'), description: error })
@@ -461,8 +478,13 @@ const canRun = computed(
   () =>
     connected.value && Boolean(activeSql.value.trim()) && !queryLoading.value
 )
+const completionSessionId = computed(() =>
+  browsedDatabase.value && browsedDatabase.value === session.value?.database
+    ? sessionId.value
+    : ''
+)
 const completionColumns = useDatabaseCompletions(
-  sessionId,
+  completionSessionId,
   databaseName,
   objects
 )
@@ -611,7 +633,12 @@ defineExpose({
 })
 
 async function refreshAll(): Promise<void> {
-  await Promise.all([refreshDatabases(), refreshObjects()])
+  await Promise.all([
+    refreshDatabases(),
+    browsedDatabase.value && browsedDatabase.value !== session.value?.database
+      ? switchDatabase(browsedDatabase.value)
+      : refreshObjects(),
+  ])
 }
 
 function addQueryTab(
@@ -1237,9 +1264,16 @@ function handleHistoryAction(id: string): void {
 
 async function changeDatabase(value: string): Promise<void> {
   if (state.transferMode) return
-  if (!value || value === session.value?.database) return
+  if (!value) return
+  if (
+    value === browsedDatabase.value &&
+    value === session.value?.database &&
+    !objectsError.value
+  )
+    return
   for (const tab of [...queryState.tabs])
     if (tab.kind === 'object' || tab.kind === 'table-designer') closeTab(tab.id)
+  if (databaseKind.value === 'postgresql') state.overviewSchema = ''
   await switchDatabase(value)
 }
 
@@ -1319,7 +1353,7 @@ watch(
       :style="sidebarStyle"
       :database-name="databaseName"
       :database-kind="databaseKind"
-      :active-database="session?.database ?? ''"
+      :active-database="overviewSchema"
       :database-names="databaseKind === 'mysql' ? databases : []"
       :objects="objects"
       :saved-queries="savedQueries"
@@ -1335,6 +1369,7 @@ watch(
       @query="createObjectQuery"
       @copy="copyObjectName"
       @select-database="changeDatabase"
+      @select-schema="selectSchema"
       @export-database="openDatabaseTransfer($event, 'export')"
       @import-database="openDatabaseTransfer($event, 'import')"
       @create-database="showNameDialog('create-database')"
@@ -1505,6 +1540,7 @@ watch(
               />
             </div>
             <span
+              v-if="status !== 'connecting'"
               class="database-toolbar-detail text-txt-3 max-w-32 truncate text-[11px]"
               :title="
                 session
@@ -1514,9 +1550,7 @@ watch(
               >{{
                 connected
                   ? `${databaseKind} · ${session?.serverVersion || databaseName}`
-                  : status === 'connecting'
-                    ? 'Connecting…'
-                    : 'Disconnected'
+                  : 'Disconnected'
               }}</span
             >
           </div>
@@ -1548,7 +1582,8 @@ watch(
         <template v-else>
           <DatabaseTableOverview
             v-if="!activeTab"
-            :objects="objects"
+            :objects="overviewObjects"
+            :selected="Boolean(overviewSchema)"
             :loading="objectsLoading"
             :error="objectsError"
             @open="openObject"
@@ -1625,9 +1660,7 @@ watch(
       </div>
       <AppSidePane
         :open="agentOpen"
-        :width="
-          agentSplit ? agentWidth + 10 : undefined
-        "
+        :width="agentSplit ? agentWidth + 10 : undefined"
       >
         <AppResizeHandle
           v-if="agentSplit"

@@ -6,12 +6,17 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 
 const { t } = useI18n()
 
-const props = withDefaults(defineProps<{ kind?: 'database' | 'redis' }>(), {
-  kind: 'database',
-})
+const props = withDefaults(
+  defineProps<{ kind?: 'database' | 'redis'; label?: string }>(),
+  {
+    kind: 'database',
+  }
+)
 
-const label = computed(() =>
-  props.kind === 'redis' ? t('正在连接 Redis…') : t('正在连接数据库…')
+const label = computed(
+  () =>
+    props.label ??
+    (props.kind === 'redis' ? t('正在连接 Redis…') : t('正在连接数据库…'))
 )
 
 /**
@@ -73,6 +78,7 @@ const ROW_WIDTHS = [
 
     <!-- 底部细状态条：等待信息留在视线边缘，不挡住正在成形的界面 -->
     <div
+      v-if="kind === 'redis'"
       class="border-line-soft bg-card/60 text-txt-3 flex shrink-0 items-center gap-2 border-t px-3 py-2 text-[11px]"
     >
       <AppIcon

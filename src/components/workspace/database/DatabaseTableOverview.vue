@@ -10,11 +10,13 @@ import { databaseObjectKey } from '@/composables/useDatabaseSession'
 import type { DatabaseObject } from '@/types/database'
 import { cn } from '@/utils/cn'
 import DatabaseObjectContextMenu from './DatabaseObjectContextMenu.vue'
+import DatabaseConnectingSkeleton from './DatabaseConnectingSkeleton.vue'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   objects: readonly DatabaseObject[]
+  selected: boolean
   loading: boolean
   error: string
 }>()
@@ -92,18 +94,10 @@ watch([() => props.objects, () => props.loading], () => {
     :aria-label="t('当前数据库的表')"
     :aria-busy="loading"
   >
-    <div
+    <DatabaseConnectingSkeleton
       v-if="loading"
-      role="status"
-      class="text-txt-3 flex items-center justify-center gap-2 p-8 text-xs"
-    >
-      <AppIcon
-        name="lucide:loader-circle"
-        :size="14"
-        class="animate-spin"
-      />
-      {{ t('正在加载表列表…') }}
-    </div>
+      :label="t('正在加载表列表…')"
+    />
     <div
       v-else-if="error"
       role="alert"
@@ -118,7 +112,7 @@ watch([() => props.objects, () => props.loading], () => {
       </AppButton>
     </div>
     <table
-      v-else
+      v-else-if="selected"
       :class="
         cn(
           'w-full border-collapse text-left text-xs',

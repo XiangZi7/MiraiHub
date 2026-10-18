@@ -44,6 +44,7 @@ export function useDatabaseSession(
     needsPassword: false,
     databases: [] as string[],
     databasesLoading: false,
+    selectedDatabase: '',
     objects: [] as DatabaseObject[],
     objectsLoading: false,
     objectsError: '',
@@ -55,6 +56,9 @@ export function useDatabaseSession(
   })
 
   let generation = 0
+  let objectsRequest = 0
+  let databaseRequest = 0
+  let databaseSwitch = Promise.resolve()
   let runtimePassword: string | undefined
 
   const connected = computed(
@@ -84,6 +88,10 @@ export function useDatabaseSession(
   }
 
   function resetData(): void {
+    objectsRequest++
+    databaseRequest++
+    databaseSwitch = Promise.resolve()
+    state.selectedDatabase = ''
     state.objects = []
     state.databases = []
     state.databasesLoading = false
@@ -124,6 +132,10 @@ export function useDatabaseSession(
 
       state.session = session
       setStatus('connected', session.sessionId)
+      // MySQL 先只读取库名，用户选择后才读取对应库的对象。
+      // PostgreSQL 需要先读取当前库的 schema，供侧栏选择。
+      if (target.kind === 'postgresql')
+        state.selectedDatabase = session.database
       await Promise.all([refreshDatabases(), refreshObjects()])
     } catch (error) {
       if (request !== generation) return
@@ -138,23 +150,36 @@ export function useDatabaseSession(
     generation++
     const sessionId = state.sessionId
     setStatus('disconnected')
+    resetData()
     await release(sessionId)
   }
 
   async function refreshObjects(): Promise<void> {
     const sessionId = state.sessionId
-    if (!sessionId) return
+    const selectedDatabase = state.selectedDatabase
+    if (
+      !sessionId ||
+      !selectedDatabase ||
+      selectedDatabase !== state.session?.database
+    )
+      return
+    const request = ++objectsRequest
 
     state.objectsLoading = true
     state.objectsError = ''
     try {
       const objects = await database.listObjects(sessionId)
-      if (state.sessionId === sessionId) state.objects = objects
+      if (state.sessionId === sessionId && request === objectsRequest)
+        state.objects =
+          connection.value?.kind === 'mysql'
+            ? objects.filter(object => object.schema === selectedDatabase)
+            : objects
     } catch (error) {
-      if (state.sessionId === sessionId)
+      if (state.sessionId === sessionId && request === objectsRequest)
         state.objectsError = database.errorMessage(error)
     } finally {
-      if (state.sessionId === sessionId) state.objectsLoading = false
+      if (state.sessionId === sessionId && request === objectsRequest)
+        state.objectsLoading = false
     }
   }
 
@@ -176,21 +201,40 @@ export function useDatabaseSession(
 
   async function switchDatabase(name: string): Promise<void> {
     const sessionId = state.sessionId
-    if (!sessionId || !name || name === state.session?.database) return
+    if (!sessionId || !name) return
+    if (name === state.selectedDatabase && !state.objectsError) {
+      await databaseSwitch
+      return
+    }
 
+    const request = ++databaseRequest
+    objectsRequest++
+    state.selectedDatabase = name
+    state.objects = []
+    state.columnsByObject = {}
+    state.inspectingKeys.clear()
     state.objectsLoading = true
     state.objectsError = ''
+    // 仅串行替换连接池，旧库的元数据请求不阻塞下一次切库。
+    const switched = databaseSwitch.then(async () => {
+      if (state.sessionId !== sessionId || request !== databaseRequest) return
+      if (name !== state.session?.database) {
+        const session = await database.useDatabase(sessionId, name)
+        if (state.sessionId !== sessionId) return
+        state.session = session
+      }
+    })
+    databaseSwitch = switched.catch(() => {})
     try {
-      const session = await database.useDatabase(sessionId, name)
-      if (state.sessionId !== sessionId) return
-      state.session = session
-      state.columnsByObject = {}
+      await switched
+      if (state.sessionId !== sessionId || request !== databaseRequest) return
       await refreshObjects()
     } catch (error) {
-      if (state.sessionId === sessionId)
+      if (state.sessionId === sessionId && request === databaseRequest)
         state.objectsError = database.errorMessage(error)
     } finally {
-      if (state.sessionId === sessionId) state.objectsLoading = false
+      if (state.sessionId === sessionId && request === databaseRequest)
+        state.objectsLoading = false
     }
   }
 
