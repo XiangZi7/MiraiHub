@@ -203,6 +203,20 @@ watch([() => props.objects, () => props.loading], () => {
         </tr>
       </tbody>
     </table>
+    <div
+      v-else
+      class="flex h-full items-center justify-center p-6"
+      aria-hidden="true"
+    >
+      <img
+        src="/images/database-empty.webp"
+        alt=""
+        width="640"
+        height="512"
+        class="pointer-events-none h-auto max-h-full w-80 max-w-full object-contain select-none"
+        draggable="false"
+      />
+    </div>
     <DatabaseObjectContextMenu
       :open="menu.open"
       :x="menu.x"
