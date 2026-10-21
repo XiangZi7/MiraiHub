@@ -165,11 +165,10 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
         {
             api.prevent_exit();
             if let Some(editor) = app.get_webview_window(&label) {
-                use tauri::Emitter;
                 let _ = editor.show();
                 let _ = editor.unminimize();
                 let _ = editor.set_focus();
-                let _ = editor.emit(platform::remote_editor::CLOSE_EVENT, ());
+                let _ = platform::remote_editor::request_close(&editor);
             }
             return;
         }

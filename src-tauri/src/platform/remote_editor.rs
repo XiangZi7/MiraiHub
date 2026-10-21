@@ -14,6 +14,11 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, Webvi
 pub const PREFIX: &str = "remote-editor-";
 pub const CLOSE_EVENT: &str = "remote-editor-close-requested";
 
+pub fn request_close<R: tauri::Runtime>(editor: &WebviewWindow<R>) -> tauri::Result<()> {
+    // emit() broadcasts even when called on a window; only this editor should close.
+    editor.emit_to(editor.label(), CLOSE_EVENT, ())
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EditorTarget {
@@ -217,7 +222,7 @@ pub async fn open_remote_editor_window(
                 .ready(&label_events)
             {
                 api.prevent_close();
-                let _ = editor_events.emit(CLOSE_EVENT, ());
+                let _ = request_close(&editor_events);
             }
         }
         tauri::WindowEvent::Destroyed => {
@@ -270,6 +275,42 @@ pub async fn remote_editor_finish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use tauri::Listener;
+
+    // Tauri links this manifest into app binaries; native window tests need it too.
+    #[cfg(target_os = "windows")]
+    #[link(name = "resource", kind = "static", modifiers = "-bundle")]
+    extern "C" {}
+
+    #[test]
+    fn close_request_only_reaches_the_target_editor() {
+        let app = tauri::test::mock_app();
+        let received = Arc::new(Mutex::new(Vec::new()));
+        let mut editors = Vec::new();
+        for label in ["main", "remote-editor-a", "remote-editor-b"] {
+            let editor = WebviewWindowBuilder::new(&app, label, WebviewUrl::default())
+                .build()
+                .unwrap();
+            // Match getCurrentWindow().listen(), which uses the Window event target.
+            let webview: &tauri::Webview<_> = editor.as_ref();
+            let received = received.clone();
+            webview.window().listen(CLOSE_EVENT, move |_| {
+                received.lock().unwrap().push(label);
+            });
+            editors.push(editor);
+        }
+
+        request_close(&editors[1]).unwrap();
+        assert_eq!(*received.lock().unwrap(), ["remote-editor-a"]);
+
+        request_close(&editors[2]).unwrap();
+        assert_eq!(
+            *received.lock().unwrap(),
+            ["remote-editor-a", "remote-editor-b"]
+        );
+    }
+
     fn target(session: &str, path: &str) -> EditorTarget {
         EditorTarget {
             session_id: session.into(),

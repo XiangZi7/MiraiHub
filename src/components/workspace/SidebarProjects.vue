@@ -145,13 +145,17 @@ const contextItems = computed<ContextMenuItem[]>(() => {
     const connected = props.connectedIds.has(connection.id)
 
     return [
-      {
-        id: 'open',
-        label: props.openIds.has(connection.id)
-          ? t('切换到连接')
-          : t('打开连接'),
-        icon: database ? 'lucide:database' : 'lucide:square-terminal',
-      },
+      ...(!database
+        ? [
+            {
+              id: 'open',
+              label: props.openIds.has(connection.id)
+                ? t('切换到连接')
+                : t('打开连接'),
+              icon: 'lucide:square-terminal',
+            },
+          ]
+        : []),
       ...(database
         ? [
             {

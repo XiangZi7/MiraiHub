@@ -90,6 +90,7 @@ windows = { version = "0.61", features = [
 windows-version = "0.1"
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 tokio = { version = "1", features = ["rt", "macros"] }
 
 # 发布构建：在"编译别变慢"的前提下把二进制压下去，安装包解压也跟着快。
