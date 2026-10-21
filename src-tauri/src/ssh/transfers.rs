@@ -1,6 +1,7 @@
 //! 文件传输任务控制：暂停、继续与取消。
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -50,6 +51,9 @@ impl TransferControl {
 
     pub async fn checkpoint(&self) -> SshResult<()> {
         loop {
+            let notified = self.wake.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
             if self.cancelled.load(Ordering::SeqCst) {
                 return Err(SshError::TransferCancelled);
             }
@@ -57,11 +61,27 @@ impl TransferControl {
                 return Ok(());
             }
 
-            let notified = self.wake.notified();
-            if !self.paused.load(Ordering::SeqCst) {
-                continue;
-            }
             notified.await;
+        }
+    }
+
+    /// Cancel a queued resource acquisition without waiting for another transfer to finish.
+    pub async fn wait_for<T>(&self, operation: impl Future<Output = SshResult<T>>) -> SshResult<T> {
+        let cancelled = async {
+            loop {
+                let notified = self.wake.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                if self.cancelled.load(Ordering::SeqCst) {
+                    break;
+                }
+                notified.await;
+            }
+        };
+        tokio::select! {
+            biased;
+            _ = cancelled => Err(SshError::TransferCancelled),
+            result = operation => result,
         }
     }
 
@@ -175,5 +195,42 @@ mod tests {
             control.checkpoint().await,
             Err(SshError::TransferCancelled)
         ));
+    }
+
+    #[tokio::test]
+    async fn cancelling_waiting_transfer_releases_its_queue_position() {
+        let manager = TransferManager::new();
+        let control = manager.begin("waiting", 0).await.unwrap();
+        let slots = Arc::new(tokio::sync::Semaphore::new(1));
+        let occupied = slots.clone().acquire_owned().await.unwrap();
+        let waiting_slots = slots.clone();
+        let waiter = tokio::spawn(async move {
+            control
+                .wait_for(async { Ok(waiting_slots.acquire_owned().await.unwrap()) })
+                .await
+        });
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished());
+        manager.cancel("waiting").await.unwrap();
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(SshError::TransferCancelled)
+        ));
+        drop(occupied);
+        assert!(slots.try_acquire_owned().is_ok());
+    }
+
+    #[tokio::test]
+    async fn already_cancelled_transfer_does_not_start_an_available_operation() {
+        let manager = TransferManager::new();
+        let control = manager.begin("cancelled", 0).await.unwrap();
+        manager.cancel("cancelled").await.unwrap();
+        let result: SshResult<()> = control
+            .wait_for(async { panic!("cancelled operation must not be polled") })
+            .await;
+        assert!(matches!(result, Err(SshError::TransferCancelled)));
     }
 }

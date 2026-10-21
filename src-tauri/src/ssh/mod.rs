@@ -26,6 +26,7 @@ pub mod manager;
 pub mod models;
 pub mod proxy;
 pub mod session;
+mod sftp_stream;
 pub mod shell;
 pub mod stats;
 pub mod transfers;

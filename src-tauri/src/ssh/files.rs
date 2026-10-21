@@ -12,6 +12,7 @@ use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::Semaphore;
 
 use super::error::{SshError, SshResult};
 use super::events::{emit_transfer, TransferEvent};
@@ -36,8 +37,10 @@ const METADATA_CONCURRENCY: usize = 32;
 /// 单个上传任务最多使用的 SFTP 通道数。
 ///
 /// 服务器按通道分配流控窗口（OpenSSH 默认 2 MB），一条通道的吞吐被“窗口 ÷ 往返延迟”封顶；
-/// 多开几条通道能把带宽叠加起来。上限取 4 是为了给交互式 shell 与其他传输留出会话数。
+/// 多开几条通道能把带宽叠加起来。实际数量还受 SSH 连接共享的传输通道额度约束。
 const MAX_UPLOAD_CHANNELS: usize = 4;
+/// Bound queued writes on each channel, including when optional channels are unavailable.
+const UPLOADS_PER_CHANNEL: usize = 3;
 
 /// 目录项类型。前端据此选图标，也决定双击是进目录还是打开文件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -225,8 +228,11 @@ pub async fn upload_file(
         let total = plan.total_bytes;
         control.set_total(total);
         control.checkpoint().await?;
-        let mut sessions = vec![session.open_transfer_sftp().await?];
+        let permit = control.wait_for(session.reserve_transfer_channel()).await?;
+        control.checkpoint().await?;
+        let mut sessions = vec![session.open_transfer_sftp(permit).await?];
         let result: SshResult<()> = async {
+            control.checkpoint().await?;
             emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
             // 先摸清整棵目录树在远端的存在情况：既是冲突检查（类型不匹配时不能
             // 覆盖前面的文件），也让后面的建目录与上传都省掉逐个探测的往返。
@@ -247,12 +253,30 @@ pub async fn upload_file(
             open_extra_channels(session, &mut sessions, request.concurrency, files.len()).await;
 
             let sessions = &sessions;
+            let channel_slots: Vec<Semaphore> = sessions
+                .iter()
+                .map(|_| Semaphore::new(UPLOADS_PER_CHANNEL))
+                .collect();
+            let channel_slots = &channel_slots;
             let next_channel = AtomicUsize::new(0);
             let next_channel = &next_channel;
             let upload_control = control.as_ref();
-            run_upload_jobs(files, request.concurrency, |(entry, exists)| async move {
+            let concurrency = request
+                .concurrency
+                .min(sessions.len() * UPLOADS_PER_CHANNEL);
+            run_upload_jobs(files, concurrency, |(entry, exists)| async move {
                 upload_control.checkpoint().await?;
-                let sftp = &sessions[next_channel.fetch_add(1, Ordering::Relaxed) % sessions.len()];
+                let index = next_channel.fetch_add(1, Ordering::Relaxed) % sessions.len();
+                let _slot = upload_control
+                    .wait_for(async {
+                        channel_slots[index]
+                            .acquire()
+                            .await
+                            .map_err(|_| SshError::InvalidInput("上传通道已关闭".into()))
+                    })
+                    .await?;
+                upload_control.checkpoint().await?;
+                let sftp = &sessions[index];
                 let file_request = UploadFileRequest {
                     local_path: entry.local_path.to_string_lossy().into_owned(),
                     remote_path: entry.remote_path.clone(),
@@ -404,10 +428,12 @@ async fn ensure_directory(sftp: &SftpSession, entry: &UploadEntry) -> SshResult<
     }
 }
 
-/// 单个任务使用的 SFTP 通道数：文件少时不必多开，每条通道至少分到 3 个并发文件。
+/// 单个任务使用的 SFTP 通道数：按每条通道最多 3 个文件向上取整。
 fn upload_channel_count(concurrency: usize, file_count: usize) -> usize {
-    let by_concurrency = concurrency.clamp(1, MAX_UPLOAD_CHANNELS * 3) / 3;
-    let by_files = file_count.div_ceil(3);
+    let by_concurrency = concurrency
+        .clamp(1, MAX_UPLOAD_CHANNELS * UPLOADS_PER_CHANNEL)
+        .div_ceil(UPLOADS_PER_CHANNEL);
+    let by_files = file_count.div_ceil(UPLOADS_PER_CHANNEL);
     by_concurrency.min(by_files).clamp(1, MAX_UPLOAD_CHANNELS)
 }
 
@@ -420,8 +446,9 @@ async fn open_extra_channels(
 ) {
     let wanted = upload_channel_count(concurrency, file_count);
     while sessions.len() < wanted {
-        match session.open_transfer_sftp().await {
-            Ok(sftp) => sessions.push(sftp),
+        match session.try_open_transfer_sftp().await {
+            Ok(Some(sftp)) => sessions.push(sftp),
+            Ok(None) => break,
             Err(error) => {
                 log::warn!(
                     "额外 SFTP 通道打开失败，继续使用 {} 条通道上传：{error}",
@@ -541,41 +568,50 @@ pub async fn download_file(
     request: &DownloadFileRequest,
 ) -> SshResult<String> {
     validate_remote_path(&request.remote_path)?;
-    let sftp = session.open_sftp().await?;
-    let total = sftp
-        .metadata(&request.remote_path)
-        .await
-        .map_err(sftp_error)?
-        .size
-        .unwrap_or(0);
-    let final_path =
-        local_download_path(&request.local_path, &request.remote_path, &request.task_id);
-    if final_path.exists() && !request.overwrite {
-        return Err(SshError::InvalidInput(format!(
-            "本地路径已存在：{}",
-            final_path.display()
-        )));
-    }
+    let control = transfers.begin(&request.task_id, 0).await?;
+    let result = async {
+        control.checkpoint().await?;
+        let permit = control.wait_for(session.reserve_transfer_channel()).await?;
+        control.checkpoint().await?;
+        let sftp = session.open_transfer_sftp(permit).await?;
+        control.checkpoint().await?;
+        let total = sftp
+            .metadata(&request.remote_path)
+            .await
+            .map_err(sftp_error)?
+            .size
+            .unwrap_or(0);
+        control.set_total(total);
+        let final_path =
+            local_download_path(&request.local_path, &request.remote_path, &request.task_id);
+        if final_path.exists() && !request.overwrite {
+            return Err(SshError::InvalidInput(format!(
+                "本地路径已存在：{}",
+                final_path.display()
+            )));
+        }
 
-    if let Some(parent) = final_path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
+        if let Some(parent) = final_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
 
-    let control = transfers.begin(&request.task_id, total).await?;
-    let temp_path = local_temp_path(&final_path, &request.task_id);
-    let result = download_inner(
-        app,
-        &sftp,
-        request,
-        &final_path,
-        &temp_path,
-        &control,
-        total,
-    )
+        let temp_path = local_temp_path(&final_path, &request.task_id);
+        let result = download_inner(
+            app,
+            &sftp,
+            request,
+            &final_path,
+            &temp_path,
+            &control,
+            total,
+        )
+        .await;
+        let _ = sftp.close().await;
+        result.map(|()| final_path.to_string_lossy().into_owned())
+    }
     .await;
     transfers.finish(&request.task_id).await;
-    let _ = sftp.close().await;
-    result.map(|()| final_path.to_string_lossy().into_owned())
+    result
 }
 
 async fn download_inner(
@@ -1052,6 +1088,8 @@ mod tests {
         assert_eq!(upload_channel_count(12, 4), 2);
         assert_eq!(upload_channel_count(12, 100), 4);
         assert_eq!(upload_channel_count(1, 100), 1);
+        assert_eq!(upload_channel_count(4, 100), 2);
+        assert_eq!(upload_channel_count(8, 100), 3);
         assert_eq!(upload_channel_count(32, 1000), 4);
     }
 }

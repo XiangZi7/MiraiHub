@@ -15,12 +15,18 @@ use russh::keys::{
 use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect};
 use russh_sftp::client::SftpSession;
 use tauri::AppHandle;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
 use super::error::{SshError, SshResult};
 use super::events::{emit_output, emit_status, OutputEvent, StatusEvent};
 use super::models::{AuthMethod, CommandOutput, PtyOptions, SshConfig};
 use super::proxy;
+use super::sftp_stream::SftpStream;
+
+/// Shared by all uploads and downloads on this SSH connection, including extra channels.
+const MAX_TRANSFER_CHANNELS: usize = 4;
+/// Reserve room for shell/exec channels even while path checks and transfers overlap.
+const MAX_METADATA_CHANNELS: usize = 2;
 
 /// 连接事件处理器。
 ///
@@ -72,6 +78,8 @@ pub struct SshSession {
     handle: Mutex<Handle<ClientHandler>>,
     /// 交互式 shell 的写半边。未开 shell 时为 None
     shell: Mutex<Option<ChannelWriteHalf<Msg>>>,
+    transfer_slots: Arc<Semaphore>,
+    metadata_slots: Arc<Semaphore>,
 }
 
 impl SshSession {
@@ -126,6 +134,8 @@ impl SshSession {
             config,
             handle: Mutex::new(handle),
             shell: Mutex::new(None),
+            transfer_slots: Arc::new(Semaphore::new(MAX_TRANSFER_CHANNELS)),
+            metadata_slots: Arc::new(Semaphore::new(MAX_METADATA_CHANNELS)),
         })
     }
 
@@ -303,18 +313,28 @@ impl SshSession {
     }
 
     pub async fn open_raw_sftp(&self) -> SshResult<russh_sftp::client::RawSftpSession> {
-        let channel = self.handle.lock().await.channel_open_session().await?;
-        channel.request_subsystem(true, "sftp").await?;
-        Ok(russh_sftp::client::RawSftpSession::new(
-            channel.into_stream(),
-        ))
+        let permit = self.acquire_sftp_slot(&self.metadata_slots).await?;
+        let stream = self.open_sftp_stream(permit, true).await?;
+        Ok(russh_sftp::client::RawSftpSession::new(stream))
     }
 
-    /// 为一次文件操作打开独立的 SFTP 子系统通道。
-    /// 每个传输使用独立通道，暂停大文件时不会挡住目录浏览或其他传输。
+    /// 为文件检查和编辑操作打开独立通道，使用预留的元数据额度。
     pub async fn open_sftp(&self) -> SshResult<SftpSession> {
-        self.open_sftp_with(russh_sftp::client::Config::default())
-            .await
+        let permit = self.acquire_sftp_slot(&self.metadata_slots).await?;
+        self.open_sftp_with(
+            russh_sftp::client::Config {
+                request_timeout_secs: 30,
+                ..Default::default()
+            },
+            permit,
+            true,
+        )
+        .await
+    }
+
+    /// 等待此连接共享的传输额度；调用方可以在排队期间取消。
+    pub async fn reserve_transfer_channel(&self) -> SshResult<OwnedSemaphorePermit> {
+        self.acquire_sftp_slot(&self.transfer_slots).await
     }
 
     /// 供批量传输使用的 SFTP 通道：放宽单个请求的超时。
@@ -323,28 +343,81 @@ impl SshSession {
     /// 发完才能得到应答；默认 10 秒在慢链路上会误判超时。
     /// 每个文件的在途写请求数保持默认 8 个（8 × 256 KB），正好填满 OpenSSH 的
     /// 2 MB 通道窗口，再多只会堆在内存里排队。
-    pub async fn open_transfer_sftp(&self) -> SshResult<SftpSession> {
-        self.open_sftp_with(russh_sftp::client::Config {
-            request_timeout_secs: 120,
-            ..Default::default()
-        })
-        .await
+    pub async fn open_transfer_sftp(&self, permit: OwnedSemaphorePermit) -> SshResult<SftpSession> {
+        self.open_sftp_with(Self::transfer_sftp_config(), permit, true)
+            .await
     }
 
-    async fn open_sftp_with(&self, config: russh_sftp::client::Config) -> SshResult<SftpSession> {
-        let channel = {
-            let handle = self.handle.lock().await;
-            handle.channel_open_session().await?
+    /// Optional channels must never wait: other tasks may be holding all slots.
+    pub async fn try_open_transfer_sftp(&self) -> SshResult<Option<SftpSession>> {
+        let Ok(permit) = self.transfer_slots.clone().try_acquire_owned() else {
+            return Ok(None);
         };
+        self.open_sftp_with(Self::transfer_sftp_config(), permit, false)
+            .await
+            .map(Some)
+    }
 
-        channel.request_subsystem(true, "sftp").await?;
-        SftpSession::new_with_config(channel.into_stream(), config)
+    fn transfer_sftp_config() -> russh_sftp::client::Config {
+        russh_sftp::client::Config {
+            request_timeout_secs: 120,
+            ..Default::default()
+        }
+    }
+
+    async fn acquire_sftp_slot(&self, slots: &Arc<Semaphore>) -> SshResult<OwnedSemaphorePermit> {
+        slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| SshError::SessionNotFound(self.id.clone()))
+    }
+
+    async fn open_sftp_stream(
+        &self,
+        permit: OwnedSemaphorePermit,
+        retry: bool,
+    ) -> SshResult<SftpStream<russh::ChannelStream<Msg>>> {
+        let mut retries = 0;
+        let channel = loop {
+            let result = self.handle.lock().await.channel_open_session().await;
+            match result {
+                Ok(channel) => break channel,
+                Err(russh::Error::ChannelOpenFailure(
+                    russh::ChannelOpenFailure::ConnectFailed
+                    | russh::ChannelOpenFailure::ResourceShortage,
+                )) if retry && retries < 4 => {
+                    // The previous SFTP stream may have stopped before sshd processed its close.
+                    // Drop the handle lock while waiting so terminal input and closes can proceed.
+                    tokio::time::sleep(Duration::from_millis(100 << retries)).await;
+                    retries += 1;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
+        if let Err(error) = channel.request_subsystem(true, "sftp").await {
+            let _ = channel.close().await;
+            return Err(error.into());
+        }
+        Ok(SftpStream::new(channel.into_stream(), permit))
+    }
+
+    async fn open_sftp_with(
+        &self,
+        config: russh_sftp::client::Config,
+        permit: OwnedSemaphorePermit,
+        retry: bool,
+    ) -> SshResult<SftpSession> {
+        let stream = self.open_sftp_stream(permit, retry).await?;
+        SftpSession::new_with_config(stream, config)
             .await
             .map_err(|error| SshError::Sftp(error.to_string()))
     }
 
     /// 主动断开。
     pub async fn disconnect(&self) -> SshResult<()> {
+        self.transfer_slots.close();
+        self.metadata_slots.close();
         let handle = self.handle.lock().await;
         handle
             .disconnect(Disconnect::ByApplication, "用户主动断开", "")
@@ -536,6 +609,174 @@ fn validate_config(config: &SshConfig) -> SshResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct TestSftp;
+
+    impl russh_sftp::server::Handler for TestSftp {
+        type Error = russh_sftp::protocol::StatusCode;
+
+        fn unimplemented(&self) -> Self::Error {
+            russh_sftp::protocol::StatusCode::OpUnsupported
+        }
+    }
+
+    #[derive(Default)]
+    struct TestServer {
+        channels: HashMap<russh::ChannelId, russh::Channel<russh::server::Msg>>,
+        active: HashSet<russh::ChannelId>,
+        rejected: Arc<AtomicUsize>,
+    }
+
+    impl russh::server::Handler for TestServer {
+        type Error = russh::Error;
+
+        async fn auth_none(&mut self, _: &str) -> Result<russh::server::Auth, Self::Error> {
+            Ok(russh::server::Auth::Accept)
+        }
+
+        async fn channel_open_session(
+            &mut self,
+            channel: russh::Channel<russh::server::Msg>,
+            _: &mut russh::server::Session,
+        ) -> Result<bool, Self::Error> {
+            // Simulate a server with a session limit below OpenSSH's default of 10.
+            if self.active.len() >= MAX_TRANSFER_CHANNELS + MAX_METADATA_CHANNELS {
+                self.rejected.fetch_add(1, Ordering::SeqCst);
+                return Ok(false);
+            }
+            self.active.insert(channel.id());
+            self.channels.insert(channel.id(), channel);
+            Ok(true)
+        }
+
+        async fn channel_close(
+            &mut self,
+            channel: russh::ChannelId,
+            _: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+            self.active.remove(&channel);
+            self.channels.remove(&channel);
+            Ok(())
+        }
+
+        async fn channel_eof(
+            &mut self,
+            channel: russh::ChannelId,
+            session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+            session.close(channel)?;
+            Ok(())
+        }
+
+        async fn subsystem_request(
+            &mut self,
+            channel: russh::ChannelId,
+            _: &str,
+            session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+            session.channel_success(channel)?;
+            let stream = self.channels.remove(&channel).unwrap().into_stream();
+            russh_sftp::server::run(stream, TestSftp).await;
+            Ok(())
+        }
+    }
+
+    async fn transfer_session() -> (SshSession, Arc<AtomicUsize>) {
+        let (client_stream, server_stream) = tokio::io::duplex(64 * 1024);
+        let rejected = Arc::new(AtomicUsize::new(0));
+        let handler = TestServer {
+            rejected: rejected.clone(),
+            ..Default::default()
+        };
+        let server_config = russh::server::Config {
+            keys: vec![russh::keys::PrivateKey::random(
+                &mut rand::rngs::OsRng,
+                russh::keys::Algorithm::Ed25519,
+            )
+            .unwrap()],
+            ..Default::default()
+        };
+        tokio::spawn(async move {
+            let _ = russh::server::run_stream(Arc::new(server_config), server_stream, handler)
+                .await
+                .unwrap()
+                .await;
+        });
+        let mut handle = client::connect_stream(
+            Arc::new(client::Config::default()),
+            client_stream,
+            ClientHandler {
+                host: "test".into(),
+                port: 22,
+                verify_host_key: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(handle.authenticate_none("test").await.unwrap().success());
+        (
+            SshSession {
+                id: "test".into(),
+                config: config_with("test", "test", 22),
+                handle: Mutex::new(handle),
+                shell: Mutex::new(None),
+                transfer_slots: Arc::new(Semaphore::new(MAX_TRANSFER_CHANNELS)),
+                metadata_slots: Arc::new(Semaphore::new(MAX_METADATA_CHANNELS)),
+            },
+            rejected,
+        )
+    }
+
+    #[tokio::test]
+    async fn transfers_share_a_budget_and_keep_metadata_channels_available() {
+        let (session, rejected) = transfer_session().await;
+        let mut transfers = Vec::new();
+        for _ in 0..MAX_TRANSFER_CHANNELS {
+            let permit = session.reserve_transfer_channel().await.unwrap();
+            transfers.push(session.open_transfer_sftp(permit).await.unwrap());
+        }
+        assert!(session.try_open_transfer_sftp().await.unwrap().is_none());
+        assert!(tokio::time::timeout(
+            Duration::from_millis(20),
+            session.reserve_transfer_channel(),
+        )
+        .await
+        .is_err());
+        let first_metadata = session.open_sftp().await.unwrap();
+        let second_metadata = session.open_sftp().await.unwrap();
+        assert_eq!(rejected.load(Ordering::SeqCst), 0);
+
+        // Explicit close and ordinary drop must both make their slots reusable.
+        transfers.pop().unwrap().close().await.unwrap();
+        drop(transfers.pop());
+        for _ in 0..2 {
+            let permit =
+                tokio::time::timeout(Duration::from_secs(2), session.reserve_transfer_channel())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            transfers.push(session.open_transfer_sftp(permit).await.unwrap());
+        }
+        assert!(session.try_open_transfer_sftp().await.unwrap().is_none());
+        drop(first_metadata);
+        drop(second_metadata);
+        drop(transfers);
+        session.disconnect().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn disconnect_wakes_transfers_waiting_for_a_channel() {
+        let (session, _) = transfer_session().await;
+        let mut permits = Vec::new();
+        for _ in 0..MAX_TRANSFER_CHANNELS {
+            permits.push(session.reserve_transfer_channel().await.unwrap());
+        }
+        let pending = session.reserve_transfer_channel();
+        session.disconnect().await.unwrap();
+        assert!(matches!(pending.await, Err(SshError::SessionNotFound(_))));
+    }
 
     fn config_with(host: &str, username: &str, port: u16) -> SshConfig {
         SshConfig {
