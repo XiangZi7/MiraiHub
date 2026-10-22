@@ -218,6 +218,17 @@ export interface MutationResult {
   elapsedMs: number
 }
 
+export type DatabaseTransferContent = 'all' | 'structure' | 'data'
+
+export interface DatabaseImportOptions {
+  content: DatabaseTransferContent
+  includeDatabase: boolean
+}
+
+export interface DatabaseExportOptions extends DatabaseImportOptions {
+  dropExisting: boolean
+}
+
 export interface DatabaseExportResult {
   path: string
   objects: number
@@ -230,6 +241,7 @@ export interface DatabaseImportResult {
   path: string
   statements: number
   rowsAffected: number
+  skippedStatements: number
   elapsedMs: number
 }
 

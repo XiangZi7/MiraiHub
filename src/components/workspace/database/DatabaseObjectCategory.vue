@@ -25,6 +25,8 @@ const props = defineProps<{
   columnsByObject: Record<string, DatabaseColumn[] | undefined>
   inspectingKeys: Set<string>
   defaultExpanded?: boolean
+  loading?: boolean
+  error?: string
 }>()
 
 const emit = defineEmits<{
@@ -67,6 +69,7 @@ watch(
     variant="bare"
     class="nav-item h-7 w-full gap-1.5 pl-6 text-xs"
     :aria-expanded="state.expanded"
+    :aria-busy="loading"
     @click="state.expanded = !state.expanded"
     @contextmenu.prevent.stop="emit('categoryContext', $event, schema, kind)"
   >
@@ -83,15 +86,39 @@ watch(
       :class="iconClass"
     />
     <span>{{ label }}</span>
-    <span class="text-txt-4 ml-auto text-[10px]">{{ objects.length }}</span>
+    <span
+      v-if="loading"
+      class="bg-txt-4/15 ml-auto h-2 w-3 rounded-sm motion-safe:animate-pulse"
+      aria-hidden="true"
+    />
+    <span
+      v-else
+      class="text-txt-4 ml-auto text-[10px]"
+      >{{ error ? '—' : objects.length }}</span
+    >
   </AppButton>
 
   <template v-if="state.expanded">
     <div
-      v-if="!objects.length"
+      v-if="loading && !objects.length"
+      class="space-y-2 py-2 pr-4 pl-10 motion-safe:animate-pulse"
+      role="status"
+      :aria-label="t('正在读取数据库结构…')"
+    >
+      <div
+        v-for="width in ['w-4/5', 'w-3/5', 'w-2/3']"
+        :key="width"
+        :class="cn('bg-txt-4/15 h-2.5 rounded-sm', width)"
+        aria-hidden="true"
+      />
+    </div>
+    <div
+      v-else-if="!objects.length"
       class="text-txt-4 flex h-7 items-center gap-1.5 pl-10 text-[10.5px]"
     >
-      <span> {{ t('暂无对象') }} </span>
+      <span>{{
+        error ? t('对象列表加载失败，请刷新重试') : t('暂无对象')
+      }}</span>
     </div>
 
     <template

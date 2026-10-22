@@ -14,10 +14,14 @@ use super::error::{DatabaseError, DatabaseResult};
 use super::manager::{DatabaseManager, DatabasePool};
 use super::metadata;
 use super::models::{
-    DatabaseExportResult, DatabaseImportResult, DatabaseKind, DatabaseObjectKind,
-    DatabaseQueryColumn, DatabaseRoutineDetail, DatabaseTableDetail, RowPageRequest, RowSort,
+    DatabaseExportResult, DatabaseImportOptions, DatabaseImportResult, DatabaseKind,
+    DatabaseObjectKind, DatabaseQueryColumn, DatabaseRoutineDetail, DatabaseTableDetail,
+    RowPageRequest, RowSort,
 };
 use super::{query, sql};
+
+#[path = "transfer_filter.rs"]
+mod filter;
 
 const EXPORT_PAGE_SIZE: u32 = 1_000;
 const INSERT_BATCH_SIZE: usize = 100;
@@ -29,8 +33,15 @@ pub async fn export_sql(
     path: &str,
     include_data: bool,
     drop_existing: bool,
+    include_structure: bool,
+    include_database: bool,
 ) -> DatabaseResult<DatabaseExportResult> {
     let path = validate_path(path)?;
+    if !include_data && !include_structure {
+        return Err(DatabaseError::InvalidInput("请至少选择结构或数据".into()));
+    }
+    let include_database = include_database && include_structure;
+    let drop_existing = drop_existing && include_structure;
     let started = Instant::now();
     let pool = manager.pool(session_id).await?;
     let kind = pool.kind();
@@ -47,11 +58,14 @@ pub async fn export_sql(
     let mut views = Vec::new();
     let mut routines = Vec::new();
     for object in objects {
+        if !include_structure && object.kind != DatabaseObjectKind::Table {
+            continue;
+        }
         if matches!(
             object.kind,
             DatabaseObjectKind::Procedure | DatabaseObjectKind::Function
         ) {
-            let detail = metadata::routine_detail(
+            let mut detail = metadata::routine_detail(
                 &pool,
                 &object.schema,
                 &object.name,
@@ -65,16 +79,22 @@ pub async fn export_sql(
                     object.schema, object.name
                 )));
             }
+            if !include_database {
+                detail.ddl = filter::current_database_sql(&detail.ddl, kind);
+            }
             routines.push(detail);
             continue;
         }
-        let detail =
+        let mut detail =
             metadata::table_detail(&pool, &object.schema, &object.name, object.kind).await?;
-        if detail.ddl.trim().is_empty() {
+        if include_structure && detail.ddl.trim().is_empty() {
             return Err(DatabaseError::InvalidInput(format!(
                 "无法读取 {}.{} 的建表语句",
                 object.schema, object.name
             )));
+        }
+        if !include_database {
+            detail.ddl = filter::current_database_sql(&detail.ddl, kind);
         }
         match object.kind {
             DatabaseObjectKind::Table => tables.push(detail),
@@ -83,6 +103,11 @@ pub async fn export_sql(
         }
     }
     tables = order_tables_by_dependencies(tables);
+    if tables.is_empty() && views.is_empty() && routines.is_empty() {
+        return Err(DatabaseError::InvalidInput(
+            "当前数据库没有符合所选导出内容的对象".into(),
+        ));
+    }
 
     let file = tokio::fs::File::create(path)
         .await
@@ -106,16 +131,18 @@ pub async fn export_sql(
     )
     .await?;
 
-    write_schema_setup(
-        &mut writer,
-        path,
-        &mut bytes,
-        kind,
-        &tables,
-        &views,
-        &routines,
-    )
-    .await?;
+    if include_database {
+        write_schema_setup(
+            &mut writer,
+            path,
+            &mut bytes,
+            kind,
+            &tables,
+            &views,
+            &routines,
+        )
+        .await?;
+    }
 
     if kind == DatabaseKind::Mysql {
         write_dump(
@@ -136,7 +163,7 @@ pub async fn export_sql(
                 &mut bytes,
                 &format!(
                     "DROP VIEW IF EXISTS {}{}",
-                    sql::qualified_name(&detail.schema, &detail.name, kind),
+                    export_name(&detail.schema, &detail.name, kind, include_database),
                     if kind == DatabaseKind::Postgresql {
                         " CASCADE"
                     } else {
@@ -147,7 +174,10 @@ pub async fn export_sql(
             .await?;
         }
         for detail in routines.iter().rev() {
-            write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+            if include_database {
+                write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema)
+                    .await?;
+            }
             let object_type = if detail.kind == DatabaseObjectKind::Procedure {
                 "PROCEDURE"
             } else {
@@ -160,7 +190,7 @@ pub async fn export_sql(
                     detail.identity
                 )
             } else {
-                sql::qualified_name(&detail.schema, &detail.name, kind)
+                export_name(&detail.schema, &detail.name, kind, include_database)
             };
             write_statement(
                 &mut writer,
@@ -184,7 +214,7 @@ pub async fn export_sql(
                 &mut bytes,
                 &format!(
                     "DROP TABLE IF EXISTS {}{}",
-                    sql::qualified_name(&detail.schema, &detail.name, kind),
+                    export_name(&detail.schema, &detail.name, kind, include_database),
                     if kind == DatabaseKind::Postgresql {
                         " CASCADE"
                     } else {
@@ -197,24 +227,39 @@ pub async fn export_sql(
     }
 
     for detail in &tables {
-        write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
-        write_statement(&mut writer, path, &mut bytes, &detail.ddl).await?;
+        if include_database {
+            write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+        }
+        if include_structure {
+            write_statement(&mut writer, path, &mut bytes, &detail.ddl).await?;
+        }
 
         if include_data {
-            exported_rows +=
-                export_table_rows(&pool, detail, &mut writer, path, &mut bytes).await?;
+            exported_rows += export_table_rows(
+                &pool,
+                detail,
+                &mut writer,
+                path,
+                &mut bytes,
+                include_database,
+            )
+            .await?;
         }
     }
 
     // 例程放到表与数据之后、视图之前；视图定义经常会调用用户函数。
     for detail in &routines {
-        write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+        if include_database {
+            write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+        }
         write_routine(&mut writer, path, &mut bytes, kind, detail).await?;
     }
 
     // 视图最后创建，确保基础表与常用函数已经存在。
     for detail in &views {
-        write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+        if include_database {
+            write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+        }
         write_statement(&mut writer, path, &mut bytes, &detail.ddl).await?;
     }
 
@@ -246,6 +291,7 @@ pub async fn import_sql(
     manager: &DatabaseManager,
     session_id: &str,
     path: &str,
+    options: &DatabaseImportOptions,
 ) -> DatabaseResult<DatabaseImportResult> {
     let path = validate_path(path)?;
     let metadata = tokio::fs::metadata(path)
@@ -262,6 +308,8 @@ pub async fn import_sql(
         .await
         .map_err(|source| io_error("读取", path, source))?;
     let started = Instant::now();
+    let pool = manager.pool(session_id).await?;
+    let (contents, skipped_statements) = filter::prepare_import(&contents, pool.kind(), options)?;
     // 与编辑器复用完全相同的串行执行器：USE / SET 等会话状态能传给后续语句，
     // 取消信号和服务端 KILL 也只维护一套实现。结果行最多保留一行，避免导入文件
     // 中意外夹带 SELECT 时把大量数据经 IPC 返回。
@@ -292,6 +340,7 @@ pub async fn import_sql(
     Ok(DatabaseImportResult {
         path: path.to_owned(),
         statements: statement_count,
+        skipped_statements,
         rows_affected,
         elapsed_ms: query::elapsed_millis(started),
     })
@@ -303,6 +352,7 @@ async fn export_table_rows(
     writer: &mut BufWriter<tokio::fs::File>,
     path: &str,
     bytes: &mut u64,
+    include_database: bool,
 ) -> DatabaseResult<u64> {
     let mut offset = 0u64;
     let mut total = 0u64;
@@ -331,7 +381,11 @@ async fn export_table_rows(
 
         for batch in page.rows.chunks(INSERT_BATCH_SIZE) {
             let statement = insert_statement(
-                &detail.schema,
+                if pool.kind() == DatabaseKind::Mysql && !include_database {
+                    ""
+                } else {
+                    &detail.schema
+                },
                 &detail.name,
                 pool.kind(),
                 &page.columns,
@@ -391,6 +445,18 @@ fn insert_statement(
     format!(
         "INSERT INTO {} ({column_list}){override_identity} VALUES\n{values}",
         sql::qualified_name(schema, table, kind)
+    )
+}
+
+fn export_name(schema: &str, name: &str, kind: DatabaseKind, include_database: bool) -> String {
+    sql::qualified_name(
+        if kind == DatabaseKind::Mysql && !include_database {
+            ""
+        } else {
+            schema
+        },
+        name,
+        kind,
     )
 }
 
@@ -594,6 +660,50 @@ mod tests {
         assert_eq!(
             sql_value(Some("base64:AAEC"), Some("BYTEA"), DatabaseKind::Postgresql),
             "decode('AAEC', 'base64')"
+        );
+    }
+
+    #[test]
+    fn mysql_data_export_round_trips_into_another_database() {
+        let statement = insert_statement(
+            "",
+            "notes",
+            DatabaseKind::Mysql,
+            &[DatabaseQueryColumn {
+                name: "text".into(),
+                data_type: "TEXT".into(),
+            }],
+            &[vec![Some("source.notes; O'Reilly \\ file".into())]],
+        );
+        assert!(statement.starts_with("INSERT INTO `notes`"));
+        let (prepared, skipped) = filter::prepare_import(
+            &format!("SET FOREIGN_KEY_CHECKS = 0;\n{statement};\nSET FOREIGN_KEY_CHECKS = 1;"),
+            DatabaseKind::Mysql,
+            &DatabaseImportOptions {
+                content: super::super::models::DatabaseTransferContent::Data,
+                include_database: false,
+            },
+        )
+        .unwrap();
+        let statements = sql::split_statements(&prepared, DatabaseKind::Mysql);
+        assert_eq!(statements.len(), 3);
+        assert_eq!(statements[1].text, statement);
+        assert_eq!(skipped, 0);
+    }
+
+    #[test]
+    fn database_name_option_keeps_postgres_namespaces() {
+        assert_eq!(
+            export_name("source", "notes", DatabaseKind::Mysql, false),
+            "`notes`"
+        );
+        assert_eq!(
+            export_name("source", "notes", DatabaseKind::Mysql, true),
+            "`source`.`notes`"
+        );
+        assert_eq!(
+            export_name("app", "notes", DatabaseKind::Postgresql, false),
+            "\"app\".\"notes\""
         );
     }
 }

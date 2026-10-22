@@ -16,13 +16,14 @@
    例：--color-card → bg-card / text-card / border-card
    ========================================================================== */
 @theme {
-  /* ---------- 字体（均已本地内置，见 main.ts 的 @fontsource 引入） ---------- */
+  /* ---------- 拉丁字体本地内置；中文明确使用系统 UI 字体，避免隐式回退 ---------- */
   --font-sans:
-    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
+    'Inter', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono:
     'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Cascadia Code',
-    'Menlo', 'Consolas', monospace;
+    'Menlo', 'Consolas', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    monospace;
 
   /* ---------- 表面层级（半透明，靠 backdrop-filter 透出系统 acrylic） ----------
      alpha 由深到浅递减：越"靠上"的层越亮、越不透明 */

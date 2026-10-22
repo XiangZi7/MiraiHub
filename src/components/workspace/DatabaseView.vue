@@ -293,7 +293,7 @@ const state = reactive({
   preparingTransfer: false,
   overviewSchema: '',
 })
-const { transferMode } = toRefs(state)
+const { transferMode, preparingTransfer } = toRefs(state)
 
 const {
   sessionId,
@@ -369,6 +369,7 @@ watch(sessionId, () => {
 })
 
 function selectSchema(name: string): void {
+  if (state.transferMode || state.preparingTransfer) return
   if (databaseKind.value === 'mysql') void changeDatabase(name)
   else state.overviewSchema = name
 }
@@ -1262,8 +1263,8 @@ function handleHistoryAction(id: string): void {
   if (entry) openQuery(entry.sql)
 }
 
-async function changeDatabase(value: string): Promise<void> {
-  if (state.transferMode) return
+async function changeDatabase(value: string, preparing = false): Promise<void> {
+  if (state.transferMode || (state.preparingTransfer && !preparing)) return
   if (!value) return
   if (
     value === browsedDatabase.value &&
@@ -1281,7 +1282,13 @@ async function openDatabaseTransfer(
   name: string,
   mode: DatabaseTransferMode
 ): Promise<void> {
-  if (!connected.value || !name || state.preparingTransfer) return
+  if (
+    !connected.value ||
+    !name ||
+    state.preparingTransfer ||
+    state.transferMode
+  )
+    return
   if (queryLoading.value) {
     toast.warning(t('请等待当前查询完成后再导入或导出数据库'))
     return
@@ -1289,7 +1296,7 @@ async function openDatabaseTransfer(
   state.preparingTransfer = true
   const originalSessionId = sessionId.value
   try {
-    await changeDatabase(name)
+    await changeDatabase(name, true)
     // 切库失败或连接已重建时，不允许误用旧库继续操作。
     if (
       sessionId.value !== originalSessionId ||
@@ -1354,6 +1361,7 @@ watch(
       :database-name="databaseName"
       :database-kind="databaseKind"
       :active-database="overviewSchema"
+      :current-database="session?.database"
       :database-names="databaseKind === 'mysql' ? databases : []"
       :objects="objects"
       :saved-queries="savedQueries"
@@ -1361,6 +1369,8 @@ watch(
       :columns-by-object="columnsByObject"
       :inspecting-keys="inspectingKeys"
       :loading="objectsLoading"
+      :databases-loading="databasesLoading || status === 'connecting'"
+      :preparing-transfer="preparingTransfer"
       :error="objectsError"
       @refresh="refreshAll"
       @inspect="inspectObject"
@@ -1533,7 +1543,12 @@ watch(
                 v-model="selectedDatabase"
                 :label="t('活动数据库')"
                 :options="databaseOptions"
-                :disabled="databasesLoading || queryLoading"
+                :disabled="
+                  databasesLoading ||
+                  queryLoading ||
+                  preparingTransfer ||
+                  transferMode !== null
+                "
                 hide-label
                 compact
                 searchable
@@ -1566,6 +1581,20 @@ watch(
             :class="agentOpen && 'text-accent'"
             @click="toggleAgent"
           />
+        </div>
+
+        <div
+          v-if="preparingTransfer"
+          class="border-line-soft bg-accent/5 text-txt-2 flex shrink-0 items-center gap-2 border-b px-3 py-2 text-[11px]"
+          role="status"
+          aria-live="polite"
+        >
+          <AppIcon
+            name="lucide:loader-circle"
+            :size="13"
+            class="text-accent animate-spin"
+          />
+          {{ t('正在读取数据库结构…') }}
         </div>
 
         <!-- 连接中只铺骨架：等待时就能看出界面即将长成什么样，

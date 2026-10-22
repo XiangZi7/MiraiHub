@@ -27,6 +27,7 @@ const props = defineProps<{
   databaseName: string
   databaseKind: DatabaseKind
   activeDatabase: string
+  currentDatabase?: string
   databaseNames: readonly string[]
   objects: DatabaseObject[]
   savedQueries: readonly SavedDatabaseQuery[]
@@ -34,6 +35,8 @@ const props = defineProps<{
   columnsByObject: Record<string, DatabaseColumn[] | undefined>
   inspectingKeys: Set<string>
   loading: boolean
+  databasesLoading?: boolean
+  preparingTransfer?: boolean
   error: string
 }>()
 
@@ -185,9 +188,11 @@ function createObjectItems(schema: string): ContextMenuItem[] {
 }
 
 const transferDatabase = computed(() =>
-  context.target === 'database' && props.databaseKind === 'mysql'
-    ? context.database
-    : props.activeDatabase
+  props.databaseKind === 'postgresql'
+    ? props.currentDatabase || props.activeDatabase
+    : context.target === 'database'
+      ? context.database
+      : props.activeDatabase
 )
 const transferItems = computed<ContextMenuItem[]>(() => [
   {
@@ -199,7 +204,8 @@ const transferItems = computed<ContextMenuItem[]>(() => [
     icon: 'lucide:database-backup',
     iconTone: 'blue',
     separatorBefore: true,
-    disabled: props.loading || !transferDatabase.value,
+    disabled:
+      props.loading || props.preparingTransfer || !transferDatabase.value,
   },
   {
     id: 'import-database',
@@ -209,7 +215,8 @@ const transferItems = computed<ContextMenuItem[]>(() => [
         : t('导入数据库…'),
     icon: 'lucide:file-input',
     iconTone: 'blue',
-    disabled: props.loading || !transferDatabase.value,
+    disabled:
+      props.loading || props.preparingTransfer || !transferDatabase.value,
   },
 ])
 
@@ -391,6 +398,19 @@ function kindLabel(kind: DatabaseObjectKind): string {
   return t('函数')
 }
 
+function schemaLoading(name: string): boolean {
+  return (
+    props.loading &&
+    (props.databaseKind === 'postgresql' || name === props.activeDatabase)
+  )
+}
+
+function schemaError(name: string): string {
+  return props.databaseKind === 'postgresql' || name === props.activeDatabase
+    ? props.error
+    : ''
+}
+
 function toggle(key: string): void {
   if (expanded.has(key)) expanded.delete(key)
   else expanded.add(key)
@@ -499,7 +519,7 @@ function handleContextAction(id: string): void {
         icon="lucide:rotate-cw"
         :size="13"
         :title="t('刷新对象树')"
-        :disabled="loading"
+        :disabled="loading || databasesLoading || preparingTransfer"
         @click.stop="emit('refresh')"
       />
     </div>
@@ -514,13 +534,26 @@ function handleContextAction(id: string): void {
 
     <div class="scroll-thin flex-1 overflow-y-auto p-1.5">
       <div
-        v-if="error && !objects.length && !savedQueries.length"
+        v-if="(loading || databasesLoading) && !schemas.length"
+        class="space-y-3 px-2 py-3 motion-safe:animate-pulse"
+        role="status"
+        :aria-label="t('正在读取数据库结构…')"
+      >
+        <div
+          v-for="width in ['w-3/4', 'w-1/2', 'w-2/3']"
+          :key="width"
+          :class="cn('bg-txt-4/15 h-3 rounded-sm', width)"
+          aria-hidden="true"
+        />
+      </div>
+      <div
+        v-else-if="error && !objects.length && !savedQueries.length"
         class="text-txt-4 px-2 py-3 text-[11px] leading-5"
       >
         {{ t('对象列表加载失败，请刷新重试') }}
       </div>
       <div
-        v-else-if="!loading && !schemas.length"
+        v-else-if="!loading && !databasesLoading && !schemas.length"
         class="text-txt-4 px-2 py-3 text-[11px]"
       >
         {{ t('当前连接中没有可显示的数据库对象') }}
@@ -539,6 +572,7 @@ function handleContextAction(id: string): void {
             )
           "
           :aria-expanded="expanded.has(`schema:${schema.name}`)"
+          :disabled="preparingTransfer"
           @click.stop="selectSchema(schema.name)"
           @contextmenu.prevent.stop="
             showContext($event, 'database', { database: schema.name })
@@ -577,6 +611,8 @@ function handleContextAction(id: string): void {
             icon="lucide:table-2"
             icon-class="text-blue"
             :objects="schema.tables"
+            :loading="schemaLoading(schema.name)"
+            :error="schemaError(schema.name)"
             :selected-key="selectedKey"
             :columns-by-object="columnsByObject"
             :inspecting-keys="inspectingKeys"
@@ -623,6 +659,8 @@ function handleContextAction(id: string): void {
             icon="lucide:eye"
             icon-class="text-accent"
             :objects="schema.views"
+            :loading="schemaLoading(schema.name)"
+            :error="schemaError(schema.name)"
             :selected-key="selectedKey"
             :columns-by-object="columnsByObject"
             :inspecting-keys="inspectingKeys"
@@ -650,6 +688,8 @@ function handleContextAction(id: string): void {
             icon="lucide:workflow"
             icon-class="text-violet"
             :objects="schema.procedures"
+            :loading="schemaLoading(schema.name)"
+            :error="schemaError(schema.name)"
             :selected-key="selectedKey"
             :columns-by-object="columnsByObject"
             :inspecting-keys="inspectingKeys"
@@ -677,6 +717,8 @@ function handleContextAction(id: string): void {
             icon="lucide:braces"
             icon-class="text-amber"
             :objects="schema.functions"
+            :loading="schemaLoading(schema.name)"
+            :error="schemaError(schema.name)"
             :selected-key="selectedKey"
             :columns-by-object="columnsByObject"
             :inspecting-keys="inspectingKeys"

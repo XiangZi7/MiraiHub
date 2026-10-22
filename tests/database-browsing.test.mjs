@@ -28,10 +28,23 @@ const load = sourceLoader(
       import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
       export default { props:['name'], setup: props => () => h('i', { 'data-icon':props.name }) }
     `),
+    '@/components/ui/AppContextMenu.vue': dataModule(`
+      import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
+      export default { props:['open','items'], emits:['select'], setup: (props, { emit }) => () =>
+        props.open ? h('menu', props.items.map(item => h('button', {
+          'data-action': item.id, disabled: item.disabled, onClick: () => emit('select', item.id)
+        }, item.label))) : null }
+    `),
+    './database/DatabaseTransferDialog.vue': dataModule(`
+      import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
+      export default { props:['open','mode'], setup: props => () =>
+        props.open ? h('dialog', { 'data-transfer-mode': props.mode }) : null }
+    `),
   },
   [
     'src/components/workspace/DatabaseView.vue',
     'src/components/workspace/database/DatabaseObjectTree.vue',
+    'src/components/workspace/database/DatabaseObjectCategory.vue',
     'src/components/workspace/database/DatabaseTableOverview.vue',
     'src/components/workspace/database/DatabaseConnectingSkeleton.vue',
     'src/components/ui/AppButton.vue',
@@ -99,6 +112,7 @@ const object = (schema, name = `${schema}_table`) => ({
   kind: 'table',
   identity: '',
   comment: '',
+  rowEstimate: null,
 })
 
 async function fixture(
@@ -159,6 +173,7 @@ async function fixture(
     root,
     overview: () =>
       all(root).find(el => el.props['aria-label'] === '当前数据库的表'),
+    tree: () => all(root).find(el => el.props['aria-label'] === '数据库对象'),
     async select(name) {
       const button = all(root).find(
         el =>
@@ -223,6 +238,19 @@ test('connection and table loading use skeletons without extra spinners or loadi
   connected.resolve(session(''))
   await flush()
   await view.select('alpha')
+  assert.doesNotMatch(textOf(view.tree()), /暂无对象/)
+  assert.ok(
+    all(view.tree()).some(
+      el =>
+        el.props.role === 'status' &&
+        el.props['aria-label'] === '正在读取数据库结构…'
+    )
+  )
+  assert.ok(
+    all(view.tree()).some(
+      el => el.type === 'button' && el.props['aria-busy'] === true
+    )
+  )
   assert.ok(
     all(view.overview()).some(
       el =>
@@ -238,6 +266,103 @@ test('connection and table loading use skeletons without extra spinners or loadi
   objects.resolve([object('alpha')])
   await flush()
   assert.match(textOf(view.overview()), /alpha_table/)
+  assert.match(textOf(view.tree()), /alpha_table/)
+  assert.equal(
+    all(view.tree()).some(el => el.props['aria-busy'] === true),
+    false
+  )
+})
+
+test('database list loading does not flash an empty tree', async t => {
+  const databases = deferred()
+  const view = await fixture(t, {
+    handlers: { listDatabases: () => databases.promise },
+  })
+  assert.doesNotMatch(textOf(view.tree()), /没有可显示的数据库对象/)
+  assert.ok(all(view.tree()).some(el => el.props.role === 'status'))
+  databases.resolve(['alpha'])
+  await flush()
+  assert.match(textOf(view.tree()), /alpha/)
+  assert.equal(
+    all(view.tree()).some(el => el.props.role === 'status'),
+    false
+  )
+})
+
+test('an empty category appears only after loading completes and a failure stays distinct', async t => {
+  const objects = deferred()
+  const view = await fixture(t, {
+    handlers: { listObjects: () => objects.promise },
+  })
+  await view.select('alpha')
+  assert.doesNotMatch(textOf(view.tree()), /暂无对象/)
+  objects.reject(new Error('fixture metadata failed'))
+  await flush()
+  assert.doesNotMatch(textOf(view.tree()), /暂无对象/)
+  assert.match(textOf(view.tree()), /对象列表加载失败/)
+  mock.handlers.listObjects = async () => []
+  const retry = all(view.overview()).find(
+    el => el.type === 'button' && textOf(el) === '重新加载'
+  )
+  retry.props.onClick()
+  await flush()
+  assert.match(textOf(view.tree()), /暂无对象/)
+  assert.doesNotMatch(textOf(view.tree()), /对象列表加载失败/)
+})
+
+test('preparing a database export shows feedback and prevents changing its target', async t => {
+  const switched = deferred()
+  const view = await fixture(t, {
+    handlers: {
+      useDatabase: (_id, name) =>
+        name === 'beta' ? switched.promise : Promise.resolve(session(name)),
+    },
+  })
+  const beta = all(view.tree()).find(
+    el => el.type === 'button' && textOf(el) === 'beta'
+  )
+  beta.props.onContextmenu({
+    preventDefault() {},
+    stopPropagation() {},
+    clientX: 0,
+    clientY: 0,
+  })
+  await flush()
+  const exportButton = all(view.root).find(
+    el => el.props['data-action'] === 'export-database'
+  )
+  assert.equal(Boolean(exportButton.props.disabled), false)
+  exportButton.props.onClick()
+  await flush()
+  assert.ok(
+    all(view.root).some(
+      el =>
+        el.props.role === 'status' &&
+        textOf(el).trim() === '正在读取数据库结构…'
+    )
+  )
+  assert.equal(
+    all(view.root).some(el => el.type === 'dialog'),
+    false
+  )
+  await view.select('alpha')
+  assert.deepEqual(
+    mock.calls.filter(([name]) => name === 'useDatabase').map(call => call[2]),
+    ['beta']
+  )
+  switched.resolve(session('beta'))
+  await flush()
+  assert.ok(
+    all(view.root).some(el => el.props['data-transfer-mode'] === 'export')
+  )
+  assert.equal(
+    all(view.root).some(
+      el =>
+        el.props.role === 'status' &&
+        textOf(el).trim() === '正在读取数据库结构…'
+    ),
+    false
+  )
 })
 
 test('switching clears old tables and ignores a late response from the previous database', async t => {
@@ -323,6 +448,32 @@ test('PostgreSQL initially leaves the overview empty and filters by the clicked 
   await view.select('audit')
   assert.match(textOf(view.overview()), /events/)
   assert.doesNotMatch(textOf(view.overview()), /users/)
+  assert.equal(
+    mock.calls.some(([name]) => name === 'useDatabase'),
+    false
+  )
+})
+
+test('PostgreSQL transfers target the current database instead of its selected schema', async t => {
+  const view = await fixture(t, {
+    kind: 'postgresql',
+    database: 'postgres',
+    handlers: { listObjects: async () => [object('public', 'users')] },
+  })
+  await view.select('public')
+  view
+    .tree()
+    .props.onContextmenu({ preventDefault() {}, clientX: 0, clientY: 0 })
+  await flush()
+  const exportButton = all(view.root).find(
+    el => el.props['data-action'] === 'export-database'
+  )
+  assert.equal(Boolean(exportButton.props.disabled), false)
+  exportButton.props.onClick()
+  await flush()
+  assert.ok(
+    all(view.root).some(el => el.props['data-transfer-mode'] === 'export')
+  )
   assert.equal(
     mock.calls.some(([name]) => name === 'useDatabase'),
     false

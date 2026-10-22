@@ -6,7 +6,9 @@ import type {
   DatabaseColumn,
   DatabaseConfig,
   DatabaseExecution,
+  DatabaseExportOptions,
   DatabaseExportResult,
+  DatabaseImportOptions,
   DatabaseImportResult,
   DatabaseObject,
   DatabaseObjectKind,
@@ -270,22 +272,31 @@ export async function cancelQuery(sessionId: string): Promise<boolean> {
 export async function exportSql(
   sessionId: string,
   path: string,
-  includeData: boolean,
-  dropExisting: boolean
+  options: DatabaseExportOptions
 ): Promise<DatabaseExportResult> {
   ensureTauri()
   return invoke<DatabaseExportResult>('db_export_sql', {
     sessionId,
     path,
-    includeData,
-    dropExisting,
+    includeData: options.content !== 'structure',
+    includeStructure: options.content !== 'data',
+    includeDatabase: options.content !== 'data' && options.includeDatabase,
+    dropExisting: options.content !== 'data' && options.dropExisting,
   })
 }
 
 export async function importSql(
   sessionId: string,
-  path: string
+  path: string,
+  options: DatabaseImportOptions
 ): Promise<DatabaseImportResult> {
   ensureTauri()
-  return invoke<DatabaseImportResult>('db_import_sql', { sessionId, path })
+  return invoke<DatabaseImportResult>('db_import_sql', {
+    sessionId,
+    path,
+    options: {
+      ...options,
+      includeDatabase: options.content !== 'data' && options.includeDatabase,
+    },
+  })
 }

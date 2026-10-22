@@ -134,12 +134,10 @@ const visibleEntries = computed(() => {
       )
     : pathEntries.value
 })
-watch(
-  () => props.sessionId,
-  () => {
-    filterText.value = ''
-  }
-)
+watch([() => props.sessionId, path], () => {
+  // 筛选仅作用于当前目录；成功切换目录时清空，原地刷新或导航失败则保留。
+  filterText.value = ''
+})
 const pathClip = useClipboard({ copiedDuring: 1600 })
 
 watch(visibleEntries, files => {

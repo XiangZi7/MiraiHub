@@ -9,10 +9,10 @@ use super::error::DatabaseError;
 use super::manager::DatabaseManager;
 use super::metadata;
 use super::models::{
-    DatabaseColumn, DatabaseConfig, DatabaseExecution, DatabaseExportResult, DatabaseImportResult,
-    DatabaseObject, DatabaseObjectKind, DatabaseRoutineDetail, DatabaseRowPage, DatabaseSession,
-    DatabaseTableDetail, DatabaseTableOptions, MutationRequest, MutationResult, RowPageRequest,
-    TableAlterOptions,
+    DatabaseColumn, DatabaseConfig, DatabaseExecution, DatabaseExportResult, DatabaseImportOptions,
+    DatabaseImportResult, DatabaseObject, DatabaseObjectKind, DatabaseRoutineDetail,
+    DatabaseRowPage, DatabaseSession, DatabaseTableDetail, DatabaseTableOptions, MutationRequest,
+    MutationResult, RowPageRequest, TableAlterOptions,
 };
 use super::mutation;
 use super::object_ops;
@@ -304,8 +304,19 @@ pub async fn db_export_sql(
     path: String,
     include_data: bool,
     drop_existing: bool,
+    include_structure: Option<bool>,
+    include_database: Option<bool>,
 ) -> AppResult<DatabaseExportResult> {
-    Ok(transfer::export_sql(&manager, &session_id, &path, include_data, drop_existing).await?)
+    Ok(transfer::export_sql(
+        &manager,
+        &session_id,
+        &path,
+        include_data,
+        drop_existing,
+        include_structure.unwrap_or(true),
+        include_database.unwrap_or(false),
+    )
+    .await?)
 }
 
 #[tauri::command]
@@ -313,6 +324,7 @@ pub async fn db_import_sql(
     manager: State<'_, DatabaseManager>,
     session_id: String,
     path: String,
+    options: Option<DatabaseImportOptions>,
 ) -> AppResult<DatabaseImportResult> {
-    Ok(transfer::import_sql(&manager, &session_id, &path).await?)
+    Ok(transfer::import_sql(&manager, &session_id, &path, &options.unwrap_or_default()).await?)
 }

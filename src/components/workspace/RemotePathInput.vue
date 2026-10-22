@@ -231,7 +231,7 @@ defineExpose({
   flex: 1;
   background: transparent;
   color: var(--color-txt);
-  font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   outline: none;
 }

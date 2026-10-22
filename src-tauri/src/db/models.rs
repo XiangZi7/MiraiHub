@@ -360,6 +360,22 @@ pub struct MutationResult {
 // SQL 导入 / 导出
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DatabaseTransferContent {
+    #[default]
+    All,
+    Structure,
+    Data,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DatabaseImportOptions {
+    pub content: DatabaseTransferContent,
+    pub include_database: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseExportResult {
@@ -375,6 +391,7 @@ pub struct DatabaseExportResult {
 pub struct DatabaseImportResult {
     pub path: String,
     pub statements: usize,
+    pub skipped_statements: usize,
     pub rows_affected: u64,
     pub elapsed_ms: u64,
 }

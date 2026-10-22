@@ -1080,6 +1080,35 @@ export const en = {
   '导出为可再次导入的 SQL 文件；大表会分页读取，避免一次载入全部数据。':
     'Export a reusable SQL file. Large tables are read in pages to avoid loading all data at once.',
   导出数据库: 'Export database',
+  结构和数据: 'Structure and data',
+  仅结构: 'Structure only',
+  仅数据: 'Data only',
+  导出内容: 'Export content',
+  导入内容: 'Import content',
+  '只导出表数据，不包含建库、建表、视图或例程；导入时目标表需已存在。':
+    'Export table data only, without databases, tables, views, or routines. Target tables must already exist.',
+  '只导入 INSERT / REPLACE 数据，跳过建库、建表和其他 SQL；目标表需已存在。':
+    'Import INSERT / REPLACE data only, skipping database creation, table creation, and other SQL. Target tables must already exist.',
+  '只导入 INSERT 数据和序列值，跳过建库、建表和其他 SQL；目标表需已存在。':
+    'Import INSERT data and sequence values only, skipping database creation, table creation, and other SQL. Target tables must already exist.',
+  '只处理表、索引、约束、视图和例程结构，不包含表数据。':
+    'Process tables, indexes, constraints, views, and routines without table data.',
+  '包含对象结构和表数据，适合完整迁移。':
+    'Include object structures and table data for a full migration.',
+  '包含 Schema 创建语句': 'Include schema creation',
+  包含建库和切库语句: 'Include database creation and switching',
+  '关闭后不创建 Schema，目标 Schema 需已存在。':
+    'When disabled, target schemas must already exist.',
+  '默认关闭，便于将文件导入其他数据库。':
+    'Disabled by default so the file can be imported into another database.',
+  '默认关闭，导入当前数据库；开启后允许文件创建或切换数据库。':
+    'Import into the current database by default. Enable to allow the file to create or switch databases.',
+  '将按所选内容导入 SQL。INSERT 会追加数据，REPLACE 可能替换已有行；主键或唯一键冲突可能导致导入失败。':
+    'Import the selected SQL content. INSERT appends rows; REPLACE may replace existing rows. Primary or unique key conflicts may cause the import to fail.',
+  '已按选项跳过 {count} 条 SQL。':
+    'Skipped {count} SQL statements based on your options.',
+  '将按所选内容导入“{value0}”，目标数据库：{value1}。该操作可能修改现有数据。':
+    'Import the selected content from “{value0}” into {value1}. This may modify existing data.',
   尚未添加字段: 'No columns added',
   尚未配置外键: 'No foreign keys configured',
   尚未配置额外索引: 'No additional indexes configured',

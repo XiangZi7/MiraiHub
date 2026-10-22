@@ -185,7 +185,7 @@ async function removePreset(): Promise<void> {
   width: 100%;
   resize: vertical;
   padding: 8px 10px;
-  font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
+  font-family: var(--font-mono);
   line-height: 1.45;
 }
 

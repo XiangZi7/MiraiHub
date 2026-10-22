@@ -11,6 +11,7 @@ import type { DatabaseObject } from '@/types/database'
 import { cn } from '@/utils/cn'
 import DatabaseObjectContextMenu from './DatabaseObjectContextMenu.vue'
 import DatabaseConnectingSkeleton from './DatabaseConnectingSkeleton.vue'
+import DatabaseEmptyIllustration from './DatabaseEmptyIllustration.vue'
 
 const { t } = useI18n()
 
@@ -208,14 +209,7 @@ watch([() => props.objects, () => props.loading], () => {
       class="flex h-full items-center justify-center p-6"
       aria-hidden="true"
     >
-      <img
-        src="/images/database-empty.webp"
-        alt=""
-        width="640"
-        height="512"
-        class="pointer-events-none h-auto max-h-full w-80 max-w-full object-contain select-none"
-        draggable="false"
-      />
+      <DatabaseEmptyIllustration />
     </div>
     <DatabaseObjectContextMenu
       :open="menu.open"

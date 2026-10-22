@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, reactive, watch } from 'vue'
+import { computed, nextTick, reactive, toRefs, watch } from 'vue'
 import {
   open as openFileDialog,
   save as saveFileDialog,
 } from '@tauri-apps/plugin-dialog'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
-import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { toast } from '@/composables/useToast'
 import type { SavedConnection } from '@/types/connection'
 import { isSqlConnection } from '@/types/connection'
+import type { DatabaseTransferContent } from '@/types/database'
+import DatabaseTransferOptions from './DatabaseTransferOptions.vue'
 
 const { t } = useI18n()
 
@@ -33,15 +34,45 @@ const emit = defineEmits<{
   finished: [mode: DatabaseTransferMode]
 }>()
 
+// 响应式状态
 const state = reactive({
+  // SQL 文件路径
   path: '',
-  includeData: true,
+  // 导入或导出的内容范围
+  content: 'all' as DatabaseTransferContent,
+  // 是否包含建库与切库语句
+  includeDatabase: false,
+  // 是否生成同名对象的删除语句
   dropExisting: false,
+  // 文件选择器是否仍在打开
+  pickingPath: false,
+  // 传输任务是否正在执行
   running: false,
+  // 导入任务是否正在取消
   cancelling: false,
+  // 是否展示导入确认
   confirmingImport: false,
+  // 当前任务是否已经完成
   finished: false,
+  // 完成后的统计信息
+  resultSummary: '',
+  // 失败后的可重试错误信息
+  error: '',
 })
+const {
+  path,
+  content,
+  includeDatabase,
+  dropExisting,
+  pickingPath,
+  running,
+  cancelling,
+  confirmingImport,
+  finished,
+  resultSummary,
+  error,
+} = toRefs(state)
+const busy = computed(() => state.running || state.pickingPath)
 
 const isExport = computed(() => props.mode === 'export')
 const title = computed(() =>
@@ -59,13 +90,26 @@ watch([() => props.open, () => props.mode], ([open]) => {
   if (!open) return
 
   state.path = ''
-  state.includeData = true
+  state.content = 'all'
+  state.includeDatabase = false
   state.dropExisting = false
+  state.pickingPath = false
   state.running = false
   state.cancelling = false
   state.confirmingImport = false
   state.finished = false
+  state.resultSummary = ''
+  state.error = ''
 })
+
+watch(
+  () => state.content,
+  content => {
+    if (content !== 'data') return
+    state.includeDatabase = false
+    state.dropExisting = false
+  }
+)
 
 function safeFileName(value: string): string {
   return (
@@ -82,26 +126,37 @@ function defaultExportName(): string {
 }
 
 async function choosePath(): Promise<void> {
-  if (isExport.value) {
-    const selected = await saveFileDialog({
-      title: t('选择 SQL 导出位置'),
-      defaultPath: defaultExportName(),
+  if (busy.value) return
+  state.pickingPath = true
+  state.error = ''
+  try {
+    if (isExport.value) {
+      const selected = await saveFileDialog({
+        title: t('选择 SQL 导出位置'),
+        defaultPath: defaultExportName(),
+        filters: [{ name: t('SQL 文件'), extensions: ['sql'] }],
+      })
+      if (selected) state.path = selected
+      return
+    }
+
+    const selected = await openFileDialog({
+      title: t('选择要导入的 SQL 文件'),
+      multiple: false,
+      directory: false,
       filters: [{ name: t('SQL 文件'), extensions: ['sql'] }],
     })
-    if (selected) state.path = selected
-    return
+    if (typeof selected === 'string') state.path = selected
+  } catch (error) {
+    state.error = database.errorMessage(error)
+    toast.error(state.error)
+  } finally {
+    state.pickingPath = false
   }
-
-  const selected = await openFileDialog({
-    title: t('选择要导入的 SQL 文件'),
-    multiple: false,
-    directory: false,
-    filters: [{ name: t('SQL 文件'), extensions: ['sql'] }],
-  })
-  if (typeof selected === 'string') state.path = selected
 }
 
 function requestRun(): void {
+  if (busy.value || state.finished || state.confirmingImport) return
   if (!state.path) {
     toast.warning(
       isExport.value ? t('请先选择导出位置') : t('请先选择 SQL 文件')
@@ -123,50 +178,66 @@ async function confirmImport(): Promise<void> {
 }
 
 async function runTransfer(): Promise<void> {
+  if (state.running) return
   state.running = true
   state.cancelling = false
   state.finished = false
+  state.error = ''
+  state.resultSummary = ''
+  // 先刷新禁用与加载状态，再发起原生任务。
+  await nextTick()
 
   try {
     if (isExport.value) {
-      const result = await database.exportSql(
-        props.sessionId,
-        state.path,
-        state.includeData,
-        state.dropExisting
+      const result = await database.exportSql(props.sessionId, state.path, {
+        content: state.content,
+        includeDatabase: state.includeDatabase,
+        dropExisting: state.dropExisting,
+      })
+      state.resultSummary = t(
+        '已导出 {value0} 个对象、{value1} 行数据（{value2}），耗时 {value3} ms。',
+        {
+          value0: result.objects,
+          value1: result.rows,
+          value2: formatBytes(result.bytes),
+          value3: result.elapsedMs,
+        }
       )
       toast.success({
         title: t('数据库导出完成'),
-        description: t(
-          '已导出 {value0} 个对象、{value1} 行数据（{value2}），耗时 {value3} ms。',
-          {
-            value0: result.objects,
-            value1: result.rows,
-            value2: formatBytes(result.bytes),
-            value3: result.elapsedMs,
-          }
-        ),
+        description: state.resultSummary,
       })
     } else {
-      const result = await database.importSql(props.sessionId, state.path)
+      const result = await database.importSql(props.sessionId, state.path, {
+        content: state.content,
+        includeDatabase: state.includeDatabase,
+      })
+      state.resultSummary = t(
+        '已执行 {value0} 条 SQL，影响 {value1} 行，耗时 {value2} ms。',
+        {
+          value0: result.statements,
+          value1: result.rowsAffected,
+          value2: result.elapsedMs,
+        }
+      )
+      if (result.skippedStatements > 0)
+        state.resultSummary +=
+          ' ' +
+          t('已按选项跳过 {count} 条 SQL。', {
+            count: result.skippedStatements,
+          })
       toast.success({
         title: t('SQL 导入完成'),
-        description: t(
-          '已执行 {value0} 条 SQL，影响 {value1} 行，耗时 {value2} ms。',
-          {
-            value0: result.statements,
-            value1: result.rowsAffected,
-            value2: result.elapsedMs,
-          }
-        ),
+        description: state.resultSummary,
       })
     }
     state.finished = true
     emit('finished', props.mode)
   } catch (error) {
+    state.error = database.errorMessage(error)
     toast.error({
       title: isExport.value ? t('数据库导出失败') : t('SQL 导入失败'),
-      description: database.errorMessage(error),
+      description: state.error,
     })
   } finally {
     state.running = false
@@ -190,7 +261,7 @@ async function cancelImport(): Promise<void> {
 }
 
 function requestClose(): void {
-  if (!state.running) emit('close')
+  if (!busy.value && !state.confirmingImport) emit('close')
 }
 
 function formatBytes(bytes: number): string {
@@ -212,7 +283,10 @@ function formatBytes(bytes: number): string {
           :description="`${connection?.name ?? t('数据库')} · ${databaseName}`"
           @close="requestClose"
         >
-          <div class="grid gap-3.5">
+          <div
+            class="grid gap-3.5"
+            :aria-busy="running"
+          >
             <div class="space-y-1.5">
               <label class="text-txt-2 text-[11px] font-medium">
                 {{ isExport ? t('保存位置') : t('SQL 文件') }}
@@ -228,38 +302,32 @@ function formatBytes(bytes: number): string {
                     :size="13"
                     class="shrink-0"
                   />
-                  <span class="truncate">{{
-                    state.path || t('尚未选择文件')
-                  }}</span>
+                  <span class="truncate">{{ path || t('尚未选择文件') }}</span>
                 </div>
                 <AppButton
-                  :disabled="state.running"
+                  :disabled="busy || finished"
                   @click="choosePath"
                 >
+                  <AppIcon
+                    v-if="pickingPath"
+                    name="lucide:loader-circle"
+                    :size="13"
+                    class="animate-spin"
+                  />
                   {{ t('浏览…') }}
                 </AppButton>
               </div>
             </div>
 
+            <DatabaseTransferOptions
+              v-model:content="content"
+              v-model:include-database="includeDatabase"
+              v-model:drop-existing="dropExisting"
+              :mode="mode"
+              :database-kind="connection?.kind"
+              :disabled="busy || finished"
+            />
             <template v-if="isExport">
-              <div class="card grid gap-3 px-3 py-2.5">
-                <AppCheckbox
-                  v-model="state.includeData"
-                  :label="t('包含表数据')"
-                  :description="
-                    t('关闭后只导出表、索引、约束、视图和例程结构。')
-                  "
-                  :disabled="state.running"
-                />
-                <AppCheckbox
-                  v-model="state.dropExisting"
-                  :label="t('导入前删除同名对象')"
-                  :description="
-                    t('在导出文件中加入表、视图、存储过程和函数的 DROP 语句。')
-                  "
-                  :disabled="state.running"
-                />
-              </div>
               <p
                 class="text-txt-4 flex items-start gap-1.5 text-[10.5px] leading-4"
               >
@@ -288,14 +356,14 @@ function formatBytes(bytes: number): string {
               <span>
                 {{
                   t(
-                    'SQL 文件会直接在当前数据库会话中执行，可能创建、修改或删除数据。请确认文件来源可信并已做好备份。'
+                    '将按所选内容导入 SQL。INSERT 会追加数据，REPLACE 可能替换已有行；主键或唯一键冲突可能导致导入失败。'
                   )
                 }}
               </span>
             </p>
 
             <p
-              v-if="state.running"
+              v-if="running"
               class="card text-txt-2 flex items-center gap-2 px-3 py-2.5 text-[11px]"
               role="status"
             >
@@ -305,39 +373,64 @@ function formatBytes(bytes: number): string {
                 class="text-violet animate-spin"
               />
               {{
-                state.cancelling
+                cancelling
                   ? t('正在取消导入…')
                   : isExport
                     ? t('正在导出，请稍候…')
                     : t('正在导入，请稍候…')
               }}
             </p>
+            <p
+              v-else-if="finished"
+              class="card text-green flex items-start gap-2 px-3 py-2.5 text-[11px] leading-5"
+              role="status"
+            >
+              <AppIcon
+                name="lucide:circle-check"
+                :size="14"
+                class="mt-0.5 shrink-0"
+              />
+              {{ resultSummary }}
+            </p>
+            <p
+              v-else-if="error"
+              class="card text-danger px-3 py-2.5 text-[11px] leading-5 break-words"
+              role="alert"
+            >
+              {{ error }}
+            </p>
           </div>
 
           <template #footer>
             <div class="flex-1" />
             <AppButton
-              v-if="state.running && !isExport"
-              :disabled="state.cancelling"
+              v-if="running && !isExport"
+              :disabled="cancelling"
               @click="cancelImport"
             >
-              {{ state.cancelling ? t('取消中…') : t('取消导入') }}
+              {{ cancelling ? t('取消中…') : t('取消导入') }}
             </AppButton>
             <AppButton
               v-else
-              :disabled="state.running"
+              :disabled="busy"
               @click="requestClose"
             >
-              {{ state.finished ? t('完成') : t('取消') }}
+              {{ finished ? t('完成') : t('取消') }}
             </AppButton>
             <AppButton
-              v-if="!state.finished"
+              v-if="!finished"
               variant="primary"
-              :disabled="state.running"
+              :disabled="busy || !path"
               @click="requestRun"
             >
+              <AppIcon
+                v-if="running"
+                name="lucide:loader-circle"
+                :size="13"
+                class="animate-spin"
+              />
               {{
-                state.running
+                running
                   ? isExport
                     ? t('导出中…')
                     : t('导入中…')
@@ -353,17 +446,17 @@ function formatBytes(bytes: number): string {
   </Teleport>
 
   <AppConfirmDialog
-    :open="state.confirmingImport"
+    :open="confirmingImport"
     :title="t('确认导入 SQL')"
     :description="
       t(
-        '将执行“{value0}”中的全部 SQL。该操作可能覆盖或删除 {value1} 中的现有数据。',
-        { value0: state.path, value1: databaseName }
+        '将按所选内容导入“{value0}”，目标数据库：{value1}。该操作可能修改现有数据。',
+        { value0: path, value1: databaseName }
       )
     "
     :confirm-label="t('确认导入')"
     danger
-    @close="state.confirmingImport = false"
+    @close="confirmingImport = false"
     @confirm="confirmImport"
   />
 </template>
