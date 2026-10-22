@@ -21,7 +21,7 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             max_steps: 32,
-            max_context_kb: 1000,
+            max_context_kb: 4000,
             max_messages: 256,
             max_retries: default_max_retries(),
         }
@@ -30,11 +30,11 @@ impl Default for Limits {
 impl Limits {
     pub fn validate(&self) -> AppResult<()> {
         if !(1..=128).contains(&self.max_steps)
-            || !(64..=4000).contains(&self.max_context_kb)
+            || !(64..=64000).contains(&self.max_context_kb)
             || !(16..=2048).contains(&self.max_messages)
             || self.max_retries > 999
         {
-            return Err(AppError::invalid_input("任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–4000 KB，历史消息须为 16–2048 条，失败重试须为 0–999 次"));
+            return Err(AppError::invalid_input("任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–64000 KB，历史消息须为 16–2048 条，失败重试须为 0–999 次"));
         }
         Ok(())
     }
@@ -123,7 +123,7 @@ mod tests {
                 ..Limits::default()
             },
             Limits {
-                max_context_kb: 4001,
+                max_context_kb: 64001,
                 ..Limits::default()
             },
             Limits {
@@ -147,6 +147,14 @@ mod tests {
                 ..Limits::default()
             };
             assert!(limits.validate().is_ok());
+        }
+        for capacity in [64, 4000, 16000, 64000] {
+            assert!(Limits {
+                max_context_kb: capacity,
+                ..Limits::default()
+            }
+            .validate()
+            .is_ok());
         }
         let history = vec![json!({"role":"assistant","content":"ok"}); 64];
         let legacy = Limits {

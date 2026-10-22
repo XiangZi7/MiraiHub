@@ -658,6 +658,25 @@ mod tests {
             settings.profile("custom").unwrap().config.limits.max_steps,
             8
         );
+        assert_eq!(
+            settings
+                .profile("custom")
+                .unwrap()
+                .config
+                .limits
+                .max_context_kb,
+            1000
+        );
+    }
+    #[test]
+    fn large_context_limits_round_trip_without_changing_existing_custom_values() {
+        let mut settings = Settings::default();
+        let mut profile = input(None, "Long context", "https://same.example/v1", "");
+        profile.config.limits.max_context_kb = 64000;
+        settings.upsert(profile, false).unwrap();
+        let restored = decode(&serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert_eq!(restored.active().unwrap().limits.max_context_kb, 64000);
+        assert_eq!(restored.public().profiles[0].limits.max_context_kb, 64000);
     }
     #[test]
     fn multiple_profiles_isolate_keys_and_reject_stale_updates() {

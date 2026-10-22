@@ -39,6 +39,20 @@ impl ApprovalMode {
 
 #[derive(Clone, Debug)]
 pub enum Action {
+    AttachmentList {
+        offset: usize,
+    },
+    AttachmentRead {
+        id: String,
+        offset: u64,
+        limit: usize,
+    },
+    AttachmentSearch {
+        id: String,
+        query: String,
+        offset: u64,
+        limit: usize,
+    },
     FileRead {
         path: String,
     },
@@ -86,10 +100,30 @@ pub enum Action {
 impl Action {
     pub fn approval_details(&self) -> (String, String) {
         match self {
+            Self::AttachmentList { offset } => (
+                json!({"offset":offset,"limit":100}).to_string(),
+                "列出当前聊天中的本地附件".into(),
+            ),
+            Self::AttachmentRead { id, offset, limit } => (
+                json!({"attachment_id":id,"offset":offset,"limit":limit}).to_string(),
+                "按需读取当前聊天附件中的一段内容".into(),
+            ),
+            Self::AttachmentSearch {
+                id,
+                query,
+                offset,
+                limit,
+            } => (
+                json!({"attachment_id":id,"query":query,"offset":offset,"limit":limit}).to_string(),
+                "在当前聊天附件中搜索文本".into(),
+            ),
             Self::FileRead { path } => (path.clone(), "读取选定的远端文本文件".into()),
-            Self::FileEdit { path, content, reason, .. } => {
-                (format!("{}\n\n{}", path, content), reason.clone())
-            }
+            Self::FileEdit {
+                path,
+                content,
+                reason,
+                ..
+            } => (format!("{}\n\n{}", path, content), reason.clone()),
             Self::Probe(probe) => (
                 probe_command(probe).unwrap_or("").into(),
                 "读取服务器的固定状态信息".into(),
@@ -135,6 +169,9 @@ impl Action {
     }
     pub fn label(&self) -> &'static str {
         match self {
+            Self::AttachmentList { .. } => "列出聊天附件",
+            Self::AttachmentRead { .. } => "读取聊天附件",
+            Self::AttachmentSearch { .. } => "搜索聊天附件",
             Self::FileRead { .. } => "读取远端配置",
             Self::FileEdit { .. } => "修改远端配置",
             Self::Probe(_) => "读取服务器状态",
@@ -152,6 +189,51 @@ impl Action {
 #[serde(deny_unknown_fields)]
 struct Probe {
     probe: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AttachmentList {
+    #[serde(default)]
+    offset: usize,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AttachmentRead {
+    attachment_id: String,
+    #[serde(default)]
+    offset: u64,
+    #[serde(default = "default_attachment_read_limit")]
+    limit: usize,
+}
+fn default_attachment_read_limit() -> usize {
+    8000
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AttachmentSearch {
+    attachment_id: String,
+    query: String,
+    #[serde(default)]
+    offset: u64,
+    #[serde(default = "default_attachment_search_limit")]
+    limit: usize,
+}
+fn default_attachment_search_limit() -> usize {
+    10
+}
+fn attachment_range(id: &str, offset: u64, limit: usize, maximum: usize) -> AppResult<()> {
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        || offset > 1024 * 1024 * 1024
+        || limit == 0
+        || limit > maximum
+    {
+        return Err(AppError::invalid_input("附件标识或读取范围无效"));
+    }
+    Ok(())
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -217,6 +299,33 @@ pub fn classify(
         return Err(AppError::invalid_input("工具参数过长"));
     }
     match (kind, name) {
+        ("ssh" | "database" | "redis", "list_attachments") => {
+            let a: AttachmentList = parse(args)?;
+            if a.offset > 1_000_000 {
+                return Err(AppError::invalid_input("附件列表分页位置无效"));
+            }
+            Ok(Action::AttachmentList { offset: a.offset })
+        }
+        ("ssh" | "database" | "redis", "read_attachment") => {
+            let a: AttachmentRead = parse(args)?;
+            attachment_range(&a.attachment_id, a.offset, a.limit, 12000)?;
+            Ok(Action::AttachmentRead {
+                id: a.attachment_id,
+                offset: a.offset,
+                limit: a.limit,
+            })
+        }
+        ("ssh" | "database" | "redis", "search_attachment") => {
+            let a: AttachmentSearch = parse(args)?;
+            attachment_range(&a.attachment_id, a.offset, a.limit, 40)?;
+            bounded(&a.query, 512)?;
+            Ok(Action::AttachmentSearch {
+                id: a.attachment_id,
+                query: a.query,
+                offset: a.offset,
+                limit: a.limit,
+            })
+        }
         ("ssh", "read_remote_file") => {
             let a: FileRead = parse(args)?;
             super::files::validate_path(&a.path)?;
@@ -353,7 +462,80 @@ pub fn definitions(kind: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::*;
+    #[test]
+    fn attachment_tools_are_bounded_local_reads_on_every_supported_target() {
+        for kind in ["ssh", "database", "redis"] {
+            let registry = crate::agent::mcp::Registry::build(kind, &[]);
+            let list = classify(&registry, kind, "list_attachments", "{}").unwrap();
+            assert!(matches!(list, Action::AttachmentList { offset: 0 }));
+            let read = classify(
+                &registry,
+                kind,
+                "read_attachment",
+                r#"{"attachment_id":"attachment-1"}"#,
+            )
+            .unwrap();
+            assert!(
+                matches!(&read, Action::AttachmentRead { id, offset: 0, limit: 8000 } if id == "attachment-1")
+            );
+            let search = classify(
+                &registry,
+                kind,
+                "search_attachment",
+                r#"{"attachment_id":"attachment-1","query":"error: connection refused"}"#,
+            )
+            .unwrap();
+            assert!(
+                matches!(&search, Action::AttachmentSearch { query, offset: 0, limit: 10, .. } if query == "error: connection refused")
+            );
+            for action in [list, read, search] {
+                assert!(!ApprovalMode::Auto.requires_approval(&action));
+                assert!(!ApprovalMode::Full.requires_approval(&action));
+                assert!(ApprovalMode::Ask.requires_approval(&action));
+                assert!(!action.approval_details().0.is_empty());
+            }
+            for (name, args) in [
+                ("list_attachments", json!({"offset":1_000_001})),
+                ("list_attachments", json!({"path":"C:/private"})),
+                ("read_attachment", json!({"attachment_id":"../private"})),
+                (
+                    "read_attachment",
+                    json!({"attachment_id":"x","limit":12001}),
+                ),
+                ("read_attachment", json!({"attachment_id":"x","limit":0})),
+                (
+                    "read_attachment",
+                    json!({"attachment_id":"x","offset":1073741825u64}),
+                ),
+                ("read_attachment", json!({"attachment_id":"x","offset":-1})),
+                (
+                    "search_attachment",
+                    json!({"attachment_id":"x","query":" "}),
+                ),
+                (
+                    "search_attachment",
+                    json!({"attachment_id":"x","query":"中".repeat(171)}),
+                ),
+                (
+                    "search_attachment",
+                    json!({"attachment_id":"x","query":"error","limit":41}),
+                ),
+            ] {
+                assert!(
+                    classify(&registry, kind, name, &args.to_string()).is_err(),
+                    "{kind} {name} {args}"
+                );
+            }
+            let names = definitions(kind);
+            for name in ["list_attachments", "read_attachment", "search_attachment"] {
+                assert!(names
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|tool| tool["function"]["name"] == name));
+            }
+        }
+    }
     #[test]
     fn redis_tools_preserve_exact_arguments_and_enforce_approval_modes() {
         for (name, args, custom) in [
@@ -449,7 +631,17 @@ mod tests {
             .iter()
             .map(|tool| tool["function"]["name"].as_str().unwrap().to_owned())
             .collect::<Vec<_>>();
-        assert_eq!(names, ["redis_scan", "redis_inspect", "propose_redis"]);
+        assert_eq!(
+            names,
+            [
+                "redis_scan",
+                "redis_inspect",
+                "propose_redis",
+                "list_attachments",
+                "read_attachment",
+                "search_attachment"
+            ]
+        );
         assert_eq!(definitions("unknown"), json!([]));
     }
     #[test]

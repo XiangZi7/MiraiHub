@@ -1,5 +1,69 @@
 /** Application-owned native messages. Service responses, SQL, and shell output stay verbatim. */
 export const en = {
+  '当前请求或最近一次工具结果超过模型上下文窗口；原始内容已保留，请缩短正文、将长文本作为附件上传，或换用更大上下文的模型':
+    'The current request or latest tool result exceeds the model context window. Original content is preserved. Shorten the message, upload long text as a file, or use a model with a larger context window.',
+  '任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–64000 KB，历史消息须为 16–2048 条，失败重试须为 0–999 次':
+    'Invalid task limits: use 1–128 model requests, 64–64000 KB of context, 16–2048 messages, and 0–999 retries.',
+  '模型上下文窗口过小，分块摘要仍无法完成；原始对话已保留，请换用更大上下文的模型后重试':
+    'The model context window is too small even for chunked summaries. The original conversation is preserved. Retry with a model that supports more context.',
+  '单张图片超过模型可接受的上下文，无法生成完整摘要；原始对话和图片已保留，请换用支持该图片的模型后重试':
+    'One image exceeds the model context window. The conversation and image are preserved. Retry with a model that supports this image.',
+  '上下文摘要被模型截断，原始对话已保留':
+    'The model truncated the summary. The original conversation is preserved.',
+  '上下文压缩未返回有效的精简摘要，原始对话已保留':
+    'Context compaction did not return a valid summary. The original conversation is preserved.',
+  '聊天记录文件过大，现有记录已保留；请新建会话后继续':
+    'The transcript is too large. Existing history is preserved. Start a new chat to continue.',
+  附件标识或读取范围无效: 'Invalid attachment identifier or read range',
+  附件列表分页位置无效: 'Invalid attachment list offset',
+  列出聊天附件: 'List chat attachments',
+  读取聊天附件: 'Read chat attachment',
+  搜索聊天附件: 'Search chat attachment',
+  列出当前聊天中的本地附件: 'List local attachments in this chat',
+  按需读取当前聊天附件中的一段内容:
+    'Read a requested section of a chat attachment',
+  在当前聊天附件中搜索文本: 'Search text in a chat attachment',
+  '附件处理失败，请重试': 'Attachment processing failed. Please retry.',
+  '请输入不超过 256 KB 的消息，或添加附件':
+    'Enter a message up to 256 KB or add an attachment',
+  '内联附件最多 256 KB；较长内容请通过文件上传':
+    'Inline attachments are limited to 256 KB. Upload longer content as a file.',
+  附件类型无效: 'Invalid attachment type',
+  附件名称与上传记录不一致:
+    'The attachment name does not match the uploaded file',
+  附件大小无效: 'Invalid attachment size',
+  附件尚未上传完成: 'The attachment has not finished uploading',
+  此附件不属于当前聊天会话:
+    'This attachment does not belong to the current chat',
+  '无效的附件或聊天会话 ID': 'Invalid attachment or chat ID',
+  附件存储目录无效: 'Invalid attachment storage directory',
+  附件文件无效或已损坏: 'The attachment file is invalid or damaged',
+  附件存储文件无效: 'Invalid attachment storage file',
+  附件元数据已损坏: 'Attachment metadata is damaged',
+  无法保存附件元数据: 'Unable to save attachment metadata',
+  附件分块已损坏: 'An attachment chunk is damaged',
+  '附件分块不是 UTF-8 文本': 'The attachment chunk is not UTF-8 text',
+  '每个附件分块须为 1–262144 字节 UTF-8 文本':
+    'Each attachment chunk must contain 1–262144 bytes of UTF-8 text',
+  附件不支持二进制或控制字符:
+    'Attachments cannot contain binary data or control characters',
+  '附件已完成，不能继续上传':
+    'The attachment is complete and cannot accept more chunks',
+  '附件分块序号不连续或分块过多，请重新上传':
+    'Attachment chunks are out of sequence or exceed the limit. Upload the file again.',
+  '单个附件不能超过 1 GB': 'Each attachment must be 1 GB or smaller',
+  附件已归属聊天会话: 'The attachment already belongs to a chat',
+  请选择非空的文本附件: 'Select a nonempty text attachment',
+  附件目录超出存储范围: 'The attachment directory is outside its storage root',
+  已发送的附件只能随聊天记录删除:
+    'Sent attachments can only be deleted with their chat history',
+  '每条消息最多添加 16 个附件': 'Attach up to 16 files per message',
+  '每条消息的附件总大小不能超过 1 GB':
+    'Attachments in one message must total 1 GB or less',
+  读取位置超过附件大小: 'The read offset exceeds the attachment size',
+  '每次读取范围须为 1–12000 字节': 'Each read must request 1–12000 bytes',
+  '搜索文本须为 1–1024 字节，每页结果数须为 1–100':
+    'Search text must be 1–1024 bytes, with 1–100 matches per page',
   '任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–4000 KB，历史消息须为 16–2048 条，失败重试须为 0–999 次':
     'Invalid task limits: use 1–128 model requests, 64–4000 KB of context, 16–2048 messages, and 0–999 retries.',
   'Redis 扫描参数无效': 'Invalid Redis scan arguments',

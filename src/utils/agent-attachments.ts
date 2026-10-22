@@ -1,11 +1,19 @@
 import { i18n } from '@/i18n'
 import type { AgentDraftAttachment } from '@/types/agent'
+import { isOfficeExtension } from '@/utils/spreadsheet-extract'
+import { readOfficeText } from '@/utils/agent-office-worker'
+import { IS_TAURI } from '@/utils/window'
 import {
-  extractOfficeText,
-  isOfficeExtension,
-} from '@/utils/spreadsheet-extract'
+  checkAttachmentRead,
+  textChunks,
+  textFileChunks,
+  uploadTextAttachment,
+  type AttachmentReadOptions,
+} from '@/utils/agent-attachment-upload'
 
-export const AGENT_MAX_FILES = 4
+export const AGENT_MAX_FILES = 16
+export const AGENT_MAX_IMAGES = 4
+export const AGENT_MAX_PROMPT_BYTES = 256_000
 export const AGENT_MAX_FILE_BYTES = 1_000_000_000
 export const AGENT_MAX_ATTACHMENT_BYTES = 1_000_000_000
 export const AGENT_MAX_IMAGE_BYTES = 5_000_000
@@ -73,26 +81,29 @@ export function bytesToSize(bytes: number): string {
 /** Readable preview of a binary office/table attachment for the model. */
 async function readOfficeAttachment(
   file: File,
-  name: string
+  name: string,
+  signal?: AbortSignal
 ): Promise<{ content: string; size: number }> {
   try {
-    const buffer = await file.arrayBuffer()
-    const text = await extractOfficeText(name, new Uint8Array(buffer))
+    const text = await readOfficeText(file, signal)
     if (!text.trim())
       throw new Error(i18n.global.t('无法从该文件中提取文本内容'))
     return { content: text, size: new TextEncoder().encode(text).length }
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw error
     throw new Error(
       i18n.global.t('{value0}：无法解析该文件，请转换为 CSV/文本后重试', {
         value0: name,
-      })
+      }) + (error instanceof Error ? ` (${i18n.global.t(error.message)})` : '')
     )
   }
 }
 
 export async function readAgentAttachment(
-  file: File
+  file: File,
+  options: AttachmentReadOptions = {}
 ): Promise<AgentDraftAttachment> {
+  checkAttachmentRead(options.signal)
   if (!file.size)
     throw new Error(i18n.global.t('{value0}：文件为空', { value0: file.name }))
   if (file.size > AGENT_MAX_FILE_BYTES)
@@ -125,8 +136,62 @@ export async function readAgentAttachment(
   // Office containers (.xlsx/.xlsm/.docx/.pptx/.ods and common .xls) get
   // parsed into readable text so the agent can actually use their content.
   if (isOfficeExtension(name)) {
-    const { content, size } = await readOfficeAttachment(file, name)
+    const { content, size } = await readOfficeAttachment(
+      file,
+      name,
+      options.signal
+    )
+    checkAttachmentRead(options.signal)
+    if (size > AGENT_MAX_FILE_BYTES)
+      throw new Error(
+        i18n.global.t('{value0}：单个文件不能超过 1 GB', { value0: name })
+      )
+    if (IS_TAURI || options.uploader) {
+      const stored = await uploadTextAttachment(
+        name,
+        textChunks(content),
+        options
+      )
+      options.onProgress?.(file.size, file.size)
+      return {
+        id: stored.id,
+        attachmentId: stored.id,
+        name: stored.name,
+        content: stored.preview,
+        size: stored.size,
+      }
+    }
     return { id: crypto.randomUUID(), name, content, size }
+  }
+
+  if (IS_TAURI || options.uploader) {
+    try {
+      const stored = await uploadTextAttachment(
+        name,
+        textFileChunks(file, options),
+        options
+      )
+      return {
+        id: stored.id,
+        attachmentId: stored.id,
+        name: stored.name,
+        content: stored.preview,
+        size: stored.size,
+      }
+    } catch (error) {
+      if (options.signal?.aborted) throw error
+      if (
+        error instanceof TypeError ||
+        (error instanceof Error &&
+          /^(Invalid|Empty) text attachment$/.test(error.message))
+      )
+        throw new Error(
+          i18n.global.t('{value0}：请选择非空的 UTF-8 文本文件', {
+            value0: name,
+          })
+        )
+      throw error
+    }
   }
 
   let content: string

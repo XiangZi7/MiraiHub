@@ -1,5 +1,6 @@
 import { i18n } from '@/i18n'
 import { onScopeDispose, reactive, toRefs } from 'vue'
+import { discardAttachment } from '@/api/agent'
 import type {
   AgentAttachment,
   AgentContextRequest,
@@ -7,7 +8,10 @@ import type {
 } from '@/types/agent'
 import {
   AGENT_MAX_FILES,
+  AGENT_MAX_IMAGES,
+  AGENT_MAX_PROMPT_BYTES,
   AGENT_MAX_ATTACHMENT_BYTES,
+  bytesToSize,
   readAgentAttachment,
 } from '@/utils/agent-attachments'
 
@@ -22,14 +26,30 @@ export function useAgentDraft(
     attachments: [] as AgentDraftAttachment[],
     // 文件读取状态
     reading: false,
+    // 当前文件及已处理字节，便于大附件读取时了解进度
+    readingProgress: '',
     // 文件读取或容量错误
     attachmentError: '',
   })
   let version = 0
   let readVersion = 0
-  function clearAttachments(): void {
-    version++
+  let readController: AbortController | undefined
+  function release(files: AgentDraftAttachment[]): void {
+    for (const file of files)
+      if (file.attachmentId)
+        void discardAttachment(file.attachmentId).catch(() => {})
+  }
+  function cancelReading(): void {
     readVersion++
+    readController?.abort()
+    readController = undefined
+    state.reading = false
+    state.readingProgress = ''
+  }
+  function clearAttachments(discard = true): void {
+    version++
+    cancelReading()
+    if (discard) release(state.attachments)
     state.attachments = []
     state.reading = false
     state.attachmentError = ''
@@ -43,15 +63,62 @@ export function useAgentDraft(
     const token = ++readVersion
     state.attachmentError = ''
     if (state.attachments.length + files.length > AGENT_MAX_FILES) {
-      state.attachmentError = i18n.global.t('每条消息最多添加 4 个文件')
+      state.attachmentError = i18n.global.t(
+        '每条消息最多添加 16 个文件，其中图片最多 4 张'
+      )
       return
     }
+    if (
+      state.attachments.reduce((sum, file) => sum + file.size, 0) +
+        files.reduce((sum, file) => sum + file.size, 0) >
+      AGENT_MAX_ATTACHMENT_BYTES
+    ) {
+      state.attachmentError = i18n.global.t('附件总大小不能超过 1 GB')
+      return
+    }
+    const controller = new AbortController()
+    readController = controller
     state.reading = true
+    const incoming: AgentDraftAttachment[] = []
     try {
       // 整批成功后才加入草稿；失败不会悄悄发送一部分文件。
-      const incoming = await Promise.all(files.map(readAgentAttachment))
-      if (token !== readVersion) return
+      // 逐个分块处理，避免多个大文件同时占用内存。
+      for (const [index, file] of files.entries()) {
+        state.readingProgress = i18n.global.t('agent.attachmentProgress', {
+          current: index + 1,
+          total: files.length,
+          name: file.name,
+          size: bytesToSize(0),
+          totalSize: bytesToSize(file.size),
+        })
+        incoming.push(
+          await readAgentAttachment(file, {
+            signal: controller.signal,
+            onProgress: bytes => {
+              if (token === readVersion)
+                state.readingProgress = i18n.global.t(
+                  'agent.attachmentProgress',
+                  {
+                    current: index + 1,
+                    total: files.length,
+                    name: file.name,
+                    size: bytesToSize(bytes),
+                    totalSize: bytesToSize(file.size),
+                  }
+                )
+            },
+          })
+        )
+        if (token !== readVersion) {
+          release(incoming)
+          return
+        }
+      }
       const combined = [...state.attachments, ...incoming]
+      if (combined.filter(file => file.mimeType).length > AGENT_MAX_IMAGES)
+        throw new Error(
+          i18n.global.t('每条消息最多添加 16 个文件，其中图片最多 4 张')
+        )
       if (
         combined.reduce((sum, file) => sum + file.size, 0) >
         AGENT_MAX_ATTACHMENT_BYTES
@@ -59,14 +126,20 @@ export function useAgentDraft(
         throw new Error(i18n.global.t('附件总大小不能超过 1 GB'))
       state.attachments = combined
     } catch (error) {
-      if (token === readVersion)
+      release(incoming)
+      if (token === readVersion && !controller.signal.aborted)
         state.attachmentError =
           error instanceof Error ? error.message : String(error)
     } finally {
-      if (token === readVersion) state.reading = false
+      if (token === readVersion) {
+        state.reading = false
+        state.readingProgress = ''
+        readController = undefined
+      }
     }
   }
   function removeFile(id: string): void {
+    release(state.attachments.filter(file => file.id === id))
     state.attachments = state.attachments.filter(file => file.id !== id)
     state.attachmentError = ''
   }
@@ -74,7 +147,9 @@ export function useAgentDraft(
     if (state.reading) return false
     state.attachmentError = ''
     if (state.attachments.length >= AGENT_MAX_FILES) {
-      state.attachmentError = i18n.global.t('每条消息最多添加 4 个文件')
+      state.attachmentError = i18n.global.t(
+        '每条消息最多添加 16 个文件，其中图片最多 4 张'
+      )
       return false
     }
     const content = request.content
@@ -128,16 +203,31 @@ export function useAgentDraft(
       return
     const prompt = state.prompt
     const attachments = [...state.attachments]
-    reset()
+    if (new TextEncoder().encode(prompt).length > AGENT_MAX_PROMPT_BYTES) {
+      state.attachmentError = i18n.global.t(
+        '消息正文最多 256 KB；较长内容请作为文件上传'
+      )
+      return
+    }
+    clearAttachments(false)
+    state.prompt = ''
     const token = version
-    const accepted = await send(
-      prompt.trim() ? prompt : i18n.global.t('agent.analyzeAttachments'),
-      attachments.map(({ name, content, mimeType }) => ({
-        name,
-        content,
-        ...(mimeType ? { mimeType } : {}),
-      }))
-    )
+    let accepted = false
+    try {
+      accepted = await send(
+        prompt.trim() ? prompt : i18n.global.t('agent.analyzeAttachments'),
+        attachments.map(({ name, content, mimeType, attachmentId }) => ({
+          name,
+          content,
+          ...(mimeType ? { mimeType } : {}),
+          ...(attachmentId ? { attachmentId } : {}),
+        }))
+      )
+    } catch (error) {
+      if (token === version)
+        state.attachmentError =
+          error instanceof Error ? error.message : String(error)
+    }
     if (
       !accepted &&
       token === version &&
@@ -147,6 +237,8 @@ export function useAgentDraft(
     ) {
       state.prompt = prompt
       state.attachments = attachments
+    } else if (!accepted) {
+      release(attachments)
     }
   }
   onScopeDispose(reset)
@@ -154,6 +246,7 @@ export function useAgentDraft(
     ...toRefs(state),
     reset,
     clearAttachments,
+    cancelReading,
     addFiles,
     addContext,
     removeFile,

@@ -147,6 +147,7 @@ test('agent composer pastes images, leaves text paste native, previews images an
   const { default: Composer } = await load(components[3])
   const { readAgentAttachment } = await load('src/utils/agent-attachments.ts')
   const attached = []
+  let cancelledReads = 0
   const props = reactive({
     modelValue: 'Existing prompt',
     approvalMode: 'auto',
@@ -157,12 +158,14 @@ test('agent composer pastes images, leaves text paste native, previews images an
     busy: false,
     canSend: true,
     reading: false,
+    readingProgress: '',
     attachmentError: '',
     activeId: '',
     profileOptions: [],
     profileDisabled: false,
     profileError: '',
     onAttach: files => attached.push(files),
+    onCancelReading: () => cancelledReads++,
   })
   const input = new File(
     [
@@ -183,6 +186,7 @@ test('agent composer pastes images, leaves text paste native, previews images an
   app.use(i18n).mount(root)
   try {
     const textarea = find(root, 'textarea')
+    assert.equal(textarea.props.maxlength, 256000)
     let prevented = 0
     const event = (files, text = '') => ({
       clipboardData: {
@@ -218,6 +222,22 @@ test('agent composer pastes images, leaves text paste native, previews images an
     const preview = find(root, 'img')
     assert.match(preview.props.src, /^data:image\/png;base64,/)
     assert.equal(preview.props.alt, 'screenshot.png')
+    const form = find(root, 'form')
+    const dropped = { dataTransfer: { files: [input] }, preventDefault() {} }
+    form.props.onDrop(dropped)
+    assert.equal(attached.length, 3)
+    props.reading = true
+    props.readingProgress = '1/2 · large.log · 50 MB / 100 MB'
+    await nextTick()
+    form.props.onDrop(dropped)
+    assert.equal(attached.length, 3)
+    const findCancel = el =>
+      el.props?.class === 'cancel-reading'
+        ? el
+        : el.children.map(findCancel).find(Boolean)
+    const cancel = findCancel(root)
+    cancel.props.onClick()
+    assert.equal(cancelledReads, 1)
   } finally {
     app.unmount()
   }
@@ -279,17 +299,30 @@ test('capacity presets preserve the independently editable retry count', async (
     const select = section.children.find(
       child => child.props?.['onUpdate:modelValue']
     )
-    select.props['onUpdate:modelValue']('enhanced')
+    for (const [value, maxSteps, maxContextKb, maxMessages] of [
+      ['standard', 32, 4000, 256],
+      ['extended', 64, 16000, 512],
+      ['max', 128, 64000, 2048],
+    ]) {
+      select.props['onUpdate:modelValue'](value)
+      await nextTick()
+      assert.deepEqual(
+        { ...state.limits },
+        { maxSteps, maxContextKb, maxMessages, maxRetries: 999 }
+      )
+      assert.match(visible(root), new RegExp(`${maxContextKb / 1000} MB`))
+    }
+    select.props['onUpdate:modelValue']('custom')
     await nextTick()
-    assert.deepEqual(
-      { ...state.limits },
-      {
-        maxSteps: 64,
-        maxContextKb: 2000,
-        maxMessages: 512,
-        maxRetries: 999,
-      }
+    const all = element => [element, ...element.children.flatMap(all)]
+    const contextInput = all(root).find(
+      child => child.props.id === 'ai-capacity-maxContextKb'
     )
+    assert.ok(contextInput)
+    assert.equal(contextInput.props.min, 64)
+    assert.equal(contextInput.props.max, 64000)
+    assert.equal(contextInput.props.step, '1')
+    assert.equal(state.limits.maxContextKb, 64000)
     const retryInput = root.children[0].children
       .flatMap(child => child.children)
       .find(child => child.props.id === 'ai-max-retries')

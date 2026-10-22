@@ -110,10 +110,10 @@ test('context count, UTF-8 size and content validation reject invalid selections
     assert.equal(draft.addContext({ ...request, content }), false)
     assert.equal(draft.attachments.value.length, 0)
   }
-  for (let i = 0; i < 4; i++)
+  for (let i = 0; i < 16; i++)
     assert.equal(draft.addContext({ ...request, id: String(i) }), true)
   assert.equal(draft.addContext({ ...request, id: 'overflow' }), false)
-  assert.equal(draft.attachments.value.length, 4)
+  assert.equal(draft.attachments.value.length, 16)
   draft.removeFile('0')
   assert.equal(draft.addContext(request), true)
   scope.stop()

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import type { AgentApprovalMode, AgentDraftAttachment } from '@/types/agent'
 import {
   AGENT_FILE_ACCEPT,
+  AGENT_MAX_PROMPT_BYTES,
   agentImageUrl,
   bytesToSize,
   clipboardImages,
@@ -24,6 +25,7 @@ const props = defineProps<{
   isRedis?: boolean
   attachments: AgentDraftAttachment[]
   reading: boolean
+  readingProgress?: string
   attachmentError: string
   activeId: string
   profileOptions: { value: string; label: string; disabled?: boolean }[]
@@ -40,6 +42,7 @@ const emit = defineEmits<{
   selectProfile: [id: string]
   attach: [files: File[]]
   removeAttachment: [id: string]
+  cancelReading: []
 }>()
 const { t } = useI18n()
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
@@ -72,6 +75,10 @@ function paste(event: ClipboardEvent): void {
   if (!event.clipboardData?.getData('text/plain')) event.preventDefault()
   if (!props.disabled && !props.reading) emit('attach', files)
 }
+function drop(event: DragEvent): void {
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length && !props.disabled && !props.reading) emit('attach', files)
+}
 watch(
   prompt,
   async () => {
@@ -89,6 +96,8 @@ watch(
     <form
       class="agent-composer"
       @submit.prevent="canSend && emit('submit')"
+      @dragover.prevent
+      @drop.prevent="drop"
     >
       <div
         v-if="attachments.length"
@@ -126,7 +135,12 @@ watch(
                 :title="file.name"
                 >{{ file.name }}</span
               >
-              <span class="attachment-size">{{ bytesToSize(file.size) }}</span>
+              <span class="attachment-size"
+                >{{ bytesToSize(file.size)
+                }}<template v-if="file.attachmentId">
+                  · {{ t('按需读取') }}</template
+                ></span
+              >
             </div>
             <IconButton
               icon="lucide:x"
@@ -144,7 +158,7 @@ watch(
         v-model="prompt"
         :placeholder="placeholder"
         rows="2"
-        maxlength="8000"
+        :maxlength="AGENT_MAX_PROMPT_BYTES"
         :aria-label="t('发送给 AI 的消息')"
         :disabled="disabled"
         @keydown="keydown"
@@ -167,7 +181,7 @@ watch(
           :size="17"
           :title="
             t(
-              '上传图片（每张最多 5 MB）或文件（每个最多 1 GB）；支持 Ctrl+V 粘贴图片'
+              '最多 16 个附件，合计 1 GB；图片最多 4 张、每张 5 MB；Office 文件最多 128 MiB。支持 Ctrl+V 粘贴图片'
             )
           "
           :aria-label="t('上传文件')"
@@ -219,13 +233,24 @@ watch(
       class="composer-notice"
       role="status"
     >
-      {{ t('正在读取附件…') }}
+      {{ readingProgress || t('正在读取附件…') }}
+      <button
+        type="button"
+        class="cancel-reading"
+        @click="emit('cancelReading')"
+      >
+        {{ t('取消读取') }}
+      </button>
     </p>
     <p
       v-if="attachments.length"
       class="composer-notice"
     >
-      {{ t('附件内容将在发送时交给所选模型，并保存到此聊天。') }}
+      {{
+        t(
+          '文件加密保存在本机，模型按需读取内容；图片直接发送给所选模型。附件会随聊天记录保留。'
+        )
+      }}
     </p>
     <p
       v-if="attachmentError || profileError"
@@ -378,6 +403,15 @@ watch(
 }
 .composer-notice {
   color: var(--color-txt-4);
+}
+.cancel-reading {
+  margin-left: 8px;
+  color: var(--color-violet);
+  cursor: pointer;
+}
+.cancel-reading:focus-visible {
+  outline: 2px solid var(--color-violet);
+  outline-offset: 2px;
 }
 .composer-error {
   color: var(--color-danger);

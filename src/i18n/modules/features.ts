@@ -1,5 +1,45 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  本地上下文容量: 'Local context capacity',
+  '本地上下文容量（KB）': 'Local context capacity (KB)',
+  '这是本地消息容量，不会扩大模型的上下文窗口；达到约 85% 时自动压缩。模型服务仍有独立的 Token 限制，调大容量可能增加耗时和用量。':
+    'This is local message capacity, not an extension of the model’s context window. Context is compacted at about 85%. Model token limits still apply; higher capacity may increase time and usage.',
+  '最多 16 个附件，合计 1 GB；图片最多 4 张、每张 5 MB。支持拖入文件和 Ctrl+V 粘贴图片':
+    'Up to 16 attachments totaling 1 GB, including up to 4 images of 5 MB each. Drag files here or paste images with Ctrl+V.',
+  '最多 16 个附件，合计 1 GB；图片最多 4 张、每张 5 MB；Office 文件最多 128 MiB。支持 Ctrl+V 粘贴图片':
+    'Up to 16 attachments totaling 1 GB, including up to 4 images of 5 MB each. Office files support up to 128 MiB. Paste images with Ctrl+V.',
+  '每条消息最多添加 16 个文件，其中图片最多 4 张':
+    'Each message supports up to 16 files, including up to 4 images',
+  '消息正文最多 256 KB；较长内容请作为文件上传':
+    'Message text supports up to 256 KB. Upload longer content as a file.',
+  按需读取: 'Read on demand',
+  取消读取: 'Cancel reading',
+  '文件加密保存在本机，模型按需读取内容；图片直接发送给所选模型。附件会随聊天记录保留。':
+    'Files are encrypted on this device and read by the model as needed. Images are sent directly to the selected model. Attachments are retained with chat history.',
+  '{value0}：请选择非空的 UTF-8 文本文件':
+    '{value0}: select a non-empty UTF-8 text file',
+  'Office 文件已损坏或内容不完整，请重新导出后重试':
+    'The Office file is damaged or incomplete. Export it again and retry.',
+  'Office 解压后的单个文件超过 128 MB，请拆分文件或转换为 CSV 后重试':
+    'An extracted Office entry exceeds 128 MB. Split the file or convert it to CSV and retry.',
+  'Office 源文件超过 128 MiB，请拆分文件或转换为 CSV 后重试':
+    'The Office source file exceeds 128 MiB. Split the file or convert it to CSV and retry.',
+  'Office 解压后的 XML 总量超过 128 MiB，请拆分文件或转换为 CSV 后重试':
+    'The total extracted Office XML exceeds 128 MiB. Split the file or convert it to CSV and retry.',
+  'Office 提取文本总量超过 128 MiB，请拆分文件或转换为 CSV 后重试':
+    'The total extracted Office text exceeds 128 MiB. Split the file or convert it to CSV and retry.',
+  '表格超出可解析范围，请拆分工作表或转换为 CSV 后重试':
+    'The table exceeds the supported parsing limits. Split the worksheet or convert it to CSV and retry.',
+  '不支持加密的 Office 文件，请先移除文件密码':
+    'Encrypted Office files are not supported. Remove the file password first.',
+  'Office 文件使用了不支持的压缩方式，请重新导出后重试':
+    'The Office file uses an unsupported compression method. Export it again and retry.',
+  '不支持旧版二进制 XLS 文件，请另存为 XLSX 或 CSV 后重试':
+    'Legacy binary XLS files are not supported. Save the file as XLSX or CSV and retry.',
+  'Office 文件解析失败，请重新导出或转换为 CSV 后重试':
+    'Could not parse the Office file. Export it again or convert it to CSV and retry.',
+  'Office 文件解析结果无法读取，请重试':
+    'Could not read the Office parsing result. Please retry.',
   移动到此标签分组: 'Move to this tab group',
   '合并分组（保留全部连接标签）': 'Merge group (keep all connection tabs)',
   '{value0} · 拖到内容区边缘分屏；拖动或 Alt + ←/→ 排序':

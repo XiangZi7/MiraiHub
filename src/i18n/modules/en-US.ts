@@ -617,9 +617,12 @@ export default {
     'Chat history is encrypted on this device and can be managed from the history menu.',
   '保存或切换配置会停止当前任务，并在当前会话继续对话。测试仅发送固定测试消息，不读取服务器或数据库。服务商可能按其标准计费。':
     'Saving or switching profiles stops the current task and continues in the current conversation. Testing only sends a fixed message without reading servers or databases. Provider charges may apply.',
-  'ai.capacitySummary': '{steps} requests · {kb} KB · {messages} messages',
+  'ai.capacitySummary': '{steps} requests · {capacity} · {messages} messages',
+  'ai.contextCapacityRange': '{capacity} · Enter {min}–{max} KB',
+  'agent.attachmentProgress':
+    '{current}/{total} · {name} · {size} / {totalSize}',
   'ai.capacityInvalid':
-    'Enter whole numbers: 1–128 model requests, 64–4000 KB of context, 16–2048 messages, and 0–999 automatic retries.',
+    'Enter whole numbers: 1–128 model requests, 64–64000 KB of local context, 16–2048 messages, and 0–999 automatic retries.',
   'settings.shortcutLabel':
     '{label}: currently {shortcut}. Press a new shortcut to change it.',
   '标签化显示…': 'Show as tags…',

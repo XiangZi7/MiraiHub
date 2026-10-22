@@ -29,8 +29,13 @@ const load = sourceLoader({
 const { useAgentSettings } = await load('src/composables/useAgentSettings.ts')
 const { useAgentProfiles } = await load('src/composables/useAgentProfiles.ts')
 const { i18n } = await load('src/i18n/index.ts')
-const { DEFAULT_AGENT_LIMITS, AGENT_CAPACITY_PRESETS, validAgentLimits } =
-  await load('src/constants/agent-limits.ts')
+const {
+  DEFAULT_AGENT_LIMITS,
+  AGENT_CAPACITY_PRESETS,
+  agentCapacityPreset,
+  formatAgentContextSize,
+  validAgentLimits,
+} = await load('src/constants/agent-limits.ts')
 i18n.global.locale.value = 'zh-CN'
 const flush = () => new Promise(resolve => setImmediate(resolve))
 function fixture(composable) {
@@ -170,7 +175,7 @@ test('invalid custom capacity blocks saving and all presets stay within backend 
       assert.ok(validAgentLimits({ ...DEFAULT_AGENT_LIMITS, ...preset.limits }))
     for (const [key, values] of Object.entries({
       maxSteps: [0, 129, 1.5, '', NaN],
-      maxContextKb: [63, 4001, Infinity],
+      maxContextKb: [63, 64001, 64.5, '', NaN, Infinity],
       maxMessages: [15, 2049],
       maxRetries: [-1, 1000, 1.5, '', NaN],
     })) {
@@ -184,17 +189,24 @@ test('invalid custom capacity blocks saving and all presets stay within backend 
     }
     state.draft.value.limits = {
       maxSteps: 128,
-      maxContextKb: 4000,
+      maxContextKb: 64000,
       maxMessages: 2048,
       maxRetries: 999,
     }
     await state.save()
     assert.equal(state.error.value, '')
     assert.equal(api.saved.input.config.limits.maxSteps, 128)
+    assert.equal(api.saved.input.config.limits.maxContextKb, 64000)
     assert.equal(api.saved.input.config.limits.maxRetries, 999)
     state.draft.value.limits.maxRetries = 0
     await state.save()
     assert.equal(api.saved.input.config.limits.maxRetries, 0)
+    for (const kb of [64, 1000, 4001, 16000]) {
+      state.draft.value.limits.maxContextKb = kb
+      await state.save()
+      assert.equal(state.error.value, '')
+      assert.equal(api.saved.input.config.limits.maxContextKb, kb)
+    }
   } finally {
     app.unmount()
   }
@@ -202,16 +214,52 @@ test('invalid custom capacity blocks saving and all presets stay within backend 
 
 test('profiles with existing capacity but no retry field keep their limits and gain the default', async () => {
   const { app, state } = fixture(useAgentSettings)
-  api.settings.profiles[0].limits = { ...AGENT_CAPACITY_PRESETS[1].limits }
+  const oldLimits = { maxSteps: 32, maxContextKb: 1000, maxMessages: 256 }
+  api.settings.profiles[0].limits = oldLimits
   try {
     await flush()
     assert.deepEqual(
       { ...state.draft.value.limits },
-      { ...DEFAULT_AGENT_LIMITS, ...AGENT_CAPACITY_PRESETS[1].limits }
+      { ...DEFAULT_AGENT_LIMITS, ...oldLimits }
     )
   } finally {
     app.unmount()
   }
+})
+
+test('local context capacity uses readable decimal MB and keeps custom values exact', () => {
+  assert.equal(DEFAULT_AGENT_LIMITS.maxContextKb, 4000)
+  assert.deepEqual(
+    AGENT_CAPACITY_PRESETS.map(preset => [
+      preset.value,
+      preset.limits.maxContextKb,
+    ]),
+    [
+      ['standard', 4000],
+      ['extended', 16000],
+      ['max', 64000],
+    ]
+  )
+  for (const [kb, display] of [
+    [64, '64 KB'],
+    [999, '999 KB'],
+    [1000, '1 MB'],
+    [1001, '1.001 MB'],
+    [4000, '4 MB'],
+    [16000, '16 MB'],
+    [64000, '64 MB'],
+  ])
+    assert.equal(formatAgentContextSize(kb), display)
+  for (const invalid of [NaN, Infinity, -1, ''])
+    assert.equal(formatAgentContextSize(invalid), '—')
+  assert.equal(
+    agentCapacityPreset({ ...DEFAULT_AGENT_LIMITS, maxRetries: 999 }),
+    'standard'
+  )
+  assert.equal(
+    agentCapacityPreset({ ...DEFAULT_AGENT_LIMITS, maxContextKb: 1000 }),
+    'custom'
+  )
 })
 
 test('external activation updates settings markers without overwriting unsaved fields', async () => {

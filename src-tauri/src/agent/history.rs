@@ -13,8 +13,9 @@ pub(super) struct Identity {
     pub created_at: i64,
 }
 
-// Image inputs need a larger encrypted-record cap; opening and listing share it.
-const MAX_RECORD_BYTES: u64 = 64 * 1024 * 1024;
+// The 64 MB model context also appears in visible entries, plus retained images
+// and encryption overhead. Every reader and writer shares this record limit.
+const MAX_RECORD_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,6 +117,9 @@ fn read(dir: &Path, id: &str, scope: &str) -> AppResult<Record> {
         return Err(AppError::invalid_input("聊天记录文件过大"));
     }
     let bytes = config::protect(&std::fs::read(path)?, false)?;
+    if bytes.len() as u64 > MAX_RECORD_BYTES {
+        return Err(record_too_large());
+    }
     let record: Record =
         serde_json::from_slice(&bytes).map_err(|_| AppError::invalid_input("聊天记录已损坏"))?;
     if record.summary.id != id || record.scope != scope {
@@ -124,10 +128,52 @@ fn read(dir: &Path, id: &str, scope: &str) -> AppResult<Record> {
     Ok(record)
 }
 fn write(dir: &Path, record: &Record) -> AppResult<()> {
+    write_with_limit(dir, record, MAX_RECORD_BYTES)
+}
+fn serialize_record(record: &Record, max_bytes: u64) -> AppResult<Vec<u8>> {
+    struct BoundedBytes {
+        bytes: Vec<u8>,
+        max: u64,
+        exceeded: bool,
+    }
+    impl Write for BoundedBytes {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if (self.bytes.len() as u64).saturating_add(bytes.len() as u64) > self.max {
+                self.exceeded = true;
+                return Err(std::io::Error::other("history record limit exceeded"));
+            }
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut output = BoundedBytes {
+        bytes: Vec::new(),
+        max: max_bytes,
+        exceeded: false,
+    };
+    if serde_json::to_writer(&mut output, record).is_err() {
+        return Err(if output.exceeded {
+            record_too_large()
+        } else {
+            AppError::internal("无法保存聊天记录")
+        });
+    }
+    Ok(output.bytes)
+}
+fn record_too_large() -> AppError {
+    AppError::invalid_input("聊天记录文件过大，现有记录已保留；请新建会话后继续")
+}
+fn write_with_limit(dir: &Path, record: &Record, max_bytes: u64) -> AppResult<()> {
     let path = record_path(dir, &record.summary.id)?;
-    std::fs::create_dir_all(dir)?;
-    let bytes = serde_json::to_vec(record).map_err(|_| AppError::internal("无法保存聊天记录"))?;
+    let bytes = serialize_record(record, max_bytes)?;
     let encrypted = config::protect(&bytes, true)?;
+    if encrypted.len() as u64 > max_bytes {
+        return Err(record_too_large());
+    }
+    std::fs::create_dir_all(dir)?;
     let temporary = path.with_extension("bin.tmp");
     let mut file = std::fs::File::create(&temporary)?;
     file.write_all(&encrypted)?;
@@ -274,6 +320,9 @@ pub async fn ai_list_conversations(
             return Err(AppError::invalid_input("聊天记录文件过大"));
         }
         let bytes = config::protect(&std::fs::read(&path)?, false)?;
+        if bytes.len() as u64 > MAX_RECORD_BYTES {
+            return Err(record_too_large());
+        }
         let record: Record = serde_json::from_slice(&bytes)
             .map_err(|_| AppError::invalid_input("聊天记录已损坏，无法加载历史列表"))?;
         if record_path(&dir, &record.summary.id)? != path {
@@ -333,8 +382,6 @@ pub async fn ai_delete_conversation(
     let mut store = state.history.lock().await;
     let dir = directory(&app)?;
     read(&dir, &conversation_id, &scope)?;
-    std::fs::remove_file(record_path(&dir, &conversation_id)?)?;
-    store.titles.remove(&conversation_id);
     if let Some(owner) = store
         .owners
         .remove(&conversation_id)
@@ -342,6 +389,15 @@ pub async fn ai_delete_conversation(
     {
         owner.cancel();
     }
+    let attachment_owner = conversation_id.clone();
+    // Keep the transcript addressable if attachment cleanup fails, so deletion
+    // can be retried instead of leaving inaccessible files behind.
+    super::attachment_job(&app, move |dir| {
+        super::attachment_store::remove_conversation(dir, &attachment_owner)
+    })
+    .await?;
+    std::fs::remove_file(record_path(&dir, &conversation_id)?)?;
+    store.titles.remove(&conversation_id);
     Ok(())
 }
 
@@ -393,6 +449,42 @@ mod tests {
         ] {
             assert!(record_path(Path::new("history"), invalid).is_err());
         }
+    }
+    #[test]
+    fn record_budget_fits_maximum_text_context_visible_entries_and_images() {
+        assert!(
+            MAX_RECORD_BYTES
+                > 64_000_000 * 2 + context::MAX_IMAGE_CONTEXT_BYTES as u64 + 1024 * 1024
+        );
+    }
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn oversized_save_preserves_the_last_readable_record() {
+        let conversation_id = id();
+        let dir = std::env::temp_dir().join(format!("miraihub-history-test-{}", id()));
+        let owner = cell(&conversation_id);
+        let run = owner.run.lock().await;
+        let mut record = Record::from_run(&run, &owner);
+        write(&dir, &record).unwrap();
+        let path = record_path(&dir, &conversation_id).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        let plain_size = serde_json::to_vec(&record).unwrap().len() as u64;
+        // Even if the plaintext fits exactly, encrypted overhead must not create
+        // a record that the shared read limit would later reject.
+        assert!(write_with_limit(&dir, &record, plain_size).is_err());
+        record.entries[0].text = "large log".repeat(2000);
+        assert!(write_with_limit(&dir, &record, plain_size + 1024)
+            .unwrap_err()
+            .message
+            .contains("现有记录已保留"));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(
+            read(&dir, &conversation_id, "ssh-host").unwrap().entries[0].text,
+            "检查服务器"
+        );
+        assert!(!path.with_extension("bin.tmp").exists());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
     #[cfg(windows)]
     #[tokio::test]

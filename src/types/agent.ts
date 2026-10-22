@@ -100,9 +100,12 @@ export interface AgentContextRequest {
 export interface AgentAttachment {
   name: string
   content: string
+  /** 本地加密附件引用；正文只发送清单，由模型按需读取。 */
+  attachmentId?: string
   mimeType?: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
 }
 export interface AgentAttachmentInfo {
+  attachmentId?: string
   name: string
   size: number
   mimeType?: AgentAttachment['mimeType']
@@ -111,6 +114,12 @@ export interface AgentDraftAttachment
   extends AgentAttachment, AgentAttachmentInfo {
   id: string
   source?: 'context'
+}
+export interface AgentStoredAttachment {
+  id: string
+  name: string
+  size: number
+  preview: string
 }
 export interface AgentApproval {
   id: string

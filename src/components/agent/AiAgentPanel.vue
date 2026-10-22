@@ -100,7 +100,7 @@ const { copied, approvalMode, presentation } = toRefs(state)
 const draft = useAgentDraft((text, attachments) =>
   send(text, attachments, state.approvalMode)
 )
-const { prompt, attachments, reading, attachmentError } = draft
+const { prompt, attachments, reading, readingProgress, attachmentError } = draft
 const scroll = useTemplateRef<HTMLElement>('scroll')
 const composer = useTemplateRef<InstanceType<typeof AgentComposer>>('composer')
 const isRedis = computed(() => props.target.kind === 'redis')
@@ -628,6 +628,7 @@ watch(
       :is-redis="isRedis"
       :attachments="attachments"
       :reading="reading"
+      :reading-progress="readingProgress"
       :attachment-error="attachmentError"
       :active-id="activeId"
       :profile-options="profileOptions"
@@ -640,6 +641,7 @@ watch(
       @select-profile="profiles.select"
       @attach="draft.addFiles"
       @remove-attachment="draft.removeFile"
+      @cancel-reading="draft.cancelReading"
     />
   </section>
 </template>

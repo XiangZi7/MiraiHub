@@ -6,16 +6,21 @@ import {
   AGENT_CAPACITY_PRESETS,
   AGENT_LIMIT_RANGES,
   agentCapacityPreset,
+  formatAgentContextSize,
 } from '@/constants/agent-limits'
 import AppSelect from '@/components/ui/AppSelect.vue'
 
 const { t } = useI18n()
 defineProps<{ disabled: boolean }>()
 const limits = defineModel<AgentLimits>({ required: true })
-const state = reactive({ custom: false })
+// 响应式状态
+const state = reactive({
+  // 显式选择自定义后，输入值即使与预设相同也保持可编辑。
+  custom: false,
+})
 const fields = [
   { key: 'maxSteps', label: '每轮模型请求次数' },
-  { key: 'maxContextKb', label: '上下文容量（KB）' },
+  { key: 'maxContextKb', label: '本地上下文容量' },
   { key: 'maxMessages', label: '历史消息数（含工具结果）' },
 ] satisfies { key: keyof AgentLimits; label: string }[]
 const preset = computed({
@@ -32,13 +37,13 @@ const options = computed(() => [
     label: t(item.label),
     description: t('ai.capacitySummary', {
       steps: item.limits.maxSteps,
-      kb: item.limits.maxContextKb,
+      capacity: formatAgentContextSize(item.limits.maxContextKb),
       messages: item.limits.maxMessages,
     }),
   })),
   {
     value: 'custom',
-    label: '自定义',
+    label: t('自定义'),
     description: t('分别调整请求次数、上下文容量和历史消息数'),
   },
 ])
@@ -69,7 +74,13 @@ const options = computed(() => [
       >
         <label
           :for="preset === 'custom' ? `ai-capacity-${field.key}` : undefined"
-          >{{ t(field.label) }}</label
+          >{{
+            t(
+              field.key === 'maxContextKb' && preset === 'custom'
+                ? '本地上下文容量（KB）'
+                : field.label
+            )
+          }}</label
         >
         <template v-if="preset === 'custom'">
           <input
@@ -86,18 +97,28 @@ const options = computed(() => [
           <span
             :id="`ai-capacity-range-${field.key}`"
             class="capacity-help"
-            >{{ AGENT_LIMIT_RANGES[field.key].min }}–{{
-              AGENT_LIMIT_RANGES[field.key].max
+            >{{
+              field.key === 'maxContextKb'
+                ? t('ai.contextCapacityRange', {
+                    capacity: formatAgentContextSize(limits.maxContextKb),
+                    min: AGENT_LIMIT_RANGES.maxContextKb.min,
+                    max: AGENT_LIMIT_RANGES.maxContextKb.max,
+                  })
+                : `${AGENT_LIMIT_RANGES[field.key].min}–${AGENT_LIMIT_RANGES[field.key].max}`
             }}</span
           >
         </template>
-        <strong v-else>{{ limits[field.key] }}</strong>
+        <strong v-else>{{
+          field.key === 'maxContextKb'
+            ? formatAgentContextSize(limits.maxContextKb)
+            : limits[field.key]
+        }}</strong>
       </div>
     </div>
     <p class="capacity-help">
       {{
         t(
-          '上下文按本地消息大小计算，非 Token 数；实际仍受模型服务限制。调大容量可能增加耗时和用量。'
+          '这是本地消息容量，不会扩大模型的上下文窗口；达到约 85% 时自动压缩。模型服务仍有独立的 Token 限制，调大容量可能增加耗时和用量。'
         )
       }}
     </p>

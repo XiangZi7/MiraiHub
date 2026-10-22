@@ -9,6 +9,7 @@ import type {
   AgentTarget,
   AgentConversation,
   AgentAttachment,
+  AgentStoredAttachment,
   AgentApprovalMode,
   AgentProgress,
   McpServer,
@@ -24,6 +25,14 @@ function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args)
 }
 export const getConfig = () => call<AgentSettings>('ai_get_config')
+export const beginAttachment = (name: string) =>
+  call<string>('ai_attachment_begin', { name })
+export const appendAttachment = (id: string, index: number, content: string) =>
+  call<void>('ai_attachment_append', { id, index, content })
+export const finishAttachment = (id: string) =>
+  call<AgentStoredAttachment>('ai_attachment_finish', { id })
+export const discardAttachment = (id: string) =>
+  call<void>('ai_attachment_discard', { id })
 export const readFileContext = (target: AgentTarget, path: string) =>
   call<{ path: string; text: string }>('ai_read_file_context', { target, path })
 export const listModels = (input: AgentModelListInput) =>

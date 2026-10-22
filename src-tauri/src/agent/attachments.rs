@@ -1,10 +1,12 @@
 //! User-selected text/Office attachments and base64 image inputs.
 //! File paths and filesystem access never cross this boundary.
+use super::attachment_store;
 use super::Entry;
 use crate::error::{AppError, AppResult};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::path::Path;
 
 /// Upper bound for a single attachment's textual size (~1 GB below).
 pub const MAX_FILE_BYTES: usize = 1_000_000_000;
@@ -12,11 +14,13 @@ pub const MAX_FILE_BYTES: usize = 1_000_000_000;
 pub const MAX_TOTAL_BYTES: usize = 1_000_000_000;
 pub const MAX_IMAGE_BYTES: usize = 5_000_000;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Attachment {
     name: String,
     content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attachment_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mime_type: Option<String>,
 }
@@ -28,6 +32,8 @@ pub struct AttachmentInfo {
     size: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mime_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    attachment_id: Option<String>,
 }
 
 fn image_size(file: &Attachment, mime_type: &str) -> AppResult<usize> {
@@ -63,17 +69,55 @@ fn image_size(file: &Attachment, mime_type: &str) -> AppResult<usize> {
     Ok(bytes.len())
 }
 
+pub(super) fn reference_ids(attachments: &[Attachment]) -> Vec<String> {
+    attachments
+        .iter()
+        .filter_map(|file| file.attachment_id.clone())
+        .collect()
+}
+
+pub(super) fn prepare_stored(
+    dir: &Path,
+    conversation_id: &str,
+    prompt: &str,
+    attachments: Vec<Attachment>,
+) -> AppResult<(Value, Entry)> {
+    prepare_with(prompt, attachments, |id| {
+        attachment_store::inspect(dir, conversation_id, id)
+    })
+}
+
+#[cfg(test)]
 pub(super) fn prepare(prompt: &str, attachments: Vec<Attachment>) -> AppResult<(Value, Entry)> {
-    if prompt.len() > 16000 || (prompt.trim().is_empty() && attachments.is_empty()) {
+    prepare_with(prompt, attachments, |_| {
+        Err(AppError::invalid_input("附件不存在或尚未读取完成"))
+    })
+}
+
+fn prepare_with(
+    prompt: &str,
+    attachments: Vec<Attachment>,
+    mut resolve: impl FnMut(&str) -> AppResult<attachment_store::AttachmentRef>,
+) -> AppResult<(Value, Entry)> {
+    if prompt.len() > 256000 || (prompt.trim().is_empty() && attachments.is_empty()) {
         return Err(AppError::invalid_input(
-            "请输入不超过 16000 字节的消息，或添加附件",
+            "请输入不超过 256 KB 的消息，或添加附件",
         ));
     }
-    if attachments.len() > 4 {
-        return Err(AppError::invalid_input("每条消息最多添加 4 个文件"));
+    if attachments.len() > 16
+        || attachments
+            .iter()
+            .filter(|file| file.mime_type.is_some())
+            .count()
+            > 4
+    {
+        return Err(AppError::invalid_input(
+            "每条消息最多添加 16 个文件，其中图片最多 4 张",
+        ));
     }
     let mut total = 0;
     let mut infos = Vec::new();
+    let mut text_files = Vec::new();
     for file in &attachments {
         if file.name.trim().is_empty()
             || file.name.len() > 255
@@ -84,20 +128,34 @@ pub(super) fn prepare(prompt: &str, attachments: Vec<Attachment>) -> AppResult<(
         {
             return Err(AppError::invalid_input("附件文件名无效"));
         }
-        let size = if let Some(mime_type) = &file.mime_type {
+        let size = if let Some(id) = &file.attachment_id {
+            if file.mime_type.is_some() {
+                return Err(AppError::invalid_input("附件类型无效"));
+            }
+            let stored = resolve(id)?;
+            if stored.name != file.name {
+                return Err(AppError::invalid_input("附件名称与上传记录不一致"));
+            }
+            if stored.size > MAX_FILE_BYTES as u64 {
+                return Err(AppError::invalid_input("附件总大小不能超过 1 GB"));
+            }
+            text_files.push(json!({"attachment_id":stored.id,"name":stored.name,"size":stored.size,"preview":stored.preview}));
+            usize::try_from(stored.size).map_err(|_| AppError::invalid_input("附件大小无效"))?
+        } else if let Some(mime_type) = &file.mime_type {
             image_size(file, mime_type)?
         } else {
             if file.content.trim().is_empty()
-                || file.content.len() > MAX_FILE_BYTES
+                || file.content.len() > 256000
                 || file
                     .content
                     .chars()
                     .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
             {
                 return Err(AppError::invalid_input(
-                    "附件必须是非空的 UTF-8 文本，单个文件不能超过 1 GB",
+                    "内联附件最多 256 KB；较长内容请通过文件上传",
                 ));
             }
+            text_files.push(json!({"name":file.name,"content":file.content}));
             file.content.len()
         };
         total += size;
@@ -105,6 +163,7 @@ pub(super) fn prepare(prompt: &str, attachments: Vec<Attachment>) -> AppResult<(
             name: file.name.clone(),
             size,
             mime_type: file.mime_type.clone(),
+            attachment_id: file.attachment_id.clone(),
         });
     }
     if total > MAX_TOTAL_BYTES {
@@ -115,10 +174,6 @@ pub(super) fn prepare(prompt: &str, attachments: Vec<Attachment>) -> AppResult<(
     } else {
         prompt.trim()
     };
-    let text_files: Vec<_> = attachments
-        .iter()
-        .filter(|file| file.mime_type.is_none())
-        .collect();
     let content = if text_files.is_empty() {
         text.to_owned()
     } else {
@@ -158,6 +213,7 @@ mod tests {
             name: name.into(),
             content: content.into(),
             mime_type: None,
+            attachment_id: None,
         }
     }
 
@@ -225,6 +281,7 @@ mod tests {
                 name: "image.png".into(),
                 content,
                 mime_type: Some(mime_type.into()),
+                attachment_id: None,
             };
             assert!(prepare("Analyze", vec![image]).is_err());
         }
@@ -233,8 +290,8 @@ mod tests {
     #[test]
     fn enforces_file_count_name_utf8_byte_size_and_binary_rejection() {
         assert!(prepare("", vec![]).is_err());
-        assert!(prepare(&"a".repeat(16001), vec![]).is_err());
-        assert!(prepare("分析", (0..5).map(|_| file("a.txt", "a")).collect()).is_err());
+        assert!(prepare(&"a".repeat(256001), vec![]).is_err());
+        assert!(prepare("分析", (0..17).map(|_| file("a.txt", "a")).collect()).is_err());
         for name in ["", "../x", "C:\\secret", "bad\nname"] {
             assert!(prepare("分析", vec![file(name, "a")]).is_err());
         }
@@ -261,5 +318,55 @@ mod tests {
         // Per-file cap is enforced via the exported constant.
         assert!(MAX_FILE_BYTES == 1_000_000_000);
         assert!(MAX_TOTAL_BYTES == 1_000_000_000);
+    }
+
+    #[test]
+    fn stored_files_include_only_verified_references_and_preview() {
+        let attachment: Attachment = serde_json::from_value(json!({
+            "name":"large.log", "attachmentId":"abc", "content":"untrusted client preview"
+        }))
+        .unwrap();
+        let (message, entry) = prepare_with("Inspect errors", vec![attachment.clone()], |id| {
+            assert_eq!(id, "abc");
+            Ok(attachment_store::AttachmentRef {
+                id: id.into(),
+                name: "large.log".into(),
+                size: 900_000_000,
+                preview: "first lines".into(),
+            })
+        })
+        .unwrap();
+        let body = message["content"].as_str().unwrap();
+        assert!(body.contains("first lines"));
+        assert!(body.contains("attachment_id"));
+        assert!(!body.contains("untrusted client preview"));
+        assert!(body.len() < 1000);
+        assert_eq!(entry.attachments[0].size, 900_000_000);
+        assert_eq!(entry.attachments[0].attachment_id.as_deref(), Some("abc"));
+        assert!(prepare_with(
+            "Inspect",
+            vec![attachment.clone(), attachment.clone()],
+            |_| Ok(attachment_store::AttachmentRef {
+                id: "abc".into(),
+                name: "large.log".into(),
+                size: 900_000_000,
+                preview: String::new()
+            })
+        )
+        .is_err());
+        assert!(prepare_with("Inspect", vec![attachment], |_| Err(
+            AppError::invalid_input("other conversation")
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn allows_sixteen_text_references_but_only_four_images_and_bounded_inline_text() {
+        assert!(prepare("Inspect", (0..16).map(|_| file("a.txt", "a")).collect()).is_ok());
+        let image: Attachment = serde_json::from_value(json!({"name":"a.png","mimeType":"image/png","content":STANDARD.encode(b"\x89PNG\r\n\x1a\n")})).unwrap();
+        assert!(prepare("Inspect", vec![image.clone(); 4]).is_ok());
+        assert!(prepare("Inspect", vec![image; 5]).is_err());
+        assert!(prepare("Inspect", vec![file("a.txt", &"a".repeat(256001))]).is_err());
+        assert!(prepare(&"a".repeat(256000), vec![]).is_ok());
     }
 }
