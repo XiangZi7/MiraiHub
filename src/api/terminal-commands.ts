@@ -73,6 +73,23 @@ export function move(id: string, direction: -1 | 1): void {
   items.splice(target, 0, item)
   write(items)
 }
+export function reorder(
+  id: string,
+  targetId: string,
+  position: 'before' | 'after'
+): void {
+  if (id === targetId) return
+  const items = list()
+  const index = items.findIndex(item => item.id === id)
+  if (index < 0 || !items.some(item => item.id === targetId)) return
+  const [item] = items.splice(index, 1)
+  const target =
+    items.findIndex(item => item.id === targetId) +
+    (position === 'after' ? 1 : 0)
+  if (index === target) return
+  items.splice(target, 0, item)
+  write(items)
+}
 export function subscribe(handler: () => void): () => void {
   const onStorage = (event: StorageEvent) => {
     if (event.key === STORAGE_KEY || event.key === null) handler()

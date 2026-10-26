@@ -6,6 +6,7 @@ import { dataModule, sourceLoader } from './helpers/source-module.mjs'
 const eventsUrl = dataModule(`
   export const listeners=new Map()
   export function useEventListener(type,handler){listeners.set(type,handler)}
+  export function useRafFn(){return {pause(){},resume(){}}}
 `)
 const { listeners } = await import(eventsUrl)
 const load = sourceLoader({ '@vueuse/core': eventsUrl })

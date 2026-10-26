@@ -27,6 +27,7 @@ export const useTerminalCommandsStore = defineStore('terminal-commands', () => {
     save: api.save,
     remove: api.remove,
     move: api.move,
+    reorder: api.reorder,
   }
 })
 if (import.meta.hot)

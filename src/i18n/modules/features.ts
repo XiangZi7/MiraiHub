@@ -978,6 +978,8 @@ export const en = {
   编辑指令: 'Edit command',
   添加指令: 'Add command',
   '管理 / 排序': 'Manage / Reorder',
+  '拖动排序（Alt + ↑/↓）': 'Drag to reorder (Alt + ↑/↓)',
+  '排序 {value0}': 'Reorder {value0}',
   关闭常用指令: 'Close saved commands',
   '还没有常用指令，点击下方添加。': 'No saved commands yet. Add one below.',
   添加命令: 'Add command',

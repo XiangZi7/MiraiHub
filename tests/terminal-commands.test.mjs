@@ -43,6 +43,63 @@ test('removing all defaults stays empty; stale edits and invalid commands cannot
   assert.equal(memory.get(key), '[]')
 })
 
+test('drag reordering persists arbitrary positions and notifies other menus once', () => {
+  memory.clear()
+  const original = api.list()
+  const first = original[0]
+  const last = original.at(-1)
+  let notifications = 0
+  const unsubscribe = api.subscribe(() => notifications++)
+  try {
+    api.reorder(last.id, first.id, 'before')
+    assert.deepEqual(api.list(), [last, ...original.slice(0, -1)])
+    assert.deepEqual(JSON.parse(memory.get(key)), api.list())
+    assert.equal(notifications, 1)
+
+    api.save('已更新的指令', 'pwd', first.id)
+    api.save('新指令', 'whoami')
+    const added = api.list().at(-1)
+    api.reorder(last.id, added.id, 'after')
+    assert.equal(api.list().at(-1).id, last.id)
+    assert.equal(api.list().at(-2).id, added.id)
+    assert.equal(api.list()[0].name, '已更新的指令')
+    assert.equal(notifications, 4)
+
+    const saved = memory.get(key)
+    api.reorder(last.id, added.id, 'after')
+    api.reorder(added.id, last.id, 'before')
+    api.reorder(last.id, last.id, 'before')
+    api.reorder('removed', first.id, 'before')
+    api.reorder(first.id, 'removed', 'after')
+    assert.equal(memory.get(key), saved)
+    assert.equal(notifications, 4)
+  } finally {
+    unsubscribe()
+  }
+})
+
+test('failed drag persistence preserves the previous order and sends no notification', () => {
+  memory.clear()
+  const original = api.list()
+  const previousSetItem = localStorage.setItem
+  let notifications = 0
+  const unsubscribe = api.subscribe(() => notifications++)
+  localStorage.setItem = () => {
+    throw new Error('Storage is full')
+  }
+  try {
+    assert.throws(
+      () => api.reorder(original.at(-1).id, original[0].id, 'before'),
+      /Storage is full/
+    )
+    assert.deepEqual(api.list(), original)
+    assert.equal(notifications, 0)
+  } finally {
+    localStorage.setItem = previousSetItem
+    unsubscribe()
+  }
+})
+
 test('malformed storage does not get overwritten; mutations notify other terminal menus', () => {
   memory.set(key, 'bad-json')
   assert.throws(() => api.save('名称', 'pwd'))

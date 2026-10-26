@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, shallowRef } from 'vue'
-import { useEventListener } from '@vueuse/core'
+import { useEventListener, useRafFn } from '@vueuse/core'
 
 interface ReorderableTab {
   id: string
@@ -16,6 +16,8 @@ export interface TabDragEvent {
 interface TabReorderOptions<T extends ReorderableTab> {
   tabs: () => readonly T[]
   container: () => HTMLElement | null
+  axis?: 'horizontal' | 'vertical'
+  handle?: string
   onReorder: (fromIndex: number, toIndex: number) => void
   onDragMove?: (drag: TabDragEvent) => void
   onDrop?: (drag: TabDragEvent) => void
@@ -30,7 +32,7 @@ interface DropTarget {
 const DRAG_THRESHOLD_PX = 5
 
 /**
- * 标签栏的指针拖拽排序。
+ * 标签栏及纵向列表的指针拖拽排序。
  *
  * 与侧栏连接拖拽一样使用 Pointer Events，避免 HTML5 drag/drop 与
  * Tauri 原生文件拖放互相抢事件。排序状态仍由标签所属的父组件持有。
@@ -52,6 +54,30 @@ export function useTabReorder<T extends ReorderableTab>(
   let suppressedClickId = ''
   let suppressClickTimer: ReturnType<typeof setTimeout> | undefined
 
+  const vertical = options.axis === 'vertical'
+  const autoScroll = useRafFn(
+    ({ delta }) => {
+      const container = options.container()
+      if (!container) return
+      const bounds = container.getBoundingClientRect()
+      if (pointerX.value < bounds.left || pointerX.value > bounds.right) return
+      const edge = Math.min(32, bounds.height / 4)
+      const y = pointerY.value
+      if (y < bounds.top || y > bounds.bottom) return
+      const speed =
+        y < bounds.top + edge
+          ? -1 + (y - bounds.top) / edge
+          : y > bounds.bottom - edge
+            ? 1 - (bounds.bottom - y) / edge
+            : 0
+      const previous = container.scrollTop
+      container.scrollTop += speed * Math.min(delta, 32) * 0.5
+      if (container.scrollTop !== previous)
+        updateTarget(dropTargetAtPoint(pointerX.value, y))
+    },
+    { immediate: false }
+  )
+
   const dragStyle = computed(() => ({
     left: `${pointerX.value + 14}px`,
     top: `${pointerY.value + 14}px`,
@@ -70,7 +96,10 @@ export function useTabReorder<T extends ReorderableTab>(
     const id = element.dataset.reorderableTabId
     if (!id) return null
     const rect = element.getBoundingClientRect()
-    return { id, position: x < rect.left + rect.width / 2 ? 'before' : 'after' }
+    const before = vertical
+      ? y < rect.top + rect.height / 2
+      : x < rect.left + rect.width / 2
+    return { id, position: before ? 'before' : 'after' }
   }
 
   function nearestTargetAtPoint(
@@ -94,7 +123,11 @@ export function useTabReorder<T extends ReorderableTab>(
 
     for (const element of elements) {
       const rect = element.getBoundingClientRect()
-      if (x < rect.left + rect.width / 2)
+      if (
+        vertical
+          ? y < rect.top + rect.height / 2
+          : x < rect.left + rect.width / 2
+      )
         return {
           id: element.dataset.reorderableTabId ?? '',
           position: 'before',
@@ -117,6 +150,7 @@ export function useTabReorder<T extends ReorderableTab>(
   }
 
   function reset(): void {
+    autoScroll.pause()
     const wasDragging = dragging.value
     activePointerId = -1
     sourceId = ''
@@ -130,8 +164,10 @@ export function useTabReorder<T extends ReorderableTab>(
   function start(event: PointerEvent, id: string): void {
     if (event.button !== 0 || !event.isPrimary) return
     if ((event.target as HTMLElement).closest('[data-tab-action]')) return
-    // 表单控件与按钮内的拖拽是文本选择或原生交互，不应触发排序（字段编辑器等复用方）。
-    if (
+    // 显式指定手柄时允许按钮作为拖拽起点；其他复用方仍保留表单控件的原生交互。
+    if (options.handle) {
+      if (!(event.target as HTMLElement).closest(options.handle)) return
+    } else if (
       (event.target as HTMLElement).closest(
         'input, textarea, select, button, label'
       )
@@ -163,6 +199,7 @@ export function useTabReorder<T extends ReorderableTab>(
       if (distance < DRAG_THRESHOLD_PX) return
       dragging.value = true
       draggedId.value = sourceId
+      if (vertical) autoScroll.resume()
     }
 
     event.preventDefault()
@@ -171,7 +208,10 @@ export function useTabReorder<T extends ReorderableTab>(
       clientX: event.clientX,
       clientY: event.clientY,
     })
-    const target = dropTargetAtPoint(event.clientX, event.clientY)
+    updateTarget(dropTargetAtPoint(event.clientX, event.clientY))
+  }
+
+  function updateTarget(target: DropTarget | null): void {
     if (!target || target.id === sourceId) {
       targetId.value = ''
       targetPosition.value = ''
@@ -259,6 +299,7 @@ export function useTabReorder<T extends ReorderableTab>(
     targetPosition,
     dragStyle,
     start,
+    cancel,
     consumeSuppressedClick,
     moveByKeyboard,
   }

@@ -18,6 +18,7 @@ import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
 import TerminalCommandEditor from './TerminalCommandEditor.vue'
 import { useTerminalCommandsStore } from '@/stores/terminal-commands'
 import { terminalCommandLabel } from '@/constants/terminal-commands'
+import { useTabReorder } from '@/composables/useTabReorder'
 import type { TerminalCommand } from '@/types/terminal-command'
 
 const { t } = useI18n()
@@ -28,6 +29,7 @@ const store = useTerminalCommandsStore()
 const { commands, error: loadError } = storeToRefs(store)
 const trigger = useTemplateRef<HTMLButtonElement>('trigger')
 const menu = useTemplateRef<HTMLElement>('menu')
+const commandList = useTemplateRef<HTMLElement>('commandList')
 const titleId = useId()
 // 响应式状态
 const state = reactive({
@@ -57,6 +59,23 @@ const style = computed(() => ({
   width: `${state.width}px`,
   maxHeight: `${state.maxHeight}px`,
 }))
+const reorder = useTabReorder({
+  tabs: () => commands.value,
+  container: () => (state.open && !state.editing ? commandList.value : null),
+  axis: 'vertical',
+  handle: '[data-command-drag-handle]',
+  onReorder: (from, to) => {
+    const source = commands.value[from]
+    const target = commands.value[to]
+    if (source && target)
+      update(() =>
+        store.reorder(source.id, target.id, from < to ? 'after' : 'before')
+      )
+  },
+})
+const draggedCommand = computed(() =>
+  commands.value.find(command => command.id === reorder.draggedId.value)
+)
 function position(): void {
   const rect = trigger.value?.getBoundingClientRect()
   if (!rect) return
@@ -86,11 +105,13 @@ async function toggle(): Promise<void> {
   menu.value?.focus()
 }
 function close(restoreFocus = true): void {
+  reorder.cancel()
   state.open = false
   state.editing = false
   if (restoreFocus) trigger.value?.focus()
 }
 function edit(command: TerminalCommand | null): void {
+  reorder.cancel()
   state.current = command
   state.editing = true
   state.error = ''
@@ -113,9 +134,10 @@ function update(action: () => void): void {
     state.error = String(error)
   }
 }
-function insert(command: string): void {
+function insert(command: TerminalCommand): void {
+  if (reorder.consumeSuppressedClick(command.id)) return
   close(false)
-  emit('insert', command)
+  emit('insert', command.command)
 }
 function escape(): void {
   if (state.editing) {
@@ -188,7 +210,10 @@ useEventListener(window, 'resize', () => {
           @click="close()"
         />
       </header>
-      <div class="scroll-thin min-h-0 overflow-y-auto">
+      <div
+        ref="commandList"
+        class="scroll-thin min-h-0 overflow-y-auto"
+      >
         <TerminalCommandEditor
           v-if="editing"
           :key="current?.id ?? 'new'"
@@ -205,13 +230,47 @@ useEventListener(window, 'resize', () => {
             v-for="(command, index) in commands"
             :key="command.id"
             class="command-row"
+            :data-reorderable-tab-id="command.id"
+            :class="{
+              'command-dragging': reorder.draggedId.value === command.id,
+              'command-drop-before':
+                reorder.targetId.value === command.id &&
+                reorder.targetPosition.value === 'before',
+              'command-drop-after':
+                reorder.targetId.value === command.id &&
+                reorder.targetPosition.value === 'after',
+            }"
           >
             <button
               type="button"
+              data-command-drag-handle
+              class="command-drag-handle text-txt-4 hover:text-txt flex shrink-0 items-center justify-center self-stretch rounded px-1"
+              :title="t('拖动排序（Alt + ↑/↓）')"
+              :aria-label="
+                t('排序 {value0}', { value0: terminalCommandLabel(command) })
+              "
+              @pointerdown="reorder.start($event, command.id)"
+              @click="reorder.consumeSuppressedClick(command.id)"
+              @keydown.alt.up.prevent.stop="
+                update(() => store.move(command.id, -1))
+              "
+              @keydown.alt.down.prevent.stop="
+                update(() => store.move(command.id, 1))
+              "
+            >
+              <AppIcon
+                name="lucide:grip-vertical"
+                :size="12"
+              />
+            </button>
+            <button
+              type="button"
               class="command-insert"
+              data-command-drag-handle
               :disabled="!connected"
               :title="t('填入终端：{value0}', { value0: command.command })"
-              @click="insert(command.command)"
+              @pointerdown="reorder.start($event, command.id)"
+              @click="insert(command)"
             >
               <span class="min-w-0 truncate">{{
                 terminalCommandLabel(command)
@@ -289,6 +348,18 @@ useEventListener(window, 'resize', () => {
         </p>
       </footer>
     </section>
+    <div
+      v-if="open && reorder.dragging.value && draggedCommand"
+      class="command-drag-preview text-txt fixed z-200 flex max-w-64 items-center gap-2 rounded-md border px-3 py-2 text-xs shadow-lg"
+      :style="reorder.dragStyle.value"
+      aria-hidden="true"
+    >
+      <AppIcon
+        name="lucide:grip-vertical"
+        :size="12"
+      />
+      <span class="truncate">{{ terminalCommandLabel(draggedCommand) }}</span>
+    </div>
   </Teleport>
 </template>
 
@@ -320,12 +391,46 @@ useEventListener(window, 'resize', () => {
   overflow: hidden;
 }
 .command-row {
+  position: relative;
   display: flex;
   align-items: center;
   border-radius: 5px;
 }
 .command-row:hover {
   background: var(--color-hover);
+}
+.command-drag-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.command-drag-handle:active {
+  cursor: grabbing;
+}
+.command-dragging {
+  opacity: 0.42;
+}
+.command-drop-before::before,
+.command-drop-after::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  pointer-events: none;
+  content: '';
+}
+.command-drop-before::before {
+  top: -1px;
+}
+.command-drop-after::after {
+  bottom: -1px;
+}
+.command-drag-preview {
+  border-color: var(--color-accent);
+  background: var(--color-panel);
+  pointer-events: none;
 }
 .command-insert {
   display: flex;
@@ -337,6 +442,7 @@ useEventListener(window, 'resize', () => {
   padding: 8px;
   font-size: 11px;
   text-align: left;
+  user-select: none;
 }
 .command-insert:disabled {
   opacity: 0.5;
