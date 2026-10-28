@@ -311,7 +311,7 @@ watch(
       :class="[
         'app-select-trigger field w-full cursor-pointer justify-between text-left disabled:pointer-events-none',
         pill
-          ? 'hover:bg-hover focus-visible:bg-hover focus-visible:outline-blue h-[25px] min-h-[25px] gap-1 rounded-full border-transparent bg-transparent pr-2 pl-1 shadow-none focus-visible:border-transparent focus-visible:shadow-none focus-visible:outline focus-visible:outline-1 disabled:opacity-72'
+          ? 'hover:bg-hover focus-visible:bg-hover focus-visible:outline-accent h-[25px] min-h-[25px] gap-1 rounded-full border-transparent bg-transparent pr-2 pl-1 shadow-none focus-visible:border-transparent focus-visible:shadow-none focus-visible:outline focus-visible:outline-1 disabled:opacity-72'
           : [
               compact ? 'app-select-trigger-compact' : 'h-[34px]',
               'disabled:opacity-45',
@@ -322,7 +322,8 @@ watch(
     >
       <span
         :class="[
-          'app-select-value min-w-0 flex-1 truncate text-xs',
+          'app-select-value min-w-0 flex-1 truncate',
+          pill ? 'text-[10.5px]' : 'text-xs',
           pill ? 'text-txt-2' : selectedOption ? 'text-txt' : 'text-txt-4',
         ]"
       >

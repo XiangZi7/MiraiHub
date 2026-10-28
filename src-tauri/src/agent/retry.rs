@@ -260,9 +260,15 @@ pub(super) async fn completion(
     let mut attempt = 0;
     loop {
         run.check(cell)?;
+        run.metrics.begin_request();
+        let request_started = Instant::now();
+        let input_bytes = super::context::text_bytes(messages)?
+            .saturating_add(run.tools.definitions().to_string().len());
+        let usage = run.usage();
         // Clear stale partial output and the retry countdown before each request,
         // including providers that do not send progress until their first token.
         emit(Progress {
+            usage: Some(usage.clone()),
             run_id: run.id.clone(),
             text: String::new(),
             phase: "thinking".into(),
@@ -277,6 +283,7 @@ pub(super) async fn completion(
                 partial_text = clip(text, 16000);
                 if phase != last_phase || last_update.elapsed() >= Duration::from_millis(50) {
                     emit(Progress {
+                        usage: Some(usage.clone()),
                         run_id: run.id.clone(),
                         text: partial_text.clone(),
                         phase: phase.into(),
@@ -295,6 +302,15 @@ pub(super) async fn completion(
                 ) => result,
             }
         };
+        if let Ok(response) = &result {
+            run.metrics.record(
+                response,
+                run.config.api_format,
+                request_started.elapsed().as_millis() as u64,
+            );
+            run.metrics.last_input_bytes = Some(input_bytes);
+            run.metrics.context_input_tokens = run.metrics.last_input_tokens;
+        }
         match result {
             Err(error)
                 if matches!(error.kind, ErrorKind::Network)
@@ -304,6 +320,7 @@ pub(super) async fn completion(
                 attempt += 1;
                 let wait = delay(&error, attempt);
                 emit(Progress {
+                    usage: Some(usage.clone()),
                     run_id: run.id.clone(),
                     text: String::new(),
                     phase: "retrying".into(),

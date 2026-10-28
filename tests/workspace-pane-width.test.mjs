@@ -6,8 +6,8 @@ import { dataModule, sourceLoader } from './helpers/source-module.mjs'
 
 const vueUrl = JSON.stringify(import.meta.resolve('vue'))
 const boundaries = dataModule(`
-  import { shallowRef, computed, toValue } from ${vueUrl}
-  export const sizes=new WeakMap(), storage=new Map()
+  import { shallowRef, computed, toValue, reactive } from ${vueUrl}
+  export const sizes=new WeakMap(), storage=reactive(new Map())
   export const useWindowSize=()=>({width:shallowRef(1400)})
   export function useElementSize(container){
     if(!sizes.has(container))sizes.set(container,shallowRef(container.value?.width??900))
@@ -80,17 +80,17 @@ test('按当前分屏限制文件面板尺寸，调整一侧不影响另一侧�
     cb = shallowRef({ width: 616 })
   const wa = scope.run(() => useMachinePaneWidth(ca, toRef(a, 'width')))
   const wb = scope.run(() => useMachinePaneWidth(cb, toRef(b, 'width')))
-  assert.equal(wa.width.value, 346)
-  assert.equal(wb.width.value, 346)
+  assert.equal(wa.width.value, 558)
+  assert.equal(wb.width.value, 558)
   wa.width.value = 280
   assert.equal(a.width, 280)
   assert.equal(b.width, 620)
-  assert.equal(wb.width.value, 346)
+  assert.equal(wb.width.value, 558)
   sizes.get(ca).value = 420
   await nextTick()
-  assert.equal(wa.width.value, 226)
+  assert.equal(wa.width.value, 280)
   assert.equal(a.width, 280)
-  assert.ok(420 - wa.width.value - 10 > 180)
+  assert.ok(420 - wa.width.value - 10 >= 48)
   sizes.get(ca).value = 700
   await nextTick()
   assert.equal(wa.width.value, 280)
@@ -123,4 +123,25 @@ test('数据库与 Redis 的侧栏和 Agent 宽度按连接保存，切换连接
   id.value = 'a'
   assert.equal(aAgent.width.value, 300)
   assert.equal(aSidebar.width.value, 320)
+})
+test('Agent and machine panes expand beyond 720px while retaining a draggable workspace edge', t => {
+  const { layout, scope } = fixture(t)
+  const container = shallowRef({ width: 1500 })
+  const machine = scope.run(() =>
+    useMachinePaneWidth(
+      container,
+      toRef(layout.machinePaneFor('wide'), 'width')
+    )
+  )
+  const agent = scope.run(() =>
+    useAgentPaneWidth(container, 'database', 'wide')
+  )
+  machine.width.value = 1400
+  agent.width.value = 1400
+  assert.equal(machine.width.value, 1400)
+  assert.equal(agent.width.value, 1400)
+  machine.width.value = 2000
+  agent.width.value = 2000
+  assert.equal(machine.width.value, 1442)
+  assert.equal(agent.width.value, 1442)
 })

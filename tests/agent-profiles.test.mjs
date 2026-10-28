@@ -177,6 +177,8 @@ test('invalid custom capacity blocks saving and all presets stay within backend 
       maxSteps: [0, 129, 1.5, '', NaN],
       maxContextKb: [63, 64001, 64.5, '', NaN, Infinity],
       maxMessages: [15, 2049],
+      maxOutputTokens: [255, 131073, NaN],
+      contextWindowTokens: [16383, 2000001, NaN],
       maxRetries: [-1, 1000, 1.5, '', NaN],
     })) {
       for (const value of values) {
@@ -188,6 +190,7 @@ test('invalid custom capacity blocks saving and all presets stay within backend 
       }
     }
     state.draft.value.limits = {
+      ...DEFAULT_AGENT_LIMITS,
       maxSteps: 128,
       maxContextKb: 64000,
       maxMessages: 2048,

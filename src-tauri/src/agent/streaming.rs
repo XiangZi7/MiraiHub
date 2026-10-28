@@ -11,6 +11,7 @@ pub(super) const MAX_TOOL_CALLS: usize = 8;
 
 #[derive(Default)]
 struct Decoder {
+    usage: Value,
     line: Vec<u8>,
     data: Vec<u8>,
     event_name: Vec<u8>,
@@ -108,6 +109,12 @@ impl Decoder {
         let kind = event["type"]
             .as_str()
             .unwrap_or_else(|| std::str::from_utf8(name).unwrap_or(""));
+        if event["usage"]
+            .as_object()
+            .is_some_and(|usage| !usage.is_empty())
+        {
+            self.usage = event["usage"].clone();
+        }
         if auxiliary_event(&event, kind) {
             return Ok(());
         }
@@ -291,6 +298,7 @@ impl Decoder {
                 // The completed event contains authoritative full output. Arguments
                 // done/item done/EOF alone must never authorize a tool invocation.
                 let response = super::responses::normalize(event["response"].clone())?;
+                self.usage = response["usage"].clone();
                 self.message = response["choices"][0]["message"].clone();
                 self.finish_reason = response["choices"][0]["finish_reason"]
                     .as_str()
@@ -306,9 +314,12 @@ impl Decoder {
             }
             "response.incomplete" => {
                 if event["response"]["incomplete_details"]["reason"] == "max_output_tokens" {
-                    return Err(AppError::invalid_input(
-                        "模型输出达到长度上限，请缩小任务范围后重试",
-                    ));
+                    let response = super::responses::normalize(event["response"].clone())?;
+                    self.message = response["choices"][0]["message"].clone();
+                    self.usage = response["usage"].clone();
+                    self.finish_reason = Some("length".into());
+                    self.done = true;
+                    return Ok(());
                 }
                 return Err(AppError::invalid_input(
                     "模型流式响应未完整结束，未执行本次工具调用，请重试",
@@ -329,11 +340,7 @@ impl Decoder {
         let calls = self.message["tool_calls"].as_array();
         let has_calls = calls.is_some_and(|calls| !calls.is_empty());
         match self.finish_reason.as_deref() {
-            Some("length") => {
-                return Err(AppError::invalid_input(
-                    "模型输出达到长度上限，请缩小任务范围后重试",
-                ))
-            }
+            Some("length") => return Ok(truncated_response(&self.message, self.usage)),
             Some("content_filter") => {
                 return Err(AppError::invalid_input(
                     "模型服务未能完成此回复，请调整请求后重试",
@@ -406,7 +413,12 @@ impl Decoder {
                 }
             }
         }
-        Ok(json!({"choices":[{"message":self.message, "finish_reason":self.finish_reason}]}))
+        let mut response =
+            json!({"choices":[{"message":self.message, "finish_reason":self.finish_reason}]});
+        if self.usage.is_object() {
+            response["usage"] = self.usage;
+        }
+        Ok(response)
     }
 }
 // Known metadata only. Unlike ignoring every event without choices, this cannot
@@ -436,6 +448,14 @@ fn auxiliary_event(event: &Value, kind: &str) -> bool {
         })
 }
 
+/// A length stop preserves prose and usage, but no incomplete call/reasoning replay can execute.
+pub(super) fn truncated_response(message: &Value, usage: Value) -> Value {
+    let mut response = json!({"choices":[{"message":{"role":"assistant", "content":message["content"].as_str().unwrap_or("")}, "finish_reason":"length"}]});
+    if usage.is_object() {
+        response["usage"] = usage;
+    }
+    response
+}
 pub(super) fn completed_message(message: Value, reason: &str) -> AppResult<Value> {
     let mut decoder = Decoder::new();
     decoder.message = message;
@@ -490,7 +510,8 @@ pub(super) async fn completion(
             decoder.finish_reason = response["choices"][0]["finish_reason"]
                 .as_str()
                 .map(str::to_owned);
-            decoder.finish(&mut |_, _| {})?;
+            decoder.usage = response["usage"].clone();
+            return decoder.finish(&mut |_, _| {});
         }
         return Ok(response);
     }
@@ -548,6 +569,41 @@ mod tests {
             "content":[{"type":"output_text", "text":text, "annotations":[]}]})
     }
     #[test]
+    fn length_stop_keeps_text_and_usage_and_discards_incomplete_tools() {
+        let wire = chunk(
+            json!({"content":"Saved partial answer", "tool_calls":[{"index":0, "id":"partial-call","function":{"name":"ssh_execute","arguments":"{"}}]}),
+            Value::Null,
+        ) + &chunk(json!({}), json!("length"))
+            + &event(
+                json!({"choices":[], "usage":{"prompt_tokens":100,"completion_tokens":8192,"prompt_tokens_details":{"cached_tokens":80}}}),
+            )
+            + "data: [DONE]\n\n";
+        let response = parse(&wire).unwrap();
+        assert_eq!(response["choices"][0]["finish_reason"], "length");
+        assert_eq!(
+            response["choices"][0]["message"]["content"],
+            "Saved partial answer"
+        );
+        assert!(response["choices"][0]["message"]["tool_calls"].is_null());
+        assert_eq!(response["usage"]["completion_tokens"], 8192);
+        let incomplete = json!({"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":100,"output_tokens":200},"output":[
+            {"type":"message","content":[{"type":"output_text","text":"Responses partial"}]},
+            {"type":"function_call","arguments":"{"}
+        ]});
+        let response = parse_format(
+            &event(json!({"type":"response.incomplete","response":incomplete})),
+            ApiFormat::Responses,
+        )
+        .unwrap();
+        assert_eq!(
+            response["choices"][0]["message"]["content"],
+            "Responses partial"
+        );
+        assert!(response["choices"][0]["message"]["tool_calls"].is_null());
+        assert_eq!(response["usage"]["output_tokens"], 200);
+    }
+
+    #[test]
     fn empty_finish_reason_is_not_a_completion_marker() {
         let wire = chunk(json!({"role":"assistant", "content":""}), json!(""))
             + &chunk(json!({"content":"你好"}), json!(""))
@@ -581,6 +637,7 @@ mod tests {
                 parse(&(chunk(json!({"content":"ok"}), json!("stop")) + &tail)).unwrap_err();
             assert!(!error.message.contains("must not be ignored"));
         }
+        assert_eq!(parse(&wire).unwrap()["usage"]["total_tokens"], 7);
         // The provider's own wording is quoted, but a credential it echoes is masked.
         let error = parse(
             &(chunk(json!({"content":"ok"}), json!("stop"))
@@ -701,7 +758,7 @@ mod tests {
         assert_eq!(history["reasoning_content"], "检查");
     }
     #[test]
-    fn rejects_truncation_length_errors_and_unfinished_calls() {
+    fn rejects_interrupted_streams_and_unfinished_calls() {
         let tool = chunk(
             json!({"tool_calls":[{"index":0,"id":"call","function":{"name":"server_status","arguments":"{\"probe\":\"disk\"}"}}]}),
             Value::Null,
@@ -709,7 +766,6 @@ mod tests {
         for wire in [
             tool.clone(),
             tool.clone() + "data: [DONE]\n\n",
-            tool.clone() + &chunk(json!({}), json!("length")) + "data: [DONE]\n\n",
             tool.clone() + &chunk(json!({}), json!("stop")),
             "data: {\"error\":{\"message\":\"bad key sk-abcdefgh12345678\"}}\n\n".into(),
             "data: invalid\n\n".into(),
@@ -875,11 +931,11 @@ mod tests {
         );
     }
     #[test]
-    fn json_fallback_handles_empty_tool_arrays_and_rejects_length_truncation() {
+    fn json_fallback_preserves_length_stops_without_authorizing_tools() {
         for (calls, reason, valid) in [
             (json!([]), "stop", true),
             (json!([]), "tool_calls", false),
-            (Value::Null, "length", false),
+            (Value::Null, "length", true),
         ] {
             let mut decoder = Decoder::new();
             decoder.message = json!({"role":"assistant", "content":"text", "tool_calls":calls});
@@ -1146,8 +1202,9 @@ mod tests {
         ))
         .unwrap_err();
         assert!(matches!(rejected.kind, ErrorKind::Internal));
-        let length = parse(&chunk(json!({"content":"partial"}), json!("length"))).unwrap_err();
-        assert!(matches!(length.kind, ErrorKind::InvalidInput));
+        let length = parse(&chunk(json!({"content":"partial"}), json!("length"))).unwrap();
+        assert_eq!(length["choices"][0]["finish_reason"], "length");
+        assert_eq!(length["choices"][0]["message"]["content"], "partial");
     }
     #[tokio::test]
     #[ignore = "65-second regression check for the former 60-second total timeout"]

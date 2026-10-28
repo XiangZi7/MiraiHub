@@ -15,6 +15,8 @@ export interface AgentConfig {
   limits: AgentLimits
 }
 export interface AgentLimits {
+  maxOutputTokens: number
+  contextWindowTokens: number
   maxSteps: number
   maxContextKb: number
   maxMessages: number
@@ -52,6 +54,8 @@ export interface AgentProfileDraft extends AgentConfigInput {
   clearKey: boolean
 }
 export interface AgentEntry {
+  turnElapsedMs?: number
+  turnStatus?: AgentRun['status']
   role: 'user' | 'assistant' | 'tool' | 'audit' | 'error'
   text: string
   detail?: string
@@ -129,18 +133,35 @@ export interface AgentApproval {
   expiresAt: number
   fileChange?: AgentFileChange
 }
+export interface AgentUsage {
+  rounds: number
+  steps: number
+  totalTokens: number | null
+  tokensPerSecond: number | null
+  cacheHitRate: number | null
+  reportedRequests: number
+  cacheReportedRequests: number
+  lastInputTokens: number | null
+  estimatedContextTokens?: number
+  contextWindowTokens?: number
+  contextBytes: number
+  contextLimitBytes: number
+}
 export interface AgentRun {
+  usage?: AgentUsage
   id: string
   conversationId: string
   target: string
   provider: string
   model: string
-  status: 'running' | 'approval' | 'completed' | 'cancelled' | 'failed'
+  status:
+    'running' | 'approval' | 'completed' | 'cancelled' | 'failed' | 'truncated'
   entries: AgentEntry[]
   approval: AgentApproval | null
   saveError?: string
 }
 export interface AgentProgress {
+  usage?: AgentUsage
   runId: string
   text: string
   phase: 'thinking' | 'answering' | 'tool' | 'retrying' | 'executing'

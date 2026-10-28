@@ -68,7 +68,7 @@ export default {
   'agent.attachmentProgress':
     '{current}/{total} · {name} · {size} / {totalSize}',
   'ai.capacityInvalid':
-    '请填写整数：每轮模型请求 1–128 次，本地上下文容量 64–64000 KB，历史消息 16–2048 条，失败自动重试 0–999 次。',
+    '请填写整数：每轮模型请求 1–128 次，本地上下文容量 64–64000 KB，历史消息 16–2048 条，失败自动重试 0–999 次，模型窗口 16384–2000000 tokens，输出 256–131072 tokens；窗口须留出输入、输出和额外余量。',
   'backup.saved': '备份已保存：{path}',
   'backup.restored':
     '恢复完成：新增 {add}，更新 {update}，跳过 {skip}。未自动连接任何服务器。',

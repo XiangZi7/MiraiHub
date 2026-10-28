@@ -195,6 +195,8 @@ fn prepare_with(
         Value::String(content)
     };
     let entry = Entry {
+        turn_elapsed_ms: None,
+        turn_status: None,
         role: "user".into(),
         text: text.into(),
         detail: None,

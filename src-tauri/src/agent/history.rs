@@ -31,6 +31,12 @@ pub struct Summary {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Record {
+    #[serde(default)]
+    pub metrics: usage::Metrics,
+    #[serde(default)]
+    context_limit_bytes: usize,
+    #[serde(default)]
+    context_window_tokens: usize,
     #[serde(flatten)]
     pub summary: Summary,
     scope: String,
@@ -43,6 +49,9 @@ pub(super) struct Record {
 impl Record {
     fn from_run(run: &Run, cell: &Cell) -> Self {
         Self {
+            metrics: run.metrics.clone(),
+            context_window_tokens: run.config.limits.context_window_tokens,
+            context_limit_bytes: run.config.limits.max_context_kb * 1000,
             summary: Summary {
                 id: run.history.id.clone(),
                 title: run.history.title.clone(),
@@ -73,7 +82,14 @@ impl Record {
         }
     }
     pub fn snapshot(self) -> Snapshot {
+        let mut usage = self.metrics.snapshot(
+            &self.entries,
+            context::text_bytes(&self.messages).unwrap_or(0),
+            self.context_limit_bytes,
+        );
+        usage.context_window_tokens = self.context_window_tokens;
         Snapshot {
+            usage,
             id: String::new(),
             conversation_id: self.summary.id,
             target: self.target,
@@ -493,6 +509,9 @@ mod tests {
         let mut run = owner.run.lock().await;
         store.save_at(&dir, &run, &owner).unwrap();
         run.entry("assistant", "**完成**", None);
+        run.entries[0].turn_elapsed_ms = Some(26000);
+        run.metrics.begin_request();
+        run.metrics.record(&json!({"usage":{"prompt_tokens":80,"completion_tokens":20,"prompt_tokens_details":{"cached_tokens":60}}}), config::ApiFormat::Openai, 1000);
         store.save_at(&dir, &run, &owner).unwrap();
         drop(store);
         let record = read(&dir, &conversation_id, "ssh-host").unwrap();
@@ -506,6 +525,10 @@ mod tests {
         assert!(snapshot.id.is_empty());
         assert!(snapshot.approval.is_none());
         assert_eq!(snapshot.status, "cancelled");
+        assert_eq!(snapshot.entries[0].turn_elapsed_ms, Some(26000));
+        assert_eq!(snapshot.usage.total_tokens, Some(100));
+        assert_eq!(snapshot.usage.cache_hit_rate, Some(75.0));
+        assert_eq!(snapshot.usage.context_window_tokens, 128000);
         let path = record_path(&dir, &conversation_id).unwrap();
         assert!(!std::fs::read(&path)
             .unwrap()

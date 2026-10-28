@@ -630,6 +630,7 @@ mod tests {
             max_context_kb: 1000,
             max_messages: 256,
             max_retries: 999,
+            ..Limits::default()
         };
         expanded.config.limits = limits;
         settings.upsert(expanded, false).unwrap();
@@ -914,7 +915,7 @@ mod http_tests {
         assert_eq!(body["tools"][0]["name"], "server_status");
         assert!(body["tools"][0]["input_schema"].is_object());
         assert_eq!(body["tool_choice"]["disable_parallel_tool_use"], true);
-        assert_eq!(body["max_tokens"], 4096);
+        assert_eq!(body["max_tokens"], 8192);
         assert_eq!(body["messages"].as_array().unwrap().len(), 1);
         let call = &result["choices"][0]["message"]["tool_calls"][0];
         assert_eq!(call["id"], "toolu_1");
@@ -965,7 +966,7 @@ mod http_tests {
         let json: serde_json::Value =
             serde_json::from_str(text.split_once("\r\n\r\n").unwrap().1).unwrap();
         assert_eq!(json["parallel_tool_calls"], false);
-        assert_eq!(json["max_tokens"], 4096);
+        assert_eq!(json["max_tokens"], 8192);
         assert_eq!(json["tools"][0]["function"]["name"], "server_status");
         assert_eq!(json["messages"].as_array().unwrap().len(), 1);
     }

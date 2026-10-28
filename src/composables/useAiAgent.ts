@@ -469,7 +469,7 @@ export function useAiAgent(
     try {
       const previous = state.run
       let next: AgentRun
-      if (previous?.id && previous.status === 'completed')
+      if (previous?.id && ['completed', 'truncated'].includes(previous.status))
         next = await api.send(
           previous.id,
           prompt.trim(),

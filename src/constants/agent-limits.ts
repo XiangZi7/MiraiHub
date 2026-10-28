@@ -1,6 +1,8 @@
 import type { AgentLimits } from '@/types/agent'
 
 export const AGENT_LIMIT_RANGES = {
+  maxOutputTokens: { min: 256, max: 131072 },
+  contextWindowTokens: { min: 16384, max: 2000000 },
   maxSteps: { min: 1, max: 128 },
   maxContextKb: { min: 64, max: 64000 },
   maxMessages: { min: 16, max: 2048 },
@@ -28,6 +30,8 @@ export const AGENT_CAPACITY_PRESETS = [
 export const DEFAULT_AGENT_LIMITS: Readonly<AgentLimits> = {
   ...AGENT_CAPACITY_PRESETS[0].limits,
   maxRetries: 5,
+  maxOutputTokens: 8192,
+  contextWindowTokens: 128000,
 }
 
 /** 本地上下文使用十进制 KB，与后端按 1000 字节计算的容量一致。 */
@@ -37,12 +41,15 @@ export function formatAgentContextSize(kb: number): string {
 }
 
 export function validAgentLimits(limits: AgentLimits): boolean {
-  return (Object.keys(AGENT_LIMIT_RANGES) as (keyof AgentLimits)[]).every(
-    key => {
+  return (
+    limits.maxOutputTokens +
+      Math.min(Math.floor(limits.contextWindowTokens / 20), 8192) <
+      limits.contextWindowTokens &&
+    (Object.keys(AGENT_LIMIT_RANGES) as (keyof AgentLimits)[]).every(key => {
       const value = limits[key]
       const range = AGENT_LIMIT_RANGES[key]
       return Number.isInteger(value) && value >= range.min && value <= range.max
-    }
+    })
   )
 }
 

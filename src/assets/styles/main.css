@@ -63,17 +63,13 @@
   --color-danger: oklch(64% 0.21 27);
 
   /* Agent 对话界面：复用基础明暗色，提供可直接使用的 Tailwind token。 */
-  --color-agent-mint: oklch(80.10233% 0.06886 172.09053);
-  --color-agent-line: color-mix(in srgb, var(--color-txt) 12%, transparent);
-  --color-agent-user: color-mix(
-    in srgb,
-    oklch(58.49032% 0.113896 260.92158) 70%,
-    var(--color-canvas)
-  );
-  --color-agent-user-text: oklch(96.13427% 0.008298 271.328);
-  --color-agent-answer: color-mix(in srgb, var(--color-txt) 18%, transparent);
-  --text-agent-body: 13.5px;
-  --text-agent-small: 13px;
+  --color-agent-mint: var(--color-accent);
+  --color-agent-line: var(--color-line-strong);
+  --color-agent-user: color-mix(in oklch, var(--color-accent) 14%, var(--color-card));
+  --color-agent-user-text: var(--color-txt);
+  --color-agent-answer: var(--color-card);
+  --text-agent-body: 12px;
+  --text-agent-small: 11px;
 
   /* ---------- 终端语法色 ---------- */
   --color-term-fg: oklch(88% 0.005 285);
@@ -679,10 +675,6 @@
   --color-amber: oklch(62% 0.14 75);
   --color-orange: oklch(58% 0.16 48);
   --color-danger: oklch(53% 0.21 27);
-  --color-agent-mint: oklch(52.90324% 0.08949 169.49727);
-  --color-agent-user: oklch(92.54098% 0.028433 261.47681);
-  --color-agent-user-text: oklch(35.5916% 0.07884 261.53958);
-  --color-agent-answer: oklch(95.47538% 0.005771 264.53204);
 
   --color-term-fg: oklch(30% 0.01 285);
   --color-term-green: oklch(48% 0.14 148);

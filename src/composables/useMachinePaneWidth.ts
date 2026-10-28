@@ -18,12 +18,7 @@ export function useMachinePaneWidth(
   const available = computed(() => Math.max(0, lastWidth.value - 10))
   const min = computed(() => Math.round(Math.min(240, available.value * 0.45)))
   const max = computed(() =>
-    Math.round(
-      Math.max(
-        min.value,
-        Math.min(720, available.value - Math.min(260, available.value * 0.45))
-      )
-    )
+    Math.round(Math.max(min.value, available.value - 48))
   )
   const width = computed({
     get: () =>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { translateNativeMessage } from '@/i18n/native'
+import { toast } from '@/composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { useResizeObserver } from '@vueuse/core'
 
@@ -22,10 +22,12 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AgentApprovalCard from './AgentApprovalCard.vue'
 import AgentTranscript from './AgentTranscript.vue'
-import AgentRunStatus from './AgentRunStatus.vue'
 import AgentConversationMenu from './AgentConversationMenu.vue'
 import AgentRetryStatus from './AgentRetryStatus.vue'
-import AgentTaskResult from './AgentTaskResult.vue'
+import {
+  useAgentErrorToasts,
+  notifyAgentError,
+} from '@/composables/useAgentErrorToasts'
 
 const { t } = useI18n()
 
@@ -92,6 +94,8 @@ const state = reactive({
   presentation: false,
   // 保留用户阅读位置，工具输出或折叠内容变化时仅在靠近底部时跟随。
   following: true,
+  lastScrollTop: 0,
+  lastScrollHeight: 0,
 })
 const { copied, presentation, following } = toRefs(state)
 const draft = useAgentDraft((text, attachments) =>
@@ -143,6 +147,42 @@ const canSend = computed(() =>
     !awaitingApproval.value
   )
 )
+const usage = computed(() => {
+  const value = progress.value?.usage ?? run.value?.usage
+  const contextLimitBytes =
+    (activeProfile.value?.limits?.maxContextKb ?? 0) * 1000
+  return value
+    ? {
+        ...value,
+        contextLimitBytes: value.contextLimitBytes || contextLimitBytes,
+      }
+    : {
+        rounds:
+          run.value?.entries.filter(entry => entry.role === 'user').length ?? 0,
+        steps: 0,
+        totalTokens: run.value ? null : 0,
+        tokensPerSecond: null,
+        cacheHitRate: null,
+        reportedRequests: 0,
+        cacheReportedRequests: 0,
+        lastInputTokens: null,
+        contextBytes: 0,
+        contextLimitBytes,
+      }
+})
+useAgentErrorToasts(error, () => run.value?.saveError)
+watch(
+  () => run.value?.status,
+  status => {
+    if (status === 'truncated') toast.warning(t('agent.truncatedHelp'))
+  }
+)
+watch(run, (current, previous) => {
+  if (!current?.id || current.conversationId !== previous?.conversationId)
+    return
+  for (const entry of current.entries.slice(previous.entries.length))
+    if (entry.role === 'error' && !entry.operation) notifyAgentError(entry.text)
+})
 const statusLabel = computed(
   () =>
     (busy.value && progress.value
@@ -160,6 +200,7 @@ const statusLabel = computed(
       completed: t('本轮完成'),
       cancelled: t('已停止'),
       failed: t('任务未完成'),
+      truncated: t('agent.truncated'),
     }[run.value?.status ?? 'completed']
 )
 async function submit(): Promise<void> {
@@ -222,9 +263,19 @@ async function copyConversation(): Promise<void> {
 }
 function onScroll(): void {
   const element = scroll.value
-  if (element)
-    state.following =
-      element.scrollHeight - element.scrollTop - element.clientHeight < 80
+  if (!element) return
+  const nearBottom =
+    element.scrollHeight - element.scrollTop - element.clientHeight < 80
+  // Output growth and browser scroll anchoring also emit scroll events. Only
+  // scrolling upward in a stable layout opts out of following new output.
+  if (nearBottom) state.following = true
+  else if (
+    element.scrollHeight === state.lastScrollHeight &&
+    element.scrollTop < state.lastScrollTop - 1
+  )
+    state.following = false
+  state.lastScrollTop = element.scrollTop
+  state.lastScrollHeight = element.scrollHeight
 }
 function scrollToBottom(force = false): void {
   if (force) state.following = true
@@ -237,6 +288,8 @@ function scrollToBottom(force = false): void {
   )
     return
   element.scrollTo({ top: element.scrollHeight, behavior: 'auto' })
+  state.lastScrollTop = element.scrollTop
+  state.lastScrollHeight = element.scrollHeight
 }
 useResizeObserver(content, () => scrollToBottom())
 watch(
@@ -261,11 +314,11 @@ watch(
 <template>
   <section
     data-agent-panel
-    class="bg-panel text-agent-body text-txt [html[data-skin-scheme=light]_&]:bg-canvas @container/agent flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(ellipse_at_75%_0%,color-mix(in_srgb,var(--color-blue)_7%,transparent),transparent_65%)] [--agent-body-font:var(--text-agent-body)] [--agent-color:var(--color-blue)] [--agent-small-font:var(--text-agent-small)] [html[data-skin-scheme=light]_&]:bg-none"
+    class="bg-panel text-agent-body text-txt [html[data-skin-scheme=light]_&]:bg-canvas @container/agent flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(ellipse_at_75%_0%,color-mix(in_srgb,var(--color-accent)_7%,transparent),transparent_65%)] [--agent-body-font:var(--text-agent-body)] [--agent-color:var(--color-accent)] [--agent-small-font:var(--text-agent-small)] [html[data-skin-scheme=light]_&]:bg-none"
     :class="[
       embedded ? 'rounded-none border-0' : 'border-line rounded-[10px] border',
       presentation &&
-        '[--text-agent-body:15px] [--text-agent-small:13px] [&_.markdown-body_code]:text-sm [&_textarea]:text-sm',
+        '[--text-agent-body:15px] [--text-agent-small:13px] [&_.markdown-body_code]:text-sm',
     ]"
     aria-label="AI Agent"
   >
@@ -347,7 +400,7 @@ watch(
       <div
         ref="scroll"
         data-agent-scroll
-        class="scroll-thin min-h-0 w-full [scrollbar-gutter:stable] overflow-auto pt-4.5 pr-3.25 pl-4 select-text @min-[25rem]/agent:pt-6 @min-[25rem]/agent:pr-6 @min-[25rem]/agent:pl-[27px]"
+        class="scroll-thin min-h-0 w-full [scrollbar-gutter:stable] overflow-auto pt-4.5 pr-3.25 pb-4 pl-4 select-text @min-[25rem]/agent:pt-6 @min-[25rem]/agent:pr-6 @min-[25rem]/agent:pl-[27px]"
         @scroll.passive="onScroll"
       >
         <div
@@ -364,7 +417,7 @@ watch(
           </p>
           <div
             v-if="!run"
-            class="[&_p]:text-txt-3 mt-5 mb-[22px] flex items-center gap-3 [&_h2]:text-[17px] [&_h2]:font-semibold [&_p]:mt-1.5 [&_p]:text-xs [&_p]:leading-[1.6]"
+            class="[&_p]:text-txt-3 mt-5 mb-[22px] flex items-center gap-3 [&_h2]:text-[13px] [&_h2]:font-semibold [&_p]:mt-1.5 [&_p]:text-[11px] [&_p]:leading-[1.6]"
           >
             <div
               class="border-line bg-agent-mint/7 text-agent-mint grid size-10.5 shrink-0 place-items-center rounded-xl border"
@@ -433,7 +486,7 @@ watch(
               class="mt-4.5 grid grid-cols-1 gap-2 @min-[25rem]/agent:grid-cols-2"
             >
               <button
-                class="border-line bg-txt/3 text-txt-2 hover:bg-hover hover:text-txt focus-visible:outline-blue flex cursor-pointer items-center justify-between gap-[7px] rounded-[9px] border p-3 text-left text-xs transition-colors duration-150 focus-visible:outline focus-visible:outline-1 motion-reduce:transition-none"
+                class="border-line bg-txt/3 text-txt-2 hover:bg-hover hover:text-txt focus-visible:outline-accent flex cursor-pointer items-center justify-between gap-[7px] rounded-[9px] border p-3 text-left text-xs transition-colors duration-150 focus-visible:outline focus-visible:outline-1 motion-reduce:transition-none"
                 v-for="item in suggestions"
                 :key="item"
                 type="button"
@@ -445,7 +498,7 @@ watch(
           </template>
           <div
             v-else
-            class="flex flex-col gap-[3px] [&_.approval]:my-3 [&_.task-result]:my-3"
+            class="flex flex-col gap-[3px] [&_.approval]:my-3"
             aria-live="polite"
           >
             <AgentTranscript
@@ -454,11 +507,10 @@ watch(
               :busy="busy"
               :awaiting-approval="awaitingApproval"
               :progress="progress"
-            />
-            <AgentTaskResult
-              :entries="run.entries"
               :status="run.status"
+              :status-label="statusLabel"
             />
+
             <AgentApprovalCard
               v-if="run.id && run.approval"
               :approval="run.approval"
@@ -470,13 +522,7 @@ watch(
               v-if="busy && progress?.phase === 'retrying' && progress.retry"
               :retry="progress.retry"
             />
-            <AgentRunStatus
-              v-else
-              :busy="busy"
-              :label="busy ? t('agent.working') : statusLabel"
-              :status="run.status"
-              :turn-key="`${run.conversationId}-${run.entries.filter(entry => entry.role === 'user').length}`"
-            />
+
             <p
               v-if="run.status === 'cancelled'"
               class="text-txt-3 text-[11px] leading-relaxed"
@@ -486,20 +532,6 @@ watch(
               }}
             </p>
           </div>
-          <p
-            v-if="run?.saveError"
-            role="alert"
-            class="text-danger mt-3 text-[11px]"
-          >
-            {{ translateNativeMessage(run.saveError) }}
-          </p>
-          <p
-            v-if="error"
-            role="alert"
-            class="border-danger/30 bg-danger/5 text-danger mt-3 rounded-lg border p-3 text-[12px]"
-          >
-            {{ translateNativeMessage(error) }}
-          </p>
           <div
             v-if="!target.sessionId"
             class="border-line text-txt-3 mt-4 rounded-lg border p-3 text-[12px]"
@@ -513,7 +545,7 @@ watch(
       <button
         v-if="!following && run"
         type="button"
-        class="border-line-strong bg-raised text-txt-2 hover:bg-hover hover:text-txt focus-visible:outline-blue absolute right-5 bottom-3.5 grid size-8 cursor-pointer place-items-center rounded-full border shadow-[0_3px_12px_#0003] focus-visible:outline-2 focus-visible:outline-offset-3"
+        class="border-line-strong bg-raised text-txt-2 hover:bg-hover hover:text-txt focus-visible:outline-accent absolute right-5 bottom-3.5 grid size-8 cursor-pointer place-items-center rounded-full border shadow-[0_3px_12px_#0003] focus-visible:outline-2 focus-visible:outline-offset-3"
         :title="t('agent.scrollToBottom')"
         :aria-label="t('agent.scrollToBottom')"
         @click="scrollToBottom(true)"
@@ -526,6 +558,7 @@ watch(
     </div>
     <AgentComposer
       ref="composer"
+      :usage="usage"
       v-model="prompt"
       :approval-mode="approvalMode"
       @update:approval-mode="setApprovalMode"

@@ -1,5 +1,5 @@
 //! Keep a bounded model context while leaving the visible, encrypted transcript intact.
-use super::{config, context, Cell, Run};
+use super::{budget, config, context, Cell, Run};
 use crate::error::{AppError, AppResult};
 use serde_json::{json, Value};
 use std::{collections::VecDeque, future::Future};
@@ -46,7 +46,9 @@ fn should_compact(
 }
 
 fn initial_chunk_budget(limits: super::limits::Limits) -> usize {
-    (limits.max_context_kb * 1000 / 4).clamp(MIN_SUMMARY_CHUNK_BYTES, 1_000_000)
+    (limits.max_context_kb * 1000 / 4)
+        .min(budget::input_threshold(limits))
+        .clamp(MIN_SUMMARY_CHUNK_BYTES, 1_000_000)
 }
 
 async fn summarize_chunks<F, Fut>(
@@ -98,6 +100,13 @@ where
             Err(error) => return Err(error),
         };
         if response["choices"][0]["finish_reason"] == "length" {
+            // Output exhaustion is distinct from input overflow. Retry a smaller
+            // excerpt only when we can make progress, never commit a partial summary.
+            if chunk.text.len() > MIN_SUMMARY_CHUNK_BYTES {
+                budget = (chunk.text.len() / 2).max(MIN_SUMMARY_CHUNK_BYTES);
+                chunks.push_front(chunk);
+                continue;
+            }
             return Err(AppError::internal("上下文摘要被模型截断，原始对话已保留"));
         }
         let next_summary = response["choices"][0]["message"]["content"]
@@ -176,12 +185,87 @@ fn compact_until(messages: &[Value], force: bool) -> Option<usize> {
         })
 }
 
+fn budget_boundary(run: &Run) -> Option<usize> {
+    let minimum_tail = if run
+        .messages
+        .last()
+        .is_some_and(|message| message["role"] == "user")
+    {
+        1
+    } else {
+        2
+    };
+    let max_cut = run.messages.len().checked_sub(minimum_tail)?;
+    let retain = run.input_threshold() * 16 / 100;
+    // Measure each message once. Re-serializing every candidate suffix would
+    // make long histories quadratic before the first compaction request.
+    let mut tail_bytes = 2usize;
+    let mut selected = None;
+    for index in (2..run.messages.len()).rev() {
+        let bytes = size(std::slice::from_ref(&run.messages[index]))
+            .unwrap_or(usize::MAX)
+            .saturating_sub(2);
+        tail_bytes = tail_bytes.saturating_add(bytes).saturating_add(1);
+        if run.metrics.estimate(tail_bytes) > retain {
+            break;
+        }
+        if index <= max_cut && safe_boundary(&run.messages, index) {
+            selected = Some(index);
+        }
+    }
+    selected.or_else(|| {
+        (2..=max_cut)
+            .rev()
+            .find(|&index| safe_boundary(&run.messages, index))
+    })
+}
+
+/// Shorten only older, closed tool exchanges; the visible encrypted transcript is intact.
+fn prune_tool_results(messages: &mut [Value], cut: usize) -> bool {
+    let mut changed = false;
+    for message in &mut messages[1..cut] {
+        if message["role"] != "tool" {
+            continue;
+        }
+        let Some(text) = message["content"]
+            .as_str()
+            .filter(|text| text.len() > 16000)
+        else {
+            continue;
+        };
+        let mut head = 6000.min(text.len());
+        while !text.is_char_boundary(head) {
+            head -= 1;
+        }
+        let mut tail = text.len().saturating_sub(2000);
+        while !text.is_char_boundary(tail) {
+            tail += 1;
+        }
+        message["content"] = format!("{}\n[Earlier tool output shortened for context. Original output remains in the execution path; retrieve exact content again if needed.]\n{}", &text[..head], &text[tail..]).into();
+        changed = true;
+    }
+    changed
+}
+
+/// A confirmed provider overflow lowers pressure for this conversation. Re-send
+/// only after a real reduction; the caller permits one recovery attempt.
+pub(super) async fn recover_overflow(run: &mut Run, cell: &Cell) -> AppResult<bool> {
+    run.check(cell)?;
+    let attempted = run.metrics.estimate(run.context_bytes());
+    let reduced = (attempted / 2).max(1024).min(run.input_threshold());
+    run.metrics.context_pressure_limit = Some(reduced);
+    if_needed(run, Some(cell), None, true).await
+}
+
 pub(super) async fn if_needed(
     run: &mut Run,
     cell: Option<&Cell>,
     next: Option<&Value>,
     force: bool,
 ) -> AppResult<bool> {
+    if let Some(cell) = cell {
+        run.check(cell)?;
+    }
     let limits = run.config.limits;
     let count = run.messages.len() + usize::from(next.is_some()) + 1; // approval instruction
     let approval = json!({"role":"system", "content":run.approval_mode.load().instruction()});
@@ -198,12 +282,37 @@ pub(super) async fn if_needed(
         || count > limits.max_messages
         || bytes > limits.max_context_kb * 1000
         || image_bytes > context::MAX_IMAGE_CONTEXT_BYTES;
-    if !should_compact(limits, count, bytes, image_bytes, force) {
+    let request_bytes = bytes.saturating_add(run.tools.definitions().to_string().len());
+    let model_pressure = run.metrics.estimate(request_bytes) >= run.input_threshold();
+    if !model_pressure && !should_compact(limits, count, bytes, image_bytes, force) {
         return Ok(false);
     }
-    let Some(cut) = compact_until(&run.messages, force) else {
+    let cut = if model_pressure || force {
+        budget_boundary(run)
+    } else {
+        compact_until(&run.messages, false)
+    };
+    let Some(cut) = cut else {
         return Ok(false);
     };
+    let pruned = prune_tool_results(&mut run.messages, cut);
+    if pruned {
+        run.entry(
+            "audit",
+            "较早的工具输出已精简，原始内容保留在执行路径中",
+            None,
+        );
+        let remaining = run.context_bytes().saturating_add(
+            next.map(|message| size(std::slice::from_ref(message)))
+                .transpose()?
+                .unwrap_or(0),
+        );
+        if run.metrics.estimate(remaining) < run.input_threshold()
+            && !should_compact(limits, count, size(&run.messages)?, image_bytes, false)
+        {
+            return Ok(true);
+        }
+    }
     let source = &run.messages[1..cut];
     let original_size = size(source)? + context::image_bytes(source);
     if original_size < 1024 && !force {
@@ -212,26 +321,47 @@ pub(super) async fn if_needed(
     if let Some(cell) = cell {
         run.check(cell)?
     }
-    let budget = initial_chunk_budget(limits);
+    let budget =
+        initial_chunk_budget(limits).min(run.input_threshold().max(MIN_SUMMARY_CHUNK_BYTES));
     let chunks = context::summary_chunks(source, budget)?;
     let config = &run.config;
-    let summary = summarize_chunks(chunks, budget, |prompt| async move {
-        let request = config::completion(config, &prompt, None);
-        if let Some(cell) = cell {
-            tokio::select! {
-                result = request => result,
-                _ = cell.cancellation() => Err(AppError::invalid_input("任务已取消")),
+    let metrics = std::sync::Mutex::new(run.metrics.clone());
+    let summary = summarize_chunks(chunks, budget, |prompt| {
+        let metrics = &metrics;
+        async move {
+            metrics.lock().unwrap().begin_request();
+            let started = std::time::Instant::now();
+            let request = config::completion(config, &prompt, None);
+            let response = if let Some(cell) = cell {
+                tokio::select! {
+                    result = request => result,
+                    _ = cell.cancellation() => Err(AppError::invalid_input("任务已取消")),
+                }
+            } else {
+                request.await
+            };
+            if let Ok(response) = &response {
+                metrics.lock().unwrap().record(
+                    response,
+                    config.api_format,
+                    started.elapsed().as_millis() as u64,
+                );
             }
-        } else {
-            request.await
+            response
         }
     })
-    .await?;
+    .await;
+    run.metrics = metrics.into_inner().unwrap();
+    let summary = match summary {
+        Ok(summary) => summary,
+        Err(error) if !error.message.contains("取消") && pruned => return Ok(true),
+        Err(error) => return Err(error),
+    };
     if let Some(cell) = cell {
         run.check(cell)?
     }
     if !replace_summary(&mut run.messages, cut, &summary)? {
-        return Ok(false);
+        return Ok(pruned);
     }
     run.entry("audit", "较早的对话已自动压缩，继续当前会话", None);
     Ok(true)
@@ -240,6 +370,85 @@ pub(super) async fn if_needed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn model_pressure_prunes_old_outputs_without_a_summary_request() {
+        let mut run = super::super::tests::pending_run();
+        run.messages = vec![
+            json!({"role":"system","content":"rules"}),
+            json!({"role":"user","content":"Keep the current request verbatim"}),
+            json!({"role":"assistant","tool_calls":[{"id":"old"}]}),
+            json!({"role":"tool","tool_call_id":"old","content":format!("{}END", "中文 log".repeat(80000))}),
+            json!({"role":"assistant","tool_calls":[{"id":"current"}]}),
+            json!({"role":"tool","tool_call_id":"current","content":"latest exact output"}),
+        ];
+        let original = run.messages.clone();
+        run.entry(
+            "tool",
+            "old",
+            Some(original[3]["content"].as_str().unwrap().into()),
+        );
+        let visible = run.entries[0].detail.clone();
+        assert!(if_needed(&mut run, None, None, false).await.unwrap());
+        assert_eq!(run.metrics.requests, 0);
+        assert_eq!(run.entries[0].detail, visible);
+        assert_eq!(run.messages.len(), original.len());
+        assert_eq!(run.messages[1], original[1]);
+        assert_eq!(&run.messages[4..], &original[4..]);
+        assert!(run.messages[3]["content"]
+            .as_str()
+            .unwrap()
+            .ends_with("END"));
+        assert!(size(&run.messages).unwrap() < 20000);
+    }
+
+    #[tokio::test]
+    async fn confirmed_overflow_learns_a_lower_threshold_and_reduces_before_retry() {
+        let mut run = super::super::tests::pending_run();
+        run.messages = vec![
+            json!({"role":"system","content":"rules"}),
+            json!({"role":"user","content":"Preserve this task"}),
+            json!({"role":"assistant","tool_calls":[{"id":"old"}]}),
+            json!({"role":"tool","tool_call_id":"old","content":"x".repeat(50000)}),
+            json!({"role":"assistant","tool_calls":[{"id":"current"}]}),
+            json!({"role":"tool","tool_call_id":"current","content":"latest exact result"}),
+        ];
+        let before = run.input_threshold();
+        assert!(run.metrics.estimate(run.context_bytes()) < before);
+        let cell = Cell::new(super::super::tests::pending_run());
+        assert!(recover_overflow(&mut run, &cell).await.unwrap());
+        assert!(run.input_threshold() < before);
+        assert!(run.metrics.estimate(run.context_bytes()) < run.input_threshold());
+        assert_eq!(run.metrics.requests, 0);
+        let learned = run.metrics.context_pressure_limit;
+        let restored: super::super::usage::Metrics =
+            serde_json::from_value(serde_json::to_value(&run.metrics).unwrap()).unwrap();
+        assert_eq!(restored.context_pressure_limit, learned);
+    }
+
+    #[tokio::test]
+    async fn truncated_summaries_retry_smaller_excerpts_without_committing_partial_text() {
+        let chunks =
+            context::summary_chunks(&[json!({"role":"user","content":"x".repeat(20000)})], 32000)
+                .unwrap();
+        let mut truncated = 0;
+        let mut accepted = String::new();
+        let summary = summarize_chunks(chunks, 32000, |prompt| {
+            let excerpt = prompt.last().unwrap()["content"].as_str().unwrap();
+            let response = if excerpt.len() > 10000 {
+                truncated += 1;
+                json!({"choices":[{"finish_reason":"length","message":{"content":"DO NOT COMMIT"}}]})
+            } else {
+                accepted.push_str(excerpt);
+                json!({"choices":[{"finish_reason":"stop","message":{"content":"Complete checkpoint"}}]})
+            };
+            std::future::ready(Ok(response))
+        }).await.unwrap();
+        assert!(truncated > 0);
+        assert_eq!(summary, "Complete checkpoint");
+        assert!(accepted.contains(&"x".repeat(8000)));
+        assert!(!summary.contains("DO NOT COMMIT"));
+    }
 
     #[test]
     fn cut_keeps_tool_calls_with_their_results() {
@@ -309,7 +518,7 @@ mod tests {
         assert!(!should_compact(expanded, 20, 16_000_000, 0, false));
         assert!(should_compact(expanded, 20, 54_400_000, 0, false));
         assert!(should_compact(expanded, 20, 100, 0, true));
-        assert_eq!(initial_chunk_budget(expanded), 1_000_000);
+        assert_eq!(initial_chunk_budget(expanded), 102400);
     }
 
     #[test]

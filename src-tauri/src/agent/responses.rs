@@ -50,7 +50,7 @@ pub(super) fn body(config: &Config, messages: &[Value], tools: Option<Value>) ->
         }
     }
     let mut body = json!({"model":config.model, "input":input, "instructions":instructions.join("\n\n"),
-        "stream":false, "store":false, "include":["reasoning.encrypted_content"], "max_output_tokens":4096});
+        "stream":false, "store":false, "include":["reasoning.encrypted_content"], "max_output_tokens":config.limits.max_output_tokens});
     if let Some(tools) = tools {
         body["tools"] = tools.as_array().ok_or_else(|| AppError::invalid_input("工具定义无效"))?
             .iter().map(|tool| json!({"type":"function", "name":tool["function"]["name"],
@@ -68,9 +68,22 @@ pub(super) fn normalize(response: Value) -> AppResult<Value> {
     {
         return Err(super::config::provider_error(&response));
     }
-    if response["incomplete_details"]["reason"] == "max_output_tokens" {
-        return Err(AppError::invalid_input(
-            "模型输出达到长度上限，请缩小任务范围后重试",
+    if response["status"] == "incomplete"
+        && response["incomplete_details"]["reason"] == "max_output_tokens"
+    {
+        let text = response["output"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|item| item["type"] == "message")
+            .flat_map(|item| item["content"].as_array().into_iter().flatten())
+            .filter(|block| block["type"] == "output_text")
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("");
+        return Ok(super::streaming::truncated_response(
+            &json!({"content":text}),
+            response["usage"].clone(),
         ));
     }
     if response["status"] != "completed" {
@@ -124,11 +137,15 @@ pub(super) fn normalize(response: Value) -> AppResult<Value> {
     } else {
         "tool_calls"
     };
-    super::streaming::completed_message(
+    let mut normalized = super::streaming::completed_message(
         json!({"role":"assistant", "content":content,
         "tool_calls":calls, "_responses_output":output}),
         reason,
-    )
+    )?;
+    if response["usage"].is_object() {
+        normalized["usage"] = response["usage"].clone();
+    }
+    Ok(normalized)
 }
 
 #[cfg(test)]
@@ -202,11 +219,11 @@ mod tests {
         ] {
             assert!(normalize(response).is_err());
         }
-        let error = normalize(
-            json!({"status":"incomplete", "incomplete_details":{"reason":"max_output_tokens"}}),
-        )
-        .unwrap_err();
-        assert!(error.message.contains("长度上限"));
+        let partial = normalize(json!({"status":"incomplete", "incomplete_details":{"reason":"max_output_tokens"}, "output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}, {"type":"function_call","arguments":"{"}],"usage":{"input_tokens":30,"output_tokens":40}})).unwrap();
+        assert_eq!(partial["choices"][0]["finish_reason"], "length");
+        assert_eq!(partial["choices"][0]["message"]["content"], "partial");
+        assert!(partial["choices"][0]["message"]["tool_calls"].is_null());
+        assert_eq!(partial["usage"]["output_tokens"], 40);
     }
 
     #[test]

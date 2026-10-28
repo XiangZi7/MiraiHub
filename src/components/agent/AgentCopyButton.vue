@@ -4,7 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { copyText } from '@/utils/clipboard'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
-const props = defineProps<{ text: string; label?: string }>()
+const props = defineProps<{
+  text: string
+  label?: string
+  iconOnly?: boolean
+}>()
 const { t } = useI18n()
 // 响应式状态
 const state = reactive({
@@ -41,10 +45,10 @@ onBeforeUnmount(reset)
 </script>
 
 <template>
-  <span class="copy-control">
+  <span class="inline-flex flex-wrap items-center gap-1.5">
     <button
       type="button"
-      class="copy-button"
+      class="text-txt-3 hover:bg-hover hover:text-txt focus-visible:outline-accent inline-flex shrink-0 cursor-pointer items-center justify-center gap-[5px] rounded p-[5px] text-[10px] select-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 disabled:cursor-default disabled:opacity-40"
       :title="label"
       :aria-label="label"
       :disabled="!text"
@@ -54,49 +58,18 @@ onBeforeUnmount(reset)
         :name="copied ? 'lucide:check' : 'lucide:copy'"
         :size="12"
       />
-      {{ copied ? t('已复制') : label }}
+      <span v-if="!iconOnly">{{ copied ? t('已复制') : label }}</span
+      ><span
+        v-else
+        class="sr-only"
+        >{{ copied ? t('已复制') : label }}</span
+      >
     </button>
     <span
       v-if="failed"
-      class="copy-error"
+      class="text-danger text-[10px]"
       role="status"
       >{{ t('复制失败，请选中文字后按 Ctrl+C') }}</span
     >
   </span>
 </template>
-
-<style scoped>
-.copy-control {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.copy-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-radius: 4px;
-  padding: 3px 5px;
-  color: var(--color-txt-3);
-  font-size: 10px;
-  cursor: pointer;
-  user-select: none;
-}
-.copy-button:hover {
-  color: var(--color-txt);
-  background: var(--color-hover);
-}
-.copy-button:focus-visible {
-  outline: 1px solid var(--agent-color, var(--color-accent));
-  outline-offset: 2px;
-}
-.copy-button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.copy-error {
-  color: var(--color-danger);
-  font-size: 10px;
-}
-</style>

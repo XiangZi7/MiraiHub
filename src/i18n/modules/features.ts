@@ -1,5 +1,29 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  'agent.tokenContextDescription':
+    'Estimated model context: {used} / {limit} tokens (configured window). Latest provider-reported input: {tokens} tokens. Text estimates use reported usage when available; image costs vary by provider.',
+  'agent.modelWindow': 'Model context window (tokens)',
+  'agent.outputLimit': 'Maximum output per request (tokens)',
+  'agent.modelBudgetHelp':
+    'Set these values to the limits supported by your provider and model. Defaults: 128,000 context / 8,192 output. Compaction reserves output space and extra headroom; increasing local storage does not increase model capacity.',
+  'agent.truncated': 'Output limit reached',
+  'agent.truncatedHelp':
+    'The model reached its output limit. Available text is saved; incomplete tool calls were not executed. Send “continue” to resume, or increase the output limit in AI Agent settings.',
+
+  'agent.executionPath': 'Execution path · {tools} tool calls',
+  'agent.completed': 'Completed',
+  'agent.elapsed': 'Time {time}',
+  'agent.roundsSteps': '{rounds} rounds {steps} steps',
+  'agent.cacheHit': 'Cache hit {value}',
+  'agent.contextUsage': 'Context usage',
+  'agent.contextDescription':
+    'Local context: {used} / {limit}. Latest reported input: {tokens} tokens. Capacity follows the configured local context budget.',
+  'agent.speedDescription':
+    'Steps count model requests, including retries and compaction. Speed uses output tokens / request duration, including waiting.',
+  'agent.tokenDescription':
+    'Provider-reported cumulative tokens. Usage available for {reports} / {steps} requests; missing counters are not estimated.',
+  'agent.usageUnavailable': 'The provider has not reported usage.',
+
   'agent.transcript': 'Conversation',
   'agent.assistantMessage': 'AI response',
   'agent.activitySummary': '{tools} tool calls, {messages} messages',
@@ -1485,6 +1509,28 @@ export const zh = {
   ...Object.fromEntries(
     Object.keys(en).map(key => [key, key.replaceAll('@', "{'@'}")])
   ),
+  'agent.tokenContextDescription':
+    '模型上下文估算：{used} / {limit} tokens（配置窗口）。最近服务上报输入：{tokens} tokens。有上报时按用量校准文本估算，图片消耗由模型服务决定。',
+  'agent.modelWindow': '模型上下文窗口（tokens）',
+  'agent.outputLimit': '单次最大输出（tokens）',
+  'agent.modelBudgetHelp':
+    '请按模型服务实际支持的容量填写。默认上下文 128000、输出 8192；压缩会预留输出空间和额外余量。增加本地存储容量不会扩大模型窗口。',
+  'agent.truncated': '输出达到上限',
+  'agent.truncatedHelp':
+    '模型输出已达上限，已保留可用正文，未执行不完整的工具调用。发送“继续”可续写，也可在 AI Agent 设置中调高输出上限。',
+  'agent.executionPath': '执行路径 · {tools} 次工具调用',
+  'agent.completed': '已完成',
+  'agent.elapsed': '用时 {time}',
+  'agent.roundsSteps': '{rounds} 轮 {steps} 步',
+  'agent.cacheHit': '缓存命中 {value}',
+  'agent.contextUsage': '上下文使用量',
+  'agent.contextDescription':
+    '本地上下文：{used} / {limit}。最近上报输入：{tokens} tokens。容量按已配置的本地上下文预算计算。',
+  'agent.speedDescription':
+    '步数包含模型请求、重试和压缩请求。速度为输出 tokens / 请求耗时，包含等待时间。',
+  'agent.tokenDescription':
+    '模型服务上报的累计 tokens。{steps} 次请求中 {reports} 次提供用量，缺失数据不估算。',
+  'agent.usageUnavailable': '模型服务尚未上报使用量。',
   'agent.transcript': '对话记录',
   'agent.assistantMessage': 'AI 回复',
   'agent.activitySummary': '{tools} 次工具调用，{messages} 条消息',

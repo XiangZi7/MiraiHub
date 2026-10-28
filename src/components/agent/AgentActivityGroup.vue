@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AgentEntry, AgentProgress } from '@/types/agent'
 import { translateNativeMessage } from '@/i18n/native'
@@ -15,6 +15,14 @@ const props = defineProps<{
   busy: boolean
 }>()
 const { t } = useI18n()
+const state = reactive({ open: props.busy })
+watch(
+  () => props.busy,
+  busy => {
+    state.open = busy
+  }
+)
+
 const tools = computed(
   () =>
     props.entries.filter(entry => entry.operation).length +
@@ -24,11 +32,6 @@ const tools = computed(
     )
       ? 1
       : 0)
-)
-const messages = computed(
-  () =>
-    props.entries.filter(entry => entry.role === 'assistant').length +
-    (props.progress?.text ? 1 : 0)
 )
 const liveOperation = computed(() =>
   props.progress?.operation &&
@@ -47,18 +50,19 @@ const preparing = computed(
   <details
     data-agent-activity
     class="group/activity min-w-0"
-    open
+    :open="state.open"
+    @toggle="state.open = ($event.target as HTMLDetailsElement).open"
   >
     <summary
       data-agent-activity-summary
-      class="border-agent-line text-agent-small text-txt-2 focus-visible:outline-blue flex min-h-7 cursor-pointer list-none items-center gap-2.5 border-l-2 pl-3.5 font-semibold focus-visible:rounded-[3px] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-3 [&::-webkit-details-marker]:hidden"
+      class="border-agent-line text-agent-small text-txt-2 focus-visible:outline-accent flex min-h-7 cursor-pointer list-none items-center gap-2.5 border-l-2 pl-3.5 font-semibold focus-visible:rounded-[3px] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-3 [&::-webkit-details-marker]:hidden"
     >
       <AppIcon
         name="lucide:chevron-up"
         :size="13"
         class="text-txt-3 shrink-0 rotate-180 group-open/activity:rotate-0"
       />
-      <span>{{ t('agent.activitySummary', { tools, messages }) }}</span>
+      <span>{{ t('agent.executionPath', { tools }) }}</span>
       <span
         v-if="busy"
         class="bg-agent-mint size-[5px] rounded-full"
@@ -96,7 +100,8 @@ const preparing = computed(
             <AgentCopyButton
               :text="entry.text"
               :label="t('复制内容')"
-              class="pointer-events-none absolute right-0 -bottom-3 opacity-0 group-focus-within/thought:pointer-events-auto group-focus-within/thought:opacity-100 group-hover/thought:pointer-events-auto group-hover/thought:opacity-100"
+              icon-only
+              class="mt-1"
             />
           </div>
         </template>
@@ -105,7 +110,7 @@ const preparing = computed(
           :open="entry.role === 'error'"
         >
           <summary
-            class="text-agent-small hover:text-txt focus-visible:outline-blue flex cursor-pointer list-none items-start gap-2.5 leading-normal focus-visible:rounded-[3px] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-3 [&::-webkit-details-marker]:hidden"
+            class="text-agent-small hover:text-txt focus-visible:outline-accent flex cursor-pointer list-none items-start gap-2.5 leading-normal focus-visible:rounded-[3px] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-3 [&::-webkit-details-marker]:hidden"
             :class="entry.role === 'error' ? 'text-danger' : 'text-txt-3'"
           >
             <AppIcon

@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useIntervalFn } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{
+  elapsedMs?: number
   busy: boolean
   label: string
-  turnKey: string
+  turnKey: string | number
   status: string
 }>()
+const { t } = useI18n()
 const state = reactive({ startedAt: 0, elapsed: 0, accumulated: 0 })
 const { pause, resume } = useIntervalFn(
   () => {
@@ -38,7 +41,7 @@ watch(
   { immediate: true }
 )
 const elapsed = computed(() => {
-  const seconds = Math.floor(state.elapsed / 1000)
+  const seconds = Math.floor((props.elapsedMs ?? state.elapsed) / 1000)
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 })
 </script>
@@ -46,7 +49,7 @@ const elapsed = computed(() => {
 <template>
   <div
     data-agent-status
-    class="text-agent-small flex min-h-7 items-center gap-2.5"
+    class="text-agent-small border-line flex min-h-8 items-center gap-2 border-b pb-1"
     :class="
       status === 'failed' ? 'text-danger' : busy ? 'text-txt-2' : 'text-txt-3'
     "
@@ -66,10 +69,13 @@ const elapsed = computed(() => {
       :class="busy && 'text-txt-3 animate-spin motion-reduce:animate-none'"
     />
     <span
-      v-if="busy || state.elapsed"
-      class="tabular-nums"
-      >{{ elapsed }}</span
+      >{{ status === 'completed' ? t('agent.completed') : status === 'truncated' ? t('agent.truncated') : label
+      }}<span v-if="busy">…</span></span
     >
-    <span>{{ label }}<span v-if="busy">…</span></span>
+    <span
+      v-if="busy || elapsedMs != null"
+      class="tabular-nums"
+      >{{ t('agent.elapsed', { time: elapsed }) }}</span
+    >
   </div>
 </template>

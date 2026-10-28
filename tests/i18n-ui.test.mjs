@@ -308,7 +308,13 @@ test('capacity presets preserve the independently editable retry count', async (
       await nextTick()
       assert.deepEqual(
         { ...state.limits },
-        { maxSteps, maxContextKb, maxMessages, maxRetries: 999 }
+        {
+          ...DEFAULT_AGENT_LIMITS,
+          maxSteps,
+          maxContextKb,
+          maxMessages,
+          maxRetries: 999,
+        }
       )
       assert.match(visible(root), new RegExp(`${maxContextKb / 1000} MB`))
     }

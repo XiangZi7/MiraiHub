@@ -122,6 +122,48 @@ const options = computed(() => [
         )
       }}
     </p>
+    <div class="grid min-w-0 gap-2">
+      <label
+        for="ai-context-window"
+        class="text-txt-3 text-[11px]"
+        >{{ t('agent.modelWindow') }}</label
+      >
+      <input
+        id="ai-context-window"
+        v-model.number="limits.contextWindowTokens"
+        class="border-line bg-input text-txt h-8 w-full rounded-md border px-2 text-xs"
+        type="number"
+        step="1"
+        min="16384"
+        max="2000000"
+        :disabled="disabled"
+        required
+        aria-describedby="ai-model-budget-help"
+      />
+      <label
+        for="ai-output-tokens"
+        class="text-txt-3 text-[11px]"
+        >{{ t('agent.outputLimit') }}</label
+      >
+      <input
+        id="ai-output-tokens"
+        v-model.number="limits.maxOutputTokens"
+        class="border-line bg-input text-txt h-8 w-full rounded-md border px-2 text-xs"
+        type="number"
+        step="1"
+        min="256"
+        max="131072"
+        :disabled="disabled"
+        required
+        aria-describedby="ai-model-budget-help"
+      />
+      <p
+        id="ai-model-budget-help"
+        class="text-txt-4 text-[11px] leading-relaxed"
+      >
+        {{ t('agent.modelBudgetHelp') }}
+      </p>
+    </div>
     <div class="capacity-field">
       <label for="ai-max-retries">{{ t('ai.maxRetries') }}</label>
       <input

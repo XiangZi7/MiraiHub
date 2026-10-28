@@ -622,7 +622,7 @@ export default {
   'agent.attachmentProgress':
     '{current}/{total} · {name} · {size} / {totalSize}',
   'ai.capacityInvalid':
-    'Enter whole numbers: 1–128 model requests, 64–64000 KB of local context, 16–2048 messages, and 0–999 automatic retries.',
+    'Enter whole numbers: 1–128 model requests, 64–64000 KB of local context, 16–2048 messages, 0–999 automatic retries, 16,384–2,000,000 context tokens, and 256–131,072 output tokens. Leave space for input, output and headroom.',
   'settings.shortcutLabel':
     '{label}: currently {shortcut}. Press a new shortcut to change it.',
   '标签化显示…': 'Show as tags…',

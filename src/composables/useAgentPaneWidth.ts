@@ -18,12 +18,7 @@ export function useAgentPaneWidth(
   )
   const min = computed(() => Math.round(Math.min(280, available.value * 0.5)))
   const max = computed(() =>
-    Math.round(
-      Math.max(
-        min.value,
-        available.value - Math.min(260, available.value * 0.4)
-      )
-    )
+    Math.round(Math.max(min.value, available.value - 48))
   )
   const width = computed({
     get: () =>

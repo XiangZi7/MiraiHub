@@ -112,8 +112,7 @@ fn anthropic_body(config: &Config, messages: &[Value], tools: Option<Value>) -> 
             history.push(json!({"role":role, "content":blocks}));
         }
     }
-    let mut body =
-        json!({"model":config.model, "messages":history, "max_tokens":4096, "stream":false});
+    let mut body = json!({"model":config.model, "messages":history, "max_tokens":config.limits.max_output_tokens, "stream":false});
     if !system.is_empty() {
         body["system"] = system.into();
     }
@@ -130,8 +129,15 @@ fn normalize_anthropic(response: Value) -> AppResult<Value> {
         .as_array()
         .ok_or_else(|| AppError::invalid_input("服务未返回兼容 Claude Messages 的响应"))?;
     if response["stop_reason"] == "max_tokens" {
-        return Err(AppError::invalid_input(
-            "模型输出达到长度上限，请缩小任务范围后重试",
+        let text = blocks
+            .iter()
+            .filter(|block| block["type"] == "text")
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Ok(super::streaming::truncated_response(
+            &json!({"content":text}),
+            response["usage"].clone(),
         ));
     }
     let mut text = Vec::new();
@@ -152,9 +158,11 @@ fn normalize_anthropic(response: Value) -> AppResult<Value> {
             _ => {}
         }
     }
-    Ok(
-        json!({"choices":[{"message":{"role":"assistant", "content":text.join("\n"), "tool_calls":calls, "_anthropic_content":blocks}}]}),
-    )
+    let mut normalized = json!({"choices":[{"message":{"role":"assistant", "content":text.join("\n"), "tool_calls":calls, "_anthropic_content":blocks}}]});
+    if response["usage"].is_object() {
+        normalized["usage"] = response["usage"].clone();
+    }
+    Ok(normalized)
 }
 pub(super) async fn completion(
     config: &Config,
@@ -197,6 +205,9 @@ pub(super) async fn streaming_completion(
     let result = async {
         let (resource, mut body) = completion_body(config, messages, tools)?;
         body["stream"] = true.into();
+        if config.api_format == ApiFormat::Openai {
+            body["stream_options"] = json!({"include_usage":true});
+        }
         let request = authenticate(
             config,
             config::streaming_client()?
@@ -246,7 +257,7 @@ fn completion_body(
                 "max_completion_tokens"
             } else {
                 "max_tokens"
-            }] = 4096.into();
+            }] = config.limits.max_output_tokens.into();
             if let Some(tools) = tools {
                 body["tools"] = tools;
                 body["parallel_tool_calls"] = false.into();
@@ -441,7 +452,11 @@ mod tests {
     #[test]
     fn rejects_invalid_and_truncated_claude_responses() {
         assert!(normalize_anthropic(json!({"choices":[]})).is_err());
-        assert!(normalize_anthropic(json!({"content":[],"stop_reason":"max_tokens"})).is_err());
+        let truncated = normalize_anthropic(json!({"content":[{"type":"text","text":"partial"},{"type":"tool_use","input":{}}],"stop_reason":"max_tokens","usage":{"input_tokens":10,"output_tokens":20}})).unwrap();
+        assert_eq!(truncated["choices"][0]["finish_reason"], "length");
+        assert_eq!(truncated["choices"][0]["message"]["content"], "partial");
+        assert!(truncated["choices"][0]["message"]["tool_calls"].is_null());
+        assert_eq!(truncated["usage"]["output_tokens"], 20);
         assert!(normalize_anthropic(
             json!({"content":[{"type":"tool_use","input":"not an object"}]})
         )

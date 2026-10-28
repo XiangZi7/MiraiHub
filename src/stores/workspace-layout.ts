@@ -55,10 +55,7 @@ export const useWorkspaceLayoutStore = defineStore('workspace-layout', () => {
   const machineMaxWidth = computed(() =>
     Math.max(
       MACHINE_MIN_WIDTH,
-      Math.min(
-        720,
-        width.value - (state.sidebarCollapsed ? 52 : state.sidebarWidth) - 390
-      )
+      width.value - (state.sidebarCollapsed ? 52 : state.sidebarWidth) - 68
     )
   )
   watch(

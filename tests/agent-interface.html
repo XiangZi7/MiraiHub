@@ -97,8 +97,10 @@
       let run, finishStep
       window.agentPreview = {
         modeChanges: [],
+        notify: () => toast.error('Preview error notification'),
         async finish() {
           run.status = 'completed'
+          run.entries.find(entry => entry.role === 'user').turnElapsedMs = 26000
           run.entries.push({
             role: 'assistant',
             text: 'The conversation now follows expanding tool output while keeping your reading position when you scroll up.',
@@ -117,6 +119,12 @@
             baseUrl: 'https://example.invalid',
             apiFormat: 'openai',
             hasApiKey: false,
+            limits: {
+              maxContextKb: 1000,
+              maxMessages: 200,
+              maxSteps: 100,
+              maxRetries: 2,
+            },
           },
         ],
       }
@@ -134,6 +142,18 @@
               provider: 'https://example.invalid',
               status: 'running',
               approval: null,
+              usage: {
+                rounds: 8,
+                steps: 435,
+                totalTokens: 57000000,
+                tokensPerSecond: 221,
+                cacheHitRate: 99,
+                reportedRequests: 435,
+                cacheReportedRequests: 435,
+                lastInputTokens: 58000,
+                contextBytes: 580000,
+                contextLimitBytes: 1000000,
+              },
               entries: clone(entries),
             }
             return clone(run)
@@ -164,18 +184,25 @@
         },
         { shouldMockEvents: true }
       )
+      const { pinia } = await import('/src/stores/index.ts')
+      const { default: ToastHost } =
+        await import('/src/components/ui/ToastHost.vue')
+      const { toast } = await import('/src/composables/useToast.ts')
       const { default: Panel } =
         await import('/src/components/agent/AiAgentPanel.vue')
       i18n.global.locale.value =
         parameters.get('lang') === 'zh' ? 'zh-CN' : 'en-US'
       createApp({
-        render: () =>
+        render: () => [
           h(Panel, {
             target: { kind: 'ssh', sessionId: 'preview', database: '' },
             title: 'Preview',
             embedded: true,
           }),
+          h(ToastHost),
+        ],
       })
+        .use(pinia)
         .use(i18n)
         .mount('#app')
     </script>

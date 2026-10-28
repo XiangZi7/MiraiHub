@@ -48,7 +48,7 @@ const label = computed(() =>
     :open="operation.status === 'failed'"
   >
     <summary
-      class="focus-visible:outline-blue flex min-h-[22px] cursor-pointer list-none items-center gap-2.5 focus-visible:rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-3 [&::-webkit-details-marker]:hidden"
+      class="focus-visible:outline-accent flex min-h-[22px] cursor-pointer list-none items-center gap-2.5 focus-visible:rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-3 [&::-webkit-details-marker]:hidden"
       :title="`${t(operation.label)} · ${label} · ${operation.command}`"
     >
       <span
@@ -78,7 +78,7 @@ const label = computed(() =>
           :class="
             operation.fileChange
               ? 'text-agent-body font-sans font-semibold'
-              : 'border-line bg-terminal rounded-md border px-[7px] py-px font-mono text-xs leading-normal font-medium @max-[31.25rem]/agent:text-[11px]'
+              : 'border-line bg-terminal rounded-md border px-[7px] py-px font-mono text-[11px] leading-normal font-medium @max-[31.25rem]/agent:text-[11px]'
           "
           >{{ operation.fileChange?.path || operation.command }}</span
         >

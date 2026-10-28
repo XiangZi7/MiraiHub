@@ -6,6 +6,10 @@ use serde_json::Value;
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Limits {
+    #[serde(default = "default_context_window_tokens")]
+    pub context_window_tokens: usize,
+    #[serde(default = "default_max_output_tokens")]
+    pub max_output_tokens: usize,
     pub max_steps: usize,
     pub max_context_kb: usize,
     pub max_messages: usize,
@@ -14,12 +18,20 @@ pub struct Limits {
     #[serde(default = "default_max_retries")]
     pub max_retries: usize,
 }
+const fn default_context_window_tokens() -> usize {
+    128000
+}
+const fn default_max_output_tokens() -> usize {
+    8192
+}
 const fn default_max_retries() -> usize {
     5
 }
 impl Default for Limits {
     fn default() -> Self {
         Self {
+            context_window_tokens: default_context_window_tokens(),
+            max_output_tokens: default_max_output_tokens(),
             max_steps: 32,
             max_context_kb: 4000,
             max_messages: 256,
@@ -33,8 +45,11 @@ impl Limits {
             || !(64..=64000).contains(&self.max_context_kb)
             || !(16..=2048).contains(&self.max_messages)
             || self.max_retries > 999
+            || !(256..=131072).contains(&self.max_output_tokens)
+            || !(16384..=2000000).contains(&self.context_window_tokens)
+            || super::budget::input_threshold(*self) == 0
         {
-            return Err(AppError::invalid_input("任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–64000 KB，历史消息须为 16–2048 条，失败重试须为 0–999 次"));
+            return Err(AppError::invalid_input("任务容量无效：每轮模型请求须为 1–128 次，上下文须为 64–64000 KB，历史消息须为 16–2048 条，失败重试须为 0–999 次，输出上限须为 256–131072 tokens，模型窗口须为 16384–2000000 tokens 且须留出输入、输出和额外余量"));
         }
         Ok(())
     }
