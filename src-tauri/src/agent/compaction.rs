@@ -184,7 +184,7 @@ pub(super) async fn if_needed(
 ) -> AppResult<bool> {
     let limits = run.config.limits;
     let count = run.messages.len() + usize::from(next.is_some()) + 1; // approval instruction
-    let approval = json!({"role":"system", "content":run.approval_mode.instruction()});
+    let approval = json!({"role":"system", "content":run.approval_mode.load().instruction()});
     let bytes = size(&run.messages)?
         + size(std::slice::from_ref(&approval))?
         + next
@@ -284,11 +284,8 @@ mod tests {
             json!({"role":"user","content":"current request"}),
         ];
         let original = run.messages.clone();
-        let cell = Cell {
-            cancelled: std::sync::atomic::AtomicBool::new(true),
-            cancel_notify: tokio::sync::Notify::new(),
-            run: tokio::sync::Mutex::new(super::super::tests::pending_run()),
-        };
+        let cell = Cell::new(super::super::tests::pending_run());
+        cell.cancel();
         // The ordinary six-entry tail cannot compact this history. The hard
         // limit must choose the forced boundary, then observe cancellation
         // before any model request instead of returning false and rejecting it.

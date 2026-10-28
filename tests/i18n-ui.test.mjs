@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createRenderer, h, markRaw, nextTick, reactive } from 'vue'
+import { createRenderer, h, markRaw, nextTick, reactive, toRef } from 'vue'
 import { createPinia } from 'pinia'
 import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -232,7 +232,7 @@ test('agent composer pastes images, leaves text paste native, previews images an
     form.props.onDrop(dropped)
     assert.equal(attached.length, 3)
     const findCancel = el =>
-      el.props?.class === 'cancel-reading'
+      el.props && Object.hasOwn(el.props, 'data-cancel-reading')
         ? el
         : el.children.map(findCancel).find(Boolean)
     const cancel = findCancel(root)
@@ -336,15 +336,17 @@ test('capacity presets preserve the independently editable retry count', async (
 
 test('panel preserves the selected permission across profiles and conversations, but resets for another target', async () => {
   const mockUrl = dataModule(`
-    import { shallowRef } from ${JSON.stringify(import.meta.resolve('vue'))}
+    import { shallowRef, watch } from ${JSON.stringify(import.meta.resolve('vue'))}
     export let profileChanged
     const ref = shallowRef
     export function useAgentProfiles(changed) {
       profileChanged = changed
       return { activeId: ref('a'), active: ref({enabled:true}), options: ref([]), loading: ref(false), switching: ref(false), error: ref(''), select() {} }
     }
-    export function useAiAgent() {
-      return { run:ref(null), busy:ref(false), progress:ref(null), error:ref(''), awaitingApproval:ref(false), conversations:ref([]), historyLoading:ref(false), historyError:ref(''), historyMutating:ref(false), switchingConversation:ref(false), selectConversation() {}, removeConversation() {}, renameConversation() {}, refreshHistory() {}, send() {}, decide() {}, stop() {}, clear() {}, changeProfile() {} }
+    export function useAiAgent(target) {
+      const approvalMode = ref('auto')
+      watch(target, () => { approvalMode.value = 'auto' })
+      return { approvalMode, setApprovalMode(mode) { approvalMode.value = mode }, run:ref(null), busy:ref(false), progress:ref(null), error:ref(''), awaitingApproval:ref(false), conversations:ref([]), historyLoading:ref(false), historyError:ref(''), historyMutating:ref(false), switchingConversation:ref(false), selectConversation() {}, removeConversation() {}, renameConversation() {}, refreshHistory() {}, send() {}, decide() {}, stop() {}, clear() {}, changeProfile() {} }
     }
     export function useAgentDraft() {
       return { prompt:ref(''), attachments:ref([]), reading:ref(false), attachmentError:ref(''), reset() {}, clearAttachments() {} }
@@ -454,8 +456,8 @@ test('mounted transfer and AI components update immediately in both languages', 
         profileDisabled: false,
         profileError: '',
       },
-      '描述问题',
-      'Describe a problem',
+      '让 AI Agent 帮你完成任务',
+      'Ask AI Agent to do something',
     ],
     [
       components[4],
@@ -689,4 +691,150 @@ test('every literal translation key used by the frontend exists in both catalogs
   }
   walk(fileURLToPath(new URL('../src', import.meta.url)))
   assert.deepEqual(missing, [])
+})
+
+test('permission selection stays enabled while busy or awaiting approval without unlocking other controls', async () => {
+  const permissionLoad = sourceLoader({}, [
+    'src/components/agent/AgentComposer.vue',
+    'src/components/agent/AgentPermissionSelect.vue',
+  ])
+  const { default: Composer } = await permissionLoad(
+    'src/components/agent/AgentComposer.vue'
+  )
+  const props = reactive({
+    modelValue: '检查服务器',
+    approvalMode: 'auto',
+    disabled: false,
+    permissionDisabled: false,
+    busy: true,
+    awaitingApproval: false,
+    canSend: false,
+    isDatabase: false,
+    attachments: [],
+    reading: false,
+    attachmentError: '',
+    activeId: 'test',
+    profileOptions: [],
+    profileDisabled: false,
+    profileError: '',
+    'onUpdate:approvalMode': mode => {
+      props.approvalMode = mode
+    },
+  })
+  const app = renderer.createApp({ render: () => h(Composer, props) })
+  app.use(i18n).mount(node('root'))
+  const find = predicate => {
+    const visit = vnode => {
+      if (predicate(vnode)) return vnode
+      if (vnode.component) {
+        const found = visit(vnode.component.subTree)
+        if (found) return found
+      }
+      for (const child of Array.isArray(vnode.children) ? vnode.children : []) {
+        if (child && typeof child === 'object') {
+          const found = visit(child)
+          if (found) return found
+        }
+      }
+    }
+    return visit(app._instance.subTree)
+  }
+  const permission = () =>
+    find(vnode => vnode.props?.['menu-min-width'] === 280)
+  try {
+    for (const awaiting of [false, true]) {
+      props.disabled = awaiting
+      props.awaitingApproval = awaiting
+      await nextTick()
+      assert.equal(permission().props.disabled, false)
+      assert.equal(
+        find(vnode => vnode.props?.['active-id'] === 'test').props.disabled,
+        true
+      )
+      for (const mode of ['ask', 'full', 'auto']) {
+        permission().props['onUpdate:modelValue'](mode)
+        await nextTick()
+        assert.equal(props.approvalMode, mode)
+        assert.equal(permission().props.modelValue, mode)
+      }
+    }
+    props.permissionDisabled = true
+    await nextTick()
+    assert.equal(permission().props.disabled, true)
+    // Standalone composers retain their disabled fallback when no override exists.
+    delete props.permissionDisabled
+    await nextTick()
+    assert.equal(permission().props.disabled, true)
+  } finally {
+    app.unmount()
+  }
+})
+
+test('voice input preserves the typed draft, stops when disabled and releases the microphone on unmount', async () => {
+  const previousWindow = globalThis.window
+  const recognitions = []
+  class Recognition {
+    start() {
+      this.started = true
+    }
+    stop() {
+      this.stopped = true
+    }
+    abort() {
+      this.aborted = true
+    }
+    constructor() {
+      recognitions.push(this)
+    }
+  }
+  globalThis.window = { SpeechRecognition: Recognition }
+  const { useAgentDictation } = await load(
+    'src/composables/useAgentDictation.ts'
+  )
+  const props = reactive({ prompt: 'Existing prompt', disabled: false })
+  let dictation
+  let mounted = false
+  const app = renderer.createApp({
+    setup() {
+      dictation = useAgentDictation(
+        toRef(props, 'prompt'),
+        toRef(props, 'disabled')
+      )
+      return () => null
+    },
+  })
+  try {
+    app.use(i18n).mount(node('root'))
+    mounted = true
+    assert.equal(dictation.supported, true)
+    dictation.toggle()
+    const recognition = recognitions[0]
+    recognition.onresult({ results: [[{ transcript: 'new words' }]] })
+    assert.equal(props.prompt, 'Existing prompt new words')
+    assert.equal(dictation.listening.value, true)
+    props.disabled = true
+    await nextTick()
+    assert.equal(recognition.stopped, true)
+    recognition.onend()
+    assert.equal(dictation.listening.value, false)
+    props.disabled = false
+    await nextTick()
+    dictation.toggle()
+    props.prompt = ''
+    await nextTick()
+    assert.equal(recognitions[1].stopped, true)
+    recognitions[1].onresult({
+      results: [[{ transcript: 'Late words from the previous draft' }]],
+    })
+    assert.equal(props.prompt, '')
+    recognitions[1].onend()
+    assert.equal(dictation.listening.value, false)
+    dictation.toggle()
+    app.unmount()
+    mounted = false
+    assert.equal(recognitions[2].aborted, true)
+  } finally {
+    if (mounted) app.unmount()
+    globalThis.window = previousWindow
+  }
 })

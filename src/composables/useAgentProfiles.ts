@@ -21,7 +21,7 @@ export function useAgentProfiles(onChanged: () => void) {
   const options = computed(() =>
     state.settings.profiles.map(item => ({
       value: item.id,
-      label: `${item.name} · ${item.model || i18n.global.t('未设置模型')}${!item.enabled ? i18n.global.t('（已停用）') : ''}`,
+      label: `${item.name === item.model ? item.model : `${item.name} · ${item.model || i18n.global.t('未设置模型')}`}${!item.enabled ? i18n.global.t('（已停用）') : ''}`,
       disabled: !item.enabled || !item.model,
     }))
   )

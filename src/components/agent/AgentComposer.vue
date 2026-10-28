@@ -15,23 +15,29 @@ import IconButton from '@/components/ui/IconButton.vue'
 import AgentProfileSelect from './AgentProfileSelect.vue'
 import AgentPermissionSelect from './AgentPermissionSelect.vue'
 import AgentContextPreview from './AgentContextPreview.vue'
+import { useAgentDictation } from '@/composables/useAgentDictation'
 
-const props = defineProps<{
-  disabled: boolean
-  busy: boolean
-  canSend: boolean
-  awaitingApproval: boolean
-  isDatabase: boolean
-  isRedis?: boolean
-  attachments: AgentDraftAttachment[]
-  reading: boolean
-  readingProgress?: string
-  attachmentError: string
-  activeId: string
-  profileOptions: { value: string; label: string; disabled?: boolean }[]
-  profileDisabled: boolean
-  profileError: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    disabled: boolean
+    /** 审批方式独立于发送状态，运行中或等待审批时仍可调整。 */
+    permissionDisabled?: boolean
+    busy: boolean
+    canSend: boolean
+    awaitingApproval: boolean
+    isDatabase: boolean
+    isRedis?: boolean
+    attachments: AgentDraftAttachment[]
+    reading: boolean
+    readingProgress?: string
+    attachmentError: string
+    activeId: string
+    profileOptions: { value: string; label: string; disabled?: boolean }[]
+    profileDisabled: boolean
+    profileError: string
+  }>(),
+  { permissionDisabled: undefined }
+)
 const prompt = defineModel<string>({ required: true })
 const approvalMode = defineModel<AgentApprovalMode>('approvalMode', {
   required: true,
@@ -45,6 +51,14 @@ const emit = defineEmits<{
   cancelReading: []
 }>()
 const { t } = useI18n()
+const dictation = useAgentDictation(
+  prompt,
+  computed(
+    () =>
+      props.disabled || props.busy || props.awaitingApproval || props.reading
+  )
+)
+const { listening, speechError, supported: speechSupported } = dictation
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
 defineExpose({ focus: () => textarea.value?.focus() })
@@ -55,7 +69,7 @@ const placeholder = computed(() =>
       ? t('询问 Redis 键、TTL，或描述要执行的命令…')
       : props.isDatabase
         ? t('询问数据库，或描述要完成的操作…')
-        : t('描述问题，或让我帮你执行任务…')
+        : t('agent.promptPlaceholder')
 )
 function keydown(event: KeyboardEvent): void {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -92,23 +106,30 @@ watch(
 </script>
 
 <template>
-  <footer class="agent-composer-footer">
+  <footer
+    data-agent-composer
+    class="border-line bg-canvas/12 min-w-0 shrink-0 border-t pr-3.25 pb-3 pl-4 @min-[25rem]/agent:pr-[34px] @min-[25rem]/agent:pb-6 @min-[25rem]/agent:pl-[27px]"
+  >
     <form
-      class="agent-composer"
+      class="min-w-0 pt-4.5"
       @submit.prevent="canSend && emit('submit')"
       @dragover.prevent
       @drop.prevent="drop"
     >
       <div
         v-if="attachments.length"
-        class="draft-attachments"
+        class="scroll-thin flex max-h-[150px] min-w-0 flex-wrap gap-1.5 overflow-y-auto pb-[7px]"
         :aria-label="t('待发送附件')"
       >
         <div
           v-for="file in attachments"
           :key="file.id"
-          class="draft-attachment"
-          :class="file.source === 'context' && 'context-attachment'"
+          class="max-w-full min-w-0"
+          :class="
+            file.source === 'context'
+              ? 'block w-full border-0 bg-transparent p-0'
+              : 'border-line-soft bg-card text-txt-2 flex items-center gap-[7px] rounded-[9px] border px-[7px] py-1.5'
+          "
         >
           <AgentContextPreview
             v-if="file.source === 'context'"
@@ -121,7 +142,7 @@ watch(
               v-if="file.mimeType"
               :src="agentImageUrl(file)"
               :alt="file.name"
-              class="attachment-thumbnail"
+              class="size-12 shrink-0 rounded-md bg-(--color-input) object-contain"
             />
             <AppIcon
               v-else
@@ -129,13 +150,13 @@ watch(
               :size="17"
               class="shrink-0"
             />
-            <div class="attachment-info">
+            <div class="grid min-w-0 gap-0.5">
               <span
-                class="attachment-name"
+                class="max-w-[180px] truncate text-[11px]"
                 :title="file.name"
                 >{{ file.name }}</span
               >
-              <span class="attachment-size"
+              <span class="text-txt-4 text-[10px]"
                 >{{ bytesToSize(file.size)
                 }}<template v-if="file.attachmentId">
                   · {{ t('按需读取') }}</template
@@ -153,22 +174,13 @@ watch(
           </template>
         </div>
       </div>
-      <textarea
-        ref="textarea"
-        v-model="prompt"
-        :placeholder="placeholder"
-        rows="2"
-        :maxlength="AGENT_MAX_PROMPT_BYTES"
-        :aria-label="t('发送给 AI 的消息')"
-        :disabled="disabled"
-        @keydown="keydown"
-        @paste="paste"
-      />
-      <div class="composer-toolbar">
+      <div
+        class="flex min-h-[75px] min-w-0 items-start gap-2.5 @min-[25rem]/agent:gap-[13px]"
+      >
         <input
           ref="fileInput"
           type="file"
-          class="file-input"
+          class="hidden"
           multiple
           :accept="AGENT_FILE_ACCEPT"
           :disabled="disabled || reading"
@@ -177,8 +189,8 @@ watch(
           @change="selectFiles"
         />
         <IconButton
-          :icon="reading ? 'lucide:loader-circle' : 'lucide:plus'"
-          :size="17"
+          :icon="reading ? 'lucide:loader-circle' : 'lucide:image-plus'"
+          :size="18"
           :title="
             t(
               '最多 16 个附件，合计 1 GB；图片最多 4 张、每张 5 MB；Office 文件最多 128 MiB。支持 Ctrl+V 粘贴图片'
@@ -186,14 +198,87 @@ watch(
           "
           :aria-label="t('上传文件')"
           :disabled="disabled || reading"
-          class="upload-button"
+          class="bg-card text-txt-3 size-7 shrink-0 rounded-full p-0"
           @click="fileInput?.click()"
         />
-        <AgentPermissionSelect
-          v-model="approvalMode"
-          :disabled="disabled || busy"
+        <textarea
+          class="text-txt placeholder:text-txt-3 block max-h-40 min-h-[58px] w-full min-w-0 flex-1 resize-none bg-transparent pt-[3px] pb-3 text-[13px] leading-[1.7] outline-none @min-[25rem]/agent:text-sm"
+          ref="textarea"
+          v-model="prompt"
+          :placeholder="listening ? t('agent.listening') : placeholder"
+          rows="2"
+          :maxlength="AGENT_MAX_PROMPT_BYTES"
+          :aria-label="t('发送给 AI 的消息')"
+          :disabled="disabled"
+          @keydown="keydown"
+          @paste="paste"
         />
-        <div class="toolbar-spacer" />
+        <div
+          class="flex items-center gap-2 self-center pb-2.5 @min-[25rem]/agent:gap-3"
+        >
+          <button
+            type="submit"
+            class="border-txt-3 text-txt-2 focus-visible:outline-blue grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border bg-transparent not-disabled:hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-3 disabled:cursor-default disabled:opacity-40"
+            :aria-label="t('发送消息')"
+            :title="t('发送 (Enter)，换行 (Shift+Enter)')"
+            :disabled="!canSend"
+          >
+            <AppIcon
+              name="lucide:chevron-up"
+              :size="17"
+            />
+          </button>
+          <button
+            type="button"
+            class="focus-visible:outline-blue grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border bg-transparent not-disabled:hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-3 disabled:cursor-default disabled:opacity-40"
+            :class="
+              listening
+                ? 'border-danger text-danger'
+                : 'border-txt-3 text-txt-2'
+            "
+            :aria-label="
+              listening ? t('agent.stopDictation') : t('agent.startDictation')
+            "
+            :aria-pressed="listening"
+            :title="
+              !speechSupported
+                ? t('agent.dictationUnsupported')
+                : listening
+                  ? t('agent.stopDictation')
+                  : t('agent.startDictation')
+            "
+            :disabled="
+              !speechSupported ||
+              disabled ||
+              busy ||
+              awaitingApproval ||
+              reading
+            "
+            @click="dictation.toggle"
+          >
+            <AppIcon
+              name="lucide:mic"
+              :size="15"
+            />
+          </button>
+          <button
+            v-if="busy || awaitingApproval"
+            type="button"
+            class="focus-visible:outline-blue grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border border-[#c47777] bg-[#b86b6b22] text-[#f3c0c0] shadow-[0_0_0_3px_#bd72721a,inset_0_0_0_2px_#181a22] hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-3"
+            :title="t('停止后续操作')"
+            :aria-label="t('停止后续操作')"
+            @click="emit('stop')"
+          >
+            <AppIcon
+              name="lucide:square"
+              :size="11"
+            />
+          </button>
+        </div>
+      </div>
+      <div
+        class="border-line-soft flex min-w-0 items-center gap-1.5 border-t pt-[7px] @min-[25rem]/agent:gap-2"
+      >
         <AgentProfileSelect
           :active-id="activeId"
           :options="profileOptions"
@@ -201,42 +286,55 @@ watch(
           @select="emit('selectProfile', $event)"
         />
         <button
-          v-if="busy || awaitingApproval"
           type="button"
-          class="composer-send"
-          :title="t('停止后续操作')"
-          :aria-label="t('停止后续操作')"
-          @click="emit('stop')"
+          class="bg-txt/5 text-txt-3 flex h-[25px] shrink-0 cursor-default items-center gap-1 rounded-full border-0 px-1.5 text-xs @min-[25rem]/agent:gap-[7px] @min-[25rem]/agent:px-3"
+          :title="t('agent.defaultReasoningDescription')"
+          :aria-label="t('agent.defaultReasoningDescription')"
+          disabled
         >
           <AppIcon
-            name="lucide:square"
-            :size="14"
+            name="lucide:cloud-upload"
+            :size="13"
           />
-        </button>
-        <button
-          v-else
-          type="submit"
-          class="composer-send"
-          :aria-label="t('发送消息')"
-          :title="t('发送 (Enter)，换行 (Shift+Enter)')"
-          :disabled="!canSend"
-        >
+          <span>{{ t('agent.defaultReasoning') }}</span>
           <AppIcon
-            name="lucide:arrow-up"
-            :size="17"
+            name="lucide:chevron-down"
+            :size="12"
           />
         </button>
+        <AgentPermissionSelect
+          v-model="approvalMode"
+          :disabled="permissionDisabled ?? disabled"
+        />
+        <div class="min-w-0 flex-1" />
+        <span
+          class="relative grid size-[23px] shrink-0 -rotate-30 place-items-center rounded-full border-2 border-b-transparent"
+          :class="[
+            busy &&
+              'animate-spin [animation-duration:2s] motion-reduce:animate-none',
+            !activeId || profileDisabled
+              ? 'border-txt-3 opacity-35'
+              : 'border-[#a3e65a]',
+          ]"
+          role="img"
+          :aria-label="busy ? t('正在处理') : t('选择 AI 模型')"
+          :title="
+            profileOptions.find(option => option.value === activeId)?.label
+          "
+          ><span class="bg-txt-3 size-[5px] rounded-full"
+        /></span>
       </div>
     </form>
     <p
       v-if="reading"
-      class="composer-notice"
+      class="text-txt-3 mt-1.5 px-[3px] text-[10px] leading-[1.6] wrap-anywhere"
       role="status"
     >
       {{ readingProgress || t('正在读取附件…') }}
       <button
         type="button"
-        class="cancel-reading"
+        data-cancel-reading
+        class="text-violet ml-2 cursor-pointer underline"
         @click="emit('cancelReading')"
       >
         {{ t('取消读取') }}
@@ -244,7 +342,7 @@ watch(
     </p>
     <p
       v-if="attachments.length"
-      class="composer-notice"
+      class="text-txt-3 mt-1.5 px-[3px] text-[10px] leading-[1.6] wrap-anywhere"
     >
       {{
         t(
@@ -253,172 +351,13 @@ watch(
       }}
     </p>
     <p
-      v-if="attachmentError || profileError"
-      class="composer-error"
+      v-if="attachmentError || profileError || speechError"
+      class="text-danger mt-1.5 px-[3px] text-[10px] leading-[1.6] wrap-anywhere"
       role="alert"
     >
-      {{ translateNativeMessage(attachmentError || profileError) }}
+      {{
+        translateNativeMessage(attachmentError || profileError || speechError)
+      }}
     </p>
   </footer>
 </template>
-
-<style scoped>
-.draft-attachment.context-attachment {
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.agent-composer-footer {
-  flex-shrink: 0;
-  padding: 10px 12px 12px;
-  min-width: 0;
-}
-.agent-composer {
-  min-width: 0;
-  border: 1px solid color-mix(in oklch, var(--color-violet) 50%, transparent);
-  background: var(--color-input, #ffffff04);
-  border-radius: 16px;
-  padding: 10px 10px 7px;
-  transition: border-color 150ms ease;
-}
-.agent-composer:focus-within {
-  border-color: color-mix(in oklch, var(--color-violet) 80%, transparent);
-}
-.agent-composer textarea {
-  display: block;
-  width: 100%;
-  resize: none;
-  min-height: 48px;
-  max-height: 160px;
-  padding: 3px 3px 9px;
-  outline: none;
-  font-size: 12px;
-  line-height: 1.7;
-  background: transparent;
-  color: var(--color-txt);
-}
-.agent-composer textarea::placeholder {
-  color: var(--color-txt-4);
-}
-.composer-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-.file-input {
-  display: none;
-}
-.upload-button {
-  flex-shrink: 0;
-}
-.toolbar-spacer {
-  flex: 1;
-  min-width: 0;
-}
-.composer-toolbar :deep(.agent-model-select) {
-  flex: 0 1 auto;
-}
-.composer-toolbar :deep(.permission-select) {
-  flex-shrink: 0;
-}
-.composer-send {
-  display: grid;
-  place-items: center;
-  width: 29px;
-  height: 29px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--color-txt);
-  color: var(--color-panel);
-  cursor: pointer;
-}
-.composer-send:not(:disabled):hover {
-  opacity: 0.8;
-}
-.composer-send:disabled {
-  opacity: 0.25;
-  cursor: default;
-}
-.composer-send:focus-visible {
-  outline: 2px solid var(--agent-color);
-  outline-offset: 3px;
-}
-.draft-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-height: 150px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--color-violet) 45%, transparent)
-    transparent;
-  padding-bottom: 7px;
-}
-.draft-attachment {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 6px 7px;
-  border: 1px solid var(--color-line-soft);
-  border-radius: 9px;
-  background: var(--color-card);
-  color: var(--color-txt-2);
-}
-.attachment-info {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-.attachment-thumbnail {
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  object-fit: contain;
-  border-radius: 5px;
-  background: var(--color-input);
-}
-.attachment-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 180px;
-  font-size: 11px;
-}
-.attachment-size {
-  color: var(--color-txt-4);
-  font-size: 10px;
-}
-.composer-notice,
-.composer-error {
-  margin-top: 6px;
-  padding-inline: 3px;
-  font-size: 10px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-.composer-notice {
-  color: var(--color-txt-4);
-}
-.cancel-reading {
-  margin-left: 8px;
-  color: var(--color-violet);
-  cursor: pointer;
-}
-.cancel-reading:focus-visible {
-  outline: 2px solid var(--color-violet);
-  outline-offset: 2px;
-}
-.composer-error {
-  color: var(--color-danger);
-}
-@media (prefers-reduced-motion: reduce) {
-  .agent-composer {
-    transition: none;
-  }
-}
-</style>

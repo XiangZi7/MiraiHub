@@ -98,7 +98,7 @@ struct Run {
     entries: Vec<Entry>,
     pending: Option<Pending>,
     steps: usize,
-    approval_mode: policy::ApprovalMode,
+    approval_mode: Arc<policy::LiveApprovalMode>,
     /// Tool list captured when the run started. Approving a call later resolves it
     /// against this snapshot, so a settings change cannot retarget it.
     tools: mcp::Registry,
@@ -106,9 +106,25 @@ struct Run {
 struct Cell {
     cancelled: AtomicBool,
     cancel_notify: Notify,
+    approval_mode: Arc<policy::LiveApprovalMode>,
     run: Mutex<Run>,
 }
 impl Cell {
+    fn new(run: Run) -> Self {
+        Self {
+            cancelled: AtomicBool::new(false),
+            cancel_notify: Notify::new(),
+            approval_mode: run.approval_mode.clone(),
+            run: Mutex::new(run),
+        }
+    }
+    fn set_approval_mode(&self, mode: policy::ApprovalMode) -> AppResult<()> {
+        if self.cancelled.load(Ordering::SeqCst) {
+            return Err(AppError::invalid_input("任务已停止，无法修改审批方式"));
+        }
+        self.approval_mode.store(mode);
+        Ok(())
+    }
     fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
         self.cancel_notify.notify_one();
@@ -285,6 +301,21 @@ impl Run {
         }
         self.status = "running".into();
         Ok(self.pending.take().unwrap())
+    }
+    fn take_auto_approval(
+        &mut self,
+        now: Instant,
+    ) -> AppResult<Option<(Pending, policy::ApprovalMode)>> {
+        let Some(pending) = self.pending.as_ref() else {
+            return Ok(None);
+        };
+        let mode = self.approval_mode.load();
+        if mode.requires_approval(&pending.action) {
+            return Ok(None);
+        }
+        let approval_id = pending.view.id.clone();
+        self.take_approval(&approval_id, now)
+            .map(|pending| Some((pending, mode)))
     }
     fn dismiss_approval(&mut self, approval_id: &str, now: Instant) -> AppResult<()> {
         let pending = self
@@ -880,7 +911,9 @@ pub async fn ai_start(
         entries: Vec::new(),
         pending: None,
         steps: 0,
-        approval_mode: approval_mode.unwrap_or_default(),
+        approval_mode: Arc::new(policy::LiveApprovalMode::new(
+            approval_mode.unwrap_or_default(),
+        )),
         tools,
     };
     if let Some(previous) = previous {
@@ -895,11 +928,7 @@ pub async fn ai_start(
         .check_context(&run.messages[..1], Some(&message))?;
     run.messages.push(message);
     run.entries.push(entry);
-    let cell = Arc::new(Cell {
-        cancelled: AtomicBool::new(false),
-        cancel_notify: Notify::new(),
-        run: Mutex::new(run),
-    });
+    let cell = Arc::new(Cell::new(run));
     let mut runs = state.runs.lock().await;
     // Bound retained context; do not evict a live approval or running operation.
     if runs.len() >= 32 {
@@ -972,10 +1001,22 @@ pub async fn ai_send(
     }
     run.messages.push(message);
     run.entries.push(entry);
-    run.approval_mode = approval_mode.unwrap_or_default();
+    run.approval_mode.store(approval_mode.unwrap_or_default());
     run.steps = 0;
     run.status = "running".into();
     Ok(state.snapshot(&app, &run, &cell).await)
+}
+#[tauri::command]
+pub async fn ai_set_approval_mode(
+    window: WebviewWindow,
+    state: State<'_, AgentManager>,
+    run_id: String,
+    approval_mode: policy::ApprovalMode,
+) -> AppResult<()> {
+    guard(&window, false)?;
+    // Do not acquire the run lock: ai_step holds it while awaiting the model or
+    // a tool. ai_step separately rechecks pending actions against the new policy.
+    state.get(&run_id).await?.set_approval_mode(approval_mode)
 }
 #[tauri::command]
 pub async fn ai_step(
@@ -988,10 +1029,43 @@ pub async fn ai_step(
     guard(&window, false)?;
     let cell = state.get(&run_id).await?;
     let mut run = cell.run.lock().await;
-    if cell.cancelled.load(Ordering::SeqCst) || run.status != "running" {
+    if cell.cancelled.load(Ordering::SeqCst)
+        || !matches!(run.status.as_str(), "running" | "approval")
+    {
         return Ok(state.snapshot(&app, &run, &cell).await);
     }
-    let result = step(&app, &mut run, &cell, Some(&on_progress)).await;
+    let result = if run.status == "approval" {
+        async {
+            run.check(&cell)?;
+            validate_target(&app, &run).await?;
+            if let Some((pending, mode)) = run.take_auto_approval(Instant::now())? {
+                run.entry(
+                    "audit",
+                    if mode == policy::ApprovalMode::Full {
+                        "完全访问权限：自动执行"
+                    } else {
+                        "只读检查：自动执行"
+                    },
+                    Some(pending.view.command),
+                );
+                run.check(&cell)?;
+                execute_tracked(
+                    &app,
+                    &mut run,
+                    &cell,
+                    &pending.call_id,
+                    &pending.action,
+                    Some(&on_progress),
+                    "",
+                )
+                .await;
+            }
+            Ok(())
+        }
+        .await
+    } else {
+        step(&app, &mut run, &cell, Some(&on_progress)).await
+    };
     if let Err(error) = result {
         if cell.cancelled.load(Ordering::SeqCst) {
             run.pending = None;
@@ -1015,7 +1089,7 @@ async fn step(
     let mut messages = run.messages.clone();
     messages.insert(
         1,
-        json!({"role":"system", "content":run.approval_mode.instruction()}),
+        json!({"role":"system", "content":run.approval_mode.load().instruction()}),
     );
     run.config.limits.check_request(run.steps, &messages)?;
     run.steps += 1;
@@ -1033,7 +1107,7 @@ async fn step(
             let mut compacted = run.messages.clone();
             compacted.insert(
                 1,
-                json!({"role":"system", "content":run.approval_mode.instruction()}),
+                json!({"role":"system", "content":run.approval_mode.load().instruction()}),
             );
             run.config.limits.check_request(run.steps, &compacted)?;
             run.steps += 1;
@@ -1084,7 +1158,9 @@ async fn step(
             run.entry("assistant", content.clone(), None);
         }
         run.messages.push(protocol::history_message(message));
-        if run.approval_mode.requires_approval(&action) {
+        // Read again after the model response, not from the request-time policy.
+        let approval_mode = run.approval_mode.load();
+        if approval_mode.requires_approval(&action) {
             let (command, reason) = action.approval_details();
             let view = Approval {
                 id: id(),
@@ -1104,14 +1180,14 @@ async fn step(
             run.status = "approval".into();
         } else {
             run.check(cell)?;
-            if run.approval_mode == policy::ApprovalMode::Auto && action.approval().is_some() {
+            if approval_mode == policy::ApprovalMode::Auto && action.approval().is_some() {
                 run.entry(
                     "audit",
                     "只读检查：自动执行",
                     Some(action.approval_details().0),
                 );
             }
-            if run.approval_mode == policy::ApprovalMode::Full && action.approval().is_some() {
+            if approval_mode == policy::ApprovalMode::Full && action.approval().is_some() {
                 run.entry(
                     "audit",
                     "完全访问权限：自动执行",
@@ -1377,7 +1453,9 @@ mod tests {
             messages: vec![],
             entries: vec![],
             steps: 0,
-            approval_mode: policy::ApprovalMode::default(),
+            approval_mode: Arc::new(policy::LiveApprovalMode::new(
+                policy::ApprovalMode::default(),
+            )),
             tools: mcp::Registry::default(),
             pending: None,
         };
@@ -1417,13 +1495,46 @@ mod tests {
         assert!(run.pending.is_none());
     }
     #[test]
+    fn full_access_rechecks_and_consumes_the_pending_action_once() {
+        let mut run = pending_run();
+        run.approval_mode.store(policy::ApprovalMode::Full);
+        let (pending, mode) = run.take_auto_approval(Instant::now()).unwrap().unwrap();
+        assert_eq!(mode, policy::ApprovalMode::Full);
+        assert_eq!(pending.call_id, "call");
+        assert_eq!(run.status, "running");
+        assert!(run.take_auto_approval(Instant::now()).unwrap().is_none());
+        assert!(run.take_approval("approval", Instant::now()).is_err());
+    }
+    #[test]
+    fn changed_policy_only_resumes_eligible_pending_actions() {
+        let mut run = pending_run();
+        run.approval_mode.store(policy::ApprovalMode::Auto);
+        assert!(run.take_auto_approval(Instant::now()).unwrap().is_none());
+        run.pending.as_mut().unwrap().action = Action::Shell {
+            command: "df -h".into(),
+            reason: "test".into(),
+        };
+        run.approval_mode.store(policy::ApprovalMode::Ask);
+        assert!(run.take_auto_approval(Instant::now()).unwrap().is_none());
+        assert_eq!(run.status, "approval");
+        run.approval_mode.store(policy::ApprovalMode::Auto);
+        assert!(run.take_auto_approval(Instant::now()).unwrap().is_some());
+    }
+    #[test]
+    fn changed_policy_does_not_revive_expired_approvals() {
+        let mut run = pending_run();
+        run.approval_mode.store(policy::ApprovalMode::Full);
+        assert!(run
+            .take_auto_approval(Instant::now() + Duration::from_secs(301))
+            .is_err());
+        assert!(run.pending.is_none());
+        assert_eq!(run.status, "failed");
+    }
+    #[test]
     fn cancellation_hides_pending_approval() {
         let run = pending_run();
-        let cell = Cell {
-            cancelled: AtomicBool::new(true),
-            cancel_notify: Notify::new(),
-            run: Mutex::new(pending_run()),
-        };
+        let cell = Cell::new(pending_run());
+        cell.cancel();
         assert!(run.check(&cell).is_err());
         assert!(run.snapshot(&cell).approval.is_none());
         assert_eq!(run.snapshot(&cell).status, "cancelled");
@@ -1433,11 +1544,8 @@ mod tests {
         let mut run = pending_run();
         run.status = "completed".into();
         run.pending = None;
-        let cell = Cell {
-            cancelled: AtomicBool::new(true),
-            cancel_notify: Notify::new(),
-            run: Mutex::new(pending_run()),
-        };
+        let cell = Cell::new(pending_run());
+        cell.cancel();
         assert_eq!(run.snapshot(&cell).status, "completed");
     }
     #[test]
@@ -1466,11 +1574,7 @@ mod tests {
     }
     #[tokio::test]
     async fn cancellation_wakes_a_pending_model_wait_without_locking_the_run() {
-        let cell = Cell {
-            cancelled: AtomicBool::new(false),
-            cancel_notify: Notify::new(),
-            run: Mutex::new(pending_run()),
-        };
+        let cell = Cell::new(pending_run());
         let _run = cell.run.lock().await;
         let wait = async {
             tokio::select! {
@@ -1490,6 +1594,28 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(100), cell.cancellation())
             .await
             .unwrap();
+    }
+    #[tokio::test]
+    async fn permission_changes_do_not_wait_for_the_running_step_lock() {
+        let cell = Cell::new(pending_run());
+        let run = cell.run.lock().await;
+        let action = &run.pending.as_ref().unwrap().action;
+        cell.set_approval_mode(policy::ApprovalMode::Full).unwrap();
+        assert!(!run.approval_mode.load().requires_approval(action));
+        cell.set_approval_mode(policy::ApprovalMode::Ask).unwrap();
+        assert!(run.approval_mode.load().requires_approval(action));
+        cell.set_approval_mode(policy::ApprovalMode::Auto).unwrap();
+        assert!(run.approval_mode.load().requires_approval(action));
+        assert_eq!(run.status, "approval");
+        assert_eq!(run.pending.as_ref().unwrap().view.id, "approval");
+        assert!(run.approval_mode.load().instruction().contains("Auto"));
+    }
+    #[test]
+    fn stopped_runs_reject_permission_updates() {
+        let cell = Cell::new(pending_run());
+        cell.cancel();
+        assert!(cell.set_approval_mode(policy::ApprovalMode::Full).is_err());
+        assert_eq!(cell.approval_mode.load(), policy::ApprovalMode::Auto);
     }
     #[test]
     fn utf8_clipping_does_not_panic() {

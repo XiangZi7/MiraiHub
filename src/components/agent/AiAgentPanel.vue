@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { translateNativeMessage } from '@/i18n/native'
 import { useI18n } from 'vue-i18n'
+import { useResizeObserver } from '@vueuse/core'
 
 import {
   computed,
@@ -11,11 +12,7 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
-import type {
-  AgentApprovalMode,
-  AgentContextRequest,
-  AgentTarget,
-} from '@/types/agent'
+import type { AgentContextRequest, AgentTarget } from '@/types/agent'
 import { useAiAgent } from '@/composables/useAiAgent'
 import { useAgentProfiles } from '@/composables/useAgentProfiles'
 import { useAgentDraft } from '@/composables/useAgentDraft'
@@ -24,13 +21,11 @@ import { copyText } from '@/utils/clipboard'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AgentApprovalCard from './AgentApprovalCard.vue'
-import AgentMarkdown from './AgentMarkdown.vue'
+import AgentTranscript from './AgentTranscript.vue'
+import AgentRunStatus from './AgentRunStatus.vue'
 import AgentConversationMenu from './AgentConversationMenu.vue'
-import AgentCopyButton from './AgentCopyButton.vue'
 import AgentRetryStatus from './AgentRetryStatus.vue'
-import AgentExecutionCard from './AgentExecutionCard.vue'
 import AgentTaskResult from './AgentTaskResult.vue'
-import AgentQueryResult from './AgentQueryResult.vue'
 
 const { t } = useI18n()
 
@@ -60,6 +55,8 @@ const {
   progress,
   error,
   awaitingApproval,
+  approvalMode,
+  setApprovalMode,
   conversations,
   historyLoading,
   historyError,
@@ -91,17 +88,18 @@ const {
 const state = reactive({
   // 对话复制状态
   copied: false,
-  // 当前连接的审批选择；切换配置或对话时保留，不从历史记录恢复
-  approvalMode: 'auto' as AgentApprovalMode,
   // 演示视图放大正文并突出执行过程，仅影响当前面板
   presentation: false,
+  // 保留用户阅读位置，工具输出或折叠内容变化时仅在靠近底部时跟随。
+  following: true,
 })
-const { copied, approvalMode, presentation } = toRefs(state)
+const { copied, presentation, following } = toRefs(state)
 const draft = useAgentDraft((text, attachments) =>
-  send(text, attachments, state.approvalMode)
+  send(text, attachments, approvalMode.value)
 )
 const { prompt, attachments, reading, readingProgress, attachmentError } = draft
 const scroll = useTemplateRef<HTMLElement>('scroll')
+const content = useTemplateRef<HTMLElement>('content')
 const composer = useTemplateRef<InstanceType<typeof AgentComposer>>('composer')
 const isRedis = computed(() => props.target.kind === 'redis')
 const isDatabase = computed(() => props.target.kind !== 'ssh')
@@ -184,7 +182,6 @@ watch(
   () => JSON.stringify(props.target),
   () => {
     draft.reset()
-    state.approvalMode = 'auto'
   }
 )
 watch(
@@ -223,59 +220,61 @@ async function copyConversation(): Promise<void> {
     state.copied = false
   }
 }
+function onScroll(): void {
+  const element = scroll.value
+  if (element)
+    state.following =
+      element.scrollHeight - element.scrollTop - element.clientHeight < 80
+}
+function scrollToBottom(force = false): void {
+  if (force) state.following = true
+  const element = scroll.value
+  const selection = typeof window !== 'undefined' ? window.getSelection() : null
+  if (
+    !element ||
+    !state.following ||
+    (selection?.toString() && element.contains(selection.anchorNode))
+  )
+    return
+  element.scrollTo({ top: element.scrollHeight, behavior: 'auto' })
+}
+useResizeObserver(content, () => scrollToBottom())
 watch(
   () => [
     run.value?.conversationId,
-    run.value?.entries.length,
-    progress.value?.text,
+    run.value?.entries.filter(entry => entry.role === 'user').length,
   ],
-  async (current, previous) => {
+  async () => {
     state.copied = false
-    const element = scroll.value
-    const follow =
-      current[0] !== previous[0] ||
-      current[1] !== previous[1] ||
-      !element ||
-      element.scrollHeight - element.scrollTop - element.clientHeight < 80
-    // Streaming must not pull the user away from text they are selecting/copying.
-    if (
-      !follow ||
-      (element?.contains(window.getSelection()?.anchorNode ?? null) &&
-        window.getSelection()?.toString())
-    )
-      return
     await nextTick()
-    scroll.value?.scrollTo({
-      top: scroll.value.scrollHeight,
-      behavior: 'auto',
-    })
+    scrollToBottom(true)
   }
 )
 watch(
-  () => run.value?.approval?.id,
-  async () => {
-    await nextTick()
-    scroll.value?.scrollTo({
-      top: scroll.value.scrollHeight,
-      behavior: 'auto',
-    })
+  () => progress.value?.text,
+  () => {
+    state.copied = false
   }
 )
 </script>
 
 <template>
   <section
-    class="agent-panel"
-    :class="{
-      'embedded-agent': embedded,
-      'presentation-agent': presentation,
-    }"
+    data-agent-panel
+    class="bg-panel text-agent-body text-txt [html[data-skin-scheme=light]_&]:bg-canvas @container/agent flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[radial-gradient(ellipse_at_75%_0%,color-mix(in_srgb,var(--color-blue)_7%,transparent),transparent_65%)] [--agent-body-font:var(--text-agent-body)] [--agent-color:var(--color-blue)] [--agent-small-font:var(--text-agent-small)] [html[data-skin-scheme=light]_&]:bg-none"
+    :class="[
+      embedded ? 'rounded-none border-0' : 'border-line rounded-[10px] border',
+      presentation &&
+        '[--text-agent-body:15px] [--text-agent-small:13px] [&_.markdown-body_code]:text-sm [&_textarea]:text-sm',
+    ]"
     aria-label="AI Agent"
   >
-    <header class="agent-header">
+    <header
+      class="border-line-soft flex min-h-[41px] shrink-0 items-center gap-1.5 border-b px-3"
+    >
       <span
-        class="status-dot"
-        :class="target.sessionId && 'online'"
+        class="size-1.5 shrink-0 rounded-full"
+        :class="target.sessionId ? 'bg-agent-mint' : 'bg-txt-4'"
       /><span
         class="text-txt-2 max-w-44 truncate text-[11px]"
         :title="title"
@@ -283,8 +282,8 @@ watch(
       >
       <span
         v-if="!embedded"
-        class="agent-tab"
-        >AI Agent <span class="beta">BETA</span></span
+        class="text-txt-2 px-[5px] py-2.5 text-[11px] font-medium whitespace-nowrap"
+        >AI Agent</span
       >
       <div class="flex-1" />
       <IconButton
@@ -344,278 +343,204 @@ watch(
         @click="emit('close')"
       />
     </header>
-    <div
-      ref="scroll"
-      class="agent-scroll"
-    >
-      <p
-        v-if="historyLoading || switchingConversation"
-        class="text-txt-3 mb-3 text-[11px]"
-        role="status"
-      >
-        {{ t('正在加载聊天记录…') }}
-      </p>
+    <div class="relative flex min-h-0 flex-1">
       <div
-        v-if="!run"
-        class="agent-intro"
+        ref="scroll"
+        data-agent-scroll
+        class="scroll-thin min-h-0 w-full [scrollbar-gutter:stable] overflow-auto pt-4.5 pr-3.25 pl-4 select-text @min-[25rem]/agent:pt-6 @min-[25rem]/agent:pr-6 @min-[25rem]/agent:pl-[27px]"
+        @scroll.passive="onScroll"
       >
-        <div class="bot-avatar">
-          <AppIcon
-            name="lucide:bot"
-            :size="25"
-          />
-        </div>
-        <div>
-          <h2>
-            AI Agent ({{
-              isRedis ? 'Redis' : isDatabase ? t('Database') : t('Terminal')
-            }})
-          </h2>
-          <p>
-            {{
-              isDatabase
-                ? t('协助查询、分析和管理数据库')
-                : t('协助诊断问题和管理服务器')
-            }}
+        <div
+          ref="content"
+          data-agent-content
+          class="min-w-0"
+        >
+          <p
+            v-if="historyLoading || switchingConversation"
+            class="text-txt-3 mb-3 text-[11px]"
+            role="status"
+          >
+            {{ t('正在加载聊天记录…') }}
           </p>
-        </div>
-      </div>
-      <template v-if="!run">
-        <div class="welcome">
-          <p>{{ t('告诉我你想完成什么，我可以帮你：') }}</p>
-          <ul>
-            <li
-              v-for="item in isRedis
-                ? [
-                    t('扫描键并查看内容'),
-                    t('检查键类型与过期时间'),
-                    t('编写和执行 Redis 命令'),
-                    t('分析 Redis 状态与内存使用'),
-                  ]
-                : isDatabase
-                  ? [
-                      t('查看表与字段结构'),
-                      t('编写和分析 SQL 查询'),
-                      t('定位数据库问题'),
-                      t('提出索引及性能优化建议'),
-                    ]
-                  : [
-                      t('检查系统、磁盘和网络状态'),
-                      t('分析命令输出与运行问题'),
-                      t('制定修复步骤'),
-                      t('执行服务器维护命令'),
-                    ]"
-              :key="item"
-            >
-              <AppIcon
-                name="lucide:check"
-                :size="13"
-              />{{ item }}
-            </li>
-          </ul>
-        </div>
-        <div class="suggestions">
-          <button
-            v-for="item in suggestions"
-            :key="item"
-            type="button"
-            @click="suggest(item)"
-          >
-            {{ item }} <span>↗</span>
-          </button>
-        </div>
-      </template>
-      <div
-        v-else
-        class="messages"
-        aria-live="polite"
-      >
-        <article
-          v-for="(entry, index) in run.entries"
-          :key="`${run.id}-${index}`"
-          class="message"
-          :class="[entry.role, { 'operation-message': entry.operation }]"
-          :aria-label="entry.role === 'user' ? t('你的消息') : undefined"
-        >
-          <template v-if="entry.operation">
-            <AgentExecutionCard
-              :operation="entry.operation"
-              :output="entry.detail"
-            />
-            <AgentQueryResult
-              v-for="(result, resultIndex) in entry.operation.results ?? []"
-              :key="resultIndex"
-              :result="result"
-            />
-          </template>
-          <template
-            v-else-if="entry.role === 'user' || entry.role === 'assistant'"
-            ><div
-              v-if="entry.role === 'assistant'"
-              class="message-author"
-            >
-              <span
-                class="message-avatar"
-                aria-hidden="true"
-              >
-                <AppIcon
-                  name="lucide:bot"
-                  :size="14"
-                />
-              </span>
-              <span>AI Agent</span>
-            </div>
-            <AgentMarkdown
-              v-if="entry.role === 'assistant'"
-              :content="entry.text"
-            />
-            <template v-else>
-              <div
-                v-if="entry.attachments?.length"
-                class="message-attachments"
-              >
-                <span
-                  v-for="(file, fileIndex) in entry.attachments"
-                  :key="fileIndex"
-                  class="message-attachment"
-                  :title="file.name"
-                >
-                  <AppIcon
-                    :name="file.mimeType ? 'lucide:image' : 'lucide:file-text'"
-                    :size="13"
-                  />
-                  <span>{{ file.name }}</span>
-                  <small>{{ (file.size / 1000).toFixed(1) }} KB</small>
-                </span>
-              </div>
-              <p>{{ entry.text }}</p>
-            </template></template
-          >
-          <details
-            v-else
-            :open="entry.role === 'error'"
-          >
-            <summary>
-              <AppIcon
-                :name="
-                  entry.role === 'error'
-                    ? 'lucide:circle-alert'
-                    : entry.role === 'audit'
-                      ? 'lucide:shield-check'
-                      : 'lucide:terminal'
-                "
-                :size="13"
-              />{{ translateNativeMessage(entry.text) }}
-            </summary>
-            <pre v-if="entry.detail">{{
-              entry.role === 'error'
-                ? translateNativeMessage(entry.detail)
-                : entry.detail
-            }}</pre>
-          </details>
           <div
-            v-if="!entry.operation"
-            class="message-actions mt-2 flex justify-end"
+            v-if="!run"
+            class="[&_p]:text-txt-3 mt-5 mb-[22px] flex items-center gap-3 [&_h2]:text-[17px] [&_h2]:font-semibold [&_p]:mt-1.5 [&_p]:text-xs [&_p]:leading-[1.6]"
           >
-            <AgentCopyButton
-              :text="
-                entry.detail ? `${entry.text}\n\n${entry.detail}` : entry.text
-              "
-              :label="t('复制内容')"
-            />
-          </div>
-        </article>
-        <article
-          v-if="progress?.text"
-          class="message assistant"
-          aria-busy="true"
-        >
-          <div class="message-author">
-            <span
-              class="message-avatar"
-              aria-hidden="true"
+            <div
+              class="border-line bg-agent-mint/7 text-agent-mint grid size-10.5 shrink-0 place-items-center rounded-xl border"
             >
               <AppIcon
                 name="lucide:bot"
-                :size="14"
+                :size="25"
               />
-            </span>
-            <span>AI Agent</span>
+            </div>
+            <div>
+              <h2>
+                AI Agent ({{
+                  isRedis
+                    ? 'Redis'
+                    : isDatabase
+                      ? t('Database')
+                      : t('Terminal')
+                }})
+              </h2>
+              <p>
+                {{
+                  isDatabase
+                    ? t('协助查询、分析和管理数据库')
+                    : t('协助诊断问题和管理服务器')
+                }}
+              </p>
+            </div>
           </div>
-          <AgentMarkdown :content="progress.text" />
-          <div class="message-actions mt-2 flex justify-end">
-            <AgentCopyButton
-              :text="progress.text"
-              :label="t('复制内容')"
+          <template v-if="!run">
+            <div
+              class="text-txt-2 [&>p]:text-txt-3 [&_svg]:text-agent-mint max-w-[520px] py-3 leading-[1.7] [&_li]:flex [&_li]:items-center [&_li]:gap-2.5 [&_ul]:my-5 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-3"
+            >
+              <p>{{ t('告诉我你想完成什么，我可以帮你：') }}</p>
+              <ul>
+                <li
+                  v-for="item in isRedis
+                    ? [
+                        t('扫描键并查看内容'),
+                        t('检查键类型与过期时间'),
+                        t('编写和执行 Redis 命令'),
+                        t('分析 Redis 状态与内存使用'),
+                      ]
+                    : isDatabase
+                      ? [
+                          t('查看表与字段结构'),
+                          t('编写和分析 SQL 查询'),
+                          t('定位数据库问题'),
+                          t('提出索引及性能优化建议'),
+                        ]
+                      : [
+                          t('检查系统、磁盘和网络状态'),
+                          t('分析命令输出与运行问题'),
+                          t('制定修复步骤'),
+                          t('执行服务器维护命令'),
+                        ]"
+                  :key="item"
+                >
+                  <AppIcon
+                    name="lucide:check"
+                    :size="13"
+                  />{{ item }}
+                </li>
+              </ul>
+            </div>
+            <div
+              class="mt-4.5 grid grid-cols-1 gap-2 @min-[25rem]/agent:grid-cols-2"
+            >
+              <button
+                class="border-line bg-txt/3 text-txt-2 hover:bg-hover hover:text-txt focus-visible:outline-blue flex cursor-pointer items-center justify-between gap-[7px] rounded-[9px] border p-3 text-left text-xs transition-colors duration-150 focus-visible:outline focus-visible:outline-1 motion-reduce:transition-none"
+                v-for="item in suggestions"
+                :key="item"
+                type="button"
+                @click="suggest(item)"
+              >
+                {{ item }} <span class="text-txt-3">↗</span>
+              </button>
+            </div>
+          </template>
+          <div
+            v-else
+            class="flex flex-col gap-[3px] [&_.approval]:my-3 [&_.task-result]:my-3"
+            aria-live="polite"
+          >
+            <AgentTranscript
+              :key="run.conversationId"
+              :entries="run.entries"
+              :busy="busy"
+              :awaiting-approval="awaitingApproval"
+              :progress="progress"
             />
+            <AgentTaskResult
+              :entries="run.entries"
+              :status="run.status"
+            />
+            <AgentApprovalCard
+              v-if="run.id && run.approval"
+              :approval="run.approval"
+              :target="run.target"
+              :busy="busy"
+              @decide="decide"
+            />
+            <AgentRetryStatus
+              v-if="busy && progress?.phase === 'retrying' && progress.retry"
+              :retry="progress.retry"
+            />
+            <AgentRunStatus
+              v-else
+              :busy="busy"
+              :label="busy ? t('agent.working') : statusLabel"
+              :status="run.status"
+              :turn-key="`${run.conversationId}-${run.entries.filter(entry => entry.role === 'user').length}`"
+            />
+            <p
+              v-if="run.status === 'cancelled'"
+              class="text-txt-3 text-[11px] leading-relaxed"
+            >
+              {{
+                t('已停止后续步骤。正在执行的操作可能已生效，请核对远端状态。')
+              }}
+            </p>
           </div>
-        </article>
-        <AgentExecutionCard
-          v-if="progress?.operation"
-          :operation="progress.operation"
-        />
-        <AgentTaskResult
-          :entries="run.entries"
-          :status="run.status"
-        />
-        <AgentApprovalCard
-          v-if="run.id && run.approval"
-          :approval="run.approval"
-          :target="run.target"
-          :busy="busy"
-          @decide="decide"
-        />
-        <AgentRetryStatus
-          v-if="busy && progress?.phase === 'retrying' && progress.retry"
-          :retry="progress.retry"
-        />
-        <div
-          v-else
-          class="text-txt-3 flex items-center gap-2 text-[11px]"
-        >
-          <AppIcon
-            v-if="busy"
-            name="lucide:loader-circle"
-            :size="13"
-            class="animate-spin"
-          />{{ statusLabel }}
+          <p
+            v-if="run?.saveError"
+            role="alert"
+            class="text-danger mt-3 text-[11px]"
+          >
+            {{ translateNativeMessage(run.saveError) }}
+          </p>
+          <p
+            v-if="error"
+            role="alert"
+            class="border-danger/30 bg-danger/5 text-danger mt-3 rounded-lg border p-3 text-[12px]"
+          >
+            {{ translateNativeMessage(error) }}
+          </p>
+          <div
+            v-if="!target.sessionId"
+            class="border-line text-txt-3 mt-4 rounded-lg border p-3 text-[12px]"
+          >
+            {{
+              isDatabase ? t('请先连接数据库。') : t('请先连接 SSH 服务器。')
+            }}
+          </div>
         </div>
-        <p
-          v-if="run.status === 'cancelled'"
-          class="text-txt-3 text-[11px] leading-relaxed"
-        >
-          {{ t('已停止后续步骤。正在执行的操作可能已生效，请核对远端状态。') }}
-        </p>
       </div>
-      <p
-        v-if="run?.saveError"
-        role="alert"
-        class="text-danger mt-3 text-[11px]"
+      <button
+        v-if="!following && run"
+        type="button"
+        class="border-line-strong bg-raised text-txt-2 hover:bg-hover hover:text-txt focus-visible:outline-blue absolute right-5 bottom-3.5 grid size-8 cursor-pointer place-items-center rounded-full border shadow-[0_3px_12px_#0003] focus-visible:outline-2 focus-visible:outline-offset-3"
+        :title="t('agent.scrollToBottom')"
+        :aria-label="t('agent.scrollToBottom')"
+        @click="scrollToBottom(true)"
       >
-        {{ translateNativeMessage(run.saveError) }}
-      </p>
-      <p
-        v-if="error"
-        role="alert"
-        class="border-danger/30 bg-danger/5 text-danger mt-3 rounded-lg border p-3 text-[12px]"
-      >
-        {{ translateNativeMessage(error) }}
-      </p>
-      <div
-        v-if="!target.sessionId"
-        class="border-line text-txt-3 mt-4 rounded-lg border p-3 text-[12px]"
-      >
-        {{ isDatabase ? t('请先连接数据库。') : t('请先连接 SSH 服务器。') }}
-      </div>
+        <AppIcon
+          name="lucide:arrow-down"
+          :size="16"
+        />
+      </button>
     </div>
     <AgentComposer
       ref="composer"
       v-model="prompt"
-      v-model:approval-mode="approvalMode"
+      :approval-mode="approvalMode"
+      @update:approval-mode="setApprovalMode"
       :disabled="
         !target.sessionId ||
         !active ||
         awaitingApproval ||
+        switchingConversation ||
+        historyLoading ||
+        historyMutating ||
+        switching
+      "
+      :permission-disabled="
+        !target.sessionId ||
+        !active ||
         switchingConversation ||
         historyLoading ||
         historyMutating ||
@@ -645,301 +570,3 @@ watch(
     />
   </section>
 </template>
-
-<style scoped>
-.agent-panel {
-  --agent-color: var(--color-violet);
-  --agent-body-font: 12px;
-  --agent-small-font: 11px;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
-  background:
-    linear-gradient(135deg, #ac82fb06, transparent 48%), var(--color-panel);
-  color: var(--color-txt);
-  font-size: 12px;
-}
-.presentation-agent {
-  --agent-body-font: 15px;
-  --agent-small-font: 12px;
-  font-size: 15px;
-}
-.presentation-agent :deep(.markdown-body code),
-.presentation-agent :deep(.agent-composer textarea) {
-  font-size: 14px;
-}
-.presentation-agent .agent-scroll {
-  padding: 20px 16px;
-}
-.operation-message {
-  margin-block: -2px;
-}
-.embedded-agent {
-  border: 0;
-  border-radius: 0;
-}
-.agent-header {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 6px;
-  padding: 0 10px;
-  min-height: 41px;
-  border-bottom: 1px solid var(--color-line-soft);
-}
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 100%;
-  background: var(--color-txt-4);
-  flex-shrink: 0;
-}
-.online {
-  background: #68d88b;
-  box-shadow: 0 0 8px #68d88b44;
-}
-.agent-tab {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  align-self: stretch;
-  border-bottom: 2px solid var(--color-violet);
-  padding: 10px 3px;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.beta {
-  font-size: 8px;
-  letter-spacing: 0.4px;
-  background: #598fcf22;
-  color: #8abbf7;
-  border-radius: 3px;
-  padding: 1px 3px;
-}
-.agent-scroll {
-  user-select: text;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 22px 18px;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--color-violet) 45%, transparent)
-    transparent;
-}
-.agent-scroll::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-.agent-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.agent-scroll::-webkit-scrollbar-thumb {
-  background-color: var(--color-line-strong);
-  border: 3px solid transparent;
-  background-clip: padding-box;
-  border-radius: 10px;
-}
-.agent-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in oklch, var(--color-violet) 60%, transparent);
-}
-.agent-scroll::-webkit-scrollbar-corner {
-  background: transparent;
-}
-.agent-intro {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 22px;
-}
-.bot-avatar {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  color: var(--agent-color);
-  background: color-mix(in srgb, var(--agent-color) 16%, transparent);
-  box-shadow: inset 0 0 16px
-    color-mix(in srgb, var(--agent-color) 12%, transparent);
-}
-.agent-intro h2 {
-  font-size: 13px;
-  font-weight: 600;
-}
-.agent-intro p {
-  font-size: 11px;
-  color: var(--color-txt-3);
-  margin-top: 5px;
-  line-height: 1.6;
-}
-.welcome {
-  max-width: 520px;
-  background: linear-gradient(120deg, #ffffff06, #ffffff02);
-  border: 1px solid #ffffff04;
-  border-radius: 8px;
-  padding: 16px;
-  color: var(--color-txt-2);
-  line-height: 1.8;
-}
-.welcome ul {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin: 18px 0;
-}
-.welcome li {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.welcome li svg {
-  color: var(--agent-color);
-}
-.suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 22px;
-}
-.suggestions button {
-  border: 1px solid var(--color-line-soft);
-  border-radius: 6px;
-  padding: 6px 9px;
-  font-size: 10.5px;
-  color: var(--color-txt-2);
-  background: #ffffff03;
-  text-align: left;
-  cursor: pointer;
-}
-.suggestions button:hover {
-  border-color: var(--agent-color);
-  color: var(--color-txt);
-}
-.suggestions span {
-  color: var(--color-txt-4);
-}
-.messages {
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-}
-.message {
-  min-width: 0;
-}
-.message-actions {
-  opacity: 0;
-  pointer-events: none;
-}
-.message:hover .message-actions,
-.message:focus-within .message-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-.message-author {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 10px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-txt-2);
-}
-.message-avatar {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  color: var(--agent-color);
-  background: color-mix(in srgb, var(--agent-color) 18%, transparent);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--agent-color) 24%, transparent);
-}
-.message p {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 1.8;
-  margin: 0;
-}
-.message.assistant {
-  margin-block: 6px;
-}
-.message.user {
-  align-self: flex-end;
-  max-width: 88%;
-  padding: 8px 12px;
-  background: var(--color-card);
-  border-radius: 12px;
-}
-.message.user p {
-  line-height: 1.65;
-}
-.message summary {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  cursor: pointer;
-  list-style: none;
-  color: var(--color-txt-3);
-  font-size: 11px;
-}
-.message summary:hover {
-  color: var(--color-txt);
-}
-.message pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 240px;
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--color-violet) 45%, transparent)
-    transparent;
-  background: #0004;
-  border-radius: 6px;
-  padding: 10px;
-  font-size: 11px;
-  margin-top: 8px;
-}
-.message.error {
-  color: var(--color-danger);
-}
-.message.error summary {
-  color: var(--color-danger);
-}
-.message-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 7px;
-}
-.message-attachment {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 5px 7px;
-  border: 1px solid var(--color-line);
-  border-radius: 7px;
-  color: var(--color-txt-2);
-  font-size: 10px;
-}
-.message-attachment > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.message-attachment svg,
-.message-attachment small {
-  flex-shrink: 0;
-}
-</style>

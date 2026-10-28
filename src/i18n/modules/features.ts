@@ -1,5 +1,24 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  'agent.transcript': 'Conversation',
+  'agent.assistantMessage': 'AI response',
+  'agent.activitySummary': '{tools} tool calls, {messages} messages',
+  'agent.scrollToBottom': 'Scroll to latest message',
+  'agent.fileEdited': 'file edited',
+  'agent.promptPlaceholder': 'Ask AI Agent to do something…',
+  'agent.startDictation': 'Voice input',
+  'agent.stopDictation': 'Stop voice input',
+  'agent.dictationUnsupported':
+    'Voice input is unavailable in this environment',
+  'agent.microphoneDenied':
+    'Microphone access was denied. Allow access to use voice input.',
+  'agent.dictationFailed':
+    'Voice input failed. Please retry or type your message.',
+  'agent.listening': 'Listening…',
+  'agent.working': 'Working',
+  'agent.defaultReasoning': 'default',
+  'agent.defaultReasoningDescription':
+    'Using the model service’s default reasoning settings; adjustment is not enabled',
   本地上下文容量: 'Local context capacity',
   '本地上下文容量（KB）': 'Local context capacity (KB)',
   '这是本地消息容量，不会扩大模型的上下文窗口；达到约 85% 时自动压缩。模型服务仍有独立的 Token 限制，调大容量可能增加耗时和用量。':
@@ -1462,6 +1481,24 @@ export const en = {
   关闭提示: 'Dismiss notice',
 }
 
-export const zh = Object.fromEntries(
-  Object.keys(en).map(key => [key, key.replaceAll('@', "{'@'}")])
-) as Record<keyof typeof en, string>
+export const zh = {
+  ...Object.fromEntries(
+    Object.keys(en).map(key => [key, key.replaceAll('@', "{'@'}")])
+  ),
+  'agent.transcript': '对话记录',
+  'agent.assistantMessage': 'AI 回复',
+  'agent.activitySummary': '{tools} 次工具调用，{messages} 条消息',
+  'agent.scrollToBottom': '回到最新消息',
+  'agent.fileEdited': '已修改文件',
+  'agent.promptPlaceholder': '让 AI Agent 帮你完成任务…',
+  'agent.startDictation': '语音输入',
+  'agent.stopDictation': '停止语音输入',
+  'agent.dictationUnsupported': '当前环境不支持语音输入',
+  'agent.microphoneDenied': '麦克风权限被拒绝，请允许麦克风访问后重试。',
+  'agent.dictationFailed': '语音输入失败，请重试或直接输入文字。',
+  'agent.listening': '正在聆听…',
+  'agent.working': '正在处理',
+  'agent.defaultReasoning': '默认',
+  'agent.defaultReasoningDescription':
+    '使用模型服务的默认推理设置，暂未启用强度调节',
+} as Record<keyof typeof en, string>

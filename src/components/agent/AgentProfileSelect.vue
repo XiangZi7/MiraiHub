@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const { t } = useI18n()
 defineProps<{
@@ -12,8 +13,16 @@ defineProps<{
 const emit = defineEmits<{ select: [id: string] }>()
 </script>
 <template>
-  <div class="agent-model-select">
+  <div
+    class="bg-txt/5 flex max-w-[48%] min-w-0 items-center gap-0.5 rounded-full pl-2 @min-[37.5rem]/agent:min-w-[158px]"
+  >
+    <AppIcon
+      name="lucide:lock-keyhole"
+      :size="12"
+      class="text-txt-3 shrink-0"
+    />
     <AppSelect
+      class="min-w-0 flex-1"
       :model-value="activeId"
       :options="options"
       :disabled="disabled || !options.length"
@@ -22,27 +31,8 @@ const emit = defineEmits<{ select: [id: string] }>()
       hide-label
       compact
       searchable
+      pill
       @update:model-value="emit('select', $event)"
     />
   </div>
 </template>
-
-<style scoped>
-.agent-model-select {
-  min-width: 0;
-  max-width: 290px;
-}
-.agent-model-select :deep(.app-select-trigger) {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  padding-inline: 6px;
-}
-.agent-model-select :deep(.app-select-trigger:hover),
-.agent-model-select :deep(.app-select-trigger:focus-visible) {
-  background: var(--color-hover);
-}
-.agent-model-select :deep(.app-select-trigger:focus-visible) {
-  outline: 1px solid var(--agent-color);
-}
-</style>

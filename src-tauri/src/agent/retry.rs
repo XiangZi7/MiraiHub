@@ -19,19 +19,15 @@ mod tests {
     use super::*;
     use crate::agent::{config::ApiFormat, tests::pending_run};
     use serde_json::json;
-    use std::sync::{atomic::AtomicBool, Arc};
+    use std::sync::Arc;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
-        sync::{Mutex, Notify},
+        sync::Mutex,
     };
 
     fn cell() -> Cell {
-        Cell {
-            cancelled: AtomicBool::new(false),
-            cancel_notify: Notify::new(),
-            run: Mutex::new(pending_run()),
-        }
+        Cell::new(pending_run())
     }
 
     fn response(status: u16, body: &str, headers: &str) -> String {

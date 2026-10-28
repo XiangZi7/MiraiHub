@@ -163,6 +163,8 @@ export const en = {
     'AI configuration changed. Select the profile again before sending.',
   '运行中的 AI 对话过多，请先停止或清空对话':
     'Too many active AI conversations. Stop or clear one first.',
+  '任务已停止，无法修改审批方式':
+    'The task has stopped; its approval mode cannot be changed',
   请等待当前任务结束或开始新对话:
     'Wait for the current task to finish or start a new conversation',
   '已阻止并行工具调用，请使用支持单工具调用的模型':

@@ -36,6 +36,8 @@ const props = withDefaults(
     hideLabel?: boolean
     /** 28px 高的紧凑规格，用于设置面板等高密度界面。 */
     compact?: boolean
+    /** Agent 输入区等行内胶囊选择器，布局与状态由 Tailwind 工具类控制。 */
+    pill?: boolean
     /** 显示搜索框；选项超过 7 个时也会自动开启。 */
     searchable?: boolean
     /** 需要完整展示说明时使用更宽的菜单。 */
@@ -49,6 +51,7 @@ const props = withDefaults(
     disabled: false,
     hideLabel: false,
     compact: false,
+    pill: false,
     searchable: false,
     menuMinWidth: 196,
     wrapDescriptions: false,
@@ -306,8 +309,13 @@ watch(
       :aria-required="required"
       :disabled="disabled"
       :class="[
-        'app-select-trigger field w-full cursor-pointer justify-between text-left disabled:pointer-events-none disabled:opacity-45',
-        compact ? 'app-select-trigger-compact' : 'h-[34px]',
+        'app-select-trigger field w-full cursor-pointer justify-between text-left disabled:pointer-events-none',
+        pill
+          ? 'hover:bg-hover focus-visible:bg-hover focus-visible:outline-blue h-[25px] min-h-[25px] gap-1 rounded-full border-transparent bg-transparent pr-2 pl-1 shadow-none focus-visible:border-transparent focus-visible:shadow-none focus-visible:outline focus-visible:outline-1 disabled:opacity-72'
+          : [
+              compact ? 'app-select-trigger-compact' : 'h-[34px]',
+              'disabled:opacity-45',
+            ],
       ]"
       @click="toggleMenu"
       @keydown="handleKeydown"
@@ -315,7 +323,7 @@ watch(
       <span
         :class="[
           'app-select-value min-w-0 flex-1 truncate text-xs',
-          selectedOption ? 'text-txt' : 'text-txt-4',
+          pill ? 'text-txt-2' : selectedOption ? 'text-txt' : 'text-txt-4',
         ]"
       >
         {{ selectedOption?.label ?? (placeholder || t('请选择')) }}
@@ -440,120 +448,127 @@ watch(
 </template>
 
 <style scoped>
-.app-select-trigger:focus-visible,
-.app-select-trigger[aria-expanded='true'] {
-  border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
-  outline: none;
-  box-shadow: 0 0 0 3px
-    color-mix(in oklch, var(--color-violet) 12%, transparent);
-}
+@layer components {
+  .app-select-trigger:focus-visible,
+  .app-select-trigger[aria-expanded='true'] {
+    border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
+    outline: none;
+    box-shadow: 0 0 0 3px
+      color-mix(in oklch, var(--color-violet) 12%, transparent);
+  }
 
-.app-select-trigger-compact {
-  height: 28px;
-  gap: 4px;
-  border-radius: 6px;
-  padding-right: 7px;
-  padding-left: 8px;
-}
+  .app-select-trigger-compact {
+    height: 28px;
+    gap: 4px;
+    border-radius: 6px;
+    padding-right: 7px;
+    padding-left: 8px;
+  }
 
-.app-select-trigger-compact .app-select-value {
-  font-size: 10.5px;
-}
+  .app-select-trigger-compact .app-select-value {
+    font-size: 10.5px;
+  }
 
-/* 背景与模糊交给 AppMenuSurface：Windows 的透明 WebView 里
+  /* 背景与模糊交给 AppMenuSurface：Windows 的透明 WebView 里
    直接写 backdrop-filter 采不到窗口内容，只能退化成一块不透明底色。 */
-.app-select-menu {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid color-mix(in oklch, var(--color-line-strong) 88%, white 5%);
-  border-radius: 11px;
-  box-shadow:
-    0 18px 48px rgb(0 0 0 / 34%),
-    0 3px 12px rgb(0 0 0 / 22%),
-    inset 0 1px var(--glass-highlight);
-}
+  .app-select-menu {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid
+      color-mix(in oklch, var(--color-line-strong) 88%, white 5%);
+    border-radius: 11px;
+    box-shadow:
+      0 18px 48px rgb(0 0 0 / 34%),
+      0 3px 12px rgb(0 0 0 / 22%),
+      inset 0 1px var(--glass-highlight);
+  }
 
-/* 选项单独滚动，玻璃底留在外层不跟着卷动。
+  /* 选项单独滚动，玻璃底留在外层不跟着卷动。
    relative 让选项的 offsetTop 相对这一层计算，滚动定位才对得上。 */
-.app-select-list {
-  position: relative;
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
+  .app-select-list {
+    position: relative;
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 
-/* 搜索框 sticky 悬在选项上：补上玻璃模糊，滚动的选项透出磨砂质感而不是直接穿透 */
-.app-select-search {
-  background-color: color-mix(in oklch, var(--color-panel) 92%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
-  backdrop-filter: blur(24px) saturate(165%);
-}
+  /* 搜索框 sticky 悬在选项上：补上玻璃模糊，滚动的选项透出磨砂质感而不是直接穿透 */
+  .app-select-search {
+    background-color: color-mix(in oklch, var(--color-panel) 92%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(165%);
+    backdrop-filter: blur(24px) saturate(165%);
+  }
 
-.app-select-option {
-  position: relative;
-  cursor: pointer;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  color: var(--color-txt-2);
-  transition:
-    background-color 150ms ease,
-    color 150ms ease,
-    border-color 150ms ease;
-}
+  .app-select-option {
+    position: relative;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: var(--color-txt-2);
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
+  }
 
-.app-select-indicator {
-  width: 2px;
-  height: 16px;
-  flex: none;
-  border-radius: 999px;
-  background: transparent;
-  transition:
-    background-color 150ms ease,
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  transform: scaleY(0.45);
-}
+  .app-select-indicator {
+    width: 2px;
+    height: 16px;
+    flex: none;
+    border-radius: 999px;
+    background: transparent;
+    transition:
+      background-color 150ms ease,
+      transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform: scaleY(0.45);
+  }
 
-.app-select-option-selected .app-select-indicator {
-  background: var(--color-violet);
-  transform: scaleY(1);
-}
+  .app-select-option-selected .app-select-indicator {
+    background: var(--color-violet);
+    transform: scaleY(1);
+  }
 
-.app-select-group {
-  padding: 7px 9px 3px;
-  color: var(--color-txt-4);
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+  .app-select-group {
+    padding: 7px 9px 3px;
+    color: var(--color-txt-4);
+    font-size: 9px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
 
-.app-select-option-active {
-  background: var(--color-hover);
-  border-color: color-mix(in oklch, var(--color-line-strong) 65%, transparent);
-}
+  .app-select-option-active {
+    background: var(--color-hover);
+    border-color: color-mix(
+      in oklch,
+      var(--color-line-strong) 65%,
+      transparent
+    );
+  }
 
-.app-select-option-selected {
-  background: color-mix(in oklch, var(--color-violet) 12%, var(--color-card));
-  color: var(--color-txt);
-}
+  .app-select-option-selected {
+    background: color-mix(in oklch, var(--color-violet) 12%, var(--color-card));
+    color: var(--color-txt);
+  }
 
-.app-select-pop-enter-active {
-  /* 与右键菜单一致：玻璃层随 v-show 复用，只做位移。
+  .app-select-pop-enter-active {
+    /* 与右键菜单一致：玻璃层随 v-show 复用，只做位移。
      整层 opacity 动画会限制背景采样，让透明 WebView 闪白。 */
-  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
-}
+    transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 
-.app-select-pop-enter-from {
-  transform: translateY(3px);
-}
+  .app-select-pop-enter-from {
+    transform: translateY(3px);
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  .app-select-indicator,
-  .app-select-option,
-  .app-select-pop-enter-active,
-  .app-select-pop-leave-active {
-    transition: none;
+  @media (prefers-reduced-motion: reduce) {
+    .app-select-indicator,
+    .app-select-option,
+    .app-select-pop-enter-active,
+    .app-select-pop-leave-active {
+      transition: none;
+    }
   }
 }
 </style>

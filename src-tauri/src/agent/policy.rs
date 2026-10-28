@@ -1,14 +1,34 @@
 use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 #[derive(Clone, Copy, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[repr(u8)]
 pub enum ApprovalMode {
     Ask,
     #[default]
     Auto,
     Full,
+}
+/// Shared independently of the run lock so a streaming request cannot block a
+/// user-selected policy change. Unknown values always fall back to asking.
+pub(super) struct LiveApprovalMode(AtomicU8);
+impl LiveApprovalMode {
+    pub fn new(mode: ApprovalMode) -> Self {
+        Self(AtomicU8::new(mode as u8))
+    }
+    pub fn load(&self) -> ApprovalMode {
+        match self.0.load(Ordering::SeqCst) {
+            value if value == ApprovalMode::Auto as u8 => ApprovalMode::Auto,
+            value if value == ApprovalMode::Full as u8 => ApprovalMode::Full,
+            _ => ApprovalMode::Ask,
+        }
+    }
+    pub fn store(&self, mode: ApprovalMode) {
+        self.0.store(mode as u8, Ordering::SeqCst);
+    }
 }
 impl ApprovalMode {
     pub fn requires_approval(self, action: &Action) -> bool {

@@ -4,7 +4,9 @@ import { effectScope } from 'vue'
 import { sourceLoader } from './helpers/source-module.mjs'
 
 const load = sourceLoader()
-const { summarizeAgentTurn } = await load('src/utils/agent-execution.ts')
+const { summarizeAgentTurn, buildAgentTranscript } = await load(
+  'src/utils/agent-execution.ts'
+)
 const { useAgentDraft } = await load('src/composables/useAgentDraft.ts')
 const operation = (
   status,
@@ -23,6 +25,35 @@ const operation = (
     durationMs: 250,
     ...(exitCode === undefined ? {} : { exitCode }),
   },
+})
+
+test('transcript keeps intermediate messages with tools and separates the final answer without changing entries', () => {
+  const entries = [
+    { role: 'assistant', text: 'Earlier reply' },
+    {
+      role: 'user',
+      text: 'Check the service',
+      attachments: [{ name: 'server.log', size: 12 }],
+    },
+    { role: 'assistant', text: 'Checking the service' },
+    operation('completed', 0),
+    { role: 'audit', text: 'Actual execution record' },
+    { role: 'assistant', text: 'Verified result' },
+    { role: 'user', text: 'Follow up' },
+    { role: 'assistant', text: 'Another check' },
+  ]
+  const original = structuredClone(entries)
+  const turns = buildAgentTranscript(entries)
+  assert.equal(turns.length, 3)
+  assert.equal(turns[0].replies[0].text, 'Earlier reply')
+  assert.deepEqual(turns[1].activity, entries.slice(2, 5))
+  assert.equal(turns[1].replies[0].text, 'Verified result')
+  assert.equal(turns[1].user.attachments[0].name, 'server.log')
+  const working = buildAgentTranscript(entries, true)
+  assert.equal(working[1].replies[0].text, 'Verified result')
+  assert.equal(working[2].activity[0].text, 'Another check')
+  assert.equal(working[2].replies.length, 0)
+  assert.deepEqual(entries, original)
 })
 
 test('task results belong only to the latest turn and preserve measured exit code changes', () => {

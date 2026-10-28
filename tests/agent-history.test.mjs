@@ -24,13 +24,30 @@ const mockUrl = dataModule(`
     const id = 'run-' + ++mock.serial
     const previous = conversationId ? await openConversation(target,conversationId) : null
     const run = {id,conversationId:conversationId || 'chat-' + mock.serial,scope:key(target),target:'test',model:'mock',provider:'https://example.com',status:'running',approval:null,entries:[...(previous?.entries || []),{role:'user',text:prompt}]}
-    mock.runs.set(id,run);save(run);return clone(run)
+    mock.runs.set(id,run);save(run);
+    if(mock.startGate) await mock.startGate
+    return clone(run)
   }
   export const send = async (id,prompt,attachments,approvalMode) => { mock.lastSend={id,prompt,attachments,approvalMode}; const run = mock.runs.get(id); run.status='running';run.entries.push({role:'user',text:prompt});save(run);return clone(run) }
+  export const setApprovalMode = async (id,mode) => {
+    mock.modeChanges.push({id,mode})
+    if(mock.modeHandler) await mock.modeHandler(id,mode)
+    mock.runs.get(id).approvalMode = mode
+  }
   export const step = async (id,onProgress) => {
     mock.progress = onProgress
+    mock.steps.push(id)
     if(mock.stepGate) return await mock.stepGate
-    const run = mock.runs.get(id);run.status='completed';run.entries.push({role:'assistant',text:'**回复**'});save(run);return clone(run)
+    const run = mock.runs.get(id)
+    if(run.status === 'approval') {
+      if(run.approvalMode !== 'full' && !(run.approvalMode === 'auto' && run.approval.command === 'df -h')) return clone(run)
+      onProgress?.({runId:id,text:'',phase:'executing'})
+      run.approval=null
+      run.status='running'
+      save(run)
+      return clone(run)
+    }
+    run.status='completed';run.entries.push({role:'assistant',text:'**回复**'});save(run);return clone(run)
   }
   export const cancel = async id => {const run=mock.runs.get(id);if(run){run.status='cancelled';run.approval=null;save(run)}}
   export const forget = async id => {mock.forgotten.push(id);const run=mock.runs.get(id);if(run && (run.status==='running' || run.status==='approval')){run.status='cancelled';run.approval=null;save(run)}}
@@ -316,6 +333,10 @@ function fixture(reset = true) {
     mock.starts = []
     mock.forgotten = []
     mock.stepGate = null
+    mock.steps = []
+    mock.startGate = null
+    mock.modeChanges = []
+    mock.modeHandler = null
     mock.listGate = null
     mock.openError = false
     mock.responses = []
@@ -600,5 +621,228 @@ test('rename errors keep the old name and conversation visible', async () => {
   assert.equal(state.conversations.value[0].title, '保留名称')
   assert.equal(state.run.value.conversationId, id)
   assert.equal(state.historyMutating.value, false)
+  app.unmount()
+})
+
+test('permission changes reach a running step immediately without stopping it', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const sending = state.send('检查', [], 'auto')
+  await flush()
+  const id = state.run.value.id
+  await state.setApprovalMode('full')
+  assert.equal(state.busy.value, true)
+  assert.equal(state.run.value.status, 'running')
+  assert.deepEqual(mock.modeChanges, [{ id, mode: 'full' }])
+  await state.setApprovalMode('ask')
+  assert.equal(mock.runs.get(id).approvalMode, 'ask')
+  assert.equal(state.approvalMode.value, 'ask')
+  finish({ ...structuredClone(mock.runs.get(id)), status: 'completed' })
+  await sending
+  assert.equal(state.approvalMode.value, 'ask')
+  app.unmount()
+})
+
+test('permission selected while a run is starting is synchronized before its first step', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let start
+  mock.startGate = new Promise(resolve => {
+    start = resolve
+  })
+  const sending = state.send('检查', [], 'full')
+  await flush()
+  await state.setApprovalMode('ask')
+  assert.equal(mock.modeChanges.length, 0)
+  start()
+  await sending
+  assert.deepEqual(mock.modeChanges, [{ id: state.run.value.id, mode: 'ask' }])
+  app.unmount()
+})
+
+test('full access immediately resumes a pending action through the backend policy check', async () => {
+  const { app, state } = fixture()
+  await flush()
+  await state.send('检查')
+  const id = pendingApproval(state, Date.now() + 60000)
+  await state.setApprovalMode('full')
+  assert.deepEqual(mock.modeChanges, [{ id, mode: 'full' }])
+  assert.equal(state.awaitingApproval.value, false)
+  assert.equal(state.run.value.status, 'completed')
+  assert.equal(state.busy.value, false)
+  assert.equal(mock.responses.length, 0)
+  app.unmount()
+})
+
+test('auto mode resumes only eligible pending reads and ask mode keeps approval pending', async () => {
+  const { app, state } = fixture()
+  await flush()
+  await state.send('检查')
+  pendingApproval(state, Date.now() + 60000)
+  await state.setApprovalMode('ask')
+  assert.equal(state.awaitingApproval.value, true)
+  await state.setApprovalMode('auto')
+  assert.equal(state.awaitingApproval.value, true)
+  const backend = mock.runs.get(state.run.value.id)
+  backend.approval.command = 'df -h'
+  state.run.value.approval.command = 'df -h'
+  await state.setApprovalMode('auto')
+  assert.equal(state.run.value.status, 'completed')
+  assert.equal(mock.responses.length, 0)
+  app.unmount()
+})
+
+test('a policy update crossing an in-flight approval response is rechecked before pausing', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const sending = state.send('检查')
+  await flush()
+  const id = pendingApproval(state, Date.now() + 60000)
+  const approval = structuredClone(mock.runs.get(id))
+  let confirm
+  mock.modeHandler = () =>
+    new Promise(resolve => {
+      confirm = resolve
+    })
+  const changing = state.setApprovalMode('full')
+  await flush()
+  finish(approval)
+  mock.stepGate = null
+  await flush()
+  assert.equal(state.awaitingApproval.value, true)
+  confirm()
+  await Promise.all([sending, changing])
+  assert.equal(state.run.value.status, 'completed')
+  assert.equal(mock.responses.length, 0)
+  app.unmount()
+})
+
+test('automatically resumed execution clears its approval and remains stoppable', async () => {
+  const { app, state } = fixture()
+  await flush()
+  await state.send('检查')
+  const id = pendingApproval(state, Date.now() + 60000)
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const changing = state.setApprovalMode('full')
+  await flush()
+  const progress = mock.progress
+  progress({ runId: id, text: '', phase: 'executing' })
+  assert.equal(state.awaitingApproval.value, false)
+  assert.equal(state.run.value.status, 'running')
+  assert.equal(state.busy.value, true)
+  await state.stop()
+  progress({ runId: id, text: '迟到分片', phase: 'answering' })
+  assert.equal(state.progress.value, null)
+  finish(structuredClone(mock.runs.get(id)))
+  await changing
+  assert.equal(state.run.value.status, 'cancelled')
+  assert.equal(state.busy.value, false)
+  assert.equal(mock.responses.length, 0)
+  app.unmount()
+})
+
+test('rapid policy changes are serialized and a failed update restores the last confirmed policy', async () => {
+  const { app, state } = fixture()
+  await flush()
+  await state.send('检查')
+  const id = pendingApproval(state, Date.now() + 60000)
+  let finish
+  mock.modeHandler = async (_id, mode) => {
+    if (mode === 'full')
+      await new Promise(resolve => {
+        finish = resolve
+      })
+    if (mode === 'ask') throw new Error('权限更新失败')
+  }
+  const full = state.setApprovalMode('full')
+  await flush()
+  const ask = state.setApprovalMode('ask')
+  assert.equal(state.approvalMode.value, 'ask')
+  assert.deepEqual(mock.modeChanges, [{ id, mode: 'full' }])
+  finish()
+  await Promise.all([full, ask])
+  assert.deepEqual(
+    mock.modeChanges.map(change => change.mode),
+    ['full', 'ask']
+  )
+  assert.equal(state.approvalMode.value, 'full')
+  assert.equal(state.error.value, '权限更新失败')
+  app.unmount()
+})
+
+test('late policy errors cannot replace the permission or error on another target', async () => {
+  const { app, state, target } = fixture()
+  await flush()
+  await state.send('检查')
+  pendingApproval(state, Date.now() + 60000)
+  let fail
+  mock.modeHandler = () =>
+    new Promise((_resolve, reject) => {
+      fail = reject
+    })
+  const change = state.setApprovalMode('full')
+  await flush()
+  target.value = { ...target.value, sessionId: 'server-b' }
+  await flush()
+  fail(new Error('旧请求失败'))
+  await change
+  assert.equal(state.approvalMode.value, 'auto')
+  assert.equal(state.error.value, '')
+  assert.equal(state.run.value, null)
+  app.unmount()
+})
+
+test('the selected policy survives conversation and profile changes, but not target changes', async () => {
+  const { app, state, target } = fixture()
+  await flush()
+  await state.setApprovalMode('full')
+  await state.clear()
+  assert.equal(state.approvalMode.value, 'full')
+  await state.changeProfile()
+  assert.equal(state.approvalMode.value, 'full')
+  target.value = { ...target.value, sessionId: 'server-b' }
+  await flush()
+  assert.equal(state.approvalMode.value, 'auto')
+  app.unmount()
+})
+
+test('an idle selection is not rolled back by an older in-flight policy failure', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let finishStep
+  mock.stepGate = new Promise(resolve => {
+    finishStep = resolve
+  })
+  const sending = state.send('检查')
+  await flush()
+  let failMode
+  mock.modeHandler = () =>
+    new Promise((_resolve, reject) => {
+      failMode = reject
+    })
+  const changing = state.setApprovalMode('full')
+  await flush()
+  finishStep({
+    ...structuredClone(mock.runs.get(state.run.value.id)),
+    status: 'completed',
+  })
+  await flush()
+  assert.equal(state.run.value.status, 'completed')
+  await state.setApprovalMode('ask')
+  failMode(new Error('旧权限请求失败'))
+  await Promise.all([changing, sending])
+  assert.equal(state.approvalMode.value, 'ask')
+  assert.equal(state.error.value, '')
   app.unmount()
 })

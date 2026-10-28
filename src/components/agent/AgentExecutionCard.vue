@@ -21,7 +21,9 @@ const icon = computed(
   () =>
     ({
       running: 'lucide:loader-circle',
-      completed: 'lucide:check',
+      completed: props.operation.fileChange
+        ? 'lucide:file-pen-line'
+        : 'lucide:terminal',
       failed: 'lucide:circle-alert',
       unknown: 'lucide:circle-help',
     })[props.operation.status]
@@ -40,45 +42,73 @@ const label = computed(() =>
 
 <template>
   <details
-    class="execution-card"
-    :class="operation.status"
-    :open="operation.status === 'running' || operation.status === 'failed'"
+    data-agent-operation
+    class="group/operation min-w-0"
+    :data-status="operation.status"
+    :open="operation.status === 'failed'"
   >
-    <summary class="execution-header">
-      <span class="execution-icon"
+    <summary
+      class="focus-visible:outline-blue flex min-h-[22px] cursor-pointer list-none items-center gap-2.5 focus-visible:rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-3 [&::-webkit-details-marker]:hidden"
+      :title="`${t(operation.label)} · ${label} · ${operation.command}`"
+    >
+      <span
+        class="text-agent-mint group-data-[status=failed]/operation:text-danger group-data-[status=unknown]/operation:text-amber grid w-4 shrink-0 place-items-center"
         ><AppIcon
           :name="icon"
           :size="15"
-          :class="operation.status === 'running' && 'animate-spin'"
+          :class="
+            operation.status === 'running' &&
+            'animate-spin motion-reduce:animate-none'
+          "
       /></span>
-      <span class="execution-heading">
-        <strong>{{ t(operation.label) }}</strong>
-        <span class="execution-command">{{
-          operation.fileChange?.path || operation.command
-        }}</span>
+      <span
+        class="flex max-w-[min(100%,480px)] min-w-0 items-baseline gap-[7px] @max-[31.25rem]/agent:flex-1"
+      >
+        <strong
+          v-if="operation.fileChange"
+          class="text-agent-body text-txt-2 shrink-0 font-semibold"
+          >{{
+            operation.status === 'completed'
+              ? t('agent.fileEdited')
+              : t(operation.label)
+          }}:</strong
+        >
+        <span
+          class="text-txt-2 min-w-0 truncate"
+          :class="
+            operation.fileChange
+              ? 'text-agent-body font-sans font-semibold'
+              : 'border-line bg-terminal rounded-md border px-[7px] py-px font-mono text-xs leading-normal font-medium @max-[31.25rem]/agent:text-[11px]'
+          "
+          >{{ operation.fileChange?.path || operation.command }}</span
+        >
       </span>
-      <span class="execution-meta">
-        <span>{{ label }}</span>
-        <span v-if="operation.durationMs !== undefined">{{
+      <span
+        class="text-txt-3 ml-auto flex shrink-0 items-center gap-[7px] text-[10px] tabular-nums opacity-0 group-focus-within/operation:opacity-100 group-hover/operation:opacity-100 group-data-[status=failed]/operation:opacity-100 @max-[31.25rem]/agent:hidden"
+      >
+        <span>{{ label }}</span
+        ><span v-if="operation.durationMs !== undefined">{{
           formatAgentDuration(operation.durationMs)
         }}</span>
       </span>
       <AppIcon
         name="lucide:chevron-down"
         :size="12"
-        class="execution-chevron"
+        class="text-txt-3 shrink-0 opacity-0 group-open/operation:rotate-180 group-open/operation:opacity-100 group-focus-within/operation:opacity-100 group-hover/operation:opacity-100 @max-[31.25rem]/agent:ml-auto"
       />
     </summary>
-    <div class="execution-body">
+    <div
+      class="border-line bg-canvas/12 mt-2 mb-0.5 ml-[26px] rounded-lg border p-[11px] @max-[31.25rem]/agent:ml-0"
+    >
       <p
         v-if="operation.reason"
-        class="execution-reason"
+        class="text-agent-body text-txt-2 mt-0 mb-[9px] leading-[1.6] wrap-anywhere"
       >
         {{ operation.reason }}
       </p>
       <pre
         v-if="!operation.fileChange"
-        class="execution-code"
+        class="scroll-thin bg-terminal m-0 max-h-[260px] overflow-auto rounded-md p-2.5 font-mono text-[11px] leading-[1.7] wrap-anywhere whitespace-pre-wrap"
         >{{ operation.command }}</pre>
       <AgentFileDiff
         v-if="operation.fileChange"
@@ -86,15 +116,15 @@ const label = computed(() =>
       />
       <div
         v-if="operation.exitCode !== undefined"
-        class="execution-exit"
+        class="text-txt-3 mt-2 text-[11px]"
       >
         {{ t('退出码：{code}', { code: operation.exitCode }) }}
       </div>
       <pre
         v-if="output"
-        class="execution-output"
+        class="scroll-thin bg-terminal mt-2 mb-0 max-h-[260px] overflow-auto rounded-md p-2.5 font-mono text-[11px] leading-[1.7] wrap-anywhere whitespace-pre-wrap"
         >{{ outputPreview }}</pre>
-      <div class="execution-actions">
+      <div class="mt-1.5 flex justify-end">
         <AgentCopyButton
           :text="
             output ? `${operation.command}\n\n${output}` : operation.command
@@ -105,135 +135,3 @@ const label = computed(() =>
     </div>
   </details>
 </template>
-
-<style scoped>
-.execution-card {
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
-  background: var(--color-card);
-  overflow: hidden;
-}
-.execution-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 12px;
-  cursor: pointer;
-  list-style: none;
-}
-.execution-header::-webkit-details-marker {
-  display: none;
-}
-.execution-icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  color: var(--color-success);
-  background: color-mix(in srgb, var(--color-success) 10%, transparent);
-}
-.running {
-  border-color: color-mix(in srgb, var(--agent-color) 40%, var(--color-line));
-}
-.running .execution-icon {
-  color: var(--agent-color);
-  background: color-mix(in srgb, var(--agent-color) 12%, transparent);
-}
-.failed .execution-icon {
-  color: var(--color-danger);
-  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
-}
-.unknown .execution-icon {
-  color: var(--color-amber);
-  background: color-mix(in srgb, var(--color-amber) 10%, transparent);
-}
-.execution-heading {
-  min-width: 0;
-  flex: 1;
-  display: grid;
-  gap: 4px;
-}
-.execution-heading strong {
-  font-size: var(--agent-body-font, 12px);
-  font-weight: 500;
-}
-.execution-command {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-family: var(--font-mono);
-  font-size: var(--agent-small-font, 10px);
-  color: var(--color-txt-3);
-}
-.execution-meta {
-  display: grid;
-  gap: 4px;
-  flex-shrink: 0;
-  text-align: right;
-  font-size: var(--agent-small-font, 10px);
-  color: var(--color-txt-3);
-  font-variant-numeric: tabular-nums;
-}
-.execution-chevron {
-  flex-shrink: 0;
-  color: var(--color-txt-4);
-}
-.execution-card[open] .execution-chevron {
-  transform: rotate(180deg);
-}
-.execution-body {
-  padding: 0 12px 10px;
-}
-.execution-reason {
-  margin: 0 0 9px;
-  color: var(--color-txt-2);
-  font-size: var(--agent-body-font, 12px);
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-}
-.execution-code,
-.execution-output {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 220px;
-  overflow: auto;
-  scrollbar-width: thin;
-  padding: 10px;
-  border-radius: 6px;
-  font: var(--agent-small-font, 11px)/1.7 var(--font-mono);
-  background: var(--color-terminal);
-  margin: 0;
-}
-.execution-output {
-  margin-top: 8px;
-}
-.execution-exit {
-  margin-top: 8px;
-  color: var(--color-txt-3);
-  font-size: var(--agent-small-font, 10px);
-}
-.execution-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 6px;
-  opacity: 0;
-  pointer-events: none;
-}
-.execution-card:hover .execution-actions,
-.execution-card:focus-within .execution-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-.execution-header:focus-visible {
-  outline: 1px solid var(--agent-color);
-  outline-offset: -2px;
-  border-radius: 8px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .animate-spin {
-    animation: none;
-  }
-}
-</style>

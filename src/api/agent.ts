@@ -94,6 +94,10 @@ export const send = (
   attachments: AgentAttachment[] = [],
   approvalMode: AgentApprovalMode = 'auto'
 ) => call<AgentRun>('ai_send', { runId, prompt, attachments, approvalMode })
+export const setApprovalMode = (
+  runId: string,
+  approvalMode: AgentApprovalMode
+) => call<void>('ai_set_approval_mode', { runId, approvalMode })
 export async function step(
   runId: string,
   onProgress: (progress: AgentProgress) => void = () => {}

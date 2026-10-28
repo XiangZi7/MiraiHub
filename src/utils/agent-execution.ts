@@ -1,5 +1,35 @@
 import type { AgentEntry, AgentOperation, AgentRun } from '@/types/agent'
 
+/** Keep intermediate messages with their tools; only the final answer is a bubble. */
+export function buildAgentTranscript(entries: AgentEntry[], working = false) {
+  const turns: { key: number; user?: AgentEntry; entries: AgentEntry[] }[] = []
+  for (const [index, entry] of entries.entries()) {
+    if (entry.role === 'user' || !turns.length)
+      turns.push({
+        key: index,
+        user: entry.role === 'user' ? entry : undefined,
+        entries: [],
+      })
+    if (entry.role !== 'user') turns.at(-1)!.entries.push(entry)
+  }
+  return turns.map((turn, index) => {
+    const live = working && index === turns.length - 1
+    const lastActivity = live
+      ? turn.entries.length - 1
+      : turn.entries.reduce(
+          (last, entry, i) =>
+            entry.role !== 'assistant' || entry.operation ? i : last,
+          -1
+        )
+    return {
+      key: turn.key,
+      user: turn.user,
+      activity: turn.entries.slice(0, lastActivity + 1),
+      replies: turn.entries.slice(lastActivity + 1),
+    }
+  })
+}
+
 /** Only the latest user turn belongs in a task result; old failures stay in history. */
 export function summarizeAgentTurn(
   entries: AgentEntry[],

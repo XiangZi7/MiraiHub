@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>AI Agent interface · simulated preview</title>
+    <style>
+      html,
+      body,
+      #app {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      #app {
+        display: flex;
+        background: #15161e;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      import { createApp, h } from 'vue'
+      import { addCollection } from '@iconify/vue'
+      import icons from 'virtual:mirai-icons'
+      import { i18n } from '/src/i18n/index.ts'
+      import '/src/assets/styles/main.css'
+      addCollection(icons)
+
+      const clone = value => structuredClone(value)
+      const parameters = new URLSearchParams(location.search)
+      if (parameters.get('theme') === 'light')
+        document.documentElement.dataset.skinScheme = 'light'
+      const tool = (id, command, file = false) => ({
+        role: 'tool',
+        text: file ? '修改远端配置' : '执行 Shell 命令',
+        operation: {
+          id,
+          label: file ? '修改远端配置' : '执行 Shell 命令',
+          command,
+          reason:
+            'Simulated preview only; no commands or file changes are executed.',
+          status: 'completed',
+          startedAt: Date.now(),
+          durationMs: 180,
+          exitCode: 0,
+          ...(file
+            ? {
+                fileChange: {
+                  path: command,
+                  before: 'const previous = true\n',
+                  after: 'const updated = true\n',
+                },
+              }
+            : {}),
+        },
+        detail: JSON.stringify({
+          stdout: 'Preview output\n'.repeat(12),
+          exitCode: 0,
+        }),
+      })
+      const entries = [
+        {
+          role: 'assistant',
+          text: 'Tests are green.\n\n`npm run test`\n- 30 files, 136 tests passed.\n- Same expected stderr log in `useGitStatus.test.tsx` ("Failed to load git status Error: boom").',
+        },
+        {
+          role: 'user',
+          text: "That's goo, now the problem is that when the new terminal output expand, the conversation view is not scrolled to the bottom",
+        },
+        {
+          role: 'assistant',
+          text: "**Reviewing auto-scroll trigger logic**\n\nI'm investigating whether auto-scroll triggers correctly when command output grows by examining how scrollKey and scrollKeyForItems handle output deltas in Messages.",
+        },
+        tool(
+          'shell-1',
+          'rg -n "scrollKeyForItems" src/features/messages/components/Messages.tsx'
+        ),
+        tool(
+          'shell-2',
+          "sed -n '320,380p' src/features/messages/components/Messages.tsx"
+        ),
+        {
+          role: 'assistant',
+          text: "**Analyzing autoscroll trigger limitations**\n\nThe current autoscroll relies on the last item's output length, which fails if output expands in an earlier command item while later assistant messages follow. To fix this, autoscroll should track output changes from any item, not just the last, possibly by incorporating a global version or outputs from all items. **Planning autoscroll on live output reveal…**",
+        },
+        tool('file-1', 'Messages.tsx', true),
+        tool('file-2', 'Messages.tsx', true),
+        tool('file-3', 'Messages.tsx', true),
+      ]
+      let run, finishStep
+      window.agentPreview = {
+        modeChanges: [],
+        async finish() {
+          run.status = 'completed'
+          run.entries.push({
+            role: 'assistant',
+            text: 'The conversation now follows expanding tool output while keeping your reading position when you scroll up.',
+          })
+          finishStep?.(clone(run))
+        },
+      }
+      const settings = {
+        activeId: 'preview',
+        profiles: [
+          {
+            id: 'preview',
+            name: 'gpt-5.2-codex',
+            model: 'gpt-5.2-codex',
+            enabled: true,
+            baseUrl: 'https://example.invalid',
+            apiFormat: 'openai',
+            hasApiKey: false,
+          },
+        ],
+      }
+      mockWindows('main')
+      mockIPC(
+        async (command, args) => {
+          if (command === 'ai_get_config') return clone(settings)
+          if (command === 'ai_list_conversations') return []
+          if (command === 'ai_start') {
+            run = {
+              id: 'preview-run',
+              conversationId: 'preview-chat',
+              target: 'Preview · no remote connection',
+              model: 'gpt-5.2-codex',
+              provider: 'https://example.invalid',
+              status: 'running',
+              approval: null,
+              entries: clone(entries),
+            }
+            return clone(run)
+          }
+          if (command === 'ai_step') {
+            args.onProgress.onmessage({
+              runId: run.id,
+              phase: 'answering',
+              text: "**Adding missing dependencies to callback**\n\nI'm including isNearBottom in the useCallback dependencies since it's defined in the component scope and ESLint likely requires it to avoid stale closures. This",
+            })
+            return await new Promise(resolve => {
+              finishStep = resolve
+            })
+          }
+          if (command === 'ai_set_approval_mode') {
+            window.agentPreview.modeChanges.push(args.approvalMode)
+            return
+          }
+          if (command === 'ai_cancel' || command === 'ai_forget') {
+            if (run) {
+              run.status = 'cancelled'
+              run.approval = null
+              finishStep?.(clone(run))
+            }
+            return
+          }
+          throw new Error(`Unexpected preview command: ${command}`)
+        },
+        { shouldMockEvents: true }
+      )
+      const { default: Panel } =
+        await import('/src/components/agent/AiAgentPanel.vue')
+      i18n.global.locale.value =
+        parameters.get('lang') === 'zh' ? 'zh-CN' : 'en-US'
+      createApp({
+        render: () =>
+          h(Panel, {
+            target: { kind: 'ssh', sessionId: 'preview', database: '' },
+            title: 'Preview',
+            embedded: true,
+          }),
+      })
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

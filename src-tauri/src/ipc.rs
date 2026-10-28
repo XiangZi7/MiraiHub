@@ -54,6 +54,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         agent::ai_test_mcp_server,
         agent::ai_start,
         agent::ai_send,
+        agent::ai_set_approval_mode,
         agent::ai_step,
         agent::ai_respond,
         agent::ai_cancel,

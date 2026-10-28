@@ -24,7 +24,7 @@ const options = computed(() => [
   {
     value: 'full',
     label: t('完全访问权限'),
-    icon: 'lucide:shield-alert',
+    icon: 'lucide:shield-check',
     description: t('当前连接的命令与 SQL 自动执行，可修改或删除数据'),
   },
 ])
@@ -37,15 +37,15 @@ const icon = computed(
 
 <template>
   <div
-    class="permission-select"
-    :class="mode === 'full' && 'full-access'"
+    class="bg-txt/5 text-txt-2 flex min-w-0 items-center gap-0.5 rounded-full pl-2"
   >
     <AppIcon
       :name="icon"
       :size="13"
-      class="permission-icon"
+      class="shrink-0"
     />
     <AppSelect
+      class="min-w-0 flex-1"
       v-model="mode"
       :label="t('AI 操作审批方式')"
       :options="options"
@@ -54,39 +54,7 @@ const icon = computed(
       wrap-descriptions
       compact
       hide-label
+      pill
     />
   </div>
 </template>
-
-<style scoped>
-.permission-select {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  min-width: 0;
-  color: var(--color-txt-3);
-}
-.permission-icon {
-  flex-shrink: 0;
-}
-.permission-select :deep(.app-select-trigger) {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-  padding-inline: 3px;
-}
-.permission-select :deep(.app-select-value) {
-  color: var(--color-txt-3);
-}
-.permission-select :deep(.app-select-trigger:hover),
-.permission-select :deep(.app-select-trigger:focus-visible) {
-  background: var(--color-hover);
-}
-.permission-select :deep(.app-select-trigger:focus-visible) {
-  outline: 1px solid var(--agent-color);
-}
-.full-access,
-.full-access :deep(.app-select-value) {
-  color: var(--color-warning, #e5a34b);
-}
-</style>

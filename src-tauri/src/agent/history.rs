@@ -414,11 +414,7 @@ mod tests {
             json!({"role":"user","content":"检查服务器"}),
         ];
         run.entry("user", "检查服务器", None);
-        Arc::new(Cell {
-            cancelled: AtomicBool::new(false),
-            cancel_notify: tokio::sync::Notify::new(),
-            run: Mutex::new(run),
-        })
+        Arc::new(Cell::new(run))
     }
     #[test]
     fn resumes_context_without_replaying_unfinished_tools() {

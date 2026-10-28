@@ -29,6 +29,8 @@ export function useAiAgent(
     run: null as AgentRun | null,
     // 模型或工具请求是否正在进行
     busy: false,
+    // 当前连接的审批选择；切换配置或对话时保留，不从历史记录恢复
+    approvalMode: 'auto' as AgentApprovalMode,
     // 当前请求错误
     error: '',
     // 当前连接的本地历史记录
@@ -47,6 +49,9 @@ export function useAiAgent(
   let generation = 0
   let historyVersion = 0
   let mutationVersion = 0
+  let approvalVersion = 0
+  let approvalQueue = Promise.resolve()
+  let confirmedApprovalMode: AgentApprovalMode = 'auto'
   let approvalTimer: ReturnType<typeof setTimeout> | undefined
   const targetKey = computed(() => JSON.stringify(target.value))
   const awaitingApproval = computed(() =>
@@ -54,6 +59,62 @@ export function useAiAgent(
       state.run?.id && state.run.approval && state.run.status === 'approval'
     )
   )
+
+  function syncApprovalMode(mode: AgentApprovalMode): Promise<void> {
+    const version = ++approvalVersion
+    const run = state.run
+    if (!run?.id || !['running', 'approval'].includes(run.status))
+      return Promise.resolve()
+    const runId = run.id
+    const token = generation
+    // Serialize IPC changes so rapid selections cannot apply in reverse order.
+    approvalQueue = approvalQueue.then(async () => {
+      if (token !== generation || state.run?.id !== runId) return
+      try {
+        await api.setApprovalMode(runId, mode)
+        if (token === generation) confirmedApprovalMode = mode
+      } catch (error) {
+        if (token === generation && version === approvalVersion) {
+          state.approvalMode = confirmedApprovalMode
+          state.error = api.errorMessage(error)
+        }
+      }
+    })
+    return approvalQueue
+  }
+  async function setApprovalMode(mode: AgentApprovalMode): Promise<void> {
+    const token = generation
+    state.approvalMode = mode
+    await syncApprovalMode(mode)
+    if (
+      token !== generation ||
+      state.approvalMode !== mode ||
+      state.busy ||
+      !active.value ||
+      !awaitingApproval.value
+    )
+      return
+    // The backend rechecks the exact pending action against the latest policy;
+    // changing the selector is never treated as a single-use manual approval.
+    state.busy = true
+    try {
+      await advance(token, true)
+    } catch (error) {
+      if (token === generation) state.error = api.errorMessage(error)
+    } finally {
+      if (token === generation) {
+        state.busy = false
+        await refreshHistory(token)
+      }
+    }
+  }
+  async function flushApprovalMode(): Promise<void> {
+    let pending: Promise<void>
+    do {
+      pending = approvalQueue
+      await pending
+    } while (pending !== approvalQueue)
+  }
 
   async function expireApproval(
     runId: string,
@@ -142,6 +203,7 @@ export function useAiAgent(
     const token = ++generation
     historyVersion++
     mutationVersion++
+    approvalQueue = Promise.resolve()
     const id = state.run?.id
     state.run = null
     state.progress = null
@@ -299,6 +361,7 @@ export function useAiAgent(
   }
   async function stop(): Promise<void> {
     const token = ++generation
+    approvalQueue = Promise.resolve()
     const id = state.run?.id
     state.busy = false
     if (state.run) {
@@ -329,9 +392,27 @@ export function useAiAgent(
     state.run = run
     return true
   }
-  async function advance(token: number): Promise<void> {
-    while (token === generation && state.run?.status === 'running') {
+  async function advance(
+    token: number,
+    recheckApproval = false
+  ): Promise<void> {
+    while (
+      token === generation &&
+      (state.run?.status === 'running' ||
+        (recheckApproval && state.run?.status === 'approval'))
+    ) {
+      const recheck = recheckApproval
+      recheckApproval = false
+      await flushApprovalMode()
+      if (
+        token !== generation ||
+        !state.run ||
+        (state.run.status !== 'running' &&
+          !(recheck && state.run.status === 'approval'))
+      )
+        return
       const id = state.run.id
+      const policyVersion = approvalVersion
       // Each callback belongs to one step and one UI generation. IPC deliveries
       // may arrive after the invoke result, cancellation or a conversation switch.
       let receiving = true
@@ -342,12 +423,21 @@ export function useAiAgent(
             receiving &&
             token === generation &&
             state.run?.id === id &&
-            state.run.status === 'running' &&
+            ['running', 'approval'].includes(state.run.status) &&
             progress.runId === id
-          )
+          ) {
             state.progress = progress
+            if (progress.phase === 'executing') {
+              state.run.approval = null
+              state.run.status = 'running'
+            }
+          }
         })
+        receiving = false
         if (!accept(next, token)) return
+        await flushApprovalMode()
+        // A policy change may finish just after the step produced an approval.
+        recheckApproval = policyVersion !== approvalVersion
       } finally {
         receiving = false
         if (token === generation) state.progress = null
@@ -374,6 +464,7 @@ export function useAiAgent(
     const token = ++generation
     state.busy = true
     state.error = ''
+    state.approvalMode = approvalMode
     let sent = false
     try {
       const previous = state.run
@@ -399,6 +490,10 @@ export function useAiAgent(
       }
       if (!accept(next, token)) return false
       sent = true
+      confirmedApprovalMode = approvalMode
+      // The selector stays usable while start/send is awaiting its run snapshot.
+      if (state.approvalMode !== approvalMode)
+        await syncApprovalMode(state.approvalMode)
       await advance(token)
       return true
     } catch (error) {
@@ -414,6 +509,9 @@ export function useAiAgent(
   async function decide(approve: boolean): Promise<void> {
     const run = state.run
     if (!run?.id || !run.approval || state.busy || !active.value) return
+    const current = generation
+    await flushApprovalMode()
+    if (current !== generation || state.busy || !active.value) return
     const token = ++generation
     state.busy = true
     state.error = ''
@@ -466,6 +564,7 @@ export function useAiAgent(
     targetKey,
     async () => {
       const { token, id } = detach()
+      state.approvalMode = 'auto'
       state.conversations = []
       state.historyError = ''
       // Block sending until the saved conversation for this target has been restored.
@@ -490,6 +589,7 @@ export function useAiAgent(
   return {
     ...toRefs(state),
     awaitingApproval,
+    setApprovalMode,
     send,
     decide,
     stop,
