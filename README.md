@@ -4,12 +4,21 @@
   <p><strong>一站式服务器与开发基础设施工作台</strong></p>
   <p>SSH 终端 · 远端文件 · 数据库 · 服务器监控 · AI Agent</p>
   <p>
-    <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/v/release/XiangZi7/MiraiHub?style=flat-square&amp;color=8b5cf6" alt="GitHub Release" /></a>
-    <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/downloads/XiangZi7/MiraiHub/total?style=flat-square&amp;color=8b5cf6" alt="Downloads" /></a>
-    <a href="https://github.com/XiangZi7/MiraiHub/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/XiangZi7/MiraiHub/release.yml?style=flat-square&amp;label=release" alt="Release Workflow" /></a>
+    <a href="https://github.com/XiangZi7/MiraiHub/releases">
+      <img src="https://img.shields.io/github/v/release/XiangZi7/MiraiHub?style=flat-square&color=8b5cf6" alt="GitHub Release" />
+    </a>
+    <a href="https://github.com/XiangZi7/MiraiHub/releases">
+      <img src="https://img.shields.io/github/downloads/XiangZi7/MiraiHub/total?style=flat-square&color=8b5cf6" alt="Downloads" />
+    </a>
+    <a href="https://github.com/XiangZi7/MiraiHub/actions/workflows/release.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/XiangZi7/MiraiHub/release.yml?style=flat-square&label=release" alt="Release Workflow" />
+    </a>
     <img src="https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square" alt="Windows x64" />
     <img src="https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square" alt="Tauri 2" />
     <img src="https://img.shields.io/badge/Vue-3-42B883?style=flat-square" alt="Vue 3" />
+    <a href="https://hub.xerj.org/contributors/XiangZi7">
+      <img src="https://hub.xerj.org/contributors/XiangZi7/badge.svg" alt="XERJ Corpus Hub Contributor" />
+    </a>
   </p>
   <p>
     <a href="https://github.com/XiangZi7/MiraiHub/releases/latest"><strong>下载最新版</strong></a> ·
@@ -21,6 +30,8 @@
 </div>
 
 <br />
+
+
 
 ![MiraiHub 产品概览](docs/images/overview.png)
 
