@@ -34,20 +34,30 @@ Manage development, test, and server environments in one place: inspect services
 
 | | Feature | Description |
 | :-: | --- | --- |
-| 🖥️ | **SSH & local terminals** | Multiple connection tabs, password / key auth, split terminals, terminal search, saved commands, and startup presets |
+| 🖥️ | **SSH & local terminals** | Multiple connection tabs, password / key auth, terminal search, reorderable saved commands, and startup presets |
 | 📁 | **Remote files** | Browse, create files and folders, drag-and-drop upload, and download over SFTP with a unified transfer center; edit and save remote text directly |
-| 🗄️ | **Database workspace** | MySQL / PostgreSQL: object tree, data editing, table designer, SQL and import / export; Redis: key scanning, value previews and editing, TTL and command console |
+| 🗄️ | **Database workspace** | MySQL / PostgreSQL: object tree, data editing, table designer, SQL and import / export, PostgreSQL schema switching; Redis: key scanning, value editing, TTL and command console |
 | 📈 | **Server monitoring** | CPU, memory, disk, network, and uptime collected over SSH, no agent to install on the server |
-| 🤖 | **AI Agent** | Chat inside SSH, database, and Redis workspaces with model profiles, streamed replies, attachments, history, and context compression; choose per-action approval, auto read-only, or full access |
+| 🤖 | **AI Agent** | Chat inside SSH, database, and Redis workspaces with image and file attachments, history, tool timelines, context compression, and token usage; switch approval modes from the composer |
 | 🔌 | **MCP extensions** | Connect local stdio or remote Streamable HTTP servers, expose tools by connection type, and review tool arguments before approval |
 | 🛠️ | **Server operations** | Local port forwarding, batch commands, SSH key management, connection groups and tags, encrypted backup and restore |
-| 🎨 | **Personalization** | Chinese / English with system detection, theme skins, custom colors and backgrounds, UI scaling, resizable split views |
+| 🪟 | **Tabbed split views** | Drag connection tabs to workspace edges, switch connections independently in each pane, and retain session and editor state |
+| 🎨 | **Personalization** | Chinese / English with system detection, light / dark / system appearance, theme skins, custom colors and backgrounds, UI scaling |
+
+## v3 workflows
+
+- **Arrange connections around your task**: Open connections in tabs and drag them to workspace edges for side-by-side views. SSH workspaces also offer terminals, remote files, monitoring, and AI panels.
+- **Export query results directly**: Export tables and query results as SQL, Excel, CSV, JSON, TXT, or an HTML data dictionary. Table exports can use the current page or the filtered dataset; track progress and cancel from the transfer center.
+- **Control AI task capacity**: Set request limits, local message capacity, the model context window, and maximum output per profile. Standard / extended / deep presets provide 4 / 16 / 64 MB of local text capacity. View usage and switch approval modes while chatting.
+- **Update in the app**: Check for updates in **Settings → About**, then download and install the available version, or download manually from Releases.
+
+These descriptions follow the current v3.0.9 repository source; individual release packages may differ. Local message capacity and the model's token window are separate settings. Increasing local capacity does not expand the model service's context window.
 
 ## Screenshots
 
-**Database workspace with AI split view**: the running desktop app connected to a local MySQL server, with the SQL editor and real query results. The query returns demonstration constants only.
+**Current workspace and command palette**: a local terminal in the Windows desktop development app, with shortcuts to connections, files, SQL, and search. The shell was opened without running demonstration commands; local paths are concealed.
 
-![Database workspace with AI split view, captured from the desktop app](docs/images/database-workspace.png)
+![v3 workspace, local terminal, and command palette in the desktop app](docs/images/workspace.png)
 
 <table>
   <tr>
@@ -62,22 +72,32 @@ Manage development, test, and server environments in one place: inspect services
   </tr>
   <tr>
     <td width="50%" align="center">
-      <a href="docs/images/ai-agent.png"><img src="docs/images/ai-agent.png" alt="AI model profiles and Responses settings in the desktop app" /></a><br />
+      <a href="docs/images/ai-agent.png"><img src="docs/images/ai-agent.png" alt="Unsaved official AI example profile in the desktop app" /></a><br />
       <sub><b>AI model profiles and API formats</b></sub>
     </td>
     <td width="50%" align="center">
-      <a href="docs/images/skin.png"><img src="docs/images/skin.png" alt="Theme settings and the built-in preview in the desktop app" /></a><br />
+      <a href="docs/images/ai-capacity.png"><img src="docs/images/ai-capacity.png" alt="AI task capacity and model token budgets in the desktop app" /></a><br />
+      <sub><b>Task capacity, token budgets, and retries</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <a href="docs/images/skin.png"><img src="docs/images/skin.png" width="900" alt="Theme settings and the built-in preview in the desktop app" /></a><br />
       <sub><b>Theme skins, backgrounds, and live preview</b></sub>
     </td>
   </tr>
 </table>
 
-These five captures come from the **v2.0.25 Windows desktop development build**. Connection forms show unsaved example addresses; windows inside theme cards are the app's built-in skin previews. Service addresses, project names, and local private key paths have been hidden. Click a gallery image to view its original size.
+These six images were captured on **2026-10-30** from the **v3.0.9 Windows desktop development app**, using that day's existing frontend build in the real Tauri WebView2. SSH, Redis, and AI forms are unsaved examples; no model requests were sent. The database window inside the theme screen is a built-in preview. Private service addresses, key paths, and local directories are concealed. Click a gallery image to view its original size.
 
 <details>
-<summary><b>Earlier SSH file and server monitoring screenshots</b></summary>
+<summary><b>Earlier database, SSH file, and server monitoring screenshots</b></summary>
 
-The repository's earlier desktop captures are kept below to illustrate these layouts. Existing SSH connections timed out or disconnected during this capture session, so these two images were not refreshed. Controls may differ from the current version.
+Earlier connected desktop captures are retained below to illustrate these layouts. No authenticated SSH or database connection was used for this refresh, so these three images were not updated. Controls may differ from the current version.
+
+**v2.0.25 database workspace with AI split view**: a live local MySQL connection using a constants-only query.
+
+![Earlier database workspace and AI split view](docs/images/database-workspace.png)
 
 ![Earlier SSH terminal and remote file screenshot](docs/images/ssh-workspace.png)
 
@@ -88,6 +108,8 @@ The repository's earlier desktop captures are kept below to illustrate these lay
 ## Download & install
 
 Grab the latest build from [Releases](https://github.com/XiangZi7/MiraiHub/releases/latest). Only **Windows x64** is published today; macOS / Linux builds are not available yet.
+
+Existing users can also check for app updates in **Settings → About**.
 
 | File | Notes |
 | --- | --- |
@@ -102,7 +124,7 @@ Grab the latest build from [Releases](https://github.com/XiangZi7/MiraiHub/relea
 1. **Add a connection**: Create an SSH, local terminal, or database connection from the sidebar. Enter the address, port, and credentials; organize with groups and tags.
 2. **Open a workspace**: After connecting over SSH, use the terminal, file panel, and server overview. For databases, browse objects, edit data, or run SQL.
 3. **Configure AI (optional)**: In **Settings → AI Agent**, add a service URL, API format, model ID, and API key, then save and test.
-4. **Work with the agent**: Open the AI Agent tab or split view in a workspace. Review any proposed command or SQL before confirming.
+4. **Work with the agent**: Open the AI Agent tab or split view, choose an approval mode in the composer, and review proposed commands or SQL according to that mode.
 
 AI features require your own model service with tool-calling support. Presets for OpenAI, Claude, DeepSeek, Doubao, Gemini, and custom endpoints are included. Supported formats are **OpenAI Chat Completions compatible**, **OpenAI Responses**, and **Claude Messages**; select the format your service implements. The Gemini preset uses its OpenAI-compatible endpoint. See the [AI Agent guide](docs/ai-agent.md).
 

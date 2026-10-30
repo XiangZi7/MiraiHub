@@ -31,8 +31,6 @@
 
 <br />
 
-
-
 ![MiraiHub 产品概览](docs/images/overview.png)
 
 MiraiHub 是一款基于 **Tauri 2 + Rust + Vue 3** 的桌面工作台。它把服务器连接、文件传输、数据库操作、监控和 AI 辅助放进同一个多标签窗口，面向开发者与服务器维护者。
@@ -45,20 +43,30 @@ MiraiHub 是一款基于 **Tauri 2 + Rust + Vue 3** 的桌面工作台。它把�
 
 | | 功能 | 说明 |
 | :-: | --- | --- |
-| 🖥️ | **SSH 与本地终端** | 多连接标签、密码 / 密钥认证、双终端分屏、终端搜索、常用命令与启动命令预设 |
+| 🖥️ | **SSH 与本地终端** | 多连接标签、密码 / 密钥认证、终端搜索、可排序的常用命令与启动命令预设 |
 | 📁 | **远端文件** | SFTP 浏览、新建文件与文件夹、拖拽上传、下载，统一的传输中心；远端文本可直接编辑保存 |
-| 🗄️ | **数据库工作台** | MySQL / PostgreSQL：对象树、数据编辑、表结构设计、SQL 与导入导出；Redis：键扫描、值预览与编辑、TTL 和命令面板 |
+| 🗄️ | **数据库工作台** | MySQL / PostgreSQL：对象树、数据编辑、表结构设计、SQL 与导入导出，支持 PostgreSQL schema 切换；Redis：键扫描、值编辑、TTL 和命令面板 |
 | 📈 | **服务器监控** | 通过 SSH 采集 CPU、内存、磁盘、网络与运行时间，无需在服务器安装 Agent |
-| 🤖 | **AI Agent** | 在 SSH、数据库与 Redis 工作区内对话，支持多模型配置、流式回复、附件、聊天历史与上下文压缩；可选逐次审批 / 自动只读 / 完全访问 |
+| 🤖 | **AI Agent** | 在 SSH、数据库与 Redis 工作区内对话，支持图片与文件附件、会话历史、工具执行时间线、上下文压缩和 Token 用量显示；可在输入区切换审批方式 |
 | 🔌 | **MCP 扩展** | 连接本地 stdio 或远程 Streamable HTTP 服务器，按连接类型提供外部工具，并显示调用参数供审批 |
 | 🛠️ | **日常运维** | 本地端口转发、批量命令、SSH 密钥管理、连接分组与标签、加密备份与恢复 |
-| 🎨 | **个性化** | 中 / 英文并跟随系统、主题皮肤、自定义配色与背景、界面缩放、可调整分屏布局 |
+| 🪟 | **多标签分屏** | 拖动连接标签到工作区边缘创建分屏，独立切换各面板的连接，保留会话与编辑状态 |
+| 🎨 | **个性化** | 中 / 英文并跟随系统、浅色 / 深色 / 跟随系统外观、主题皮肤、自定义配色与背景、界面缩放 |
+
+## v3 工作流
+
+- **按任务组织工作区**：多个连接以标签形式打开，拖到边缘即可并排查看；SSH 内还可打开终端、远端文件、监控和 AI 面板。
+- **查询后直接交付数据**：表格与查询结果支持导出为 SQL、Excel、CSV、JSON、TXT 或 HTML 数据字典；表数据可选择当前页或当前筛选范围，导出进度与取消入口统一放在传输中心。
+- **让 AI 任务容量更可控**：每份模型配置独立设置请求次数、本地消息容量、模型上下文窗口和单次最大输出。标准 / 增强 / 深度预设分别提供 4 / 16 / 64 MB 本地文本容量，聊天中可查看用量并切换审批方式。
+- **在应用内更新**：在「设置 → 关于」检查更新，查看新版本后下载并安装；也可继续从 Releases 手动下载。
+
+以上按当前仓库 v3.0.9 源码说明，发布包功能以对应 Release 为准。本地消息容量与模型的 Token 窗口分别设置，调大本地容量不会扩大模型服务的上下文窗口。
 
 ## 界面预览
 
-**数据库工作台与 AI 分屏**：在实际运行的桌面版中连接本机 MySQL，编辑 SQL 并查看查询结果。图中查询只返回示例常量。
+**当前工作区与命令面板**：在 Windows 桌面开发版中打开本地终端，通过命令面板访问连接、文件、SQL 和搜索入口。终端仅启动 Shell，未执行演示命令；本地目录已遮盖。
 
-![数据库工作台与 AI 分屏实机截图](docs/images/database-workspace.png)
+![v3 工作区、本地终端与命令面板实机截图](docs/images/workspace.png)
 
 <table>
   <tr>
@@ -73,22 +81,32 @@ MiraiHub 是一款基于 **Tauri 2 + Rust + Vue 3** 的桌面工作台。它把�
   </tr>
   <tr>
     <td width="50%" align="center">
-      <a href="docs/images/ai-agent.png"><img src="docs/images/ai-agent.png" alt="AI Agent 多配置与 Responses 设置实机截图" /></a><br />
+      <a href="docs/images/ai-agent.png"><img src="docs/images/ai-agent.png" alt="AI Agent 未保存的官方示例配置实机截图" /></a><br />
       <sub><b>AI 模型配置与 API 协议选择</b></sub>
     </td>
     <td width="50%" align="center">
-      <a href="docs/images/skin.png"><img src="docs/images/skin.png" alt="主题皮肤设置与内置预览实机截图" /></a><br />
+      <a href="docs/images/ai-capacity.png"><img src="docs/images/ai-capacity.png" alt="AI 任务容量与模型 Token 预算实机截图" /></a><br />
+      <sub><b>任务容量、Token 预算与自动重试</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <a href="docs/images/skin.png"><img src="docs/images/skin.png" width="900" alt="主题皮肤设置与内置预览实机截图" /></a><br />
       <sub><b>主题皮肤、背景与实时预览</b></sub>
     </td>
   </tr>
 </table>
 
-上方五张截图采集自 **v2.0.25 Windows 桌面开发版**。连接表单使用未保存的示例地址；主题卡片中的窗口是应用自带的皮肤预览。服务地址、项目名和本地私钥路径已隐藏，点击图片可查看原图。
+上方六张截图于 **2026-10-30** 采集自 **v3.0.9 Windows 桌面开发版**，使用当天已有的前端构建与真实 Tauri WebView2。SSH、Redis 和 AI 配置均为未保存的示例，未发送模型请求；主题中的数据库窗口是内置预览。真实服务地址、私钥路径和本地目录均未出现在图片中，点击图片可查看原图。
 
 <details>
-<summary><b>查看 SSH 文件与服务器监控的历史实机截图</b></summary>
+<summary><b>查看数据库、SSH 文件与服务器监控的历史实机截图</b></summary>
 
-以下是仓库保留的较早版本截图，用于展示 SSH 文件与监控布局。本次采集时已有 SSH 连接超时或断开，因此未更新这两张图；界面入口可能与当前版本不同。
+以下保留较早版本的已连接实机截图，用于展示数据库、SSH 文件与监控布局。本次未使用已认证的 SSH / 数据库连接，未更新这三张图，界面入口可能与当前版本不同。
+
+**v2.0.25 数据库工作台与 AI 分屏**：本机 MySQL 实际连接，SQL 仅返回示例常量。
+
+![数据库工作台与 AI 分屏历史截图](docs/images/database-workspace.png)
 
 ![SSH 终端与远端文件历史截图](docs/images/ssh-workspace.png)
 
@@ -99,6 +117,8 @@ MiraiHub 是一款基于 **Tauri 2 + Rust + Vue 3** 的桌面工作台。它把�
 ## 下载与安装
 
 前往 [Releases](https://github.com/XiangZi7/MiraiHub/releases/latest) 下载。当前仅提供 **Windows x64** 构建，macOS / Linux 暂未发布。
+
+已安装用户也可通过「设置 → 关于」检查应用更新。
 
 | 文件 | 说明 |
 | --- | --- |
@@ -113,7 +133,7 @@ MiraiHub 是一款基于 **Tauri 2 + Rust + Vue 3** 的桌面工作台。它把�
 1. **添加连接**：在侧栏新建 SSH、本地终端或数据库连接，填写地址、端口与认证信息；可用分组和标签整理。
 2. **进入工作区**：SSH 连接后可使用终端、文件面板与服务器概览；数据库连接后可浏览对象、编辑数据或执行 SQL。
 3. **配置 AI（可选）**：「设置 → AI Agent」中添加服务地址、API 格式、模型 ID 和 API Key，保存后测试连接。
-4. **与 AI 协作**：在工作区打开 AI Agent 标签或分屏。AI 提议执行命令或 SQL 时，先核对内容再确认。
+4. **与 AI 协作**：在工作区打开 AI Agent 标签或分屏，在输入区选择「请求批准 / 帮我批准 / 完全访问权限」。AI 提议执行命令或 SQL 时，按所选模式核对并处理审批。
 
 AI 功能需要自备支持工具调用的模型服务，内置 OpenAI、Claude、DeepSeek、豆包、Gemini 与自定义模板。支持 **OpenAI Chat Completions 兼容格式**、**OpenAI Responses** 和 **Claude Messages**；请根据服务商的接口选择对应协议。Gemini 模板使用 OpenAI 兼容入口。详见 [AI Agent 文档](docs/ai-agent.md)。
 
