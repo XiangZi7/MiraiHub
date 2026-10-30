@@ -210,6 +210,8 @@ export interface SshTransferEvent {
   totalBytes: number | null
   localPath: string | null
   error: string | null
+  /** 数据库 SQL 导出的累计行数，普通文件传输不发送。 */
+  processedRows?: number | null
 }
 
 export type ShellSuggestionKind = 'command' | 'directory' | 'file'

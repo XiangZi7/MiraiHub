@@ -14,9 +14,9 @@ use super::models::{CellValue, DatabaseKind, MutationRequest, MutationResult, Ro
 use super::query::elapsed_millis;
 use super::sql;
 
-struct PreparedMutation {
-    statement: String,
-    values: Vec<Option<String>>,
+pub(super) struct PreparedMutation {
+    pub statement: String,
+    pub values: Vec<Option<String>>,
 }
 
 struct Binder {
@@ -66,40 +66,7 @@ pub async fn mutate(
         .map(|mutation| prepare(schema, table, mutation, kind, &casts))
         .collect::<DatabaseResult<Vec<_>>>()?;
     let started = Instant::now();
-    let mut rows_affected = 0;
-
-    match pool {
-        DatabasePool::Mysql(pool) => {
-            let mut transaction = pool.begin().await.map_err(DatabaseError::Query)?;
-            for mutation in &prepared {
-                let mut query = sqlx::query(&mutation.statement);
-                for value in &mutation.values {
-                    query = query.bind(value.clone());
-                }
-                rows_affected += query
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(DatabaseError::Query)?
-                    .rows_affected();
-            }
-            transaction.commit().await.map_err(DatabaseError::Query)?;
-        }
-        DatabasePool::Postgresql(pool) => {
-            let mut transaction = pool.begin().await.map_err(DatabaseError::Query)?;
-            for mutation in &prepared {
-                let mut query = sqlx::query(&mutation.statement);
-                for value in &mutation.values {
-                    query = query.bind(value.clone());
-                }
-                rows_affected += query
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(DatabaseError::Query)?
-                    .rows_affected();
-            }
-            transaction.commit().await.map_err(DatabaseError::Query)?;
-        }
-    }
+    let rows_affected = execute_prepared(pool, &prepared, None).await?;
 
     Ok(MutationResult {
         rows_affected,
@@ -111,7 +78,94 @@ pub async fn mutate(
     })
 }
 
-fn prepare(
+/// 网格编辑与 Excel 导入共用事务执行；取消发生在提交前时，连接释放会回滚全部行。
+pub(super) async fn execute_prepared(
+    pool: &DatabasePool,
+    prepared: &[PreparedMutation],
+    progress: Option<(
+        &crate::ssh::transfers::TransferControl,
+        &tauri::AppHandle,
+        &str,
+    )>,
+) -> DatabaseResult<u64> {
+    let mut rows_affected = 0;
+
+    match pool {
+        DatabasePool::Mysql(pool) => {
+            let mut transaction = pool.begin().await.map_err(DatabaseError::Query)?;
+            for (index, mutation) in prepared.iter().enumerate() {
+                if let Some((control, _, _)) = progress {
+                    control
+                        .checkpoint()
+                        .await
+                        .map_err(|_| DatabaseError::Cancelled)?;
+                }
+                let mut query = sqlx::query(&mutation.statement);
+                for value in &mutation.values {
+                    query = query.bind(value.clone());
+                }
+                rows_affected += query
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(DatabaseError::Query)?
+                    .rows_affected();
+                if let Some((_, app, task_id)) = progress {
+                    if index % 100 == 0 || index + 1 == prepared.len() {
+                        let mut event = crate::ssh::events::TransferEvent::progress(task_id, 0, 0);
+                        event.processed_rows = Some((index + 1) as u64);
+                        crate::ssh::events::emit_transfer(app, event);
+                    }
+                }
+            }
+            if let Some((control, _, _)) = progress {
+                control
+                    .checkpoint()
+                    .await
+                    .map_err(|_| DatabaseError::Cancelled)?;
+            }
+            transaction.commit().await.map_err(DatabaseError::Query)?;
+        }
+        DatabasePool::Postgresql(pool) => {
+            let mut transaction = pool.begin().await.map_err(DatabaseError::Query)?;
+            for (index, mutation) in prepared.iter().enumerate() {
+                if let Some((control, _, _)) = progress {
+                    control
+                        .checkpoint()
+                        .await
+                        .map_err(|_| DatabaseError::Cancelled)?;
+                }
+                let mut query = sqlx::query(&mutation.statement);
+                for value in &mutation.values {
+                    query = query.bind(value.clone());
+                }
+                rows_affected += query
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(DatabaseError::Query)?
+                    .rows_affected();
+                if let Some((_, app, task_id)) = progress {
+                    if index % 100 == 0 || index + 1 == prepared.len() {
+                        let mut event = crate::ssh::events::TransferEvent::progress(task_id, 0, 0);
+                        event.processed_rows = Some((index + 1) as u64);
+                        crate::ssh::events::emit_transfer(app, event);
+                    }
+                }
+            }
+            if let Some((control, _, _)) = progress {
+                control
+                    .checkpoint()
+                    .await
+                    .map_err(|_| DatabaseError::Cancelled)?;
+            }
+            transaction.commit().await.map_err(DatabaseError::Query)?;
+        }
+    }
+
+    Ok(rows_affected)
+}
+
+/// 将一行新增、修改或删除编译为转义标识符与绑定参数，供网格与 Excel 导入共用。
+pub(super) fn prepare(
     schema: &str,
     table: &str,
     mutation: &RowMutation,

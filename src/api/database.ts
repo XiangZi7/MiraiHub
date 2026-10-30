@@ -26,6 +26,34 @@ import { IS_TAURI } from '@/utils/window'
 import { settingNumber } from '@/composables/useSettings'
 export { errorMessage, isAppError } from './ssh'
 
+export async function forkSession(
+  sessionId: string,
+  database: string
+): Promise<DatabaseSession> {
+  ensureTauri()
+  return invoke('db_fork_session', { sessionId, database })
+}
+export async function beginExportFile(taskId: string): Promise<void> {
+  ensureTauri()
+  await invoke('db_begin_export_file', { taskId })
+}
+export async function finishExportFile(taskId: string): Promise<void> {
+  ensureTauri()
+  await invoke('db_finish_export_file', { taskId })
+}
+export async function writeExportFile(
+  path: string,
+  bytes: Uint8Array,
+  taskId: string
+): Promise<void> {
+  ensureTauri()
+  await invoke('db_write_export_file', {
+    path,
+    bytes: Array.from(bytes),
+    taskId,
+  })
+}
+
 function ensureTauri(): void {
   if (!IS_TAURI)
     throw new Error(i18n.global.t('数据库功能需要在桌面应用中运行'))
@@ -272,10 +300,12 @@ export async function cancelQuery(sessionId: string): Promise<boolean> {
 export async function exportSql(
   sessionId: string,
   path: string,
-  options: DatabaseExportOptions
+  options: DatabaseExportOptions,
+  taskId?: string
 ): Promise<DatabaseExportResult> {
   ensureTauri()
   return invoke<DatabaseExportResult>('db_export_sql', {
+    ...(taskId ? { taskId } : {}),
     sessionId,
     path,
     includeData: options.content !== 'structure',
@@ -283,6 +313,52 @@ export async function exportSql(
     includeDatabase: options.content !== 'data' && options.includeDatabase,
     dropExisting: options.content !== 'data' && options.dropExisting,
   })
+}
+
+/** 逐块写入任务临时文件，最后一块完成后才替换目标文件。 */
+export async function writeExportChunk(
+  path: string,
+  bytes: Uint8Array,
+  taskId: string,
+  complete = false
+): Promise<void> {
+  ensureTauri()
+  await invoke('db_write_export_file', {
+    path,
+    bytes: Array.from(bytes),
+    taskId,
+    complete,
+  })
+}
+
+/** 读取用户选择的本地导入文件，由后端统一限制大小。 */
+export async function readImportFile(path: string): Promise<Uint8Array> {
+  ensureTauri()
+  return new Uint8Array(await invoke<number[]>('db_read_import_file', { path }))
+}
+/** 只读分析 SQL 的源表和字段，数据导入前必须确认匹配结果。 */
+export async function previewImportSql(
+  sessionId: string,
+  path: string
+): Promise<import('@/types/database-import').DatabaseSqlImportPreview> {
+  ensureTauri()
+  return invoke('db_preview_import_sql', { sessionId, path })
+}
+/** 获取当前目标库的可写表和字段，用于导入匹配与模板生成。 */
+export async function importCatalog(
+  sessionId: string
+): Promise<import('@/types/database-import').DatabaseImportTarget[]> {
+  ensureTauri()
+  return invoke('db_import_catalog', { sessionId })
+}
+/** 在同一事务中追加 Excel 各工作表的数据，任务进度由文件传输中心接收。 */
+export async function importRows(
+  sessionId: string,
+  tables: import('@/types/database-import').DatabaseImportRowsTable[],
+  taskId: string
+): Promise<DatabaseImportResult> {
+  ensureTauri()
+  return invoke('db_import_rows', { sessionId, tables, taskId })
 }
 
 export async function importSql(

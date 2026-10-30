@@ -400,13 +400,20 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
   border-radius: 5px;
   color: var(--color-txt-3);
 }
-.app-context-menu-item:hover .app-context-menu-icon,
-.app-context-menu-item:focus-visible .app-context-menu-icon,
+/* 降低通用悬停色的优先级，显式设置的格式颜色在悬停和键盘聚焦时仍保持。 */
+:where(.app-context-menu-item:hover, .app-context-menu-item:focus-visible)
+  .app-context-menu-icon,
 .app-context-menu-icon-violet {
   color: var(--color-violet);
 }
 .app-context-menu-icon-blue {
   color: var(--color-blue);
+}
+.app-context-menu-icon-success {
+  color: var(--color-success);
+}
+.app-context-menu-icon-cyan {
+  color: var(--color-cyan);
 }
 .app-context-menu-icon-amber {
   color: var(--color-amber);

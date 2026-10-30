@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -34,6 +34,8 @@ const props = defineProps<{
   selectedSavedQueryId: string
   columnsByObject: Record<string, DatabaseColumn[] | undefined>
   inspectingKeys: Set<string>
+  loadedDatabases?: ReadonlySet<string>
+  switchingDisabled?: boolean
   loading: boolean
   databasesLoading?: boolean
   preparingTransfer?: boolean
@@ -80,6 +82,11 @@ type ContextTarget =
   'root' | 'database' | 'category' | 'object' | 'query-category' | 'saved-query'
 
 const expanded = reactive(new Set<string>())
+// 响应式状态
+const state = reactive({
+  // 只展开最后一次请求且已加载成功的数据库，连续双击不重复切换。
+  pendingSchema: '',
+})
 const selectedKey = shallowRef('')
 const search = shallowRef('')
 const context = reactive({
@@ -416,10 +423,46 @@ function toggle(key: string): void {
   else expanded.add(key)
 }
 
+/**
+ * 点击数据库时先判断缓存；未加载的库保持折叠，只在箭头处展示加载图标。
+ * 已缓存的库立即切换展开状态，连续点击同一个待加载库不会重复请求或闪烁。
+ */
 function selectSchema(name: string): void {
+  if (
+    props.preparingTransfer ||
+    props.switchingDisabled ||
+    state.pendingSchema === name
+  )
+    return
+  if (props.databaseKind === 'mysql' && !props.loadedDatabases?.has(name)) {
+    state.pendingSchema = name
+    emit('selectSchema', name)
+    return
+  }
+  state.pendingSchema = ''
   toggle(`schema:${name}`)
   emit('selectSchema', name)
 }
+
+// 成功后才展开当前请求；切换目标或请求失败时停止等待，保留其他库的展开缓存。
+watch(
+  () =>
+    [
+      props.loading,
+      props.activeDatabase,
+      props.loadedDatabases?.has(state.pendingSchema),
+      props.error,
+      props.switchingDisabled,
+    ] as const,
+  ([loading, active, loaded, error, disabled]) => {
+    const pending = state.pendingSchema
+    if (!pending || loading) return
+    if (active === pending && loaded && !error) {
+      expanded.add(`schema:${pending}`)
+      state.pendingSchema = ''
+    } else if (error || disabled) state.pendingSchema = ''
+  }
+)
 
 function selectObject(object: DatabaseObject): void {
   selectedKey.value = databaseObjectKey(object)
@@ -572,18 +615,25 @@ function handleContextAction(id: string): void {
             )
           "
           :aria-expanded="expanded.has(`schema:${schema.name}`)"
-          :disabled="preparingTransfer"
+          :disabled="preparingTransfer || switchingDisabled"
+          :aria-busy="state.pendingSchema === schema.name"
           @click.stop="selectSchema(schema.name)"
           @contextmenu.prevent.stop="
             showContext($event, 'database', { database: schema.name })
           "
         >
           <AppIcon
-            name="lucide:chevron-right"
+            :name="
+              state.pendingSchema === schema.name
+                ? 'lucide:loader-circle'
+                : 'lucide:chevron-right'
+            "
             :size="12"
             :class="
               cn(
                 'text-txt-4 transition-transform',
+                state.pendingSchema === schema.name &&
+                  'text-accent animate-spin',
                 expanded.has(`schema:${schema.name}`) && 'rotate-90'
               )
             "

@@ -31,7 +31,7 @@ const description = computed(() => {
       ? t('只导出表数据，不包含建库、建表、视图或例程；导入时目标表需已存在。')
       : props.databaseKind === 'postgresql'
         ? t(
-            '只导入 INSERT 数据和序列值，跳过建库、建表和其他 SQL；目标表需已存在。'
+            '先匹配目标表和字段，再导入 INSERT 数据；跳过建库、建表和其他 SQL，目标表需已存在。'
           )
         : t(
             '只导入 INSERT / REPLACE 数据，跳过建库、建表和其他 SQL；目标表需已存在。'

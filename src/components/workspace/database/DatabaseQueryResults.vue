@@ -10,7 +10,9 @@ import {
   columnsScope,
   useDatabaseColumnWidths,
 } from '@/composables/useDatabaseColumnWidths'
-import type { DatabaseExecution } from '@/types/database'
+import type { DatabaseExecution, DatabaseKind } from '@/types/database'
+import { exportDataText } from '@/utils/database-export'
+import DatabaseExportMenu from './DatabaseExportMenu.vue'
 import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
 
@@ -20,6 +22,8 @@ const props = defineProps<{
   execution: DatabaseExecution | null
   loading: boolean
   error: string
+  databaseKind?: DatabaseKind
+  databaseName?: string
 }>()
 
 const activeTab = shallowRef<'results' | 'messages'>('results')
@@ -74,52 +78,17 @@ function statementLabel(statement: string, index: number): string {
   return `${index + 1} · ${keyword || 'SQL'}`
 }
 
-function csvCell(value: string | null): string {
-  if (value === null) return ''
-  return /[",\r\n]/u.test(value) ? `"${value.replaceAll('"', '""')}"` : value
-}
-
-function resultPayload(format: 'csv' | 'json'): string {
-  if (!result.value) return ''
-  if (format === 'csv') {
-    return [
-      result.value.columns.map(column => csvCell(column.name)).join(','),
-      ...result.value.rows.map(row => row.map(csvCell).join(',')),
-    ].join('\r\n')
-  }
-  return JSON.stringify(
-    result.value.rows.map(row =>
-      Object.fromEntries(
-        result.value?.columns.map((column, index) => [
-          column.name,
-          row[index] ?? null,
-        ]) ?? []
-      )
-    ),
-    null,
-    2
-  )
-}
-
-function exportResult(format: 'csv' | 'json'): void {
-  if (!result.value?.columns.length) return
-  const payload = resultPayload(format)
-  const blob = new Blob([format === 'csv' ? `\uFEFF${payload}` : payload], {
-    type:
-      format === 'csv'
-        ? 'text/csv;charset=utf-8'
-        : 'application/json;charset=utf-8',
-  })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `query-result-${new Date().toISOString().replaceAll(':', '-').slice(0, 19)}.${format}`
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
+const exportData = computed(() => ({
+  name: 'query_result',
+  schema: props.databaseKind === 'mysql' ? props.databaseName : undefined,
+  databaseKind: props.databaseKind ?? 'mysql',
+  columns: result.value?.columns ?? [],
+  rows: result.value?.rows ?? [],
+  truncated: result.value?.truncated,
+}))
 
 async function copyResult(): Promise<void> {
-  await copyText(resultPayload('csv'))
+  await copyText(exportDataText(exportData.value, 'csv'))
 }
 </script>
 
@@ -404,17 +373,9 @@ async function copyResult(): Promise<void> {
           :title="t('复制为 CSV')"
           @click="copyResult"
         />
-        <IconButton
-          icon="lucide:file-down"
-          :size="11"
-          :title="t('导出 CSV')"
-          @click="exportResult('csv')"
-        />
-        <IconButton
-          icon="lucide:braces"
-          :size="11"
-          :title="t('导出 JSON')"
-          @click="exportResult('json')"
+        <DatabaseExportMenu
+          :data="exportData"
+          :disabled="loading || Boolean(error || result?.error)"
         />
       </div>
       <span

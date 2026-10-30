@@ -9,6 +9,7 @@ export function useFileTransfers() {
   const store = useTransfersStore()
   void store.ensureListener()
   const {
+    panelOpen,
     activeTasks,
     completedTasks,
     failedTasks,
@@ -30,6 +31,7 @@ export function useFileTransfers() {
   } = store
   return {
     tasks: readonly(store.tasks),
+    panelOpen,
     activeTasks,
     completedTasks,
     failedTasks,

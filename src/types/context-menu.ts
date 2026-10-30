@@ -2,7 +2,8 @@ export interface ContextMenuItem {
   id: string
   label: string
   icon?: string
-  iconTone?: 'default' | 'violet' | 'blue' | 'amber' | 'danger'
+  iconTone?:
+    'default' | 'violet' | 'blue' | 'success' | 'cyan' | 'amber' | 'danger'
   shortcut?: string
   groupLabel?: string
   checked?: boolean

@@ -20,6 +20,93 @@ use super::query::{self, DEFAULT_RESULT_ROWS};
 use super::table_ops;
 use super::transfer;
 
+/// 导入弹窗只读取用户选择的本地文件，不向外部服务上传。
+#[tauri::command]
+pub async fn db_read_import_file(path: String) -> AppResult<Vec<u8>> {
+    Ok(super::import_data::read_file(&path).await?)
+}
+
+#[tauri::command]
+pub async fn db_preview_import_sql(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    path: String,
+) -> AppResult<super::import_data::SqlImportPreview> {
+    Ok(transfer::preview_import(&manager, &session_id, &path).await?)
+}
+
+#[tauri::command]
+pub async fn db_import_catalog(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+) -> AppResult<Vec<super::import_data::ImportTarget>> {
+    Ok(super::import_data::catalog(&manager, &session_id).await?)
+}
+
+#[tauri::command]
+pub async fn db_import_rows(
+    manager: State<'_, DatabaseManager>,
+    transfers: State<'_, crate::ssh::TransferManager>,
+    app: tauri::AppHandle,
+    session_id: String,
+    tables: Vec<super::import_data::ImportRowsTable>,
+    task_id: String,
+) -> AppResult<DatabaseImportResult> {
+    Ok(super::import_data::import_rows(
+        &manager,
+        &session_id,
+        &tables,
+        &app,
+        &task_id,
+        transfers.control(&task_id).await?,
+    )
+    .await?)
+}
+
+#[tauri::command]
+pub async fn db_fork_session(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    database: String,
+) -> AppResult<DatabaseSession> {
+    Ok(manager.fork_session(&session_id, &database).await?)
+}
+
+#[tauri::command]
+pub async fn db_begin_export_file(
+    transfers: State<'_, crate::ssh::TransferManager>,
+    task_id: String,
+) -> AppResult<()> {
+    transfers.begin(&task_id, 0).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn db_finish_export_file(
+    transfers: State<'_, crate::ssh::TransferManager>,
+    task_id: String,
+) -> AppResult<()> {
+    super::export_file::discard(&task_id).await;
+    transfers.finish(&task_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn db_write_export_file(
+    app: tauri::AppHandle,
+    transfers: State<'_, crate::ssh::TransferManager>,
+    task_id: String,
+    path: String,
+    bytes: Vec<u8>,
+    complete: Option<bool>,
+) -> AppResult<()> {
+    if let Some(complete) = complete {
+        super::export_file::write_chunk(&app, &transfers, &task_id, &path, &bytes, complete).await
+    } else {
+        super::export_file::write(&app, &transfers, &task_id, &path, &bytes).await
+    }
+}
+
 #[tauri::command]
 pub async fn db_test_connection(
     manager: State<'_, DatabaseManager>,
@@ -299,6 +386,9 @@ pub async fn db_cancel_query(
 
 #[tauri::command]
 pub async fn db_export_sql(
+    app: tauri::AppHandle,
+    transfers: State<'_, crate::ssh::TransferManager>,
+    task_id: Option<String>,
     manager: State<'_, DatabaseManager>,
     session_id: String,
     path: String,
@@ -307,6 +397,16 @@ pub async fn db_export_sql(
     include_structure: Option<bool>,
     include_database: Option<bool>,
 ) -> AppResult<DatabaseExportResult> {
+    let progress = if let Some(task_id) = task_id.as_deref() {
+        Some(transfer::ExportProgress {
+            app: &app,
+            task_id,
+            control: transfers.control(task_id).await?,
+            rows: std::sync::atomic::AtomicU64::new(0),
+        })
+    } else {
+        None
+    };
     Ok(transfer::export_sql(
         &manager,
         &session_id,
@@ -315,6 +415,7 @@ pub async fn db_export_sql(
         drop_existing,
         include_structure.unwrap_or(true),
         include_database.unwrap_or(false),
+        progress.as_ref(),
     )
     .await?)
 }

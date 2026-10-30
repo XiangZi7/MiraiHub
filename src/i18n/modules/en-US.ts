@@ -3,6 +3,76 @@ import { en as parameterized } from './parameterized'
 import { en as native } from './native'
 import { en as redis } from './redis'
 export default {
+  数据导入完成: 'Data import completed',
+  数据导入失败: 'Data import failed',
+  导入数据: 'Import data',
+  导入格式: 'Import format',
+  包含数据库名: 'Include database name',
+  附加日期: 'Append date',
+  附加时间: 'Append time',
+  'Excel 在后台生成，最多 20 万单元格或 16 MB 文本；更大数据请使用 CSV、TXT、JSON 或 SQL。':
+    'Excel is generated in the background, up to 200,000 cells or 16 MB of text. Use CSV, TXT, JSON or SQL for larger data.',
+  '分批读取并写入文件，可在文件传输中查看进度或取消。':
+    'Read and write in batches. Track progress or cancel in File transfers.',
+  请选择目标表: 'Choose a target table',
+  '全部表（每表一个工作表）': 'All tables (one sheet per table)',
+  'SQL 的所有源字段都需要映射': 'All source SQL columns must be mapped',
+  '下载 Excel 导入模板': 'Download Excel import template',
+  '上传 Excel 文件': 'Upload Excel file',
+  '上传 Excel': 'Upload Excel',
+  下载模板: 'Download template',
+  模板范围: 'Template scope',
+  'Excel 文件': 'Excel file',
+  '先下载模板填写数据，或上传第一行为字段名的 Excel。每张工作表对应一张表，导入前可调整映射。':
+    'Download a template or upload an Excel workbook with column names in the first row. Each sheet maps to a table; review mappings before importing.',
+  '正在读取文件和匹配表结构…': 'Reading file and matching table structures…',
+  核对表和字段映射: 'Review table and column mappings',
+  目标表: 'Target table',
+  字段映射: 'Column mapping',
+  目标字段: 'Target column',
+  忽略此字段: 'Ignore this column',
+  '映射完整，确认后追加数据': 'Mapping is valid. Confirm to append data.',
+  'Excel 仅追加数据，不会创建或清空表。全部工作表在同一事务内写入，失败或取消会回滚。':
+    'Excel appends data to existing tables. All sheets are written in one transaction and rolled back on failure or cancellation.',
+  '将按所选内容导入 SQL。INSERT 会追加数据，REPLACE 可能替换已有行；主键或唯一键冲突可能导致导入失败。SQL 失败前已提交的语句不会自动回滚。':
+    'Imports the selected SQL content. INSERT appends data and REPLACE may replace existing rows. Key conflicts can fail the import. Previously committed SQL statements are not automatically rolled back.',
+  确认导入数据: 'Confirm data import',
+  导入已取消: 'Import cancelled',
+  '已导入 {count} 行': 'Imported {count} rows',
+  等待导入: 'Waiting to import',
+  '正在导入数据…': 'Importing data…',
+  '{count} 条 SQL': '{count} SQL statements',
+  '先匹配目标表和字段，再导入 INSERT 数据；跳过建库、建表和其他 SQL，目标表需已存在。':
+    'Match target tables and columns before importing INSERT data. Skips database creation, table creation and other SQL; target tables must exist.',
+  后台运行: 'Continue in background',
+  左右分屏: 'Split side by side',
+  上下分屏: 'Split vertically',
+  '分屏（拖拽选择方向）': 'Split (drag to choose direction)',
+  关闭分屏: 'Close split pane',
+  数据字典: 'Data dictionary',
+  导出格式: 'Export format',
+  导出数据: 'Export data',
+  导出范围: 'Export range',
+  '全部数据（应用当前筛选）': 'All rows matching current filters',
+  当前页数据: 'Current page',
+  'SQL 目标表名': 'SQL target table',
+  '导出字段定义与备注，不包含行数据':
+    'Export field definitions and comments without row data',
+  '导出当前语句已查询到的全部结果（含所有分页）':
+    'Export all returned rows of the current statement, across all pages',
+  '查询结果已达行数上限，导出仅包含已返回的数据':
+    'The query reached its row limit. Only returned rows will be exported',
+  '导出已提交的数据，未提交的单元格修改不包含在内':
+    'Export saved data; pending cell changes are excluded',
+  '正在导出…': 'Exporting…',
+  请先保存或关闭表设计草稿再切换数据库:
+    'Save or close table design drafts before switching databases',
+  '已读取 {count} 行': 'Read {count} rows',
+  等待导出: 'Waiting to export',
+  '正在生成文件…': 'Generating file…',
+  '正在保存文件…': 'Saving file…',
+  '正在读取导出数据…': 'Reading export data…',
+  导出已取消: 'Export cancelled',
   应用更新: 'Application updates',
   显示连接地址: 'Show connection addresses',
   '在侧栏显示 SSH 和数据库连接的 IP 地址或域名':

@@ -387,3 +387,140 @@ test('一键取消会终止排队、运行与暂停中的全部任务', async t 
   assert.equal(cancelled.length, 1)
   await batch
 })
+
+test('数据库导出复用传输队列、行数进度和完成历史', async t => {
+  const { store } = fixture(t)
+  const gate = deferred()
+  const done = store.exportFile({
+    fileName: 'result.xlsx',
+    source: 'demo.events',
+    target: 'C:/result.xlsx',
+    connectionName: 'DB',
+    run: async context => {
+      context.progress({ phase: 'reading', processedRows: 1000 })
+      await gate.promise
+      context.progress({
+        phase: 'writing',
+        totalBytes: 2048,
+        transferredBytes: 1024,
+      })
+      return 'C:/result.xlsx'
+    },
+  })
+  await tick()
+  assert.equal(store.panelOpen, true)
+  assert.equal(store.activeTasks[0].processedRows, 1000)
+  assert.equal(store.activeTasks[0].totalBytes, 0)
+  gate.resolve()
+  assert.equal(await done, 'C:/result.xlsx')
+  assert.equal(store.tasks[0].status, 'completed')
+  assert.equal(store.tasks[0].transferredBytes, 2048)
+  assert.equal(store.tasks[0].localPath, 'C:/result.xlsx')
+  assert.equal(store.unreadCount, 1)
+})
+
+test('数据库导出取消后忽略迟到进度，排队任务取消后不再执行', async t => {
+  const { store } = fixture(t)
+  settings.maxFileTransfers = 1
+  const gate = deferred()
+  let cancelled = 0,
+    queuedRan = false
+  const first = store.exportFile({
+    fileName: 'first.csv',
+    source: 'db.first',
+    target: 'C:/first.csv',
+    connectionName: 'DB',
+    run: async context => {
+      context.bindCancel(async () => {
+        cancelled++
+      })
+      await gate.promise
+      context.progress({ transferredBytes: 100, totalBytes: 100 })
+      return 'C:/first.csv'
+    },
+  })
+  await tick()
+  const second = store.exportFile({
+    fileName: 'second.csv',
+    source: 'db.second',
+    target: 'C:/second.csv',
+    connectionName: 'DB',
+    run: async () => {
+      queuedRan = true
+      return 'C:/second.csv'
+    },
+  })
+  const running = store.tasks.find(task => task.fileName === 'first.csv')
+  const queued = store.tasks.find(task => task.fileName === 'second.csv')
+  assert.equal(queued.status, 'queued')
+  await store.cancelAll()
+  gate.resolve()
+  assert.equal(await first, null)
+  assert.equal(await second, null)
+  assert.equal(cancelled, 1)
+  assert.equal(queuedRan, false)
+  onTransfer({
+    taskId: running.id,
+    status: 'completed',
+    transferredBytes: 100,
+    totalBytes: 100,
+    error: null,
+    localPath: 'C:/first.csv',
+  })
+  assert.equal(running.status, 'cancelled')
+})
+
+test('数据库编解码串行运行，同时保留 SSH 的传输并发', async t => {
+  const { store } = fixture(t)
+  settings.maxFileTransfers = 3
+  const gate = deferred()
+  const started = []
+  const make = name =>
+    store.exportFile({
+      fileName: name,
+      source: 'db.table',
+      target: `C:/${name}`,
+      connectionName: 'DB',
+      run: async () => {
+        started.push(name)
+        if (name === 'one') await gate.promise
+        return `C:/${name}`
+      },
+    })
+  const first = make('one')
+  await tick()
+  const second = make('two')
+  await tick()
+  assert.deepEqual(started, ['one'])
+  assert.equal(
+    store.tasks.find(task => task.fileName === 'two').status,
+    'queued'
+  )
+  gate.resolve()
+  await Promise.all([first, second])
+  assert.deepEqual(started, ['one', 'two'])
+})
+
+test('数据库导入使用上传方向并保留目标库名称', async t => {
+  const { store } = fixture(t)
+  let queuedId
+  await store.exportFile({
+    kind: 'database-import',
+    fileName: 'users.xlsx',
+    source: 'C:/users.xlsx',
+    target: 'demo',
+    connectionName: 'DB',
+    onQueued: id => {
+      queuedId = id
+    },
+    run: async context => {
+      context.progress({ processedRows: 5 })
+      return 'C:/users.xlsx'
+    },
+  })
+  const task = store.tasks.find(task => task.id === queuedId)
+  assert.equal(task.direction, 'upload')
+  assert.equal(task.target, 'demo')
+  assert.equal(task.processedRows, 5)
+  assert.equal(task.status, 'completed')
+})

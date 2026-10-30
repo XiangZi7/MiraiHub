@@ -63,6 +63,8 @@ export default defineConfig(async () => ({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // 后台 Excel 编码器按需加载依赖，Worker 使用 ES 模块产物。
+  worker: { format: 'es' },
   build: {
     // 产物只跑在 WebView2 里，按它的基线编译，省掉一轮向下兼容转译。
     target: 'chrome105',
@@ -83,6 +85,12 @@ export default defineConfig(async () => ({
          */
         advancedChunks: {
           groups: [
+            // ExcelJS 的浏览器编码器只在用户导出 Excel 时加载。
+            {
+              name: 'vendor-excel',
+              test: /node_modules[\\/]exceljs[\\/]/,
+              priority: 30,
+            },
             {
               name: 'vendor-xterm',
               test: /node_modules[\\/]@xterm[\\/]/,

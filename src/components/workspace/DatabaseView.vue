@@ -25,7 +25,6 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import type { TabItem } from '@/components/ui/TabBar.vue'
 import IconButton from '@/components/ui/IconButton.vue'
-import TabBar from '@/components/ui/TabBar.vue'
 import {
   databaseObjectKey,
   useDatabaseSession,
@@ -41,6 +40,7 @@ import { isSqlConnection } from '@/types/connection'
 import type { ContextMenuItem } from '@/types/context-menu'
 import type {
   DatabaseHistoryEntry,
+  DatabaseExecution,
   DatabaseKind,
   DatabaseObject,
   DatabaseObjectKind,
@@ -56,8 +56,8 @@ import DatabaseConnectionState from './database/DatabaseConnectionState.vue'
 import DatabaseConnectingSkeleton from './database/DatabaseConnectingSkeleton.vue'
 import DatabaseObjectNameDialog from './database/DatabaseObjectNameDialog.vue'
 import DatabaseObjectTree from './database/DatabaseObjectTree.vue'
-import DatabaseQueryResults from './database/DatabaseQueryResults.vue'
-import DatabaseQueryResizeHandle from './database/DatabaseQueryResizeHandle.vue'
+import DatabaseQueryPane from './database/DatabaseQueryPane.vue'
+import DatabaseTabWorkspace from './database/DatabaseTabWorkspace.vue'
 import DatabaseRoutineView from './database/DatabaseRoutineView.vue'
 import DatabaseTableDesigner from './database/DatabaseTableDesigner.vue'
 import DatabaseTableOverview from './database/DatabaseTableOverview.vue'
@@ -65,7 +65,6 @@ import DatabaseTableView from './database/DatabaseTableView.vue'
 import DatabaseTransferDialog, {
   type DatabaseTransferMode,
 } from './database/DatabaseTransferDialog.vue'
-import SqlEditor from './database/SqlEditor.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppSidePane from '@/components/ui/AppSidePane.vue'
@@ -203,7 +202,11 @@ async function askAgentStructure(object: DatabaseObject): Promise<void> {
 }
 const connection = toRef(props, 'connection')
 const password = shallowRef('')
-const editor = shallowRef<SqlEditorExpose | null>(null)
+const editors = new Map<string, SqlEditorExpose>()
+function setEditor(id: string, editor: unknown): void {
+  if (editor) editors.set(id, editor as SqlEditorExpose)
+  else editors.delete(id)
+}
 const queryRowLimit = useStorage('miraihub:database-query-row-limit', '500')
 const queryRowLimitOptions = computed(() =>
   [500, 1000, 5000, 10000, 50000].map(value => ({
@@ -215,16 +218,6 @@ const queryEditorRatio = useStorage<number>(
   `miraihub:database-query-split:${props.connection?.id ?? 'default'}`,
   58
 )
-const querySplitStyle = computed(() => {
-  const editorRatio = Math.min(
-    85,
-    Math.max(
-      15,
-      Number.isFinite(queryEditorRatio.value) ? queryEditorRatio.value : 58
-    )
-  )
-  return { gridTemplateRows: `${editorRatio}fr 10px ${100 - editorRatio}fr` }
-})
 const configuredDatabase =
   props.connection && isSqlConnection(props.connection)
     ? props.connection.settings.database
@@ -292,6 +285,15 @@ const state = reactive({
   // 正在切换到右键选中的目标库，防止重复打开弹窗。
   preparingTransfer: false,
   overviewSchema: '',
+  // 正在执行查询的来源标签，结果始终归回该标签。
+  runningQueryId: '',
+  // 切换查询目标库期间阻止重复执行。
+  preparingQuery: false,
+  // 各查询标签独立保留执行结果和错误。
+  queryResults: {} as Record<
+    string,
+    { execution: DatabaseExecution | null; error: string }
+  >,
 })
 const { transferMode, preparingTransfer } = toRefs(state)
 
@@ -306,6 +308,7 @@ const {
   selectedDatabase: browsedDatabase,
   objects,
   objectsLoading,
+  loadedDatabases,
   objectsError,
   columnsByObject,
   inspectingKeys,
@@ -354,8 +357,17 @@ const databaseOptions = computed(() =>
   databases.value.map(name => ({ value: name, label: name }))
 )
 const selectedDatabase = computed({
-  get: () => browsedDatabase.value,
-  set: (value: string) => void changeDatabase(value),
+  get: () => activeQuery.value?.database || browsedDatabase.value,
+  set: (value: string) => {
+    const tab = activeQuery.value
+    void changeDatabase(value).then(() => {
+      if (tab && session.value?.database === value) {
+        tab.database = value
+        if (tab.savedQueryId)
+          updateSavedQuery(tab.savedQueryId, { database: value })
+      }
+    })
+  },
 })
 
 const overviewSchema = computed(() =>
@@ -366,6 +378,7 @@ const overviewObjects = computed(() =>
 )
 watch(sessionId, () => {
   state.overviewSchema = ''
+  state.queryResults = {}
 })
 
 function selectSchema(name: string): void {
@@ -392,20 +405,33 @@ const activeDesigner = computed(() =>
 const selectedSavedQueryId = computed(
   () => activeQuery.value?.savedQueryId ?? ''
 )
-const relationTabs = computed(() =>
-  queryState.tabs.filter(
-    (tab): tab is ObjectTab =>
-      tab.kind === 'object' &&
-      (tab.object.kind === 'table' || tab.object.kind === 'view')
-  )
-)
-const routineTabs = computed(() =>
-  queryState.tabs.filter(
-    (tab): tab is ObjectTab =>
-      tab.kind === 'object' &&
-      (tab.object.kind === 'procedure' || tab.object.kind === 'function')
-  )
-)
+function tabDatabase(tab: WorkspaceTab): string {
+  if (tab.kind === 'query') return tab.database
+  if (databaseKind.value === 'mysql')
+    return tab.kind === 'object' ? tab.object.schema : tab.schema
+  return session.value?.database || configuredDatabase
+}
+/** 为数据库内部的表、查询和设计标签提供其自身所属库的悬停信息。 */
+function tabTooltip(tab: WorkspaceTab): NonNullable<TabItem['tooltip']> {
+  const connection = props.connection
+  return [
+    { label: t('连接'), value: connection?.name || '—' },
+    ...(tab.label !== connection?.name
+      ? [{ label: t('名称'), value: tab.label }]
+      : []),
+    {
+      label: 'Host',
+      value: connection ? `${connection.host}:${connection.port}` : '—',
+    },
+    { label: 'Db', value: tabDatabase(tab) || '—' },
+    { label: t('备注'), value: connection?.description || '—' },
+  ]
+}
+/** 在表、查询和设计标签后附上所属数据库，分屏和跨库打开同名对象时仍可区分。 */
+function tabLabel(tab: WorkspaceTab): string {
+  const name = tabDatabase(tab)
+  return name ? `${tab.label} @${name}` : tab.label
+}
 const designerTabs = computed(() =>
   queryState.tabs.filter(
     (tab): tab is TableDesignerTab => tab.kind === 'table-designer'
@@ -477,7 +503,10 @@ useEventListener(window, 'beforeunload', () => {
 })
 const canRun = computed(
   () =>
-    connected.value && Boolean(activeSql.value.trim()) && !queryLoading.value
+    connected.value &&
+    Boolean(activeSql.value.trim()) &&
+    !queryLoading.value &&
+    !state.preparingQuery
 )
 const completionSessionId = computed(() =>
   browsedDatabase.value && browsedDatabase.value === session.value?.database
@@ -669,6 +698,7 @@ function closeTab(id: string): void {
 function closeQueryTabs(ids: string[]): void {
   const closing = new Set(ids)
   for (const id of closing) dirtyDesignerIds.delete(id)
+  for (const id of closing) delete state.queryResults[id]
   const next = activeAfterTabClose(queryState.tabs, queryState.activeId, ids)
   queryState.tabs = queryState.tabs.filter(tab => !closing.has(tab.id))
   queryState.activeId = next
@@ -1207,34 +1237,57 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
-async function runQuery(sqlOverride?: string): Promise<void> {
-  if (state.transferMode || state.preparingTransfer) return
+async function runQuery(
+  sqlOverride?: string,
+  tabId = queryState.activeId
+): Promise<void> {
+  if (state.transferMode || state.preparingTransfer || state.preparingQuery)
+    return
+  const tab = queryState.tabs.find(tab => tab.id === tabId)
+  if (tab?.kind !== 'query') return
   const sql = (
     sqlOverride ??
-    editor.value?.runnableSql() ??
-    activeSql.value
+    editors.get(tabId)?.runnableSql() ??
+    tab.sql
   ).trim()
   if (!connected.value || !sql || queryLoading.value) return
-  const queryDatabase = activeQuery.value?.database
-  if (
-    databaseKind.value === 'mysql' &&
-    queryDatabase &&
-    queryDatabase !== session.value?.database
-  )
-    await changeDatabase(queryDatabase)
-  if (props.connection) {
-    addQueryHistory({
-      connectionId: props.connection.id,
-      database: databaseName.value,
+  const originalSessionId = sessionId.value
+  state.preparingQuery = true
+  state.runningQueryId = tabId
+  try {
+    if (tab.database && tab.database !== session.value?.database)
+      await changeDatabase(tab.database, false, true)
+    if (
+      sessionId.value !== originalSessionId ||
+      (tab.database && session.value?.database !== tab.database)
+    )
+      return
+    if (props.connection) {
+      addQueryHistory({
+        connectionId: props.connection.id,
+        database: databaseName.value,
+        sql,
+      })
+      historyEntries.value = listQueryHistory(props.connection.id)
+    }
+    state.queryResults[tabId] = { execution: null, error: '' }
+    const maxRows = Number(queryRowLimit.value)
+    await executeSql(
       sql,
-    })
-    historyEntries.value = listQueryHistory(props.connection.id)
+      [500, 1000, 5000, 10000, 50000].includes(maxRows) ? maxRows : 500
+    )
+    if (
+      sessionId.value === originalSessionId &&
+      queryState.tabs.some(tab => tab.id === tabId)
+    )
+      state.queryResults[tabId] = {
+        execution: queryExecution.value,
+        error: queryError.value,
+      }
+  } finally {
+    state.preparingQuery = false
+    state.runningQueryId = ''
   }
-  const maxRows = Number(queryRowLimit.value)
-  await executeSql(
-    sql,
-    [500, 1000, 5000, 10000, 50000].includes(maxRows) ? maxRows : 500
-  )
 }
 
 function showHistory(event: MouseEvent): void {
@@ -1263,8 +1316,13 @@ function handleHistoryAction(id: string): void {
   if (entry) openQuery(entry.sql)
 }
 
-async function changeDatabase(value: string, preparing = false): Promise<void> {
+async function changeDatabase(
+  value: string,
+  preparing = false,
+  fromQuery = false
+): Promise<void> {
   if (state.transferMode || (state.preparingTransfer && !preparing)) return
+  if (queryLoading.value || (state.preparingQuery && !fromQuery)) return
   if (!value) return
   if (
     value === browsedDatabase.value &&
@@ -1272,8 +1330,17 @@ async function changeDatabase(value: string, preparing = false): Promise<void> {
     !objectsError.value
   )
     return
-  for (const tab of [...queryState.tabs])
-    if (tab.kind === 'object' || tab.kind === 'table-designer') closeTab(tab.id)
+  // MySQL 对象使用完整库名访问，切库后继续保留标签和未提交改动。
+  if (databaseKind.value === 'postgresql') {
+    const dirty = designerTabs.value.some(tab => dirtyDesignerIds.has(tab.id))
+    if (dirty) {
+      toast.warning(t('请先保存或关闭表设计草稿再切换数据库'))
+      return
+    }
+    for (const tab of [...queryState.tabs])
+      if (tab.kind === 'object' || tab.kind === 'table-designer')
+        closeTab(tab.id)
+  }
   if (databaseKind.value === 'postgresql') state.overviewSchema = ''
   await switchDatabase(value)
 }
@@ -1368,6 +1435,8 @@ watch(
       :selected-saved-query-id="selectedSavedQueryId"
       :columns-by-object="columnsByObject"
       :inspecting-keys="inspectingKeys"
+      :loaded-databases="loadedDatabases"
+      :switching-disabled="!connected || queryLoading || state.preparingQuery"
       :loading="objectsLoading"
       :databases-loading="databasesLoading || status === 'connecting'"
       :preparing-transfer="preparingTransfer"
@@ -1429,18 +1498,6 @@ watch(
         <div
           class="database-tab-toolbar border-line-soft flex h-10 min-w-0 shrink-0 items-center gap-1.5 border-b px-2"
         >
-          <TabBar
-            v-model:active="queryState.activeId"
-            :tabs="queryState.tabs"
-            :context-items="queryTabActions.contextItems"
-            class="flex-1"
-            addable
-            @add="addQueryTab()"
-            @close="queryTabActions.requestClose([$event])"
-            @close-many="queryTabActions.requestClose"
-            @context-action="queryTabActions.action"
-            @reorder="reorderTabs"
-          />
           <div
             class="scroll-none flex h-full max-w-3/4 min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto"
             role="group"
@@ -1546,6 +1603,7 @@ watch(
                 :disabled="
                   databasesLoading ||
                   queryLoading ||
+                  state.preparingQuery ||
                   preparingTransfer ||
                   transferMode !== null
                 "
@@ -1608,84 +1666,100 @@ watch(
           :error="connectionError"
           @connect="connect"
         />
-        <template v-else>
-          <DatabaseTableOverview
-            v-if="!activeTab"
-            :objects="overviewObjects"
-            :selected="Boolean(overviewSchema)"
-            :loading="objectsLoading"
-            :error="objectsError"
-            @open="openObject"
-            @inspect="inspectObject"
-            @ask-agent="askAgentStructure"
-            @query="createObjectQuery"
-            @copy="copyObjectName"
-            @rename-object="showNameDialog('rename-object', $event)"
-            @remove-object="requestDeleteObject"
-            @design-object="openTableDesignerForObject"
-            @truncate-object="requestTruncateTable"
-            @refresh="refreshAll"
-          />
-          <div
-            v-show="Boolean(activeQuery)"
-            class="query-workspace"
-            :style="querySplitStyle"
-          >
-            <SqlEditor
-              ref="editor"
-              v-model="activeSql"
+        <DatabaseTabWorkspace
+          v-else
+          v-model:active="queryState.activeId"
+          :tabs="queryState.tabs"
+          :tab-label="tabLabel"
+          :tab-tooltip="tabTooltip"
+          :context-items="queryTabActions.contextItems"
+          @add="addQueryTab()"
+          @close="queryTabActions.requestClose([$event])"
+          @close-many="queryTabActions.requestClose"
+          @context-action="queryTabActions.action"
+          @reorder="reorderTabs"
+        >
+          <template #empty>
+            <DatabaseTableOverview
+              :objects="overviewObjects"
+              :selected="Boolean(overviewSchema)"
+              :loading="objectsLoading"
+              :error="objectsError"
+              @open="openObject"
+              @inspect="inspectObject"
+              @ask-agent="askAgentStructure"
+              @query="createObjectQuery"
+              @copy="copyObjectName"
+              @rename-object="showNameDialog('rename-object', $event)"
+              @remove-object="requestDeleteObject"
+              @design-object="openTableDesignerForObject"
+              @truncate-object="requestTruncateTable"
+              @refresh="refreshAll"
+            />
+          </template>
+          <template #default="{ tab }">
+            <DatabaseQueryPane
+              v-if="tab.kind === 'query'"
+              :ref="editor => setEditor(tab.id, editor)"
+              v-model="tab.sql"
+              v-model:ratio="queryEditorRatio"
               :database-kind="databaseKind"
-              :disabled="queryLoading"
+              :database-name="tab.database"
+              :execution="state.queryResults[tab.id]?.execution ?? null"
+              :error="state.queryResults[tab.id]?.error ?? ''"
+              :loading="
+                state.runningQueryId === tab.id &&
+                (queryLoading || state.preparingQuery)
+              "
               :suggestions="sqlSuggestions"
-              @run="runQuery"
-              @save="saveActiveQuery"
+              @update:model-value="
+                value => {
+                  if (tab.savedQueryId)
+                    updateSavedQuery(tab.savedQueryId, { sql: value })
+                }
+              "
+              @run="sql => runQuery(sql, tab.id)"
+              @save="saveQueryTab(tab.id)"
               @ask-agent="askAgent"
             />
-            <DatabaseQueryResizeHandle v-model="queryEditorRatio" />
-            <DatabaseQueryResults
-              :execution="queryExecution"
-              :loading="queryLoading"
-              :error="queryError"
+            <DatabaseTableView
+              v-else-if="
+                tab.kind === 'object' &&
+                (tab.object.kind === 'table' || tab.object.kind === 'view')
+              "
+              :session-id="sessionId"
+              :database-kind="databaseKind"
+              :database-name="tabDatabase(tab)"
+              :object="tab.object"
+              :initial-panel="tab.panel"
+              :panel-nonce="tab.panelNonce"
+              @query="openQuery"
             />
-          </div>
-          <DatabaseTableView
-            v-for="tab in relationTabs"
-            v-show="queryState.activeId === tab.id"
-            :key="tab.id"
-            :session-id="sessionId"
-            :object="tab.object"
-            :initial-panel="tab.panel"
-            :panel-nonce="tab.panelNonce"
-            @query="openQuery"
-          />
-          <DatabaseRoutineView
-            v-for="tab in routineTabs"
-            v-show="queryState.activeId === tab.id"
-            :key="tab.id"
-            :session-id="sessionId"
-            :database-kind="databaseKind"
-            :object="tab.object"
-            @query="openQuery"
-          />
-          <DatabaseTableDesigner
-            v-for="tab in designerTabs"
-            v-show="queryState.activeId === tab.id"
-            :key="tab.id"
-            :session-id="sessionId"
-            :database-kind="databaseKind"
-            :schema="tab.schema"
-            :objects="objects"
-            :edit-table="tab.editTarget"
-            @query="openQuery"
-            @created="
-              (schema, name) => handleTableCreated(tab.id, schema, name)
-            "
-            @applied="
-              (schema, name) => handleTableApplied(tab.id, schema, name)
-            "
-            @dirty="value => setDesignerDirty(tab.id, value)"
-          />
-        </template>
+            <DatabaseRoutineView
+              v-else-if="tab.kind === 'object'"
+              :session-id="sessionId"
+              :database-kind="databaseKind"
+              :object="tab.object"
+              @query="openQuery"
+            />
+            <DatabaseTableDesigner
+              v-else-if="tab.kind === 'table-designer'"
+              :session-id="sessionId"
+              :database-kind="databaseKind"
+              :schema="tab.schema"
+              :objects="objects"
+              :edit-table="tab.editTarget"
+              @query="openQuery"
+              @created="
+                (schema, name) => handleTableCreated(tab.id, schema, name)
+              "
+              @applied="
+                (schema, name) => handleTableApplied(tab.id, schema, name)
+              "
+              @dirty="value => setDesignerDirty(tab.id, value)"
+            />
+          </template>
+        </DatabaseTabWorkspace>
       </div>
       <AppSidePane
         :open="agentOpen"

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { createPinia, disposePinia } from 'pinia'
 import { createRenderer, h, markRaw, nextTick, reactive } from 'vue'
 import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 
@@ -25,6 +26,12 @@ const load = sourceLoader(
       export const open = options => call('open', options)
       export const save = options => call('save', options)
     `),
+    '@/api/ssh': dataModule(
+      'export const onTransfer = async () => () => {}; export const cancelTransfer = async () => {}; export const errorMessage = error => error.message ?? String(error)'
+    ),
+    '@/stores/settings': dataModule(
+      'export const useSettingsStore = () => ({ values: { maxFileTransfers: 3, notifyTransferComplete: true } })'
+    ),
     '@/utils/window': dataModule('export const IS_TAURI = true'),
     '@/composables/useSettings': dataModule(
       'export const settingNumber = (_key, fallback) => fallback; export const settingsSnapshot = () => ({})'
@@ -121,7 +128,7 @@ const all = el => [el, ...el.children.flatMap(all)]
 const textOf = el =>
   (el.type === '#comment' ? '' : el.text) + el.children.map(textOf).join('')
 const flush = async () => {
-  for (let index = 0; index < 12; index++) await nextTick()
+  for (let index = 0; index < 75; index++) await nextTick()
 }
 const deferred = () => {
   let resolve, reject
@@ -155,7 +162,36 @@ async function fixture(t, mode = 'export') {
     open: async () => 'C:/import.sql',
     db_export_sql: async () => exportResult,
     db_import_sql: async () => importResult,
+    db_import_catalog: async () => [
+      {
+        schema: 'target',
+        name: 'users',
+        columns: [
+          {
+            name: 'id',
+            dataType: 'INT',
+            nullable: false,
+            defaultValue: null,
+            autoIncrement: true,
+          },
+        ],
+      },
+    ],
+    db_preview_import_sql: async () => ({
+      sources: [
+        {
+          id: 'old\\u0000users',
+          schema: 'old',
+          name: 'users',
+          columns: ['id'],
+          rows: [],
+          statementCount: 4,
+        },
+      ],
+      skippedStatements: 3,
+    }),
     db_cancel_query: async () => true,
+    db_fork_session: async () => ({ sessionId: 'transfer-session' }),
   }
   body = node('body')
   const root = node('root')
@@ -181,9 +217,11 @@ async function fixture(t, mode = 'export') {
       }),
   })
   app.config.errorHandler = error => errors.push(error)
-  app.use(i18n).mount(root)
+  const pinia = createPinia()
+  app.use(pinia).use(i18n).mount(root)
   t.after(() => {
     app.unmount()
+    disposePinia(pinia)
     assert.deepEqual(errors, [])
   })
   await flush()
@@ -205,9 +243,9 @@ async function fixture(t, mode = 'export') {
     radios: () =>
       elements().filter(el => el.type === 'input' && el.props.type === 'radio'),
     checkboxes: () =>
-      elements().filter(
-        el => el.type === 'input' && el.props.type === 'checkbox'
-      ),
+      elements()
+        .filter(el => el.type === 'input' && el.props.type === 'checkbox')
+        .slice(mode === 'export' ? 2 : 0),
     async chooseContent(value) {
       const input = elements().find(
         el => el.props.type === 'radio' && el.props.value === value
@@ -217,7 +255,9 @@ async function fixture(t, mode = 'export') {
       await flush()
     },
     async check(index, checked = true) {
-      const input = elements().filter(el => el.props.type === 'checkbox')[index]
+      const input = elements().filter(el => el.props.type === 'checkbox')[
+        index + (mode === 'export' ? 2 : 0)
+      ]
       assert.ok(input)
       input.checked = checked
       input.listeners.change({ target: input })
@@ -278,6 +318,7 @@ test('data-only export stays responsive and prevents duplicate file selection or
   assert.equal(calls('db_export_sql').length, 1)
   assert.deepEqual(calls('db_export_sql')[0][1], {
     sessionId: 'transfer-session',
+    taskId: calls('db_begin_export_file')[0][1].taskId,
     path: 'C:/data.sql',
     includeData: true,
     includeStructure: false,
@@ -305,6 +346,7 @@ test('structure-only export forwards the selected schema and replacement options
   await view.click('开始导出')
   assert.deepEqual(calls('db_export_sql')[0][1], {
     sessionId: 'transfer-session',
+    taskId: calls('db_begin_export_file')[0][1].taskId,
     path: 'C:/export.sql',
     includeData: false,
     includeStructure: true,
@@ -328,7 +370,18 @@ test('import waits for confirmation, applies data-only options and shows skipped
   assert.deepEqual(calls('db_import_sql')[0][1], {
     sessionId: 'transfer-session',
     path: 'C:/import.sql',
-    options: { content: 'data', includeDatabase: false },
+    options: {
+      content: 'data',
+      includeDatabase: false,
+      mappings: [
+        {
+          sourceId: 'old\\u0000users',
+          targetSchema: 'target',
+          targetTable: 'users',
+          columns: { id: 'id' },
+        },
+      ],
+    },
   })
   assert.match(view.text(), /已执行 4 条 SQL，影响 120 行/)
   assert.match(view.text(), /已按选项跳过 3 条 SQL/)

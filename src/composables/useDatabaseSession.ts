@@ -46,6 +46,8 @@ export function useDatabaseSession(
     databasesLoading: false,
     selectedDatabase: '',
     objects: [] as DatabaseObject[],
+    // 已读取的数据库，即使没有对象也保留已加载状态。
+    loadedDatabases: new Set<string>(),
     objectsLoading: false,
     objectsError: '',
     columnsByObject: {} as Record<string, DatabaseColumn[] | undefined>,
@@ -93,6 +95,7 @@ export function useDatabaseSession(
     databaseSwitch = Promise.resolve()
     state.selectedDatabase = ''
     state.objects = []
+    state.loadedDatabases.clear()
     state.databases = []
     state.databasesLoading = false
     state.objectsLoading = false
@@ -154,6 +157,7 @@ export function useDatabaseSession(
     await release(sessionId)
   }
 
+  /** 刷新当前库结构，只替换该库的对象与字段缓存；空库也记为已加载，并忽略过期响应。 */
   async function refreshObjects(): Promise<void> {
     const sessionId = state.sessionId
     const selectedDatabase = state.selectedDatabase
@@ -169,11 +173,28 @@ export function useDatabaseSession(
     state.objectsError = ''
     try {
       const objects = await database.listObjects(sessionId)
-      if (state.sessionId === sessionId && request === objectsRequest)
-        state.objects =
+      if (state.sessionId === sessionId && request === objectsRequest) {
+        if (connection.value?.kind === 'mysql') {
+          state.objects = [
+            ...state.objects.filter(
+              object => object.schema !== selectedDatabase
+            ),
+            ...objects.filter(object => object.schema === selectedDatabase),
+          ]
+        } else state.objects = objects
+        state.loadedDatabases.add(selectedDatabase)
+        // 刷新当前库时使其字段缓存失效，其他库的字段仍可展开。
+        const schemas = new Set(
           connection.value?.kind === 'mysql'
-            ? objects.filter(object => object.schema === selectedDatabase)
-            : objects
+            ? [selectedDatabase]
+            : objects.map(object => object.schema)
+        )
+        for (const key of Object.keys(state.columnsByObject)) {
+          const schema = key.split('\u0000')[0]
+          if (schema === selectedDatabase || schemas.has(schema ?? ''))
+            delete state.columnsByObject[key]
+        }
+      }
     } catch (error) {
       if (state.sessionId === sessionId && request === objectsRequest)
         state.objectsError = database.errorMessage(error)
@@ -183,6 +204,7 @@ export function useDatabaseSession(
     }
   }
 
+  /** 更新库列表并清理已经被删除的库缓存，保留其他库已展开的元数据。 */
   async function refreshDatabases(): Promise<void> {
     const sessionId = state.sessionId
     if (!sessionId) return
@@ -190,7 +212,17 @@ export function useDatabaseSession(
     state.databasesLoading = true
     try {
       const databases = await database.listDatabases(sessionId)
-      if (state.sessionId === sessionId) state.databases = databases
+      if (state.sessionId === sessionId) {
+        state.databases = databases
+        if (connection.value?.kind === 'mysql') {
+          const available = new Set(databases)
+          state.objects = state.objects.filter(object =>
+            available.has(object.schema)
+          )
+          for (const name of state.loadedDatabases)
+            if (!available.has(name)) state.loadedDatabases.delete(name)
+        }
+      }
     } catch (error) {
       if (state.sessionId === sessionId)
         state.objectsError = database.errorMessage(error)
@@ -199,6 +231,7 @@ export function useDatabaseSession(
     }
   }
 
+  /** 串行切换连接池，优先使用已缓存结构；快速连续点击时只应用最后一次选择，避免旧响应覆盖新库。 */
   async function switchDatabase(name: string): Promise<void> {
     const sessionId = state.sessionId
     if (!sessionId || !name) return
@@ -210,10 +243,13 @@ export function useDatabaseSession(
     const request = ++databaseRequest
     objectsRequest++
     state.selectedDatabase = name
-    state.objects = []
-    state.columnsByObject = {}
-    state.inspectingKeys.clear()
-    state.objectsLoading = true
+    if (connection.value?.kind !== 'mysql') {
+      state.objects = []
+      state.columnsByObject = {}
+      state.inspectingKeys.clear()
+    }
+    const cached = state.loadedDatabases.has(name)
+    state.objectsLoading = !cached
     state.objectsError = ''
     // 仅串行替换连接池，旧库的元数据请求不阻塞下一次切库。
     const switched = databaseSwitch.then(async () => {
@@ -228,7 +264,7 @@ export function useDatabaseSession(
     try {
       await switched
       if (state.sessionId !== sessionId || request !== databaseRequest) return
-      await refreshObjects()
+      if (!cached) await refreshObjects()
     } catch (error) {
       if (state.sessionId === sessionId && request === databaseRequest)
         state.objectsError = database.errorMessage(error)

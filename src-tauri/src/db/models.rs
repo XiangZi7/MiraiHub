@@ -374,6 +374,8 @@ pub enum DatabaseTransferContent {
 pub struct DatabaseImportOptions {
     pub content: DatabaseTransferContent,
     pub include_database: bool,
+    #[serde(default)]
+    pub mappings: Option<Vec<super::import_data::ImportMapping>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

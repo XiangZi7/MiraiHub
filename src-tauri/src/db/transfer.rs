@@ -27,6 +27,28 @@ const EXPORT_PAGE_SIZE: u32 = 1_000;
 const INSERT_BATCH_SIZE: usize = 100;
 const MAX_IMPORT_BYTES: u64 = 128 * 1024 * 1024;
 
+pub struct ExportProgress<'a> {
+    pub app: &'a tauri::AppHandle,
+    pub task_id: &'a str,
+    pub control: std::sync::Arc<crate::ssh::transfers::TransferControl>,
+    pub rows: std::sync::atomic::AtomicU64,
+}
+impl ExportProgress<'_> {
+    async fn checkpoint(&self) -> DatabaseResult<()> {
+        self.control
+            .checkpoint()
+            .await
+            .map_err(|_| DatabaseError::Cancelled)
+    }
+    fn report(&self, bytes: u64, rows: u64) {
+        use std::sync::atomic::Ordering;
+        let total = self.rows.fetch_add(rows, Ordering::Relaxed) + rows;
+        let mut event = crate::ssh::events::TransferEvent::progress(self.task_id, bytes, 0);
+        event.processed_rows = Some(total);
+        crate::ssh::events::emit_transfer(self.app, event);
+    }
+}
+
 pub async fn export_sql(
     manager: &DatabaseManager,
     session_id: &str,
@@ -35,6 +57,7 @@ pub async fn export_sql(
     drop_existing: bool,
     include_structure: bool,
     include_database: bool,
+    progress: Option<&ExportProgress<'_>>,
 ) -> DatabaseResult<DatabaseExportResult> {
     let path = validate_path(path)?;
     if !include_data && !include_structure {
@@ -58,6 +81,9 @@ pub async fn export_sql(
     let mut views = Vec::new();
     let mut routines = Vec::new();
     for object in objects {
+        if let Some(progress) = progress {
+            progress.checkpoint().await?;
+        }
         if !include_structure && object.kind != DatabaseObjectKind::Table {
             continue;
         }
@@ -109,182 +135,225 @@ pub async fn export_sql(
         ));
     }
 
-    let file = tokio::fs::File::create(path)
-        .await
-        .map_err(|source| io_error("创建", path, source))?;
-    let mut writer = BufWriter::new(file);
-    let mut bytes = 0u64;
-    let mut exported_rows = 0u64;
+    let destination = path;
+    let temporary = std::path::Path::new(destination)
+        .with_file_name(format!(".miraihub-{:032x}.part", rand::random::<u128>()));
+    let path = temporary
+        .to_str()
+        .ok_or_else(|| DatabaseError::InvalidInput("导出路径不是有效 UTF-8".into()))?;
+    let result = async {
+        let file = tokio::fs::File::create(path)
+            .await
+            .map_err(|source| io_error("创建", path, source))?;
+        let mut writer = BufWriter::new(file);
+        let mut bytes = 0u64;
+        let mut exported_rows = 0u64;
 
-    write_dump(
-        &mut writer,
-        path,
-        &mut bytes,
-        &format!(
-            "-- MiraiHub SQL export\n-- Generated at {}\n-- Dialect: {}\n\n",
-            chrono::Utc::now().to_rfc3339(),
-            match kind {
-                DatabaseKind::Mysql => "MySQL",
-                DatabaseKind::Postgresql => "PostgreSQL",
-            }
-        ),
-    )
-    .await?;
-
-    if include_database {
-        write_schema_setup(
-            &mut writer,
-            path,
-            &mut bytes,
-            kind,
-            &tables,
-            &views,
-            &routines,
-        )
-        .await?;
-    }
-
-    if kind == DatabaseKind::Mysql {
         write_dump(
             &mut writer,
             path,
             &mut bytes,
-            "SET FOREIGN_KEY_CHECKS = 0;\n\n",
+            &format!(
+                "-- MiraiHub SQL export\n-- Generated at {}\n-- Dialect: {}\n\n",
+                chrono::Utc::now().to_rfc3339(),
+                match kind {
+                    DatabaseKind::Mysql => "MySQL",
+                    DatabaseKind::Postgresql => "PostgreSQL",
+                }
+            ),
         )
         .await?;
-    }
 
-    if drop_existing {
-        // 视图可能调用函数，例程也可能依赖表：先删视图，再删例程，最后删表。
-        for detail in views.iter().rev() {
-            write_statement(
+        if include_database {
+            write_schema_setup(
                 &mut writer,
                 path,
                 &mut bytes,
-                &format!(
-                    "DROP VIEW IF EXISTS {}{}",
-                    export_name(&detail.schema, &detail.name, kind, include_database),
-                    if kind == DatabaseKind::Postgresql {
-                        " CASCADE"
-                    } else {
-                        ""
-                    }
-                ),
+                kind,
+                &tables,
+                &views,
+                &routines,
             )
             .await?;
         }
-        for detail in routines.iter().rev() {
+
+        if kind == DatabaseKind::Mysql {
+            write_dump(
+                &mut writer,
+                path,
+                &mut bytes,
+                "SET FOREIGN_KEY_CHECKS = 0;\n\n",
+            )
+            .await?;
+        }
+
+        if drop_existing {
+            // 视图可能调用函数，例程也可能依赖表：先删视图，再删例程，最后删表。
+            for detail in views.iter().rev() {
+                write_statement(
+                    &mut writer,
+                    path,
+                    &mut bytes,
+                    &format!(
+                        "DROP VIEW IF EXISTS {}{}",
+                        export_name(&detail.schema, &detail.name, kind, include_database),
+                        if kind == DatabaseKind::Postgresql {
+                            " CASCADE"
+                        } else {
+                            ""
+                        }
+                    ),
+                )
+                .await?;
+            }
+            for detail in routines.iter().rev() {
+                if include_database {
+                    write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema)
+                        .await?;
+                }
+                let object_type = if detail.kind == DatabaseObjectKind::Procedure {
+                    "PROCEDURE"
+                } else {
+                    "FUNCTION"
+                };
+                let signature = if kind == DatabaseKind::Postgresql {
+                    format!(
+                        "{}({})",
+                        sql::qualified_name(&detail.schema, &detail.name, kind),
+                        detail.identity
+                    )
+                } else {
+                    export_name(&detail.schema, &detail.name, kind, include_database)
+                };
+                write_statement(
+                    &mut writer,
+                    path,
+                    &mut bytes,
+                    &format!(
+                        "DROP {object_type} IF EXISTS {signature}{}",
+                        if kind == DatabaseKind::Postgresql {
+                            " CASCADE"
+                        } else {
+                            ""
+                        }
+                    ),
+                )
+                .await?;
+            }
+            for detail in tables.iter().rev() {
+                write_statement(
+                    &mut writer,
+                    path,
+                    &mut bytes,
+                    &format!(
+                        "DROP TABLE IF EXISTS {}{}",
+                        export_name(&detail.schema, &detail.name, kind, include_database),
+                        if kind == DatabaseKind::Postgresql {
+                            " CASCADE"
+                        } else {
+                            ""
+                        }
+                    ),
+                )
+                .await?;
+            }
+        }
+
+        for detail in &tables {
+            if let Some(progress) = progress {
+                progress.checkpoint().await?;
+            }
             if include_database {
                 write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema)
                     .await?;
             }
-            let object_type = if detail.kind == DatabaseObjectKind::Procedure {
-                "PROCEDURE"
-            } else {
-                "FUNCTION"
-            };
-            let signature = if kind == DatabaseKind::Postgresql {
-                format!(
-                    "{}({})",
-                    sql::qualified_name(&detail.schema, &detail.name, kind),
-                    detail.identity
-                )
-            } else {
-                export_name(&detail.schema, &detail.name, kind, include_database)
-            };
-            write_statement(
-                &mut writer,
-                path,
-                &mut bytes,
-                &format!(
-                    "DROP {object_type} IF EXISTS {signature}{}",
-                    if kind == DatabaseKind::Postgresql {
-                        " CASCADE"
-                    } else {
-                        ""
-                    }
-                ),
-            )
-            .await?;
-        }
-        for detail in tables.iter().rev() {
-            write_statement(
-                &mut writer,
-                path,
-                &mut bytes,
-                &format!(
-                    "DROP TABLE IF EXISTS {}{}",
-                    export_name(&detail.schema, &detail.name, kind, include_database),
-                    if kind == DatabaseKind::Postgresql {
-                        " CASCADE"
-                    } else {
-                        ""
-                    }
-                ),
-            )
-            .await?;
-        }
-    }
+            if include_structure {
+                write_statement(&mut writer, path, &mut bytes, &detail.ddl).await?;
+            }
 
-    for detail in &tables {
-        if include_database {
-            write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+            if include_data {
+                exported_rows += export_table_rows(
+                    &pool,
+                    detail,
+                    &mut writer,
+                    path,
+                    &mut bytes,
+                    include_database,
+                    progress,
+                )
+                .await?;
+            }
         }
-        if include_structure {
+
+        // 例程放到表与数据之后、视图之前；视图定义经常会调用用户函数。
+        for detail in &routines {
+            if include_database {
+                write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema)
+                    .await?;
+            }
+            write_routine(&mut writer, path, &mut bytes, kind, detail).await?;
+        }
+
+        // 视图最后创建，确保基础表与常用函数已经存在。
+        for detail in &views {
+            if include_database {
+                write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema)
+                    .await?;
+            }
             write_statement(&mut writer, path, &mut bytes, &detail.ddl).await?;
         }
 
-        if include_data {
-            exported_rows += export_table_rows(
-                &pool,
-                detail,
+        if kind == DatabaseKind::Mysql {
+            write_dump(
                 &mut writer,
                 path,
                 &mut bytes,
-                include_database,
+                "SET FOREIGN_KEY_CHECKS = 1;\n",
             )
             .await?;
         }
-    }
 
-    // 例程放到表与数据之后、视图之前；视图定义经常会调用用户函数。
-    for detail in &routines {
-        if include_database {
-            write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+        if let Some(progress) = progress {
+            progress.checkpoint().await?;
+            progress.report(bytes, 0);
         }
-        write_routine(&mut writer, path, &mut bytes, kind, detail).await?;
-    }
+        writer
+            .flush()
+            .await
+            .map_err(|source| io_error("写入", path, source))?;
 
-    // 视图最后创建，确保基础表与常用函数已经存在。
-    for detail in &views {
-        if include_database {
-            write_mysql_use_database(&mut writer, path, &mut bytes, kind, &detail.schema).await?;
+        drop(writer);
+        if let Some(progress) = progress {
+            progress.checkpoint().await?;
         }
-        write_statement(&mut writer, path, &mut bytes, &detail.ddl).await?;
+        tokio::fs::rename(path, destination)
+            .await
+            .map_err(|source| io_error("保存", destination, source))?;
+        Ok(DatabaseExportResult {
+            path: destination.to_owned(),
+            objects: tables.len() + views.len() + routines.len(),
+            rows: exported_rows,
+            bytes,
+            elapsed_ms: query::elapsed_millis(started),
+        })
     }
-
-    if kind == DatabaseKind::Mysql {
-        write_dump(
-            &mut writer,
-            path,
-            &mut bytes,
-            "SET FOREIGN_KEY_CHECKS = 1;\n",
-        )
-        .await?;
+    .await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&temporary).await;
     }
+    result
+}
 
-    writer
-        .flush()
-        .await
-        .map_err(|source| io_error("写入", path, source))?;
-
-    Ok(DatabaseExportResult {
-        path: path.to_owned(),
-        objects: tables.len() + views.len() + routines.len(),
-        rows: exported_rows,
-        bytes,
-        elapsed_ms: query::elapsed_millis(started),
-    })
+/// 只读预览纯数据脚本中的表和字段，供导入弹窗确认映射。
+pub async fn preview_import(
+    manager: &DatabaseManager,
+    session_id: &str,
+    path: &str,
+) -> DatabaseResult<super::import_data::SqlImportPreview> {
+    let bytes = super::import_data::read_file(path).await?;
+    let contents = String::from_utf8(bytes)
+        .map_err(|_| DatabaseError::InvalidInput("SQL 文件必须为 UTF-8 编码".into()))?;
+    filter::preview_data(&contents, manager.pool(session_id).await?.kind())
 }
 
 pub async fn import_sql(
@@ -309,7 +378,12 @@ pub async fn import_sql(
         .map_err(|source| io_error("读取", path, source))?;
     let started = Instant::now();
     let pool = manager.pool(session_id).await?;
-    let (contents, skipped_statements) = filter::prepare_import(&contents, pool.kind(), options)?;
+    let (contents, skipped_statements) = if let Some(mappings) = &options.mappings {
+        super::import_data::validate_mappings(manager, session_id, mappings).await?;
+        filter::mapped_data(&contents, pool.kind(), mappings)?
+    } else {
+        filter::prepare_import(&contents, pool.kind(), options)?
+    };
     // 与编辑器复用完全相同的串行执行器：USE / SET 等会话状态能传给后续语句，
     // 取消信号和服务端 KILL 也只维护一套实现。结果行最多保留一行，避免导入文件
     // 中意外夹带 SELECT 时把大量数据经 IPC 返回。
@@ -353,11 +427,15 @@ async fn export_table_rows(
     path: &str,
     bytes: &mut u64,
     include_database: bool,
+    progress: Option<&ExportProgress<'_>>,
 ) -> DatabaseResult<u64> {
     let mut offset = 0u64;
     let mut total = 0u64;
 
     loop {
+        if let Some(progress) = progress {
+            progress.checkpoint().await?;
+        }
         let page = browse::fetch_rows(
             pool,
             &RowPageRequest {
@@ -391,7 +469,13 @@ async fn export_table_rows(
                 &page.columns,
                 batch,
             );
+            if let Some(progress) = progress {
+                progress.checkpoint().await?;
+            }
             write_statement(writer, path, bytes, &statement).await?;
+            if let Some(progress) = progress {
+                progress.report(*bytes, batch.len() as u64);
+            }
         }
 
         let fetched = page.rows.len() as u64;
@@ -682,6 +766,7 @@ mod tests {
             &DatabaseImportOptions {
                 content: super::super::models::DatabaseTransferContent::Data,
                 include_database: false,
+                mappings: None,
             },
         )
         .unwrap();

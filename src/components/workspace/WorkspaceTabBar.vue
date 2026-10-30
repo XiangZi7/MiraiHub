@@ -47,6 +47,14 @@ const items = computed<TabItem[]>(() =>
                 ? ('amber' as const)
                 : ('txt-3' as const),
         }),
+    tooltip: [
+      { label: t('连接'), value: tab.connection.name },
+      { label: 'Host', value: `${tab.connection.host}:${tab.connection.port}` },
+      ...(isDatabaseConnection(tab.connection)
+        ? [{ label: 'Db', value: tab.connection.settings.database || '—' }]
+        : [{ label: t('用户名'), value: tab.connection.username || '—' }]),
+      { label: t('备注'), value: tab.connection.description || '—' },
+    ],
     closable: true,
   }))
 )

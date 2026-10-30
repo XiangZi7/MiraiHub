@@ -6,7 +6,7 @@ import AppMenuSurface from './AppMenuSurface.vue'
 const tooltipId = `tooltip-${useId()}`
 const bubble = useTemplateRef<HTMLElement>('bubble')
 const { state, enter, leave } = useAppTooltip(bubble, tooltipId)
-const { content, open, positioned, side, style } = toRefs(state)
+const { content, details, open, positioned, side, style } = toRefs(state)
 </script>
 
 <template>
@@ -23,7 +23,26 @@ const { content, open, positioned, side, style } = toRefs(state)
       @pointerleave="leave"
     >
       <AppMenuSurface />
+      <dl
+        v-if="details.length"
+        class="scroll-thin app-tooltip-content grid grid-cols-[auto_minmax(0,1fr)] overflow-auto p-1"
+      >
+        <template
+          v-for="row in details"
+          :key="row.label"
+        >
+          <dt class="bg-panel text-txt-3 px-2 py-1 text-right">
+            {{ row.label }}
+          </dt>
+          <dd
+            class="text-blue min-w-0 px-2 py-1 font-mono break-words whitespace-pre-wrap"
+          >
+            {{ row.value || '—' }}
+          </dd>
+        </template>
+      </dl>
       <div
+        v-else
         class="scroll-thin app-tooltip-content overflow-auto px-2.5 py-1.5 whitespace-pre-wrap"
       >
         {{ content }}

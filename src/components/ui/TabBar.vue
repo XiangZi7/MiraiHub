@@ -27,6 +27,8 @@ export interface TabItem {
   accent?: string
   /** 是否可关闭 */
   closable?: boolean
+  /** 悬停时以字段表展示的连接信息，不包含密码或私钥。 */
+  tooltip?: readonly { label: string; value: string }[]
 }
 
 const props = defineProps<{
@@ -153,6 +155,12 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
       :aria-selected="active === tab.id"
       :aria-posinset="index + 1"
       :aria-setsize="tabs.length"
+      :data-tooltip="
+        tab.tooltip?.map(row => `${row.label}：${row.value}`).join('\n')
+      "
+      :data-tooltip-details="
+        tab.tooltip ? JSON.stringify(tab.tooltip) : undefined
+      "
       :title="
         t(
           splitDraggable

@@ -45,7 +45,6 @@ const items = computed<ContextMenuItem[]>(() => {
       id: 'open-object',
       label: object.kind === 'table' ? t('浏览数据') : t('打开对象'),
       icon: relation ? 'lucide:table-2' : 'lucide:file-code-2',
-      groupLabel: `${object.schema}.${object.name}`,
     },
     {
       id: 'query-object',

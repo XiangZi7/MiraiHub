@@ -28,6 +28,7 @@ import type {
   CellValue,
   ColumnTagConfig,
   DatabaseObject,
+  DatabaseKind,
   DatabaseRowPage,
   DatabaseTableDetail,
   RowFilter,
@@ -40,6 +41,11 @@ import { cn } from '@/utils/cn'
 import { IS_TAURI } from '@/utils/window'
 import DatabaseColumnTagDialog from './DatabaseColumnTagDialog.vue'
 import DatabaseDataRow from './DatabaseDataRow.vue'
+import DatabaseExportMenu from './DatabaseExportMenu.vue'
+import type {
+  DatabaseExportData,
+  DatabaseExportLoader,
+} from '@/types/database-export'
 
 const { t } = useI18n()
 
@@ -48,6 +54,8 @@ type DetailPanel =
 
 const props = defineProps<{
   sessionId: string
+  databaseKind?: DatabaseKind
+  databaseName?: string
   object: DatabaseObject
   initialPanel?: 'data' | 'columns'
   panelNonce?: number
@@ -84,6 +92,49 @@ const confirmOpen = shallowRef(false)
 
 let loadRevision = 0
 let pageRevision = 0
+
+const exportData = computed<DatabaseExportData>(() => ({
+  name: props.object.name,
+  schema: props.object.schema,
+  databaseKind: props.databaseKind ?? 'mysql',
+  columns: state.detail?.columns ?? state.page?.columns ?? [],
+  rows: state.page?.rows ?? [],
+  detail: state.detail,
+}))
+/** 固定导出目标与筛选，每次最多读取 200 行；等待编码写入后再取下一批，关闭标签也不影响任务。 */
+function loadAllExportRows(): DatabaseExportLoader {
+  const data = { ...exportData.value, rows: [] as Array<Array<string | null>> }
+  const sessionId = props.sessionId
+  const databaseName = props.databaseName || props.object.schema
+  const request = {
+    schema: props.object.schema,
+    table: props.object.name,
+    filters: state.filters.map(filter => ({ ...filter })),
+    sort: state.sort ? { ...state.sort } : undefined,
+    limit: 200,
+  }
+  return async ({ signal, onProgress, onRows }) => {
+    const owned = await database.forkSession(sessionId, databaseName)
+    try {
+      let offset = 0
+      while (!signal.aborted) {
+        const page = await database.fetchRows(owned.sessionId, {
+          ...request,
+          offset,
+        })
+        if (signal.aborted) throw new Error('Export cancelled')
+        if (onRows) await onRows(page.rows)
+        else data.rows.push(...page.rows)
+        onProgress(offset + page.rows.length)
+        if (!page.hasMore || !page.rows.length) return data
+        offset += page.rows.length
+      }
+      throw new Error('Export cancelled')
+    } finally {
+      await database.disconnect(owned.sessionId)
+    }
+  }
+}
 
 const tablePanels = computed<
   Array<{ id: DetailPanel; label: string; icon: string }>
@@ -689,6 +740,11 @@ watch(
         >
       </AppButton>
       <div class="flex-1" />
+      <DatabaseExportMenu
+        :data="exportData"
+        :load-all="loadAllExportRows"
+        :disabled="state.loading || state.pageLoading || state.mutationLoading"
+      />
       <span
         v-if="!canEditExisting && state.detail?.kind === 'table'"
         class="text-amber mr-1 text-[10px]"

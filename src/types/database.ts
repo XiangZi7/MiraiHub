@@ -221,6 +221,7 @@ export interface MutationResult {
 export type DatabaseTransferContent = 'all' | 'structure' | 'data'
 
 export interface DatabaseImportOptions {
+  mappings?: import('./database-import').DatabaseImportMapping[]
   content: DatabaseTransferContent
   includeDatabase: boolean
 }

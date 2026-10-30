@@ -31,6 +31,7 @@ const ACTIVE_STATUSES = ['queued', 'running', 'paused']
 
 const {
   tasks,
+  panelOpen: open,
   activeTasks,
   unreadCount,
   hasUnreadError,
@@ -44,7 +45,6 @@ const {
   clearSettled,
 } = useFileTransfers()
 
-const open = shallowRef(false)
 const statusFilter = shallowRef<TransferFilter>('all')
 const triggerRoot = useTemplateRef<HTMLElement>('triggerRoot')
 const panelRoot = useTemplateRef<HTMLElement>('panelRoot')
@@ -120,7 +120,7 @@ const aggregate = computed(() => {
 })
 
 const canPause = computed(() =>
-  activeTasks.value.some(task => task.status === 'running')
+  activeTasks.value.some(task => task.status === 'running' && !task.kind)
 )
 const canResume = computed(
   () =>

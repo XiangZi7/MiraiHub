@@ -16,6 +16,8 @@ export function useAppTooltip(
   const state = reactive({
     // 当前提示文案。
     content: '',
+    // 标签页的结构化连接字段，普通文字提示保持为空。
+    details: [] as { label: string; value: string }[],
     // 气泡是否打开。
     open: false,
     // 完成测量后才显示。
@@ -38,6 +40,27 @@ export function useAppTooltip(
       element.getAttribute('data-native-tooltip') ??
       ''
     ).trim()
+  }
+
+  /** 读取标签提供的字段表，只接受文本键值，避免异常属性破坏全局提示。 */
+  function detailsOf(element: Element): { label: string; value: string }[] {
+    try {
+      const rows: unknown = JSON.parse(
+        element.getAttribute('data-tooltip-details') || '[]'
+      )
+      return Array.isArray(rows)
+        ? rows
+            .filter(
+              (row): row is { label: string; value: string } =>
+                row &&
+                typeof row.label === 'string' &&
+                typeof row.value === 'string'
+            )
+            .slice(0, 12)
+        : []
+    } catch {
+      return []
+    }
   }
 
   function targetOf(target: EventTarget | null): Element | null {
@@ -135,6 +158,7 @@ export function useAppTooltip(
     immediate: false,
   })
 
+  /** 隐藏气泡时清空字段表和可访问关联，避免下一个普通提示残留连接信息。 */
   function hide(): void {
     stopShow()
     stopHide()
@@ -145,8 +169,10 @@ export function useAppTooltip(
     state.open = false
     state.positioned = false
     state.content = ''
+    state.details = []
   }
 
+  /** 鼠标或键盘进入控件后读取提示文本与连接字段，沿用统一的延迟显示和定位。 */
   function activate(
     element: Element | null,
     source: 'pointer' | 'focus'
@@ -167,6 +193,7 @@ export function useAppTooltip(
     }
     mode = source
     state.content = contentOf(element)
+    state.details = detailsOf(element)
     if (state.open) queuePosition()
     else if (source === 'focus') void show()
     else if (!isPending.value) startShow()
@@ -251,6 +278,7 @@ export function useAppTooltip(
       if (!active.isConnected || !content) hide()
       else {
         state.content = content
+        state.details = detailsOf(active)
         queuePosition()
       }
     })

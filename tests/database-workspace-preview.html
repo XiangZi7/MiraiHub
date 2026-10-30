@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>数据库缓存、分屏与导出预览</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref } from 'vue'
+      import { createPinia } from 'pinia'
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      import { addCollection } from '@iconify/vue'
+      import icons from 'virtual:mirai-icons'
+      import '/src/assets/styles/main.css'
+      addCollection(icons)
+      mockWindows('main')
+      const sessions = new Map()
+      let sequence = 0
+      const session = database => {
+        const sessionId = `preview-${++sequence}`
+        sessions.set(sessionId, database)
+        return {
+          sessionId,
+          database,
+          kind: 'mysql',
+          endpoint: 'fixture.invalid:3306',
+          serverVersion: '8.4',
+        }
+      }
+      const columns = [
+        {
+          name: 'id',
+          dataType: 'BIGINT',
+          nullable: false,
+          primaryKey: true,
+          autoIncrement: true,
+          ordinal: 1,
+          defaultValue: null,
+          comment: '主键',
+        },
+        {
+          name: 'message',
+          dataType: 'VARCHAR(255)',
+          nullable: true,
+          primaryKey: false,
+          autoIncrement: false,
+          ordinal: 2,
+          defaultValue: null,
+          comment: '中文内容',
+        },
+      ]
+      const objects = schema =>
+        ['events', 'users'].map(name => ({
+          schema,
+          name,
+          kind: 'table',
+          identity: '',
+          rowEstimate: 2200,
+          comment: '预览数据',
+          createdAt: null,
+          updatedAt: null,
+        }))
+      mockIPC(
+        async (command, args) => {
+          if (command === 'ai_get_config') return { activeId: '', profiles: [] }
+          if (command === 'ai_list_conversations') return []
+          if (command === 'db_connect')
+            return session(args.config.database || '')
+          if (command === 'db_fork_session') return session(args.database)
+          if (command === 'db_disconnect') {
+            sessions.delete(args.sessionId)
+            return
+          }
+          if (command === 'db_use_database') {
+            sessions.set(args.sessionId, args.database)
+            return { ...session(args.database), sessionId: args.sessionId }
+          }
+          if (command === 'db_describe_session')
+            return {
+              sessionId: args.sessionId,
+              database: sessions.get(args.sessionId),
+              kind: 'mysql',
+            }
+          if (command === 'db_list_databases') return ['alpha', 'beta']
+          if (command === 'db_list_objects') {
+            await new Promise(resolve => setTimeout(resolve, 600))
+            return objects(sessions.get(args.sessionId))
+          }
+          if (command === 'db_import_catalog')
+            return objects(sessions.get(args.sessionId) || 'alpha').map(
+              object => ({ schema: object.schema, name: object.name, columns })
+            )
+          if (command === 'db_preview_import_sql')
+            return {
+              sources: [
+                {
+                  id: 'old\u0000events',
+                  name: 'events',
+                  schema: 'old',
+                  columns: ['id', 'message'],
+                  rows: [],
+                  statementCount: 2,
+                },
+              ],
+              skippedStatements: 2,
+            }
+          if (command === 'plugin:dialog|open')
+            return args.options.filters[0].extensions[0] === 'xlsx'
+              ? 'C:/preview/events.xlsx'
+              : 'C:/preview/events.sql'
+          if (command === 'db_read_import_file') {
+            const { default: ExcelJS } = await import('exceljs')
+            const workbook = new ExcelJS.Workbook()
+            const sheet = workbook.addWorksheet('events')
+            sheet.addRow(['id', 'message'])
+            sheet.addRow(['9007199254740993', 'Excel 导入示例'])
+            sheet.addRow(['', '中文内容'])
+            sheet.addRow(['', '保留前导零 001'])
+            return Array.from(new Uint8Array(await workbook.xlsx.writeBuffer()))
+          }
+          if (command === 'db_import_rows' || command === 'db_import_sql') {
+            await new Promise(resolve => setTimeout(resolve, 800))
+            return {
+              path: 'C:/preview/events.xlsx',
+              statements: 3,
+              rowsAffected: 3,
+              skippedStatements: 0,
+              elapsedMs: 800,
+            }
+          }
+          if (command === 'db_describe_object') return columns
+          if (command === 'db_completion_columns') return ['id', 'message']
+          if (command === 'db_table_detail')
+            return {
+              schema: args.schema,
+              name: args.name,
+              kind: 'table',
+              columns,
+              indexes: [],
+              foreignKeys: [],
+              primaryKey: ['id'],
+              rowEstimate: 2200,
+              ddl: 'CREATE TABLE events (id BIGINT, message TEXT);',
+              options: null,
+            }
+          if (command === 'db_fetch_rows') {
+            await new Promise(resolve => setTimeout(resolve, 300))
+            const { offset = 0, limit = 100 } = args.request
+            return {
+              columns,
+              rows: Array.from(
+                { length: Math.min(limit, 2200 - offset) },
+                (_, index) => [
+                  String(offset + index + 1),
+                  `${args.request.schema} · 示例数据 ${offset + index + 1}`,
+                ]
+              ),
+              offset,
+              limit,
+              hasMore: offset + limit < 2200,
+              elapsedMs: 2,
+              sql: 'SELECT * FROM events',
+            }
+          }
+          if (command === 'db_execute')
+            return {
+              statements: [
+                {
+                  statement: args.sql,
+                  offset: 0,
+                  columns,
+                  rows: [
+                    [
+                      '9007199254740993',
+                      `${sessions.get(args.sessionId)} 查询结果`,
+                    ],
+                  ],
+                  rowsAffected: 0,
+                  elapsedMs: 3,
+                  truncated: false,
+                  message: '1 row',
+                  error: null,
+                },
+              ],
+              elapsedMs: 3,
+              cancelled: false,
+            }
+          if (command === 'plugin:dialog|save')
+            return `C:/preview/${args.options.defaultPath}`
+          if (command === 'db_write_export_file') {
+            await new Promise(resolve => setTimeout(resolve, 60))
+            return
+          }
+          if (command === 'plugin:event|listen') return 1
+          if (
+            command === 'db_begin_export_file' ||
+            command === 'db_finish_export_file' ||
+            command === 'ssh_cancel_transfer'
+          )
+            return
+          if (command === 'db_count_rows') return 2200
+          return null
+        },
+        { shouldMockEvents: true }
+      )
+      const [
+        { default: DatabaseView },
+        { default: TransferCenter },
+        { i18n },
+        { default: DatabaseTransferDialog },
+        { default: AppTooltip },
+      ] = await Promise.all([
+        import('/src/components/workspace/DatabaseView.vue'),
+        import('/src/components/workspace/TransferCenter.vue'),
+        import('/src/i18n/index.ts'),
+        import('/src/components/workspace/database/DatabaseTransferDialog.vue'),
+        import('/src/components/ui/AppTooltip.vue'),
+      ])
+      i18n.global.locale.value = 'zh-CN'
+      const importOpen = ref(false)
+      createApp({
+        render: () =>
+          h('main', { class: 'flex h-screen min-w-0 flex-col p-3' }, [
+            h(
+              'header',
+              {
+                class:
+                  'flex h-9 shrink-0 items-center justify-between px-2 text-xs',
+              },
+              [
+                '数据库工作区预览',
+                h(
+                  'button',
+                  {
+                    class: 'btn',
+                    onClick: () => {
+                      importOpen.value = true
+                    },
+                  },
+                  '导入演示'
+                ),
+                h(TransferCenter),
+              ]
+            ),
+            h(AppTooltip),
+            h(DatabaseTransferDialog, {
+              open: importOpen.value,
+              mode: 'import',
+              sessionId: 'preview-1',
+              databaseName: 'alpha',
+              connection: {
+                kind: 'mysql',
+                name: '预览数据库',
+                settings: { database: 'alpha' },
+              },
+              onClose: () => {
+                importOpen.value = false
+              },
+            }),
+            h(DatabaseView, {
+              connection: {
+                id: 'database-workspace-preview',
+                kind: 'mysql',
+                name: '演示连接',
+                host: 'fixture.invalid',
+                port: 3306,
+                username: 'preview',
+                settings: { database: '', password: '', ssl: false },
+                tags: [],
+                group: '',
+                tagColor: 'violet',
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            }),
+          ]),
+      })
+        .use(createPinia())
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

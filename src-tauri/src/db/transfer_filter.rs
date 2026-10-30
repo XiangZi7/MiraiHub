@@ -469,6 +469,323 @@ pub(super) fn prepare_import(
     Ok((join_statements(&selected, kind), total - selected.len()))
 }
 
+/// 解开标识符的引号，仅用于表和列名；字符串常量从不经过此方法。
+fn identifier(token: &Token<'_>) -> String {
+    let text = token.text;
+    if let Some(inner) = text
+        .strip_prefix('`')
+        .and_then(|value| value.strip_suffix('`'))
+    {
+        inner.replace("``", "`")
+    } else if let Some(inner) = text
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+    {
+        inner.replace("\"\"", "\"")
+    } else {
+        text.to_owned()
+    }
+}
+
+/// 定位 INSERT/REPLACE 的目标表及可选字段清单，不处理值、注释中的相同文字。
+fn insert_target(tokens: &[Token<'_>]) -> Option<(usize, usize, usize)> {
+    if !tokens
+        .first()
+        .is_some_and(|t| t.is("INSERT") || t.is("REPLACE"))
+    {
+        return None;
+    }
+    let mut index = 1;
+    while tokens.get(index).is_some_and(|t| {
+        [
+            "INTO",
+            "LOW_PRIORITY",
+            "HIGH_PRIORITY",
+            "DELAYED",
+            "IGNORE",
+            "ONLY",
+        ]
+        .iter()
+        .any(|word| t.is(word))
+    }) {
+        index += 1;
+    }
+    if !tokens.get(index).is_some_and(|t| t.identifier) {
+        return None;
+    }
+    let last = if tokens.get(index + 1).is_some_and(|t| t.text == ".")
+        && tokens.get(index + 2).is_some_and(|t| t.identifier)
+    {
+        index + 2
+    } else {
+        index
+    };
+    Some((index, last, last + 1))
+}
+
+/// 从建表语句取原始字段顺序，让没有字段清单的常见 mysqldump 也能按名称匹配。
+fn create_columns(tokens: &[Token<'_>]) -> Option<(String, String, Vec<String>)> {
+    if !tokens.first().is_some_and(|t| t.is("CREATE")) {
+        return None;
+    }
+    let mut index = tokens.iter().position(|t| t.is("TABLE"))? + 1;
+    while tokens
+        .get(index)
+        .is_some_and(|t| ["IF", "NOT", "EXISTS"].iter().any(|word| t.is(word)))
+    {
+        index += 1;
+    }
+    let first = tokens.get(index)?;
+    let (schema, name) = if tokens.get(index + 1).is_some_and(|t| t.text == ".") {
+        let pair = (identifier(first), identifier(tokens.get(index + 2)?));
+        index += 3;
+        pair
+    } else {
+        index += 1;
+        (String::new(), identifier(first))
+    };
+    if !tokens.get(index).is_some_and(|t| t.text == "(") {
+        return None;
+    }
+    let mut columns = Vec::new();
+    let mut depth = 1;
+    let mut at_column = true;
+    for token in &tokens[index + 1..] {
+        if token.text == ")" {
+            depth -= 1;
+            if depth == 0 {
+                break;
+            }
+        }
+        if depth == 1 && at_column {
+            if token.identifier
+                && ![
+                    "PRIMARY",
+                    "UNIQUE",
+                    "KEY",
+                    "INDEX",
+                    "CONSTRAINT",
+                    "FOREIGN",
+                    "CHECK",
+                    "FULLTEXT",
+                    "SPATIAL",
+                ]
+                .iter()
+                .any(|word| token.is(word))
+            {
+                columns.push(identifier(token));
+            }
+            at_column = false;
+        }
+        if token.text == "(" {
+            depth += 1;
+        }
+        if depth == 1 && token.text == "," {
+            at_column = true;
+        }
+    }
+    Some((schema, name, columns))
+}
+
+/// 预览纯数据脚本中的源表和字段；只允许普通 VALUES 写入，复杂脚本保留给完整 SQL 导入。
+pub(super) fn preview_data(
+    contents: &str,
+    kind: DatabaseKind,
+) -> DatabaseResult<super::super::import_data::SqlImportPreview> {
+    use super::super::import_data::{ImportSource, SqlImportPreview};
+    let expanded = if kind == DatabaseKind::Mysql {
+        expand_mysql_comments(contents.trim_start_matches('\u{feff}'))
+    } else {
+        contents.to_owned()
+    };
+    let statements = sql::split_statements(&expanded, kind);
+    let definitions: Vec<_> = statements
+        .iter()
+        .filter_map(|s| create_columns(&tokens(&s.text, kind)))
+        .collect();
+    let mut sources: Vec<ImportSource> = Vec::new();
+    let mut skipped = 0;
+    for statement in &statements {
+        let ts = tokens(&statement.text, kind);
+        let Some((first, last, next)) = insert_target(&ts) else {
+            skipped += 1;
+            continue;
+        };
+        if !ts.iter().any(|t| t.is("VALUES")) || ts.iter().any(|t| t.is("SELECT")) {
+            return Err(DatabaseError::InvalidInput(
+                "纯数据匹配仅支持 INSERT/REPLACE ... VALUES，请使用普通 INSERT 格式的 SQL".into(),
+            ));
+        }
+        let schema = if first != last {
+            identifier(&ts[first])
+        } else {
+            String::new()
+        };
+        let name = identifier(&ts[last]);
+        let mut columns = Vec::new();
+        if ts.get(next).is_some_and(|t| t.text == "(") {
+            let mut i = next + 1;
+            while let Some(t) = ts.get(i) {
+                if t.text == ")" {
+                    break;
+                }
+                if !t.identifier {
+                    return Err(DatabaseError::InvalidInput(
+                        "无法识别 INSERT 字段清单".into(),
+                    ));
+                }
+                columns.push(identifier(t));
+                i += 1;
+                if ts.get(i).is_some_and(|t| t.text == ",") {
+                    i += 1;
+                } else if !ts.get(i).is_some_and(|t| t.text == ")") {
+                    return Err(DatabaseError::InvalidInput(
+                        "无法识别 INSERT 字段清单".into(),
+                    ));
+                }
+            }
+        } else if let Some((_, _, defined)) = definitions
+            .iter()
+            .find(|(s, n, _)| *n == name && (s.is_empty() || schema.is_empty() || *s == schema))
+        {
+            columns = defined.clone();
+        }
+        if columns.is_empty() {
+            return Err(DatabaseError::InvalidInput(format!("表 {name} 的 INSERT 没有字段名，也没有对应建表定义，无法可靠匹配；请重新导出并包含字段名")));
+        }
+        let unique: std::collections::BTreeSet<_> = columns.iter().collect();
+        if unique.len() != columns.len() {
+            return Err(DatabaseError::InvalidInput(format!(
+                "表 {name} 包含重复字段"
+            )));
+        }
+        let id = format!("{schema}\0{name}");
+        if let Some(source) = sources.iter_mut().find(|s| s.id == id) {
+            if columns.len() != source.columns.len()
+                || columns
+                    .iter()
+                    .any(|column| !source.columns.contains(column))
+            {
+                return Err(DatabaseError::InvalidInput(format!(
+                    "表 {name} 的多条 INSERT 字段清单不一致，请统一字段后再使用匹配导入"
+                )));
+            }
+            source.statement_count += 1;
+        } else {
+            sources.push(ImportSource {
+                id,
+                schema,
+                name,
+                columns,
+                rows: Vec::new(),
+                statement_count: 1,
+            });
+        }
+    }
+    if sources.is_empty() {
+        return Err(DatabaseError::InvalidInput(
+            "SQL 文件没有可匹配的 INSERT/REPLACE 数据".into(),
+        ));
+    }
+    Ok(SqlImportPreview {
+        sources,
+        skipped_statements: skipped,
+    })
+}
+
+/// 用户确认后只替换语句的表名和字段标识符；值、注释和字符串保持原样，且禁止危险会话设置。
+pub(super) fn mapped_data(
+    contents: &str,
+    kind: DatabaseKind,
+    mappings: &[super::super::import_data::ImportMapping],
+) -> DatabaseResult<(String, usize)> {
+    let preview = preview_data(contents, kind)?;
+    let expanded = if kind == DatabaseKind::Mysql {
+        expand_mysql_comments(contents.trim_start_matches('\u{feff}'))
+    } else {
+        contents.to_owned()
+    };
+    let mut selected = Vec::new();
+    for statement in sql::split_statements(&expanded, kind) {
+        let ts = tokens(&statement.text, kind);
+        let Some((first, last, next)) = insert_target(&ts) else {
+            continue;
+        };
+        let schema = if first != last {
+            identifier(&ts[first])
+        } else {
+            String::new()
+        };
+        let name = identifier(&ts[last]);
+        let id = format!("{schema}\0{name}");
+        let mapping = mappings
+            .iter()
+            .find(|m| m.source_id == id)
+            .ok_or_else(|| DatabaseError::InvalidInput(format!("源表 {name} 缺少确认映射")))?;
+        let source = preview.sources.iter().find(|s| s.id == id).unwrap();
+        let mut edits = vec![(
+            ts[first].start,
+            ts[last].end,
+            sql::qualified_name(&mapping.target_schema, &mapping.target_table, kind),
+        )];
+        if ts.get(next).is_some_and(|t| t.text == "(") {
+            for token in &ts[next + 1..] {
+                if token.text == ")" {
+                    break;
+                }
+                if token.identifier {
+                    let original = identifier(token);
+                    let column = mapping.columns.get(&original).ok_or_else(|| {
+                        DatabaseError::InvalidInput(format!("字段 {original} 缺少映射"))
+                    })?;
+                    edits.push((token.start, token.end, sql::quote_identifier(column, kind)));
+                }
+            }
+        } else {
+            let columns = source
+                .columns
+                .iter()
+                .map(|name| {
+                    mapping
+                        .columns
+                        .get(name)
+                        .map(|column| sql::quote_identifier(column, kind))
+                        .ok_or_else(|| DatabaseError::InvalidInput(format!("字段 {name} 缺少映射")))
+                })
+                .collect::<DatabaseResult<Vec<_>>>()?;
+            edits.push((
+                ts[last].end,
+                ts[last].end,
+                format!(" ({})", columns.join(", ")),
+            ));
+        }
+        // ON DUPLICATE/CONFLICT 的表达式可能引用源列名，只允许字段名不变的情况。
+        if ts.iter().any(|t| t.is("DUPLICATE") || t.is("CONFLICT"))
+            && mapping.columns.iter().any(|(a, b)| a != b)
+        {
+            return Err(DatabaseError::InvalidInput(
+                "带冲突处理的 SQL 不能重映射字段名，请保留原字段名或重新导出普通 INSERT".into(),
+            ));
+        }
+        let mut output = String::new();
+        let mut cursor = 0;
+        for (start, end, value) in edits {
+            output.push_str(&statement.text[cursor..start]);
+            output.push_str(&value);
+            cursor = end;
+        }
+        output.push_str(&statement.text[cursor..]);
+        selected.push(output);
+    }
+    // setval 的序列名无法由表名可靠推导，避免映射到新表后修改旧序列。
+    if kind == DatabaseKind::Postgresql && tokens(&expanded, kind).iter().any(|t| t.is("setval")) {
+        return Err(DatabaseError::InvalidInput(
+            "匹配导入暂不处理序列恢复，请移除 setval 语句后导入，或选择完整 SQL 导入".into(),
+        ));
+    }
+    Ok((join_statements(&selected, kind), preview.skipped_statements))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,6 +797,7 @@ mod tests {
             &DatabaseImportOptions {
                 content,
                 include_database: false,
+                mappings: None,
             },
         )
         .unwrap();
@@ -487,6 +805,80 @@ mod tests {
             .into_iter()
             .map(|statement| statement.text)
             .collect()
+    }
+
+    fn mapping() -> super::super::super::import_data::ImportMapping {
+        super::super::super::import_data::ImportMapping {
+            source_id: "old\0users".into(),
+            target_schema: "new".into(),
+            target_table: "customers".into(),
+            columns: [
+                ("id".into(), "id".into()),
+                ("name".into(), "display_name".into()),
+            ]
+            .into(),
+        }
+    }
+
+    #[test]
+    fn malformed_identifiers_and_inconsistent_columns_fail_without_panicking() {
+        assert!(preview_data("INSERT INTO `中文", DatabaseKind::Mysql).is_err());
+        assert!(preview_data(
+            "INSERT INTO old.users(id,name) VALUES(1,'a'); INSERT INTO old.users(id) VALUES(2);",
+            DatabaseKind::Mysql
+        )
+        .is_err());
+        assert!(preview_data(
+            "INSERT INTO old.users(id,id) VALUES(1,2)",
+            DatabaseKind::Mysql
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn mapped_data_only_rewrites_identifiers_and_preserves_values() {
+        let source = "CREATE DATABASE old; USE old; SET FOREIGN_KEY_CHECKS=0; INSERT INTO `old`.`users` (`id`,`name`) VALUES(1,'old.users; name INSERT INTO');";
+        let (prepared, skipped) = mapped_data(source, DatabaseKind::Mysql, &[mapping()]).unwrap();
+        assert_eq!(skipped, 3);
+        assert!(prepared.contains("INSERT INTO `new`.`customers` (`id`,`display_name`) VALUES(1,'old.users; name INSERT INTO')"));
+        assert!(!prepared.contains("FOREIGN_KEY_CHECKS"));
+    }
+
+    #[test]
+    fn dump_without_insert_columns_uses_original_create_order() {
+        let source = "CREATE TABLE old.users (`id` int, `name` varchar(20), PRIMARY KEY(id)); INSERT INTO old.users VALUES(1,'one'),(2,'two');";
+        let preview = preview_data(source, DatabaseKind::Mysql).unwrap();
+        assert_eq!(preview.sources[0].columns, vec!["id", "name"]);
+        let (prepared, _) = mapped_data(source, DatabaseKind::Mysql, &[mapping()]).unwrap();
+        assert!(prepared.contains("`customers` (`id`, `display_name`) VALUES"));
+    }
+
+    #[test]
+    fn matching_rejects_unverifiable_or_incomplete_sources_before_execution() {
+        assert!(preview_data("INSERT INTO users VALUES(1)", DatabaseKind::Mysql).is_err());
+        assert!(preview_data(
+            "INSERT INTO users(id) SELECT id FROM other",
+            DatabaseKind::Mysql
+        )
+        .is_err());
+        assert!(mapped_data(
+            "INSERT INTO old.users(id,name) VALUES(1,'a'); INSERT INTO other(id) VALUES(2)",
+            DatabaseKind::Mysql,
+            &[mapping()]
+        )
+        .is_err());
+        assert!(mapped_data("INSERT INTO old.users(id,name) VALUES(1,'a') ON DUPLICATE KEY UPDATE name=VALUES(name)",DatabaseKind::Mysql,&[mapping()]).is_err());
+    }
+
+    #[test]
+    fn postgres_mapping_keeps_literal_and_quoted_schema_names() {
+        let mut map = mapping();
+        map.source_id = "Old.Schema\0User.Table".into();
+        map.target_schema = "New.Schema".into();
+        let source = "INSERT INTO \"Old.Schema\".\"User.Table\"(id,name) VALUES(1,$tag$Old.Schema.User.Table; name$tag$);";
+        let (prepared, _) = mapped_data(source, DatabaseKind::Postgresql, &[map]).unwrap();
+        assert!(prepared.contains("\"New.Schema\".\"customers\""));
+        assert!(prepared.contains("$tag$Old.Schema.User.Table; name$tag$"));
     }
 
     #[test]
@@ -633,7 +1025,8 @@ mod tests {
             DatabaseKind::Mysql,
             &DatabaseImportOptions {
                 content: DatabaseTransferContent::Data,
-                include_database: false
+                include_database: false,
+                mappings: None,
             }
         )
         .is_err());
@@ -647,6 +1040,7 @@ mod tests {
             &DatabaseImportOptions {
                 content: DatabaseTransferContent::All,
                 include_database: true,
+                mappings: None,
             },
         )
         .unwrap();

@@ -14,6 +14,7 @@ const api = dataModule(`
   export const listDatabases = (...args) => call('listDatabases', args)
   export const listObjects = (...args) => call('listObjects', args)
   export const useDatabase = (...args) => call('useDatabase', args)
+  export const execute = (...args) => call('execute', args)
   export const completionColumns = (...args) => call('completionColumns', args)
   export const errorMessage = error => error.message ?? String(error)
   export const isAppError = () => false
@@ -35,6 +36,26 @@ const load = sourceLoader(
           'data-action': item.id, disabled: item.disabled, onClick: () => emit('select', item.id)
         }, item.label))) : null }
     `),
+    './database/DatabaseTableView.vue': dataModule(`
+      import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
+      import { mock } from ${JSON.stringify(api)}
+      export default { props:['object'], setup(props) {
+        mock.mounts = (mock.mounts ?? 0) + 1
+        const marker = mock.mounts
+        return () => h('div', { 'data-table-marker': marker }, props.object.name)
+      } }
+    `),
+    './database/DatabaseQueryPane.vue': dataModule(`
+      import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
+      export default { props:['modelValue','databaseName','execution'], emits:['update:modelValue','run'], setup(props,{emit,expose}) {
+        expose({ runnableSql: () => props.modelValue })
+        return () => h('div', { 'data-query-db':props.databaseName }, [
+          h('textarea', { value:props.modelValue, onInput:value=>emit('update:modelValue',value) }),
+          h('button', { onClick:()=>emit('run') }, 'Run fixture'),
+          h('output', props.execution?.statements[0]?.rows[0]?.[0] ?? '')
+        ])
+      } }
+    `),
     './database/DatabaseTransferDialog.vue': dataModule(`
       import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
       export default { props:['open','mode'], setup: props => () =>
@@ -43,6 +64,10 @@ const load = sourceLoader(
   },
   [
     'src/components/workspace/DatabaseView.vue',
+    'src/components/workspace/database/DatabaseTabWorkspace.vue',
+    'src/components/ui/SplitPaneGroup.vue',
+    'src/components/ui/TabBar.vue',
+    'src/components/ui/IconButton.vue',
     'src/components/workspace/database/DatabaseObjectTree.vue',
     'src/components/workspace/database/DatabaseObjectCategory.vue',
     'src/components/workspace/database/DatabaseTableOverview.vue',
@@ -59,7 +84,9 @@ i18n.global.locale.value = 'zh-CN'
 
 const node = (type, text = '') =>
   markRaw({ type, text, style: {}, props: {}, children: [], parent: null })
+const body = node('body')
 const renderer = createRenderer({
+  querySelector: selector => (selector === 'body' ? body : null),
   createElement: type => node(type),
   createText: text => node('#text', text),
   createComment: text => node('#comment', text),
@@ -129,11 +156,23 @@ async function fixture(
     removeItem: key => storage.delete(key),
   }
   mock.calls = []
+  mock.mounts = 0
   mock.handlers = {
     connect: async () => session(database),
     listDatabases: async () => ['alpha', 'beta'],
     useDatabase: async (_id, name) => session(name),
     listObjects: async () => [object('alpha'), object('beta')],
+    execute: async (_id, sql) => ({
+      statements: [
+        {
+          columns: [{ name: 'value', dataType: 'text' }],
+          rows: [[sql]],
+          error: null,
+        },
+      ],
+      elapsedMs: 1,
+      cancelled: false,
+    }),
     completionColumns: async () => [],
     ...handlers,
   }
@@ -214,7 +253,7 @@ test('MySQL initially shows no tables or metadata requests, including configured
   }
 })
 
-test('connection and table loading use skeletons without extra spinners or loading text', async t => {
+test('unloaded databases spin their collapsed arrow and expand only after metadata arrives', async t => {
   const connected = deferred(),
     objects = deferred()
   const view = await fixture(t, {
@@ -239,13 +278,18 @@ test('connection and table loading use skeletons without extra spinners or loadi
   await flush()
   await view.select('alpha')
   assert.doesNotMatch(textOf(view.tree()), /暂无对象/)
+  assert.equal(
+    all(view.tree()).some(
+      el => el.props['aria-label'] === '正在读取数据库结构…'
+    ),
+    false
+  )
   assert.ok(
     all(view.tree()).some(
-      el =>
-        el.props.role === 'status' &&
-        el.props['aria-label'] === '正在读取数据库结构…'
+      el => el.props['data-icon'] === 'lucide:loader-circle'
     )
   )
+  assert.doesNotMatch(textOf(view.tree()), /查询|存储过程|函数/)
   assert.ok(
     all(view.tree()).some(
       el => el.type === 'button' && el.props['aria-busy'] === true
@@ -261,7 +305,7 @@ test('connection and table loading use skeletons without extra spinners or loadi
   assert.equal(textOf(view.overview()), '')
   assert.equal(
     all(view.root).some(el => el.props['data-icon'] === 'lucide:loader-circle'),
-    false
+    true
   )
   objects.resolve([object('alpha')])
   await flush()
@@ -306,6 +350,7 @@ test('an empty category appears only after loading completes and a failure stays
   )
   retry.props.onClick()
   await flush()
+  await view.select('alpha')
   assert.match(textOf(view.tree()), /暂无对象/)
   assert.doesNotMatch(textOf(view.tree()), /对象列表加载失败/)
 })
@@ -365,7 +410,7 @@ test('preparing a database export shows feedback and prevents changing its targe
   )
 })
 
-test('switching clears old tables and ignores a late response from the previous database', async t => {
+test('switching changes the overview and ignores a late response from the previous database', async t => {
   const oldObjects = deferred()
   let requests = 0
   const view = await fixture(t, {
@@ -383,6 +428,57 @@ test('switching clears old tables and ignores a late response from the previous 
   await flush()
   assert.match(textOf(view.overview()), /beta_table/)
   assert.doesNotMatch(textOf(view.overview()), /alpha_table/)
+})
+
+test('switching keeps both database trees and reuses loaded metadata, including empty databases', async t => {
+  const view = await fixture(t, {
+    handlers: { listObjects: async () => [object('alpha')] },
+  })
+  await view.select('alpha')
+  await view.select('beta')
+  assert.match(textOf(view.tree()), /alpha_table/)
+  assert.doesNotMatch(textOf(view.overview()), /alpha_table/)
+  assert.equal(mock.calls.filter(([name]) => name === 'listObjects').length, 2)
+  await view.select('alpha')
+  assert.match(textOf(view.overview()), /alpha_table/)
+  await view.select('beta')
+  assert.equal(mock.calls.filter(([name]) => name === 'listObjects').length, 2)
+})
+
+test('table tabs include their database and remain mounted across database switches and splits', async t => {
+  const view = await fixture(t)
+  await view.select('alpha')
+  const table = all(view.overview()).find(el => el.props.onDblclick)
+  assert.ok(table)
+  table.props.onDblclick()
+  await flush()
+  assert.match(textOf(view.root), /alpha_table @alpha/)
+  await view.select('beta')
+  assert.match(textOf(view.root), /alpha_table @alpha/)
+  const split = all(view.root).find(
+    el => el.props.title === '分屏（拖拽选择方向）'
+  )
+  split.props.onClick()
+  await flush()
+  assert.equal(
+    all(view.root).filter(el => el.props['data-database-pane']).length,
+    2
+  )
+  assert.match(textOf(view.root), /alpha_table @alpha/)
+  assert.equal(
+    mock.mounts,
+    1,
+    'moving a tab must preserve the mounted table instance'
+  )
+  const close = all(view.root).find(el => el.props.title === '关闭分屏')
+  await close.props.onClick()
+  await flush()
+  assert.equal(
+    all(view.root).filter(el => el.props['data-database-pane']).length,
+    1
+  )
+  assert.equal(mock.mounts, 1)
+  assert.match(textOf(view.root), /alpha_table @alpha/)
 })
 
 test('rapid database changes serialize pool switches and keep the last selection', async t => {
@@ -478,4 +574,51 @@ test('PostgreSQL transfers target the current database instead of its selected s
     mock.calls.some(([name]) => name === 'useDatabase'),
     false
   )
+})
+
+test('query tabs keep independent SQL and results while switching databases and splitting', async t => {
+  const view = await fixture(t)
+  await view.select('alpha')
+  const add = () =>
+    all(view.root)
+      .find(el => el.props.title === '在当前数据库中新建查询')
+      .props.onClick({ stopPropagation() {} })
+  add()
+  await flush()
+  const alpha = () =>
+    all(view.root).find(el => el.props['data-query-db'] === 'alpha')
+  all(alpha())
+    .find(el => el.type === 'textarea')
+    .props.onInput('SELECT alpha')
+  await flush()
+  all(alpha())
+    .find(el => el.type === 'button')
+    .props.onClick()
+  await flush()
+  assert.match(textOf(alpha()), /SELECT alpha/)
+  await view.select('beta')
+  add()
+  await flush()
+  const beta = () =>
+    all(view.root).find(el => el.props['data-query-db'] === 'beta')
+  all(beta())
+    .find(el => el.type === 'textarea')
+    .props.onInput('SELECT beta')
+  await flush()
+  all(beta())
+    .find(el => el.type === 'button')
+    .props.onClick()
+  await flush()
+  all(view.root)
+    .find(el => el.props.title === '分屏（拖拽选择方向）')
+    .props.onClick()
+  await flush()
+  assert.match(textOf(alpha()), /SELECT alpha/)
+  assert.match(textOf(beta()), /SELECT beta/)
+  assert.equal(
+    all(alpha()).find(el => el.type === 'textarea').props.value,
+    'SELECT alpha'
+  )
+  assert.match(textOf(view.root), /Query 1 @alpha/)
+  assert.match(textOf(view.root), /Query 2 @beta/)
 })

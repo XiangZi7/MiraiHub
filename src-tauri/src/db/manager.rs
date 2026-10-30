@@ -335,6 +335,25 @@ impl DatabaseManager {
         Ok(session)
     }
 
+    /// 后台导出独占连接池，工作区切库或关闭标签不改变任务的目标库。
+    pub async fn fork_session(&self, id: &str, database: &str) -> DatabaseResult<DatabaseSession> {
+        let mut config = {
+            let sessions = self.sessions.read().await;
+            let entry = sessions
+                .get(id)
+                .ok_or_else(|| DatabaseError::SessionNotFound(id.into()))?;
+            let mut config = entry.config.clone();
+            config.database = if database.is_empty() {
+                entry.database.clone()
+            } else {
+                database.to_owned()
+            };
+            config
+        };
+        config.max_connections = 2;
+        self.connect(config).await
+    }
+
     pub(crate) async fn pool(&self, id: &str) -> DatabaseResult<DatabasePool> {
         self.sessions
             .read()

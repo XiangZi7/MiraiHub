@@ -156,6 +156,10 @@ impl TransferManager {
         }
     }
 
+    pub async fn control(&self, task_id: &str) -> SshResult<Arc<TransferControl>> {
+        self.get(task_id).await
+    }
+
     async fn get(&self, task_id: &str) -> SshResult<Arc<TransferControl>> {
         self.controls
             .read()

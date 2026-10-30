@@ -96,6 +96,10 @@ const progressTone = computed(() => {
 })
 
 const sizeLabel = computed(() => {
+  if (props.task.kind === 'database-import')
+    return t('已导入 {count} 行', { count: props.task.processedRows ?? 0 })
+  if (props.task.kind && !props.task.totalBytes && !settled.value)
+    return t('已读取 {count} 行', { count: props.task.processedRows ?? 0 })
   const current = formatBytes(props.task.transferredBytes)
   if (props.task.totalBytes)
     return `${current} / ${formatBytes(props.task.totalBytes)}`
@@ -115,6 +119,15 @@ const statusIcon = computed(() => {
     default:
       return ''
   }
+})
+const exportPhase = computed(() => {
+  if (!props.task.kind || settled.value) return ''
+  if (props.task.kind === 'database-import')
+    return props.task.status === 'queued' ? t('等待导入') : t('正在导入数据…')
+  if (props.task.status === 'queued') return t('等待导出')
+  if (props.task.phase === 'encoding') return t('正在生成文件…')
+  if (props.task.phase === 'writing') return t('正在保存文件…')
+  return t('正在读取导出数据…')
 })
 </script>
 
@@ -159,26 +172,38 @@ const statusIcon = computed(() => {
           :size="10"
         />
         <span>{{
-          task.error ? translateNativeMessage(task.error) : displayPath
+          task.error
+            ? translateNativeMessage(task.error)
+            : exportPhase || displayPath
         }}</span>
       </p>
       <div
         class="transfer-file-track"
         role="progressbar"
-        :aria-valuenow="progress"
+        :aria-valuenow="!task.totalBytes && !settled ? undefined : progress"
+        :aria-valuetext="exportPhase || undefined"
         aria-valuemin="0"
         aria-valuemax="100"
       >
         <div
-          :class="['transfer-file-progress', progressTone]"
-          :style="{ width: `${progress}%` }"
+          :class="[
+            'transfer-file-progress',
+            progressTone,
+            task.kind && !task.totalBytes && !settled && 'animate-pulse',
+          ]"
+          :style="{
+            width:
+              task.kind && !task.totalBytes && !settled
+                ? '30%'
+                : `${progress}%`,
+          }"
         />
       </div>
     </div>
 
     <div class="transfer-file-actions">
       <button
-        v-if="task.status === 'running'"
+        v-if="task.status === 'running' && !task.kind"
         type="button"
         class="transfer-action"
         :title="t('暂停')"

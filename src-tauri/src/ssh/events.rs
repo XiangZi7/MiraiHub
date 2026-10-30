@@ -52,6 +52,8 @@ pub struct TransferEvent {
     pub total_bytes: Option<u64>,
     pub local_path: Option<String>,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processed_rows: Option<u64>,
 }
 
 impl TransferEvent {
@@ -63,6 +65,7 @@ impl TransferEvent {
             total_bytes: Some(total),
             local_path: None,
             error: None,
+            processed_rows: None,
         }
     }
 
@@ -74,6 +77,7 @@ impl TransferEvent {
             total_bytes: None,
             local_path: None,
             error: None,
+            processed_rows: None,
         }
     }
 
@@ -137,7 +141,7 @@ pub fn emit_status(app: &AppHandle, payload: StatusEvent) {
     }
 }
 
-pub fn emit_transfer(app: &AppHandle, payload: TransferEvent) {
+pub fn emit_transfer<R: tauri::Runtime>(app: &AppHandle<R>, payload: TransferEvent) {
     if let Err(err) = app.emit(EVENT_TRANSFER, payload) {
         log::warn!("推送文件传输状态失败：{err}");
     }
