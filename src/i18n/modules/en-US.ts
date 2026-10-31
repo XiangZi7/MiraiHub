@@ -7,6 +7,7 @@ export default {
   数据导入失败: 'Data import failed',
   导入数据: 'Import data',
   导入格式: 'Import format',
+  文件名: 'File name',
   包含数据库名: 'Include database name',
   附加日期: 'Append date',
   附加时间: 'Append time',
