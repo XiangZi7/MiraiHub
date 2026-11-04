@@ -285,6 +285,10 @@ const deleteDialog = reactive({
 
 // 响应式状态
 const state = reactive({
+  // 工作区重新可见时重建侧栏的搜索、选中和展开状态。
+  browserEpoch: 0,
+  // 暂时离开工作区后，等待查询及传输结束再初始化元数据。
+  browserResetPending: false,
   // 当前导入或导出弹窗的模式；关闭时为空。
   transferMode: null as DatabaseTransferMode | null,
   // 正在切换到右键选中的目标库，防止重复打开弹窗。
@@ -300,7 +304,7 @@ const state = reactive({
     { execution: DatabaseExecution | null; error: string }
   >,
 })
-const { transferMode, preparingTransfer } = toRefs(state)
+const { transferMode, preparingTransfer, browserEpoch } = toRefs(state)
 
 const {
   sessionId,
@@ -325,6 +329,7 @@ const {
   disconnect,
   refreshObjects,
   refreshDatabases,
+  initializeBrowser,
   switchDatabase,
   inspectObject,
   executeSql,
@@ -333,6 +338,32 @@ const {
   onStatus: (nextStatus, nextSessionId) =>
     emit('status', nextStatus, nextSessionId),
 })
+
+// 真正返回该连接时初始化侧栏；同连接各分屏之间聚焦不会触发，也不打断后台执行。
+watch(
+  () =>
+    [
+      props.active !== false,
+      connected.value,
+      queryLoading.value ||
+        state.preparingQuery ||
+        objectsLoading.value ||
+        state.preparingTransfer ||
+        Boolean(state.transferMode),
+    ] as const,
+  ([active, ready, busy]) => {
+    if (!active) {
+      if (!state.browserResetPending) state.browserEpoch++
+      state.browserResetPending = true
+      return
+    }
+    if (!ready || busy || !state.browserResetPending) return
+    state.browserResetPending = false
+    state.overviewSchema = ''
+    void initializeBrowser()
+  },
+  { immediate: true }
+)
 
 // watch 会立即读取 getter；先创建数据库会话，再派生和监听 AI 的执行目标。
 const agentTarget = computed(() => ({
@@ -1472,10 +1503,12 @@ watch(
     class="pane flex-1 flex-row"
   >
     <DatabaseObjectTree
+      :key="`${sessionId}:${browserEpoch}`"
       v-show="!agentOpen || agentSplit"
       :style="sidebarStyle"
       :database-name="databaseName"
       :database-kind="databaseKind"
+      :ready="connected && !databasesLoading && !state.browserResetPending"
       :active-database="overviewSchema"
       :current-database="session?.database"
       :database-names="databaseKind === 'mysql' ? databases : []"
@@ -1487,7 +1520,11 @@ watch(
       :loaded-databases="loadedDatabases"
       :switching-disabled="!connected || queryLoading || state.preparingQuery"
       :loading="objectsLoading"
-      :databases-loading="databasesLoading || status === 'connecting'"
+      :databases-loading="
+        databasesLoading ||
+        status === 'connecting' ||
+        (state.browserResetPending && active !== false)
+      "
       :preparing-transfer="preparingTransfer"
       :error="objectsError"
       @refresh="refreshAll"

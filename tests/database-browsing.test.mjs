@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createRenderer, h, markRaw, nextTick } from 'vue'
+import { createRenderer, h, markRaw, nextTick, shallowRef } from 'vue'
 import { createPinia } from 'pinia'
 import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 
@@ -35,6 +35,12 @@ const load = sourceLoader(
         props.open ? h('menu', props.items.map(item => h('button', {
           'data-action': item.id, disabled: item.disabled, onClick: () => emit('select', item.id)
         }, item.label))) : null }
+    `),
+    '@/components/ui/SearchField.vue': dataModule(`
+      import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
+      export default {props:['modelValue'],emits:['update:modelValue'],setup:(props,{emit})=>()=>h('input',{
+        'data-tree-search':true,value:props.modelValue,onInput:value=>emit('update:modelValue',value)
+      })}
     `),
     './database/DatabaseTableView.vue': dataModule(`
       import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
@@ -156,12 +162,16 @@ const object = (schema, name = `${schema}_table`) => ({
 
 async function fixture(
   t,
-  { database = '', kind = 'mysql', handlers = {} } = {}
+  { database = '', kind = 'mysql', handlers = {}, savedQueries = [] } = {}
 ) {
   const originalWindow = globalThis.window
   const originalStorage = globalThis.localStorage
   globalThis.window = new EventTarget()
   const storage = new Map()
+  storage.set(
+    'miraihub.database-saved-queries.v1',
+    JSON.stringify(savedQueries)
+  )
   globalThis.localStorage = {
     getItem: key => storage.get(key) ?? null,
     setItem: (key, value) => storage.set(key, String(value)),
@@ -191,25 +201,28 @@ async function fixture(
   const root = node('root')
   const errors = []
   let mainTabs
+  const active = shallowRef(true)
+  const connection = {
+    id: 'browse-test',
+    kind,
+    name: 'Fixture connection',
+    host: 'fixture.invalid',
+    port: 3306,
+    username: 'fixture',
+    settings: { database, password: '', ssl: false },
+    tags: [],
+    tagColor: 'green',
+    group: '',
+    createdAt: 1,
+    updatedAt: 1,
+  }
   const app = renderer.createApp({
     setup() {
       mainTabs = provideDatabaseWorkspaceTabs()
       return () =>
         h(DatabaseView, {
-          connection: {
-            id: 'browse-test',
-            kind,
-            name: 'Fixture connection',
-            host: 'fixture.invalid',
-            port: 3306,
-            username: 'fixture',
-            settings: { database, password: '', ssl: false },
-            tags: [],
-            tagColor: 'green',
-            group: '',
-            createdAt: 1,
-            updatedAt: 1,
-          },
+          connection,
+          active: active.value,
         })
     },
   })
@@ -226,6 +239,7 @@ async function fixture(
   await flush()
   return {
     root,
+    active,
     mainTabs: () => mainTabs.get('browse-test'),
     overview: () =>
       all(root).find(el => el.props['aria-label'] === '当前数据库的表'),
@@ -670,4 +684,191 @@ test('applying AI SQL creates a main query tab without overwriting the current d
     mock.calls.filter(([name]) => name === 'execute').length,
     executions
   )
+})
+
+const savedQuery = (database, name) => ({
+  id: `saved-${name}`,
+  connectionId: 'browse-test',
+  database,
+  name,
+  sql: 'SELECT 1',
+  createdAt: 1,
+  updatedAt: 1,
+})
+
+test('saved queries do not resurrect cached database names during connection or catalog loading', async t => {
+  const connected = deferred(),
+    databases = deferred()
+  const view = await fixture(t, {
+    savedQueries: [
+      savedQuery('old_deleted_database', 'stale_query'),
+      savedQuery('alpha', 'current_query'),
+    ],
+    handlers: {
+      connect: () => connected.promise,
+      listDatabases: () => databases.promise,
+    },
+  })
+  assert.doesNotMatch(
+    textOf(view.tree()),
+    /old_deleted_database|alpha|stale_query|current_query/
+  )
+  assert.ok(all(view.tree()).some(el => el.props.role === 'status'))
+  connected.resolve(session(''))
+  await flush()
+  assert.doesNotMatch(
+    textOf(view.tree()),
+    /old_deleted_database|alpha|stale_query|current_query/
+  )
+  databases.resolve(['alpha'])
+  await flush()
+  assert.match(textOf(view.tree()), /alpha/)
+  assert.doesNotMatch(textOf(view.tree()), /old_deleted_database|stale_query/)
+  await view.select('alpha')
+  assert.equal(
+    all(view.tree()).find(
+      el => el.props['aria-expanded'] !== undefined && textOf(el) === 'alpha'
+    ).props['aria-expanded'],
+    true
+  )
+})
+
+test('returning to a database resets sidebar state and reads fresh catalog without reconnecting or losing SQL', async t => {
+  const refreshed = deferred()
+  let reads = 0
+  const view = await fixture(t, {
+    savedQueries: [savedQuery('alpha', 'kept_query')],
+    handlers: {
+      listDatabases: () =>
+        ++reads === 1 ? Promise.resolve(['alpha', 'beta']) : refreshed.promise,
+    },
+  })
+  await view.select('alpha')
+  view.mainTabs().add()
+  await flush()
+  const query = all(view.root).find(el => el.props['data-query-db'] === 'alpha')
+  const editor = all(query).find(el => el.type === 'textarea')
+  editor.props.onInput('SELECT keep_this_draft')
+  await flush()
+  all(query)
+    .find(el => el.type === 'button')
+    .props.onClick()
+  await flush()
+  all(view.tree())
+    .find(el => el.props['data-tree-search'])
+    .props.onInput('alpha')
+  await flush()
+  view.active.value = false
+  await flush()
+  view.active.value = true
+  await flush()
+  assert.equal(reads, 2)
+  assert.equal(
+    all(view.tree()).find(el => el.props['data-tree-search']).props.value,
+    ''
+  )
+  assert.equal(
+    all(view.tree()).filter(
+      el => el.type === 'button' && el.props['aria-expanded'] !== undefined
+    ).length,
+    0
+  )
+  assert.ok(all(view.tree()).some(el => el.props.role === 'status'))
+  refreshed.resolve(['beta'])
+  await flush()
+  assert.doesNotMatch(textOf(view.tree()), /kept_query/)
+  assert.equal(
+    all(view.tree()).some(
+      el =>
+        el.type === 'button' &&
+        el.props['aria-expanded'] !== undefined &&
+        textOf(el) === 'alpha'
+    ),
+    false
+  )
+  const beta = all(view.tree()).find(
+    el => el.props['aria-expanded'] !== undefined && textOf(el) === 'beta'
+  )
+  assert.equal(beta.props['aria-expanded'], false)
+  assert.equal(
+    all(view.root).find(el => el.props['data-query-db'] === 'alpha'),
+    query
+  )
+  assert.equal(editor.props.value, 'SELECT keep_this_draft')
+  assert.match(textOf(query), /SELECT keep_this_draft/)
+  assert.equal(mock.calls.filter(([name]) => name === 'connect').length, 1)
+  assert.equal(mock.calls.filter(([name]) => name === 'disconnect').length, 0)
+})
+
+test('a catalog response from before sidebar initialization cannot replace the fresh database list', async t => {
+  const oldList = deferred(),
+    newList = deferred()
+  let reads = 0
+  const view = await fixture(t, {
+    handlers: {
+      listDatabases: () => (++reads === 1 ? oldList.promise : newList.promise),
+    },
+  })
+  view.active.value = false
+  await flush()
+  view.active.value = true
+  await flush()
+  assert.equal(reads, 2)
+  newList.resolve(['beta'])
+  await flush()
+  oldList.resolve(['stale_database'])
+  await flush()
+  const names = all(view.tree())
+    .filter(
+      el => el.type === 'button' && el.props['aria-expanded'] !== undefined
+    )
+    .map(textOf)
+  assert.deepEqual(names, ['beta'])
+})
+
+test('returning during a query hides old sidebar data and initializes after the existing query finishes', async t => {
+  const execution = deferred()
+  let reads = 0
+  const view = await fixture(t, {
+    handlers: {
+      listDatabases: async () => {
+        reads++
+        return ['alpha']
+      },
+      execute: () => execution.promise,
+    },
+  })
+  await view.select('alpha')
+  view.mainTabs().add()
+  await flush()
+  const query = all(view.root).find(el => el.props['data-query-db'] === 'alpha')
+  all(query)
+    .find(el => el.type === 'textarea')
+    .props.onInput('SELECT background_query')
+  await flush()
+  all(query)
+    .find(el => el.type === 'button')
+    .props.onClick()
+  await flush()
+  view.active.value = false
+  await flush()
+  view.active.value = true
+  await flush()
+  assert.equal(reads, 1)
+  assert.equal(
+    all(view.tree()).filter(
+      el => el.type === 'button' && el.props['aria-expanded'] !== undefined
+    ).length,
+    0
+  )
+  assert.ok(all(view.tree()).some(el => el.props.role === 'status'))
+  execution.resolve({
+    statements: [{ columns: [], rows: [['background result']], error: null }],
+    elapsedMs: 1,
+    cancelled: false,
+  })
+  await flush()
+  assert.equal(reads, 2)
+  assert.match(textOf(query), /background result/)
+  assert.equal(mock.calls.filter(([name]) => name === 'disconnect').length, 0)
 })

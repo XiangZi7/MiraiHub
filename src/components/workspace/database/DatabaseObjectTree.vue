@@ -40,6 +40,7 @@ const props = defineProps<{
   databasesLoading?: boolean
   preparingTransfer?: boolean
   error: string
+  ready?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -112,6 +113,7 @@ function emptySchema(name: string): SchemaGroup {
 }
 
 const schemas = computed<SchemaGroup[]>(() => {
+  if (props.ready === false) return []
   const term = search.value.trim().toLocaleLowerCase()
   const groups = new Map<string, SchemaGroup>()
 
@@ -139,6 +141,12 @@ const schemas = computed<SchemaGroup[]>(() => {
   }
 
   for (const query of props.savedQueries) {
+    // 已保存查询是本地数据，不能凭它在当前连接中虚构一个尚未读取或已删除的库。
+    if (
+      props.databaseKind === 'mysql' &&
+      !props.databaseNames.includes(query.database)
+    )
+      continue
     const searchable =
       `${query.database}.${query.name} ${query.sql}`.toLocaleLowerCase()
     if (term && !searchable.includes(term)) continue
@@ -590,13 +598,15 @@ function handleContextAction(id: string): void {
         />
       </div>
       <div
-        v-else-if="error && !objects.length && !savedQueries.length"
+        v-else-if="error && !objects.length"
         class="text-txt-4 px-2 py-3 text-[11px] leading-5"
       >
         {{ t('对象列表加载失败，请刷新重试') }}
       </div>
       <div
-        v-else-if="!loading && !databasesLoading && !schemas.length"
+        v-else-if="
+          ready !== false && !loading && !databasesLoading && !schemas.length
+        "
         class="text-txt-4 px-2 py-3 text-[11px]"
       >
         {{ t('当前连接中没有可显示的数据库对象') }}

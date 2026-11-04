@@ -60,6 +60,8 @@ export function useDatabaseSession(
   let generation = 0
   let objectsRequest = 0
   let databaseRequest = 0
+  let databasesRequest = 0
+  let metadataGeneration = 0
   let databaseSwitch = Promise.resolve()
   let runtimePassword: string | undefined
 
@@ -89,10 +91,12 @@ export function useDatabaseSession(
     }
   }
 
-  function resetData(): void {
+  // 初始化侧栏的库、对象和字段缓存，使旧会话及旧初始化请求的响应失效。
+  function resetBrowserData(): void {
+    metadataGeneration++
     objectsRequest++
     databaseRequest++
-    databaseSwitch = Promise.resolve()
+    databasesRequest++
     state.selectedDatabase = ''
     state.objects = []
     state.loadedDatabases.clear()
@@ -102,9 +106,29 @@ export function useDatabaseSession(
     state.objectsError = ''
     state.columnsByObject = {}
     state.inspectingKeys.clear()
+  }
+
+  // 连接重建或断开时同时清理元数据和本轮查询；侧栏重新进入只清理元数据。
+  function resetData(): void {
+    databaseSwitch = Promise.resolve()
+    resetBrowserData()
     state.queryExecution = null
     state.queryLoading = false
     state.queryError = ''
+  }
+
+  // 重新进入工作区时从当前连接读取新目录，保留连接、执行中的 Agent 和查询结果。
+  async function initializeBrowser(): Promise<void> {
+    const sessionId = state.sessionId
+    if (!sessionId) return
+    resetBrowserData()
+    const version = metadataGeneration
+    state.databasesLoading = true
+    await databaseSwitch
+    if (state.sessionId !== sessionId || version !== metadataGeneration) return
+    if (connection.value?.kind === 'postgresql')
+      state.selectedDatabase = state.session?.database ?? ''
+    await Promise.all([refreshDatabases(), refreshObjects()])
   }
 
   async function connect(password?: string): Promise<void> {
@@ -208,11 +232,12 @@ export function useDatabaseSession(
   async function refreshDatabases(): Promise<void> {
     const sessionId = state.sessionId
     if (!sessionId) return
+    const request = ++databasesRequest
 
     state.databasesLoading = true
     try {
       const databases = await database.listDatabases(sessionId)
-      if (state.sessionId === sessionId) {
+      if (state.sessionId === sessionId && request === databasesRequest) {
         state.databases = databases
         if (connection.value?.kind === 'mysql') {
           const available = new Set(databases)
@@ -224,10 +249,11 @@ export function useDatabaseSession(
         }
       }
     } catch (error) {
-      if (state.sessionId === sessionId)
+      if (state.sessionId === sessionId && request === databasesRequest)
         state.objectsError = database.errorMessage(error)
     } finally {
-      if (state.sessionId === sessionId) state.databasesLoading = false
+      if (state.sessionId === sessionId && request === databasesRequest)
+        state.databasesLoading = false
     }
   }
 
@@ -274,8 +300,10 @@ export function useDatabaseSession(
     }
   }
 
+  // 字段请求绑定本次元数据初始化，返回工作区后忽略上一次目录的迟到结果。
   async function inspectObject(object: DatabaseObject): Promise<void> {
     const sessionId = state.sessionId
+    const version = metadataGeneration
     const key = databaseObjectKey(object)
     if (
       !sessionId ||
@@ -291,12 +319,13 @@ export function useDatabaseSession(
         object.schema,
         object.name
       )
-      if (state.sessionId === sessionId) state.columnsByObject[key] = columns
+      if (state.sessionId === sessionId && version === metadataGeneration)
+        state.columnsByObject[key] = columns
     } catch (error) {
-      if (state.sessionId === sessionId)
+      if (state.sessionId === sessionId && version === metadataGeneration)
         state.objectsError = database.errorMessage(error)
     } finally {
-      state.inspectingKeys.delete(key)
+      if (version === metadataGeneration) state.inspectingKeys.delete(key)
     }
   }
 
@@ -355,6 +384,7 @@ export function useDatabaseSession(
     disconnect,
     refreshObjects,
     refreshDatabases,
+    initializeBrowser,
     switchDatabase,
     inspectObject,
     executeSql,
