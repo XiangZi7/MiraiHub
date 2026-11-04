@@ -178,6 +178,18 @@ pub async fn ssh_delete_path(
     Ok(files::delete_path(&session, &path, is_directory).await?)
 }
 
+/// 文件菜单的复制到目录操作，使用独立 SFTP 通道保留当前终端和 Agent。
+#[tauri::command]
+pub async fn ssh_copy_path(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    source: String,
+    destination: String,
+) -> AppResult<()> {
+    let session = manager.get(&session_id).await?;
+    Ok(files::copy_path(&session, &source, &destination).await?)
+}
+
 #[tauri::command]
 pub async fn ssh_upload_file(
     app: AppHandle,

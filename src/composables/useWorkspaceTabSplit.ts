@@ -116,13 +116,14 @@ export function useWorkspaceTabSplit(options: WorkspaceTabSplitOptions) {
       options.enabled() && groups.value.some(group => group.activeId === id)
     )
   }
+  // 同组切换只切可见性，不把隐藏会话从分屏 DOM 搬回缓存宿主，减少终端和编辑器闪动。
   function targetFor(id: string): HTMLElement | undefined {
     const group = id
       ? groupForTab(id)
       : groups.value.find(
           group => group.id === focusedGroupId.value && !group.tabIds.length
         )
-    return group?.activeId === id ? targets.get(group.id) : undefined
+    return group ? targets.get(group.id) : undefined
   }
   function setTarget(groupId: string, element: unknown): void {
     if (element) targets.set(groupId, element as HTMLElement)
@@ -313,9 +314,11 @@ export function useWorkspaceTabSplit(options: WorkspaceTabSplitOptions) {
     )
   }
 
+  // 只在标签成员真正变化时重排分组；输入 SQL、更新标题或会话状态不重建整棵布局树。
   watch(
-    () => options.tabs().map(tab => tab.id),
-    ids => {
+    () => JSON.stringify(options.tabs().map(tab => tab.id)),
+    () => {
+      const ids = options.tabs().map(tab => tab.id)
       const alive = new Set(ids),
         root = cloneTree(tree.value),
         leaves = groupsOf(root)

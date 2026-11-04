@@ -767,4 +767,25 @@ export default {
     'Delete {count} selected remote items? This cannot be undone. Non-empty folders will be kept.',
   'files.selectionHint':
     'Drag to select · Ctrl / Shift multi-select · Right-click for batch actions',
+  'files.moveTo': 'Move to…',
+  'files.copyTo': 'Copy to…',
+  'files.copyNames': 'Copy names',
+  'files.properties': 'Properties',
+  'files.selectAll': 'Select all',
+  'files.invertSelection': 'Invert selection',
+  'files.transferDescription':
+    '{count} items selected. Choose a destination on this server. Existing items are kept; interrupted copies may leave partial content.',
+  'files.targetDirectory': 'Destination folder',
+  'files.noSubfolders': 'No subfolders. You can choose this folder.',
+  'files.moveHere': 'Move here',
+  'files.copyHere': 'Copy here',
+  'files.processing': 'Processing…',
+  'files.namesCopied': 'Names copied',
+  'files.invalidDestination':
+    'Cannot move or copy an item to itself or its subfolder',
+  'files.movedCount': 'Moved {count} items',
+  'files.copiedCount': 'Copied {count} items',
+  'files.operationFailed': 'Some items could not be processed',
+  'files.directory': 'Folder',
+  'files.background': 'Continue in background',
 } satisfies Record<string, string>

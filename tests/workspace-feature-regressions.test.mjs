@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createRenderer, h, markRaw, nextTick, reactive, shallowRef } from 'vue'
+import {
+  createRenderer,
+  h,
+  markRaw,
+  nextTick,
+  onUnmounted,
+  reactive,
+  shallowRef,
+} from 'vue'
 import { dataModule, sourceLoader } from './helpers/source-module.mjs'
 
 const vue = JSON.stringify(import.meta.resolve('vue'))
@@ -27,6 +35,7 @@ const load = sourceLoader(
     'src/components/workspace/SidebarProjects.vue',
     'src/components/connection/ConnectionTagEditor.vue',
     'src/components/workspace/WorkspaceTabBar.vue',
+    'src/components/workspace/database/DatabaseTabWorkspace.vue',
   ]
 )
 const { i18n } = await load('src/i18n/index.ts')
@@ -40,11 +49,19 @@ const { default: ConnectionTagEditor } = await load(
 const { default: WorkspaceTabBar } = await load(
   'src/components/workspace/WorkspaceTabBar.vue'
 )
-const { provideDatabaseWorkspaceTabs, databaseWorkspaceTabId } = await load(
-  'src/composables/useDatabaseWorkspaceTabs.ts'
-)
+const {
+  provideDatabaseWorkspaceTabs,
+  databaseWorkspaceTabId,
+  workspaceViewTabs,
+} = await load('src/composables/useDatabaseWorkspaceTabs.ts')
 const { useRemoteFileSelection } = await load(
   'src/components/workspace/useRemoteFileSelection.ts'
+)
+const { useWorkspaceTabSplit, provideWorkspaceTabSplit } = await load(
+  'src/composables/useWorkspaceTabSplit.ts'
+)
+const { default: DatabaseTabWorkspace } = await load(
+  'src/components/workspace/database/DatabaseTabWorkspace.vue'
 )
 const node = (type, text = '') =>
   markRaw({
@@ -218,12 +235,15 @@ test('database content is shown in main tabs with connection-specific identity a
           })
         return () =>
           h(WorkspaceTabBar, {
-            tabs: ['one', 'two'].map(id => ({
-              id,
-              connection: connection(id, id),
-              status: 'connected',
-              sessionId: id,
-            })),
+            tabs: workspaceViewTabs(
+              ['one', 'two'].map(id => ({
+                id,
+                connection: connection(id, id),
+                status: 'connected',
+                sessionId: id,
+              })),
+              registry
+            ),
             active: mainTabs.value,
             closeWarning: () => '',
             'onUpdate:active': id => {
@@ -245,7 +265,7 @@ test('database content is shown in main tabs with connection-specific identity a
   )
   nav().props.onSelect(two)
   await nextTick()
-  assert.equal(active, 'two')
+  assert.equal(active, two)
   assert.equal(records.two.active, 'same')
   assert.equal(nav().props.active, two)
   nav().props.onAdd()
@@ -335,4 +355,91 @@ test('virtual file list selection supports Ctrl, Shift, drag range and offscreen
   selection.stopDrag()
   assert.equal(selection.box.value, null)
   assert.ok(selected.value.includes('/file-5'))
+})
+
+test('moving one database content tab keeps SSH and sibling tabs in place and preserves both editors', async t => {
+  const a = databaseWorkspaceTabId('db', 'a'),
+    b = databaseWorkspaceTabId('db', 'b')
+  const tabs = shallowRef([{ id: 'db' }, { id: 'ssh' }, { id: a }, { id: b }])
+  const active = shallowRef(a)
+  const left = node('left'),
+    right = node('right')
+  const drafts = reactive({ a: 'SELECT first', b: 'SELECT second' })
+  const mounts = [],
+    unmounts = []
+  let layout, rootId
+  const Editor = {
+    props: ['id'],
+    setup(props) {
+      mounts.push(props.id)
+      onUnmounted(() => unmounts.push(props.id))
+      return () =>
+        h('input', {
+          'data-editor': props.id,
+          value: drafts[props.id],
+          onInput: value => {
+            drafts[props.id] = value
+          },
+        })
+    },
+  }
+  const root = mount(
+    {
+      setup() {
+        layout = useWorkspaceTabSplit({
+          tabs: () => tabs.value,
+          activeId: () => active.value,
+          enabled: () => true,
+        })
+        provideWorkspaceTabSplit(layout)
+        rootId = layout.groups.value[0].id
+        layout.setTarget(rootId, left)
+        return () =>
+          h(
+            DatabaseTabWorkspace,
+            {
+              tabs: [
+                { id: 'a', label: 'A' },
+                { id: 'b', label: 'B' },
+              ],
+              active: '',
+              connectionId: 'db',
+              workspaceHostId: 'db',
+            },
+            { default: ({ tab }) => h(Editor, { id: tab.id }) }
+          )
+      },
+    },
+    t
+  )
+  await nextTick()
+  const first = all(left).find(el => el.props['data-editor'] === 'a')
+  first.props.onInput('SELECT edited')
+  assert.equal(layout.moveTab(b, rootId, 'right'), true)
+  const destination = layout.groupForTab(b).id
+  layout.setTarget(destination, right)
+  active.value = b
+  await nextTick()
+  assert.deepEqual(layout.groupForTab('ssh').tabIds, ['db', 'ssh', a])
+  assert.deepEqual(layout.groupForTab(b).tabIds, [b])
+  assert.equal(layout.groupForTab(a).activeId, a)
+  assert.equal(
+    all(left).find(el => el.props['data-editor'] === 'a'),
+    first
+  )
+  assert.equal(first.props.value, 'SELECT edited')
+  assert.equal(
+    all(right).find(el => el.props['data-editor'] === 'b').props.value,
+    'SELECT second'
+  )
+  assert.deepEqual(mounts, ['a', 'b'])
+  const current = layout.groupForTab(b).id
+  layout.mergeGroup(current)
+  await nextTick()
+  assert.equal(
+    all(left).find(el => el.props['data-editor'] === 'a'),
+    first
+  )
+  assert.deepEqual(mounts, ['a', 'b'])
+  assert.deepEqual(unmounts, [])
 })

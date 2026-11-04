@@ -37,6 +37,9 @@ import RemoteFileCreateDialog from './RemoteFileCreateDialog.vue'
 import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
 import RemoteFileList from './RemoteFileList.vue'
 import RemotePathInput from './RemotePathInput.vue'
+import RemoteFileTransferDialog from './RemoteFileTransferDialog.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
+import { formatBytes } from '@/utils/format'
 
 const { t } = useI18n()
 
@@ -95,6 +98,15 @@ const state = reactive({
   pendingDelete: [] as SshRemoteFile[],
   // 批量操作期间阻止重复提交
   processing: false,
+  // 移动/复制弹窗锁定菜单打开时的文件与会话，目录切换不会改变操作目标
+  transfer: null as {
+    mode: 'move' | 'copy'
+    files: SshRemoteFile[]
+    sessionId: string
+    directory: string
+  } | null,
+  // 属性面板所展示的文件快照
+  properties: [] as SshRemoteFile[],
   renaming: null as SshRemoteFile | null,
   createMenuOpen: false,
   createMenuX: 0,
@@ -104,6 +116,15 @@ const state = reactive({
   readingContext: false,
 })
 const { selection } = toRefs(state)
+
+// 连接变化时撤销旧会话的弹窗目标，已开始的操作仍使用各自锁定的会话 ID。
+watch(
+  () => props.sessionId,
+  () => {
+    state.transfer = null
+    state.properties = []
+  }
+)
 
 const {
   conflictOpen,
@@ -208,6 +229,38 @@ async function createRemote(name: string): Promise<void> {
 const contextItems = computed<ContextMenuItem[]>(() => {
   const file = state.menuFile
   if (!file) return []
+  const common: ContextMenuItem[] = [
+    {
+      id: 'move',
+      label: t('files.moveTo'),
+      icon: 'lucide:folder-input',
+      disabled: state.processing,
+    },
+    {
+      id: 'copy-to',
+      label: t('files.copyTo'),
+      icon: 'lucide:copy-plus',
+      disabled: state.processing,
+    },
+    {
+      id: 'copy-names',
+      label: t('files.copyNames'),
+      icon: 'lucide:text-cursor-input',
+    },
+    { id: 'properties', label: t('files.properties'), icon: 'lucide:info' },
+    {
+      id: 'select-all',
+      label: t('files.selectAll'),
+      icon: 'lucide:list-checks',
+      separatorBefore: true,
+    },
+    {
+      id: 'invert-selection',
+      label: t('files.invertSelection'),
+      icon: 'lucide:replace',
+    },
+    { id: 'refresh', label: t('刷新'), icon: 'lucide:refresh-cw' },
+  ]
   if (state.menuFiles.length > 1)
     return [
       {
@@ -219,6 +272,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
           state.menuFiles.some(file => file.kind === 'directory'),
       },
       { id: 'copy-paths', label: t('files.copyPaths'), icon: 'lucide:copy' },
+      ...common,
       {
         id: 'delete',
         label: t('files.deleteSelected', { count: state.menuFiles.length }),
@@ -267,6 +321,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       label: t('复制路径'),
       icon: 'lucide:copy',
     },
+    ...common,
     {
       id: 'delete',
       label: t('删除'),
@@ -399,6 +454,41 @@ function openMenu(event: MouseEvent, file: SshRemoteFile): void {
 function runContextAction(action: string): void {
   const file = state.menuFile
   if (!file) return
+  if (action === 'move' || action === 'copy-to') {
+    state.transfer = {
+      mode: action === 'move' ? 'move' : 'copy',
+      files: [...state.menuFiles],
+      sessionId: props.sessionId,
+      directory: path.value,
+    }
+    return
+  }
+  if (action === 'properties') {
+    state.properties = [...state.menuFiles]
+    return
+  }
+  if (action === 'copy-names') {
+    void copySelectedNames()
+    return
+  }
+  if (action === 'select-all') {
+    selectFiles(
+      visibleEntries.value.map(file => file.path),
+      selected.value
+    )
+    return
+  }
+  if (action === 'invert-selection') {
+    const paths = visibleEntries.value
+      .filter(file => !state.selection.includes(file.path))
+      .map(file => file.path)
+    selectFiles(paths, paths[0] ?? '')
+    return
+  }
+  if (action === 'refresh') {
+    void refresh()
+    return
+  }
   if (action === 'open') void openRemote(file)
   else if (action === 'ask-agent') void askAgentFile(file)
   else if (action === 'external')
@@ -414,6 +504,69 @@ function runContextAction(action: string): void {
   else if (action === 'delete') {
     if (settings.confirmFileDelete) state.pendingDelete = [...state.menuFiles]
     else void deleteFiles(state.menuFiles)
+  }
+}
+
+// 复制名称时保留每个远端项目的大小写与空格，与复制绝对路径分开提供。
+async function copySelectedNames(): Promise<void> {
+  try {
+    const text = state.menuFiles.map(file => file.name).join('\n')
+    await copyText(text)
+    scheduleClipboardClear(text)
+    toast.success(t('files.namesCopied'))
+  } catch (error) {
+    toast.error({
+      title: t('复制失败，请检查剪贴板权限'),
+      description: ssh.errorMessage(error),
+    })
+  }
+}
+
+// 对锁定的项目逐个移动或复制；同名项目保留，失败不阻断其余项目，最后统一刷新原目录。
+async function transferFiles(directory: string): Promise<void> {
+  const request = state.transfer
+  if (!request || state.processing || request.sessionId !== props.sessionId)
+    return
+  state.processing = true
+  const failures: string[] = []
+  let completed = 0
+  try {
+    for (const file of request.files) {
+      if (props.sessionId !== request.sessionId) break
+      const destination = `${directory.replace(/\/$/, '')}/${file.name}`
+      try {
+        if (
+          destination === file.path ||
+          (file.kind === 'directory' && destination.startsWith(`${file.path}/`))
+        )
+          throw new Error(t('files.invalidDestination'))
+        if (request.mode === 'move')
+          await ssh.renamePath(request.sessionId, file.path, destination)
+        else await ssh.copyPath(request.sessionId, file.path, destination)
+        completed++
+      } catch (error) {
+        failures.push(`${file.name}: ${ssh.errorMessage(error)}`)
+      }
+    }
+    if (
+      props.sessionId === request.sessionId &&
+      path.value === request.directory
+    )
+      await refresh()
+    if (completed)
+      toast.success(
+        t(request.mode === 'move' ? 'files.movedCount' : 'files.copiedCount', {
+          count: completed,
+        })
+      )
+    if (failures.length)
+      toast.error({
+        title: t('files.operationFailed'),
+        description: failures.join('\n'),
+      })
+    state.transfer = null
+  } finally {
+    state.processing = false
   }
 }
 
@@ -775,6 +928,58 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       @submit="renameFile"
       @close="state.renaming = null"
     />
+    <RemoteFileTransferDialog
+      v-if="state.transfer"
+      :session-id="state.transfer.sessionId"
+      :directory="state.transfer.directory"
+      :count="state.transfer.files.length"
+      :mode="state.transfer.mode"
+      :busy="state.processing"
+      @close="state.transfer = null"
+      @submit="transferFiles"
+    />
+    <AppDialog
+      v-if="state.properties.length"
+      :title="t('files.properties')"
+      @close="state.properties = []"
+    >
+      <p class="text-txt-2 mb-3 text-xs">
+        {{ t('files.selectedCount', { count: state.properties.length }) }} ·
+        {{
+          formatBytes(
+            state.properties.reduce(
+              (total, file) =>
+                total + (file.kind === 'directory' ? 0 : file.size),
+              0
+            )
+          )
+        }}
+      </p>
+      <div class="scroll-thin max-h-80 space-y-3 overflow-auto">
+        <dl
+          v-for="file in state.properties"
+          :key="file.path"
+          class="border-line bg-input rounded-md border p-3 text-xs"
+        >
+          <dt class="text-txt font-medium break-all">{{ file.name }}</dt>
+          <dd class="text-txt-3 mt-1 break-all">{{ file.path }}</dd>
+          <dd class="text-txt-3 mt-2 font-mono">
+            {{ file.permissions }} · {{ file.owner }}:{{ file.group }} ·
+            {{
+              file.kind === 'directory'
+                ? t('files.directory')
+                : formatBytes(file.size)
+            }}
+          </dd>
+          <dd
+            v-if="file.linkTarget"
+            class="text-txt-3 mt-1 break-all"
+          >
+            → {{ file.linkTarget }}
+          </dd>
+        </dl>
+      </div>
+    </AppDialog>
     <RemoteFileCreateDialog
       v-if="state.creating"
       :is-directory="state.creating === 'directory'"

@@ -7,6 +7,14 @@ import {
 } from 'vue'
 import type { TabItem } from '@/components/ui/TabBar.vue'
 import type { ContextMenuItem } from '@/types/context-menu'
+import type { WorkspaceTab } from '@/stores/workspace'
+
+export interface WorkspaceViewTab extends WorkspaceTab {
+  contentId?: string
+  label?: string
+  icon?: string
+  tooltip?: TabItem['tooltip']
+}
 
 export interface DatabaseWorkspaceTabs {
   tabs: () => readonly TabItem[]
@@ -18,7 +26,8 @@ export interface DatabaseWorkspaceTabs {
   contextItems: (id: string) => ContextMenuItem[]
   action: (id: string, action: string) => Promise<void>
 }
-type Registry = Map<string, DatabaseWorkspaceTabs>
+export type DatabaseWorkspaceTabRegistry = Map<string, DatabaseWorkspaceTabs>
+type Registry = DatabaseWorkspaceTabRegistry
 const key: InjectionKey<Registry> = Symbol('database-workspace-tabs')
 
 // 顶层标签栏共享数据库内容入口；会话、编辑器和结果仍由所属连接实例管理。
@@ -52,4 +61,38 @@ export function databaseWorkspaceTabId(
   tabId: string
 ): string {
   return `database-content:${encodeURIComponent(connectionId)}:${encodeURIComponent(tabId)}`
+}
+
+// 解析内容标签的连接归属，路由仍指向连接，分屏布局则保留内容标签本身的 ID。
+export function databaseWorkspaceTabTarget(
+  id: string
+): { connectionId: string; tabId: string } | undefined {
+  const parts = id.split(':')
+  if (parts.length !== 3 || parts[0] !== 'database-content') return
+  try {
+    return {
+      connectionId: decodeURIComponent(parts[1]!),
+      tabId: decodeURIComponent(parts[2]!),
+    }
+  } catch {
+    return
+  }
+}
+
+// 将数据库内容展开为真正的主标签，供分屏树逐项移动，避免拖表时带走整条连接。
+export function workspaceViewTabs(
+  tabs: readonly WorkspaceTab[],
+  registry: Registry | null
+): WorkspaceViewTab[] {
+  return tabs.flatMap(connection => [
+    connection,
+    ...(registry?.get(connection.id)?.tabs() ?? []).map(tab => ({
+      ...connection,
+      id: databaseWorkspaceTabId(connection.id, tab.id),
+      contentId: tab.id,
+      label: tab.label,
+      icon: tab.icon,
+      tooltip: tab.tooltip,
+    })),
+  ])
 }

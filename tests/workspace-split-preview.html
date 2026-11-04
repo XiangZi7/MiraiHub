@@ -52,6 +52,42 @@
               version: '7.4',
             }
           if (command === 'redis_scan') return { cursor: '0', keys: [] }
+          if (
+            command === 'db_connect' ||
+            command === 'db_describe_session' ||
+            command === 'db_use_database'
+          )
+            return {
+              sessionId: 'preview-sql',
+              database: 'demo',
+              kind: 'mysql',
+              endpoint: 'preview-sql.invalid:3306',
+              serverVersion: '8.4',
+            }
+          if (command === 'db_list_databases') return ['demo']
+          if (
+            command === 'db_list_objects' ||
+            command === 'db_completion_columns'
+          )
+            return []
+          if (command === 'db_execute')
+            return {
+              statements: [
+                {
+                  statement: args.sql,
+                  offset: 0,
+                  truncated: false,
+                  message: '',
+                  columns: [{ name: 'value', dataType: 'INT' }],
+                  rows: [['1']],
+                  rowsAffected: 0,
+                  elapsedMs: 1,
+                  error: null,
+                },
+              ],
+              elapsedMs: 1,
+              cancelled: false,
+            }
           if (command === 'settings_load') return {}
           if (command === 'ai_get_config') return { activeId: '', profiles: [] }
           if (
@@ -105,10 +141,15 @@
       const connections = useConnectionsStore(pinia)
       useSettingsStore(pinia).values.restoreLastSession = false
       useWorkspaceLayoutStore(pinia).machineOpen = true
-      const saved = ['a', 'b', 'c', 'cache'].map(id => ({
+      const saved = ['a', 'b', 'c', 'cache', 'sql'].map(id => ({
         id,
-        name: id === 'cache' ? '缓存数据库' : '服务器 ' + id.toUpperCase(),
-        kind: id === 'cache' ? 'redis' : 'ssh',
+        name:
+          id === 'sql'
+            ? '演示数据库'
+            : id === 'cache'
+              ? '缓存数据库'
+              : '服务器 ' + id.toUpperCase(),
+        kind: id === 'sql' ? 'mysql' : id === 'cache' ? 'redis' : 'ssh',
         host: 'preview-' + id + '.invalid',
         port: 22,
         username: 'preview',
@@ -118,15 +159,17 @@
         createdAt: 1,
         lastUsedAt: 1,
         settings:
-          id === 'cache'
-            ? { database: '0', password: '', timeoutSecs: 10 }
-            : {
-                auth: { type: 'password', password: '' },
-                timeoutSecs: 10,
-                keepaliveSecs: 30,
-                terminalType: 'xterm-256color',
-                startupCommand: '',
-              },
+          id === 'sql'
+            ? { database: 'demo', ssl: false, password: '', timeoutSecs: 10 }
+            : id === 'cache'
+              ? { database: '0', password: '', timeoutSecs: 10 }
+              : {
+                  auth: { type: 'password', password: '' },
+                  timeoutSecs: 10,
+                  keepaliveSecs: 30,
+                  terminalType: 'xterm-256color',
+                  startupCommand: '',
+                },
       }))
       connections.items.push(...saved)
       connections.loaded = true

@@ -315,3 +315,23 @@ test('分屏按钮取消拖拽后抑制点击，下一次正常点击不受影�
   assert.deepEqual(dropped, ['left'])
   assert.equal(gesture.consumeSuppressedClick(), true)
 })
+
+test('编辑 SQL 或更新标签标题不重建分屏树，新增标签才更新分组', async t => {
+  const { layout, tabs } = fixture(t)
+  const before = layout.tree.value
+  tabs.splice(
+    0,
+    tabs.length,
+    ...tabs.map(tab => ({
+      ...tab,
+      label: 'Updated',
+      sql: 'SELECT edited',
+    }))
+  )
+  await nextTick()
+  assert.equal(layout.tree.value, before)
+  tabs.push({ id: 'new-content' })
+  await nextTick()
+  assert.notEqual(layout.tree.value, before)
+  assert.ok(layout.groupForTab('new-content'))
+})

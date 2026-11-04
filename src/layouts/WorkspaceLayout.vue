@@ -31,7 +31,12 @@ import RemoteEditorHost from '@/components/operations/RemoteEditorHost.vue'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { provideWorkspaceControllers } from '@/composables/useWorkspaceControllers'
-import { provideDatabaseWorkspaceTabs } from '@/composables/useDatabaseWorkspaceTabs'
+import {
+  provideDatabaseWorkspaceTabs,
+  workspaceViewTabs,
+  databaseWorkspaceTabId,
+  databaseWorkspaceTabTarget,
+} from '@/composables/useDatabaseWorkspaceTabs'
 import {
   provideWorkspaceTabSplit,
   useWorkspaceTabSplit,
@@ -82,10 +87,19 @@ const {
   followActiveTab,
 } = useWorkspaceNavigation()
 const controllers = provideWorkspaceControllers()
-provideDatabaseWorkspaceTabs()
+const databaseWorkspaceTabs = provideDatabaseWorkspaceTabs()
+const viewTabs = computed(() =>
+  workspaceViewTabs(openTabs, databaseWorkspaceTabs)
+)
+const activeViewId = computed(() => {
+  const contentId = databaseWorkspaceTabs.get(activeId.value)?.activeId()
+  return contentId
+    ? databaseWorkspaceTabId(activeId.value, contentId)
+    : activeId.value
+})
 const tabSplit = useWorkspaceTabSplit({
-  tabs: () => openTabs,
-  activeId: () => activeId.value,
+  tabs: () => viewTabs.value,
+  activeId: () => activeViewId.value,
   enabled: () => hasOpenSectionTabs.value,
 })
 provideWorkspaceTabSplit(tabSplit)
@@ -170,11 +184,20 @@ function handleTitleBarDblClick(event: MouseEvent): void {
 function addConnection(): void {
   openConnectionWindow(activeNav.value === 'databases' ? 'database' : 'ssh')
 }
+// 关闭连接时连同其内容标签一起计算后继焦点，保留其他分屏的活动内容。
 function closeTabs(ids: string[]): void {
   const wasActive = ids.includes(activeId.value)
-  const preferred = tabSplit.preferredAfterClose(ids)
+  const closingViews = viewTabs.value
+    .filter(tab => ids.includes(tab.connection.id))
+    .map(tab => tab.id)
+  const preferred = tabSplit.preferredAfterClose(closingViews)
   workspace.closeMany(ids)
-  if (preferred) workspace.activate(preferred)
+  if (preferred) {
+    const target = databaseWorkspaceTabTarget(preferred)
+    if (target)
+      databaseWorkspaceTabs.get(target.connectionId)?.select(target.tabId)
+    workspace.activate(target?.connectionId ?? preferred)
+  }
   if (wasActive) void followActiveTab()
 }
 function closeWarning(ids: string[]): string {

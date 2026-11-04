@@ -5,7 +5,7 @@ import {
   injectWorkspaceTabSplit,
   type WorkspaceSplitNode,
 } from '@/composables/useWorkspaceTabSplit'
-import type { WorkspaceTab } from '@/composables/useWorkspaceTabs'
+import type { WorkspaceViewTab } from '@/composables/useDatabaseWorkspaceTabs'
 import type { TabDragEvent } from '@/composables/useTabReorder'
 import WorkspaceTabBar from './WorkspaceTabBar.vue'
 import ServerOperations from '@/components/operations/ServerOperations.vue'
@@ -16,7 +16,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 const { t } = useI18n()
 const props = defineProps<{
   node: WorkspaceSplitNode
-  tabs: readonly WorkspaceTab[]
+  tabs: readonly WorkspaceViewTab[]
   closeWarning: (ids: string[]) => string
 }>()
 const emit = defineEmits<{

@@ -70,7 +70,10 @@ import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppSidePane from '@/components/ui/AppSidePane.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
 import type { AgentContextRequest, AgentTarget } from '@/types/agent'
-import { registerDatabaseWorkspaceTabs } from '@/composables/useDatabaseWorkspaceTabs'
+import {
+  registerDatabaseWorkspaceTabs,
+  databaseWorkspaceTabTarget,
+} from '@/composables/useDatabaseWorkspaceTabs'
 
 const { t } = useI18n()
 
@@ -111,6 +114,7 @@ interface SqlEditorExpose {
 const props = defineProps<{
   connection?: SavedConnection
   active?: boolean
+  workspaceHostId?: string
 }>()
 
 const emit = defineEmits<{
@@ -391,8 +395,13 @@ function selectSchema(name: string): void {
 watch(objectsError, error => {
   if (error) toast.error({ title: t('读取数据库对象失败'), description: error })
 })
+const displayedTabId = computed(() =>
+  props.workspaceHostId === undefined
+    ? queryState.activeId
+    : (databaseWorkspaceTabTarget(props.workspaceHostId)?.tabId ?? '')
+)
 const activeTab = computed(() =>
-  queryState.tabs.find(tab => tab.id === queryState.activeId)
+  queryState.tabs.find(tab => tab.id === displayedTabId.value)
 )
 const activeQuery = computed(() =>
   activeTab.value?.kind === 'query' ? activeTab.value : undefined
@@ -764,7 +773,9 @@ function reorderTabs(fromIndex: number, toIndex: number): void {
 registerDatabaseWorkspaceTabs(props.connection?.id, {
   tabs: () =>
     queryState.tabs.map(tab => ({
-      ...tab,
+      id: tab.id,
+      icon: tab.icon,
+      closable: tab.closable,
       label: tabLabel(tab),
       tooltip: tabTooltip(tab),
     })),
@@ -1274,9 +1285,10 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
+// 查询工具栏按所在屏的标签运行 SQL，分离内容通过显式 tabId 定位，避免焦点切屏后跑错草稿。
 async function runQuery(
   sqlOverride?: string,
-  tabId = queryState.activeId
+  tabId = activeTab.value?.id ?? queryState.activeId
 ): Promise<void> {
   if (state.transferMode || state.preparingTransfer || state.preparingQuery)
     return
@@ -1705,9 +1717,34 @@ watch(
         />
         <DatabaseTabWorkspace
           v-else
-          v-model:active="queryState.activeId"
+          :active="displayedTabId"
           :tabs="queryState.tabs"
+          :connection-id="connection?.id"
+          :workspace-host-id="workspaceHostId"
         >
+          <template #toolbar="{ tab }">
+            <div
+              v-if="tab.kind === 'query'"
+              class="border-line-soft text-txt-2 flex h-10 shrink-0 items-center gap-2 border-b px-3 text-xs"
+            >
+              <span class="min-w-0 flex-1 truncate"
+                >{{ tabLabel(tab) }} · {{ connection?.name }}</span
+              >
+              <IconButton
+                icon="lucide:play"
+                :size="14"
+                :title="t('Run SQL')"
+                :disabled="queryLoading || !tab.sql.trim()"
+                @click="runQuery(undefined, tab.id)"
+              />
+              <IconButton
+                icon="lucide:save"
+                :size="14"
+                :title="t('保存查询')"
+                @click="saveQueryTab(tab.id)"
+              />
+            </div>
+          </template>
           <template #empty>
             <DatabaseTableOverview
               :objects="overviewObjects"

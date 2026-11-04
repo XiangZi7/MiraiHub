@@ -195,6 +195,87 @@ pub async fn rename_path(session: &SshSession, old_path: &str, new_path: &str) -
     sftp.rename(old_path, new_path).await.map_err(sftp_error)
 }
 
+/// 复制远端文件、目录或符号链接；逐项独占创建目标，任何同名项目都不会被覆盖。
+pub async fn copy_path(session: &SshSession, source: &str, destination: &str) -> SshResult<()> {
+    validate_remote_path(source)?;
+    validate_remote_path(destination)?;
+    let sftp = session.open_sftp().await?;
+    let (parent, name) = destination
+        .rsplit_once('/')
+        .ok_or_else(|| SshError::InvalidInput("目标须为绝对路径".into()))?;
+    let parent = sftp
+        .canonicalize(if parent.is_empty() { "/" } else { parent })
+        .await
+        .map_err(sftp_error)?;
+    let destination = create_child_path(&parent, name)?;
+    let metadata = sftp.symlink_metadata(source).await.map_err(sftp_error)?;
+    if metadata.is_dir() {
+        let canonical_source = sftp.canonicalize(source).await.map_err(sftp_error)?;
+        validate_copy_destination(&canonical_source, &destination)?;
+    }
+    // 采用迭代遍历，软链只复制链接本身，避免递归栈溢出和软链循环。
+    let mut pending = vec![(source.to_owned(), destination, false)];
+    while let Some((from, to, finalize)) = pending.pop() {
+        let attrs = sftp.symlink_metadata(&from).await.map_err(sftp_error)?;
+        if finalize {
+            let mut preserved = FileAttributes::empty();
+            preserved.permissions = attrs.permissions.map(|value| value & 0o7777);
+            preserved.atime = attrs.atime;
+            preserved.mtime = attrs.mtime;
+            sftp.set_metadata(&to, preserved)
+                .await
+                .map_err(sftp_error)?;
+            continue;
+        }
+        if attrs.is_symlink() {
+            let target = sftp.read_link(&from).await.map_err(sftp_error)?;
+            sftp.symlink(&to, target).await.map_err(sftp_error)?;
+        } else if attrs.is_dir() {
+            sftp.create_dir(&to).await.map_err(sftp_error)?;
+            pending.push((from.clone(), to.clone(), true));
+            for entry in sftp.read_dir(&from).await.map_err(sftp_error)? {
+                let name = entry.file_name();
+                if matches!(name.as_str(), "." | "..") {
+                    continue;
+                }
+                pending.push((
+                    create_child_path(&from, &name)?,
+                    create_child_path(&to, &name)?,
+                    false,
+                ));
+            }
+        } else if attrs.file_type().is_file() {
+            let mut input = sftp.open(&from).await.map_err(sftp_error)?;
+            let mut output = sftp
+                .open_with_flags(
+                    &to,
+                    OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
+                )
+                .await
+                .map_err(sftp_error)?;
+            tokio::io::copy(&mut input, &mut output).await?;
+            output.shutdown().await?;
+            pending.push((from, to, true));
+        } else {
+            return Err(SshError::InvalidInput(
+                "仅支持复制普通文件、目录和符号链接".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// 规范化后的目录不允许复制到自身或子目录，避免把新建目标再次纳入复制。
+fn validate_copy_destination(source: &str, destination: &str) -> SshResult<()> {
+    let source = source.trim_end_matches('/');
+    if destination == source || destination.starts_with(&format!("{source}/")) {
+        return Err(SshError::InvalidInput(
+            "不能将目录复制到自身或其子目录".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// 删除远端文件、软链或空目录。目录非空时由服务器返回明确错误，避免误递归删除。
 pub async fn delete_path(session: &SshSession, path: &str, is_directory: bool) -> SshResult<()> {
     validate_remote_path(path)?;
@@ -1091,5 +1172,14 @@ mod tests {
         assert_eq!(upload_channel_count(4, 100), 2);
         assert_eq!(upload_channel_count(8, 100), 3);
         assert_eq!(upload_channel_count(32, 1000), 4);
+    }
+
+    #[test]
+    fn copied_directory_cannot_target_itself_or_descendants() {
+        assert!(validate_copy_destination("/data/app", "/data/app").is_err());
+        assert!(validate_copy_destination("/data/app", "/data/app/backups/app").is_err());
+        assert!(validate_copy_destination("/", "/backup").is_err());
+        assert!(validate_copy_destination("/data/app", "/data/application/app").is_ok());
+        assert!(validate_copy_destination("/data/app", "/backup/app").is_ok());
     }
 }

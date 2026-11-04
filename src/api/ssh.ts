@@ -202,6 +202,16 @@ export async function deletePath(
   await invoke('ssh_delete_path', { sessionId, path, isDirectory })
 }
 
+// 文件菜单复制到远端目录，后端独占创建目标并保留目录及软链结构。
+export async function copyPath(
+  sessionId: string,
+  source: string,
+  destination: string
+): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_copy_path', { sessionId, source, destination })
+}
+
 export async function uploadFile(options: {
   sessionId: string
   taskId: string

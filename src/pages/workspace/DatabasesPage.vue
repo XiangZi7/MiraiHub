@@ -9,11 +9,16 @@ import { isDatabaseConnection } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
 import DatabaseView from '@/components/workspace/DatabaseView.vue'
 import RedisView from '@/components/workspace/RedisView.vue'
+import {
+  useDatabaseWorkspaceTabs,
+  databaseWorkspaceTabId,
+} from '@/composables/useDatabaseWorkspaceTabs'
 const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
 const { activeNav } = useWorkspaceNavigation()
 const tabSplit = injectWorkspaceTabSplit()
+const databaseTabs = useDatabaseWorkspaceTabs()
 function visible(id: string): boolean {
   return tabSplit ? tabSplit.isVisible(id) : activeId.value === id
 }
@@ -35,7 +40,16 @@ const activeDatabaseConnection = computed(() => {
 const databaseTabViews = computed(() =>
   openTabs.flatMap(tab => {
     const connection = tab.connection
-    return isDatabaseConnection(connection) ? [{ id: tab.id, connection }] : []
+    if (!isDatabaseConnection(connection)) return []
+    const ids = [
+      tab.id,
+      ...(databaseTabs?.get(tab.id)?.tabs() ?? []).map(content =>
+        databaseWorkspaceTabId(tab.id, content.id)
+      ),
+    ]
+    // 连接壳优先停留在连接标签所在屏，其余内容独立投放，聚焦其他屏不会把侧栏搬走。
+    const hostId = ids.find(id => visible(id)) ?? tab.id
+    return [{ id: tab.id, connection, hostId }]
   })
 )
 
@@ -65,16 +79,18 @@ registerWorkspaceController('databases', {
     <Teleport
       v-for="tab in databaseTabViews"
       :key="tab.id"
-      :to="tabSplit?.targetFor(tab.id) ?? 'body'"
-      :disabled="!tabSplit?.targetFor(tab.id)"
+      :to="tabSplit?.targetFor(tab.hostId) ?? 'body'"
+      :disabled="!tabSplit?.targetFor(tab.hostId)"
     >
       <component
         :is="tab.connection.kind === 'redis' ? RedisView : DatabaseView"
-        v-show="visible(tab.id)"
+        v-show="visible(tab.hostId)"
         ref="databaseViews"
         :connection="tab.connection"
+        :workspace-host-id="tab.hostId"
         :active="
-          visible(tab.id) && (Boolean(tabSplit) || activeNav === 'databases')
+          visible(tab.hostId) &&
+          (Boolean(tabSplit) || activeNav === 'databases')
         "
         @status="
           (status, sessionId) => handleSshStatus(tab.id, status, sessionId)

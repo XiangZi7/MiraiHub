@@ -3,7 +3,6 @@ import { useI18n } from 'vue-i18n'
 import { computed, reactive } from 'vue'
 import TabBar, { type TabItem } from '@/components/ui/TabBar.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
-import type { WorkspaceTab } from '@/composables/useWorkspaceTabs'
 import type { ContextMenuItem } from '@/types/context-menu'
 import { copyText } from '@/utils/clipboard'
 import { openConnectionWindow } from '@/utils/window'
@@ -12,14 +11,14 @@ import { isDatabaseConnection } from '@/types/connection'
 import { DATABASE_CONNECTION_ICONS } from '@/constants/connection'
 import type { TabDragEvent } from '@/composables/useTabReorder'
 import {
-  databaseWorkspaceTabId,
+  type WorkspaceViewTab,
   useDatabaseWorkspaceTabs,
 } from '@/composables/useDatabaseWorkspaceTabs'
 
 const { t } = useI18n()
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{
-  tabs: readonly WorkspaceTab[]
+  tabs: readonly WorkspaceViewTab[]
   active: string
   closeWarning: (ids: string[]) => string
 }>()
@@ -35,14 +34,14 @@ const emit = defineEmits<{
 }>()
 const state = reactive({ closingIds: [] as string[], warning: '' })
 const databaseTabs = useDatabaseWorkspaceTabs()
-const connectionItems = computed<TabItem[]>(() =>
+const items = computed<TabItem[]>(() =>
   props.tabs.map(tab => ({
     id: tab.id,
-    label: tab.connection.name,
+    label: tab.label ?? tab.connection.name,
     ...(isDatabaseConnection(tab.connection)
       ? {
-          icon: DATABASE_CONNECTION_ICONS[tab.connection.kind].name,
-          iconSize: 18,
+          icon: tab.icon ?? DATABASE_CONNECTION_ICONS[tab.connection.kind].name,
+          iconSize: tab.contentId ? 13 : 18,
         }
       : {
           dot:
@@ -52,7 +51,7 @@ const connectionItems = computed<TabItem[]>(() =>
                 ? ('amber' as const)
                 : ('txt-3' as const),
         }),
-    tooltip: [
+    tooltip: tab.tooltip ?? [
       { label: t('连接'), value: tab.connection.name },
       { label: 'Host', value: `${tab.connection.host}:${tab.connection.port}` },
       ...(isDatabaseConnection(tab.connection)
@@ -65,26 +64,13 @@ const connectionItems = computed<TabItem[]>(() =>
 )
 const contentTargets = computed(() => {
   const targets = new Map<string, { connectionId: string; tabId: string }>()
-  for (const connection of props.tabs)
-    for (const tab of databaseTabs?.get(connection.id)?.tabs() ?? [])
-      targets.set(databaseWorkspaceTabId(connection.id, tab.id), {
-        connectionId: connection.id,
-        tabId: tab.id,
+  for (const tab of props.tabs)
+    if (tab.contentId)
+      targets.set(tab.id, {
+        connectionId: tab.connection.id,
+        tabId: tab.contentId,
       })
   return targets
-})
-const items = computed<TabItem[]>(() =>
-  connectionItems.value.flatMap(connection => [
-    connection,
-    ...(databaseTabs?.get(connection.id)?.tabs() ?? []).map(tab => ({
-      ...tab,
-      id: databaseWorkspaceTabId(connection.id, tab.id),
-    })),
-  ])
-)
-const displayedActive = computed(() => {
-  const current = databaseTabs?.get(props.active)?.activeId()
-  return current ? databaseWorkspaceTabId(props.active, current) : props.active
 })
 
 // 主标签栏的查询和表入口切换所属连接中的内容，不重建连接或后台 Agent。
@@ -92,7 +78,7 @@ function activate(id: string): void {
   const target = contentTargets.value.get(id)
   if (target) {
     databaseTabs?.get(target.connectionId)?.select(target.tabId)
-    emit('update:active', target.connectionId)
+    emit('update:active', id)
   } else {
     databaseTabs?.get(id)?.select('')
     emit('update:active', id)
@@ -101,7 +87,8 @@ function activate(id: string): void {
 
 // 数据库分组的加号直接新建查询，其他分组沿用新增连接入口。
 function add(): void {
-  const current = databaseTabs?.get(props.active)
+  const owner = props.tabs.find(tab => tab.id === props.active)?.connection.id
+  const current = owner ? databaseTabs?.get(owner) : undefined
   if (current) current.add()
   else emit('add')
 }
@@ -163,7 +150,7 @@ function contextItems(id: string): ContextMenuItem[] {
 async function action(id: string, action: string): Promise<void> {
   const content = contentTargets.value.get(id)
   if (content) {
-    emit('update:active', content.connectionId)
+    emit('update:active', id)
     await databaseTabs?.get(content.connectionId)?.action(content.tabId, action)
     return
   }
@@ -206,7 +193,7 @@ function requestClose(ids: string[]): void {
   if (current.length > 1)
     current = current.filter(
       id =>
-        !props.tabs.some(tab => tab.id === id) ||
+        contentTargets.value.has(id) ||
         ![...contentTargets.value].some(
           ([contentId, target]) =>
             target.connectionId === id && !current.includes(contentId)
@@ -224,13 +211,15 @@ function requestClose(ids: string[]): void {
 // 关闭连接时由连接卸载统一释放内容；仅关闭查询时保留同连接的其他标签。
 function closeItems(ids: string[]): void {
   const connections = ids.filter(id => !contentTargets.value.has(id))
-  for (const connection of props.tabs) {
-    if (connections.includes(connection.id)) continue
+  for (const connectionId of new Set(
+    props.tabs.map(tab => tab.connection.id)
+  )) {
+    if (connections.includes(connectionId)) continue
     const contentIds = ids.flatMap(id => {
       const target = contentTargets.value.get(id)
-      return target?.connectionId === connection.id ? [target.tabId] : []
+      return target?.connectionId === connectionId ? [target.tabId] : []
     })
-    if (contentIds.length) databaseTabs?.get(connection.id)?.close(contentIds)
+    if (contentIds.length) databaseTabs?.get(connectionId)?.close(contentIds)
   }
   if (connections.length) emit('closeMany', connections)
 }
@@ -244,44 +233,12 @@ function confirmClose(): void {
   cancelClose()
   closeItems(ids)
 }
-
-// 同连接内容拖动调整查询顺序，跨连接拖动则移动所属连接及其内容标签。
-function reorder(from: number, to: number): void {
-  const source = items.value[from]
-  const destination = items.value[to]
-  if (!source || !destination) return
-  const a = contentTargets.value.get(source.id)
-  const b = contentTargets.value.get(destination.id)
-  if (a && b && a.connectionId === b.connectionId) {
-    const current = databaseTabs?.get(a.connectionId)
-    const tabs = current?.tabs() ?? []
-    current?.reorder(
-      tabs.findIndex(tab => tab.id === a.tabId),
-      tabs.findIndex(tab => tab.id === b.tabId)
-    )
-  } else
-    emit(
-      'reorder',
-      props.tabs.findIndex(tab => tab.id === (a?.connectionId ?? source.id)),
-      props.tabs.findIndex(
-        tab => tab.id === (b?.connectionId ?? destination.id)
-      )
-    )
-}
-
-// 内容标签随所属连接移动到主分屏，避免把同一个会话挂载为多个实例。
-function connectionDrag(drag: TabDragEvent): TabDragEvent {
-  return {
-    ...drag,
-    id: contentTargets.value.get(drag.id)?.connectionId ?? drag.id,
-  }
-}
 </script>
 <template>
   <TabBar
     v-bind="$attrs"
     :tabs="items"
-    :active="displayedActive"
+    :active="active"
     :context-items="contextItems"
     addable
     split-draggable
@@ -289,10 +246,10 @@ function connectionDrag(drag: TabDragEvent): TabDragEvent {
     @add="add"
     @close="requestClose([$event])"
     @close-many="requestClose"
-    @reorder="reorder"
+    @reorder="(from, to) => emit('reorder', from, to)"
     @context-action="action"
-    @tab-drag-move="emit('tabDragMove', connectionDrag($event))"
-    @tab-drop="emit('tabDrop', connectionDrag($event))"
+    @tab-drag-move="emit('tabDragMove', $event)"
+    @tab-drop="emit('tabDrop', $event)"
     @tab-drag-end="emit('tabDragEnd')"
   />
   <AppConfirmDialog
