@@ -9,8 +9,11 @@ import { isAgentWebLink, renderAgentMarkdown } from '@/utils/agent-markdown'
 
 const { t } = useI18n()
 
-const props = defineProps<{ content: string }>()
-const html = computed(() => renderAgentMarkdown(props.content))
+const props = defineProps<{ content: string; canApplySql?: boolean }>()
+const emit = defineEmits<{ applySql: [sql: string] }>()
+const html = computed(() =>
+  renderAgentMarkdown(props.content, props.canApplySql)
+)
 const state = reactive({ feedback: '', failed: false })
 const { feedback, failed } = toRefs(state)
 let feedbackTimer: ReturnType<typeof setTimeout> | undefined
@@ -22,8 +25,17 @@ function notify(message: string, failed = false): void {
     state.feedback = ''
   }, 2500)
 }
+// 响应代码块的复制或 SQL 应用按钮，应用只填入编辑器，不触发查询执行。
 async function activate(event: MouseEvent): Promise<void> {
   if (!(event.target instanceof Element)) return
+  const apply = event.target.closest<HTMLButtonElement>(
+    'button[data-apply-sql]'
+  )
+  if (apply && event.button === 0 && props.canApplySql) {
+    const code = apply.closest('.md-code')?.querySelector('code')?.textContent
+    if (code?.trim()) emit('applySql', code)
+    return
+  }
   const copy = event.target.closest<HTMLButtonElement>('button[data-copy-code]')
   if (copy && event.button === 0) {
     const code = copy.closest('.md-code')?.querySelector('code')

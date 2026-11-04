@@ -7,7 +7,12 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AgentCopyButton from './AgentCopyButton.vue'
 import AgentFileDiff from './AgentFileDiff.vue'
 
-const props = defineProps<{ operation: AgentOperation; output?: string }>()
+const props = defineProps<{
+  operation: AgentOperation
+  output?: string
+  canApplySql?: boolean
+}>()
+const emit = defineEmits<{ applySql: [sql: string] }>()
 const { t } = useI18n()
 const outputPreview = computed(() => {
   if (!props.output) return ''
@@ -125,6 +130,14 @@ const label = computed(() =>
         class="scroll-thin bg-terminal mt-2 mb-0 max-h-[260px] overflow-auto rounded-md p-2.5 font-mono text-[11px] leading-[1.7] wrap-anywhere whitespace-pre-wrap"
         >{{ outputPreview }}</pre>
       <div class="mt-1.5 flex justify-end">
+        <button
+          v-if="canApplySql && operation.label === '执行 SQL'"
+          type="button"
+          class="text-accent hover:bg-hover mr-2 cursor-pointer rounded px-2 py-1 text-xs"
+          @click="emit('applySql', operation.command)"
+        >
+          {{ t('agent.applySql') }}
+        </button>
         <AgentCopyButton
           :text="
             output ? `${operation.command}\n\n${output}` : operation.command

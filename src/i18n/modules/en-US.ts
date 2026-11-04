@@ -748,4 +748,23 @@ export default {
     'Label: the text shown on the tag; leave empty to show the value, e.g. show 1 as “Enabled”',
   '颜色：同一列可给不同值配不同颜色，未匹配的值仍按原样显示':
     'Color: each value in a column can have its own color; unmatched values stay as they are',
+  'agent.applySql': 'Apply to query',
+  'agent.sqlApplied': 'SQL applied to the query editor; not executed',
+  'agent.guidancePlaceholder': 'Add guidance for the next step…',
+  'agent.queuedGuidance': 'Queued guidance',
+  'agent.editGuidance': 'Edit guidance',
+  'agent.removeGuidance': 'Remove guidance',
+  'agent.sendGuidance': 'Send guidance',
+  'agent.guidanceHint':
+    'Send guidance (Enter / Ctrl+Enter); takes effect after the current step',
+  'files.downloadSelected': 'Download {count} selected files…',
+  'files.deleteSelected': 'Delete {count} selected items',
+  'files.copyPaths': 'Copy selected paths',
+  'files.downloadDirectory': 'Choose download folder',
+  'files.selectedCount': '{count} selected',
+  'files.deletedCount': 'Deleted {count} items',
+  'files.confirmBatchDelete':
+    'Delete {count} selected remote items? This cannot be undone. Non-empty folders will be kept.',
+  'files.selectionHint':
+    'Drag to select · Ctrl / Shift multi-select · Right-click for batch actions',
 } satisfies Record<string, string>

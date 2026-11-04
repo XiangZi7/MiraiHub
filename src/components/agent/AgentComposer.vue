@@ -29,6 +29,7 @@ const props = withDefaults(
     /** 审批方式独立于发送状态，运行中或等待审批时仍可调整。 */
     permissionDisabled?: boolean
     busy: boolean
+    guidance?: { id: string; text: string }[]
     canSend: boolean
     awaitingApproval: boolean
     isDatabase: boolean
@@ -55,6 +56,8 @@ const emit = defineEmits<{
   attach: [files: File[]]
   removeAttachment: [id: string]
   cancelReading: []
+  editGuidance: [id: string]
+  removeGuidance: [id: string]
 }>()
 const { t } = useI18n()
 const dictation = useAgentDictation(
@@ -76,12 +79,15 @@ defineExpose({ focus: () => textarea.value?.focus() })
 const placeholder = computed(() =>
   props.awaitingApproval
     ? t('请先审批或拒绝上方操作…')
-    : props.isRedis
-      ? t('询问 Redis 键、TTL，或描述要执行的命令…')
-      : props.isDatabase
-        ? t('询问数据库，或描述要完成的操作…')
-        : t('agent.promptPlaceholder')
+    : props.busy
+      ? t('agent.guidancePlaceholder')
+      : props.isRedis
+        ? t('询问 Redis 键、TTL，或描述要执行的命令…')
+        : props.isDatabase
+          ? t('询问数据库，或描述要完成的操作…')
+          : t('agent.promptPlaceholder')
 )
+// Enter 提交引导或普通消息，Shift+Enter 保留换行；兼容输入法组合输入。
 function keydown(event: KeyboardEvent): void {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault()
@@ -89,20 +95,25 @@ function keydown(event: KeyboardEvent): void {
     if (props.canSend) emit('submit')
   }
 }
+// 只在普通消息模式读取所选附件，引导消息保持文字输入。
 function selectFiles(event: Event): void {
   const input = event.target as HTMLInputElement
-  if (!props.disabled) emit('attach', Array.from(input.files ?? []))
+  if (!props.disabled && !props.busy)
+    emit('attach', Array.from(input.files ?? []))
   input.value = ''
 }
+// 粘贴图片时走已有附件流程，运行中的文字引导不接收图片附件。
 function paste(event: ClipboardEvent): void {
   const files = clipboardImages(event.clipboardData)
   if (!files.length) return
   if (!event.clipboardData?.getData('text/plain')) event.preventDefault()
-  if (!props.disabled && !props.reading) emit('attach', files)
+  if (!props.disabled && !props.reading && !props.busy) emit('attach', files)
 }
+// 将拖入文件交给附件读取流程，模型运行时保留当前引导输入。
 function drop(event: DragEvent): void {
   const files = Array.from(event.dataTransfer?.files ?? [])
-  if (files.length && !props.disabled && !props.reading) emit('attach', files)
+  if (files.length && !props.disabled && !props.reading && !props.busy)
+    emit('attach', files)
 }
 watch(
   prompt,
@@ -121,6 +132,40 @@ watch(
     data-agent-composer
     class="min-w-0 shrink-0 px-3 pt-2 pb-2"
   >
+    <ul
+      v-if="guidance?.length"
+      class="border-line bg-card mb-1.5 max-h-32 overflow-auto rounded-xl border px-2 py-1"
+      :aria-label="t('agent.queuedGuidance')"
+    >
+      <li
+        v-for="message in guidance"
+        :key="message.id"
+        class="text-txt-2 flex min-w-0 items-center gap-2 py-1 text-xs"
+      >
+        <AppIcon
+          name="lucide:message-circle-more"
+          :size="13"
+          class="shrink-0"
+        />
+        <span
+          class="min-w-0 flex-1 truncate"
+          :title="message.text"
+          >{{ message.text }}</span
+        >
+        <IconButton
+          icon="lucide:pencil"
+          :size="13"
+          :title="t('agent.editGuidance')"
+          @click="emit('editGuidance', message.id)"
+        />
+        <IconButton
+          icon="lucide:trash-2"
+          :size="13"
+          :title="t('agent.removeGuidance')"
+          @click="emit('removeGuidance', message.id)"
+        />
+      </li>
+    </ul>
     <form
       class="border-accent/35 focus-within:border-accent/65 bg-input min-w-0 rounded-2xl border px-3 py-2.5"
       @submit.prevent="canSend && emit('submit')"
@@ -192,7 +237,7 @@ watch(
         class="hidden"
         multiple
         :accept="AGENT_FILE_ACCEPT"
-        :disabled="disabled || reading"
+        :disabled="disabled || reading || busy"
         tabindex="-1"
         aria-hidden="true"
         @change="selectFiles"
@@ -219,7 +264,7 @@ watch(
             )
           "
           :aria-label="t('上传文件')"
-          :disabled="disabled || reading"
+          :disabled="disabled || reading || busy"
           class="text-txt-3 size-7 shrink-0 rounded-full p-0"
           @click="fileInput?.click()"
         />
@@ -303,15 +348,19 @@ watch(
             />
           </button>
           <button
-            v-if="!busy && !awaitingApproval"
+            v-if="!awaitingApproval"
             type="submit"
             class="border-accent/30 bg-accent focus-visible:outline-accent grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border text-white not-disabled:hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-3 disabled:cursor-default disabled:opacity-40"
-            :aria-label="t('发送消息')"
-            :title="t('发送 (Enter)，换行 (Shift+Enter)')"
+            :aria-label="busy ? t('agent.sendGuidance') : t('发送消息')"
+            :title="
+              busy
+                ? t('agent.guidanceHint')
+                : t('发送 (Enter)，换行 (Shift+Enter)')
+            "
             :disabled="!canSend"
           >
             <AppIcon
-              name="lucide:chevron-up"
+              :name="busy ? 'lucide:corner-down-left' : 'lucide:chevron-up'"
               :size="17"
             />
           </button>

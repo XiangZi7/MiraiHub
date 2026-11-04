@@ -15,8 +15,12 @@ const props = defineProps<{
   approval: AgentApproval
   target: string
   busy: boolean
+  canApplySql?: boolean
 }>()
-const emit = defineEmits<{ decide: [approve: boolean] }>()
+const emit = defineEmits<{
+  decide: [approve: boolean]
+  applySql: [sql: string]
+}>()
 // 每一条新审批都必须重新核对，不继承上一条的确认状态。
 const state = reactive({ reviewed: false, time: Date.now() })
 const { reviewed } = toRefs(state)
@@ -66,6 +70,14 @@ const expired = computed(() => seconds.value === 0)
       class="text-txt-3 mt-3 flex items-center justify-between gap-2 text-[11px]"
     >
       <span>{{ t(approval.label) }} · {{ t('完整内容') }}</span>
+      <button
+        v-if="canApplySql && approval.label === '执行 SQL'"
+        type="button"
+        class="text-accent hover:bg-hover cursor-pointer rounded px-2 py-1 text-xs"
+        @click="emit('applySql', approval.command)"
+      >
+        {{ t('agent.applySql') }}
+      </button>
       <AgentCopyButton
         :text="approval.command"
         :label="t('复制命令')"

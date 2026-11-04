@@ -46,6 +46,7 @@ const emit = defineEmits<{
   split: []
   close: []
   contextConsumed: [id: string]
+  applySql: [sql: string, target: AgentTarget]
 }>()
 const profiles = useAgentProfiles(() => {
   draft.clearAttachments()
@@ -55,6 +56,8 @@ const {
   run,
   busy,
   progress,
+  guidance,
+  removeGuidance,
   error,
   awaitingApproval,
   approvalMode,
@@ -143,7 +146,8 @@ const canSend = computed(() =>
     !switchingConversation.value &&
     (prompt.value.trim() || attachments.value.length) &&
     !reading.value &&
-    !busy.value &&
+    (!busy.value ||
+      (!attachments.value.length && guidance.value.length < 16)) &&
     !awaitingApproval.value
   )
 )
@@ -203,9 +207,17 @@ const statusLabel = computed(
       truncated: t('agent.truncated'),
     }[run.value?.status ?? 'completed']
 )
+// 根据当前运行状态发送新请求或排入本会话的引导队列。
 async function submit(): Promise<void> {
   if (!canSend.value) return
   await draft.submit()
+}
+// 编辑排队引导时将原文放回草稿，已有草稿则保留并追加，避免丢失输入。
+function editGuidance(id: string): void {
+  const text = removeGuidance(id)
+  if (text)
+    draft.prompt.value = [draft.prompt.value, text].filter(Boolean).join('\n')
+  composer.value?.focus()
 }
 function newConversation(): void {
   draft.reset()
@@ -509,6 +521,8 @@ watch(
               :progress="progress"
               :status="run.status"
               :status-label="statusLabel"
+              :can-apply-sql="target.kind === 'database'"
+              @apply-sql="emit('applySql', $event, { ...target })"
             />
 
             <AgentApprovalCard
@@ -516,6 +530,8 @@ watch(
               :approval="run.approval"
               :target="run.target"
               :busy="busy"
+              :can-apply-sql="target.kind === 'database'"
+              @apply-sql="emit('applySql', $event, { ...target })"
               @decide="decide"
             />
             <AgentRetryStatus
@@ -580,6 +596,9 @@ watch(
         switching
       "
       :busy="busy"
+      :guidance="guidance"
+      @edit-guidance="editGuidance"
+      @remove-guidance="removeGuidance"
       :can-send="canSend"
       :awaiting-approval="awaitingApproval"
       :is-database="isDatabase"

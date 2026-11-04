@@ -70,6 +70,8 @@ const state = reactive({
   keyword: '',
   selectedId: props.activeId ?? '',
   collapsed: {} as Record<string, boolean>,
+  // 搜索期间的临时折叠选择，不覆盖用户原先的分类展开状态
+  searchCollapsed: {} as Record<string, boolean>,
   creatingGroup: false,
   editingGroupId: '',
   menuOpen: false,
@@ -107,28 +109,33 @@ const matchCount = computed(() =>
 )
 /** 未分组桶直接平铺，没有折叠态，不参与"全部展开 / 折叠" */
 const collapsibleGroups = computed(() =>
-  props.groups.filter(group => !group.loose)
+  (state.keyword.trim() ? visibleGroups.value : props.groups).filter(
+    group => !group.loose
+  )
 )
 const allExpanded = computed(
   () =>
     collapsibleGroups.value.length > 0 &&
-    collapsibleGroups.value.every(group => state.collapsed[group.id] === false)
+    collapsibleGroups.value.every(group => isExpanded(group.id))
 )
 watch(listKind, () => {
   state.keyword = ''
   state.creatingGroup = false
   state.editingGroupId = ''
 })
+// 搜索词变化只重置临时折叠；清空搜索后自然恢复原分类状态。
 watch(
   () => state.keyword,
-  value => {
-    if (value.trim())
-      for (const group of visibleGroups.value) state.collapsed[group.id] = false
+  () => {
+    state.searchCollapsed = {}
   }
 )
+// 搜索结果的全部展开/折叠仅作用于命中分类，普通列表继续使用原偏好。
 function setAllExpanded(expanded: boolean): void {
-  for (const group of collapsibleGroups.value)
-    state.collapsed[group.id] = !expanded
+  const collapsed = state.keyword.trim()
+    ? state.searchCollapsed
+    : state.collapsed
+  for (const group of collapsibleGroups.value) collapsed[group.id] = !expanded
 }
 watch(
   () => props.activeId,
@@ -255,13 +262,20 @@ const contextItems = computed<ContextMenuItem[]>(() => {
   return items
 })
 
+// 搜索时默认展示命中连接；非搜索时读取用户手动设置的分类折叠状态。
 function isExpanded(groupId: string): boolean {
-  return state.collapsed[groupId] === false
+  return state.keyword.trim()
+    ? state.searchCollapsed[groupId] !== true
+    : state.collapsed[groupId] === false
 }
 
+// 切换分类时写入当前模式对应的折叠状态，搜索操作不会污染普通列表。
 function toggleGroup(groupId: string): void {
   if (groupReorder.consumeSuppressedClick(groupId)) return
-  state.collapsed[groupId] = isExpanded(groupId)
+  const collapsed = state.keyword.trim()
+    ? state.searchCollapsed
+    : state.collapsed
+  collapsed[groupId] = isExpanded(groupId)
 }
 
 function toneOf(connection: SavedConnection): 'success' | 'amber' | 'txt-3' {

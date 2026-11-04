@@ -6,6 +6,7 @@ import {
   reactive,
   shallowRef,
   toRef,
+  toRefs,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -30,7 +31,7 @@ import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { ContextMenuItem } from '@/types/context-menu'
 import type { SshRemoteFile } from '@/types/ssh'
-import { scheduleClipboardClear } from '@/utils/clipboard'
+import { copyText, scheduleClipboardClear } from '@/utils/clipboard'
 import FileConflictDialog from './FileConflictDialog.vue'
 import RemoteFileCreateDialog from './RemoteFileCreateDialog.vue'
 import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
@@ -86,7 +87,14 @@ const state = reactive({
   menuX: 0,
   menuY: 0,
   menuFile: null as SshRemoteFile | null,
-  pendingDelete: null as SshRemoteFile | null,
+  // 列表多选集合；右键菜单使用打开时的快照，避免异步操作目标漂移
+  selection: [] as string[],
+  // 当前菜单对应的一组远端项目
+  menuFiles: [] as SshRemoteFile[],
+  // 等待用户确认删除的项目
+  pendingDelete: [] as SshRemoteFile[],
+  // 批量操作期间阻止重复提交
+  processing: false,
   renaming: null as SshRemoteFile | null,
   createMenuOpen: false,
   createMenuX: 0,
@@ -95,6 +103,7 @@ const state = reactive({
   // 正在读取将加入 AI 草稿的配置文件
   readingContext: false,
 })
+const { selection } = toRefs(state)
 
 const {
   conflictOpen,
@@ -118,8 +127,8 @@ const { isDragging: nativeDragging } = useNativeFileDrop(
 )
 const dropActive = computed(() => nativeDragging.value || browserDragging.value)
 const connected = computed(() => Boolean(props.sessionId))
-const selectedFile = computed(() =>
-  entries.value.find(file => file.path === selected.value)
+const selectedFiles = computed(() =>
+  visibleEntries.value.filter(file => state.selection.includes(file.path))
 )
 const pathEntries = computed(() =>
   sortedEntries.value.filter(
@@ -137,12 +146,17 @@ const visibleEntries = computed(() => {
 watch([() => props.sessionId, path], () => {
   // 筛选仅作用于当前目录；成功切换目录时清空，原地刷新或导航失败则保留。
   filterText.value = ''
+  state.selection = []
+  state.menuOpen = false
+  state.pendingDelete = []
 })
 const pathClip = useClipboard({ copiedDuring: 1600 })
 
 watch(visibleEntries, files => {
   if (selected.value && !files.some(file => file.path === selected.value))
     selected.value = ''
+  const visible = new Set(files.map(file => file.path))
+  state.selection = state.selection.filter(path => visible.has(path))
 })
 
 watch(error, message => {
@@ -194,6 +208,26 @@ async function createRemote(name: string): Promise<void> {
 const contextItems = computed<ContextMenuItem[]>(() => {
   const file = state.menuFile
   if (!file) return []
+  if (state.menuFiles.length > 1)
+    return [
+      {
+        id: 'download',
+        label: t('files.downloadSelected', { count: state.menuFiles.length }),
+        icon: 'lucide:download',
+        disabled:
+          state.processing ||
+          state.menuFiles.some(file => file.kind === 'directory'),
+      },
+      { id: 'copy-paths', label: t('files.copyPaths'), icon: 'lucide:copy' },
+      {
+        id: 'delete',
+        label: t('files.deleteSelected', { count: state.menuFiles.length }),
+        icon: 'lucide:trash-2',
+        danger: true,
+        separatorBefore: true,
+        disabled: state.processing,
+      },
+    ]
   const directory = file.kind === 'directory'
   return [
     {
@@ -227,6 +261,11 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       label: t('重命名'),
       icon: 'lucide:pencil',
       separatorBefore: true,
+    },
+    {
+      id: 'copy-paths',
+      label: t('复制路径'),
+      icon: 'lucide:copy',
     },
     {
       id: 'delete',
@@ -298,16 +337,19 @@ async function pickUpload(directoryOnly: boolean): Promise<void> {
   await uploadPaths(Array.isArray(result) ? result : [result])
 }
 
+// 选择下载位置前固定 SSH 会话，选择期间若已切换连接则取消本次操作。
 async function download(file: SshRemoteFile): Promise<void> {
   if (file.kind === 'directory') return
+  const sessionId = props.sessionId
+  const connectionName = props.connectionName
   const destination = await saveFileDialog({
     title: t('下载 {value0}', { value0: file.name }),
     defaultPath: defaultDownloadPath(file.name),
   })
-  if (!destination) return
+  if (!destination || sessionId !== props.sessionId) return
   await transfers.download({
-    sessionId: props.sessionId,
-    connectionName: props.connectionName,
+    sessionId,
+    connectionName,
     remotePath: file.path,
     localPath: destination,
     overwrite: true,
@@ -336,14 +378,24 @@ async function openExternal(file: SshRemoteFile): Promise<void> {
   if (localPath) await openPath(localPath)
 }
 
+// 列表选择事件同时保存多选集合与键盘焦点，不改变其他目录的状态。
+function selectFiles(paths: string[], focus: string): void {
+  state.selection = paths
+  selected.value = focus
+}
+
+// 在已选行上右键保留整个集合，在未选行上右键只操作该行。
 function openMenu(event: MouseEvent, file: SshRemoteFile): void {
+  if (!state.selection.includes(file.path)) state.selection = [file.path]
   selected.value = file.path
   state.menuFile = file
+  state.menuFiles = [...selectedFiles.value]
   state.menuX = event.clientX
   state.menuY = event.clientY
   state.menuOpen = true
 }
 
+// 根据菜单快照执行单项或批量操作，删除确认只出现一次。
 function runContextAction(action: string): void {
   const file = state.menuFile
   if (!file) return
@@ -356,11 +408,70 @@ function runContextAction(action: string): void {
         description: ssh.errorMessage(error),
       })
     )
-  else if (action === 'download') void download(file)
+  else if (action === 'download') void downloadFiles(state.menuFiles)
+  else if (action === 'copy-paths') void copySelectedPaths(state.menuFiles)
   else if (action === 'rename') state.renaming = file
   else if (action === 'delete') {
-    if (settings.confirmFileDelete) state.pendingDelete = file
-    else void deleteFile(file)
+    if (settings.confirmFileDelete) state.pendingDelete = [...state.menuFiles]
+    else void deleteFiles(state.menuFiles)
+  }
+}
+
+// 批量下载只选择一次本地目录，逐项交给现有传输队列并保留同名文件保护。
+async function downloadFiles(files: SshRemoteFile[]): Promise<void> {
+  if (
+    state.processing ||
+    !files.length ||
+    files.some(file => file.kind === 'directory')
+  )
+    return
+  if (files.length === 1) {
+    await download(files[0]!)
+    return
+  }
+  const sessionId = props.sessionId
+  const connectionName = props.connectionName
+  const destination = await openFileDialog({
+    title: t('files.downloadDirectory'),
+    directory: true,
+    multiple: false,
+  })
+  if (
+    !destination ||
+    Array.isArray(destination) ||
+    sessionId !== props.sessionId
+  )
+    return
+  state.processing = true
+  try {
+    const separator = destination.includes('\\') ? '\\' : '/'
+    for (const file of files) {
+      if (sessionId !== props.sessionId) break
+      await transfers.download({
+        sessionId,
+        connectionName,
+        remotePath: file.path,
+        localPath: `${destination.replace(/[\\/]$/, '')}${separator}${file.name}`,
+        overwrite: false,
+      })
+    }
+  } finally {
+    state.processing = false
+  }
+}
+
+// 把选中项目的绝对路径逐行复制，便于在终端或其他工具中继续处理。
+async function copySelectedPaths(files: SshRemoteFile[]): Promise<void> {
+  try {
+    const text = files.map(file => file.path).join('\n')
+    await copyText(text)
+    scheduleClipboardClear(text)
+    toast.success(t('远端路径已复制'))
+  } catch (error) {
+    toast.error({
+      title: t('复制失败，请检查剪贴板权限'),
+      description: ssh.errorMessage(error),
+    })
   }
 }
 async function askAgentFile(file: SshRemoteFile): Promise<void> {
@@ -400,23 +511,39 @@ async function renameFile(name: string): Promise<void> {
   }
 }
 
-async function deleteFile(file: SshRemoteFile): Promise<void> {
+// 批量删除逐项执行并汇总失败；沿用后端仅允许删除空目录的规则。
+async function deleteFiles(files: SshRemoteFile[]): Promise<void> {
+  if (state.processing || !files.length) return
+  const sessionId = props.sessionId
+  const directory = path.value
+  state.processing = true
+  const failures: string[] = []
+  let deleted = 0
   try {
-    await ssh.deletePath(props.sessionId, file.path, file.kind === 'directory')
-    await refresh()
-    toast.success(t('已删除“{value0}”', { value0: file.name }))
-  } catch (deleteError) {
-    toast.error({
-      title: t('删除失败'),
-      description: ssh.errorMessage(deleteError),
-    })
+    for (const file of files) {
+      if (sessionId !== props.sessionId) break
+      try {
+        await ssh.deletePath(sessionId, file.path, file.kind === 'directory')
+        deleted++
+      } catch (error) {
+        failures.push(`${file.name}: ${ssh.errorMessage(error)}`)
+      }
+    }
+    if (props.sessionId === sessionId && path.value === directory)
+      await refresh()
+    if (deleted) toast.success(t('files.deletedCount', { count: deleted }))
+    if (failures.length)
+      toast.error({ title: t('删除失败'), description: failures.join('\n') })
+  } finally {
+    state.processing = false
   }
 }
 
+// 确认后使用弹窗打开时的项目快照，不依赖可能已变化的当前选中行。
 async function confirmDelete(): Promise<void> {
-  const file = state.pendingDelete
-  state.pendingDelete = null
-  if (file) await deleteFile(file)
+  const files = state.pendingDelete
+  state.pendingDelete = []
+  await deleteFiles(files)
 }
 
 function handleBrowserDrop(event: DragEvent): void {
@@ -506,8 +633,12 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         icon="lucide:download"
         :size="14"
         :title="t('下载选中文件')"
-        :disabled="!selectedFile || selectedFile.kind === 'directory'"
-        @click="selectedFile && download(selectedFile)"
+        :disabled="
+          !selectedFiles.length ||
+          selectedFiles.some(file => file.kind === 'directory') ||
+          state.processing
+        "
+        @click="downloadFiles(selectedFiles)"
       />
       <IconButton
         :icon="settings.showHiddenFiles ? 'lucide:eye' : 'lucide:eye-off'"
@@ -569,7 +700,8 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     <RemoteFileList
       :files="visibleEntries"
       :selected="selected"
-      @select="selected = $event"
+      :selection="selection"
+      @select="selectFiles"
       @open="openRemote"
       @contextmenu="openMenu"
     >
@@ -603,9 +735,14 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px]"
     >
       <span class="truncate">{{ connected ? summary : t('未连接') }}</span>
+      <span
+        v-if="selection.length"
+        class="text-accent shrink-0"
+        >{{ t('files.selectedCount', { count: selection.length }) }}</span
+      >
       <div class="flex-1" />
       <span class="text-txt-4 shrink-0">
-        {{ t('双击打开 · 可拖入本地文件上传') }}
+        {{ t('files.selectionHint') }}
       </span>
     </footer>
 
@@ -671,20 +808,22 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
   />
 
   <AppConfirmDialog
-    :open="Boolean(state.pendingDelete)"
+    :open="state.pendingDelete.length > 0"
     :title="t('删除远端项目')"
     :description="
-      state.pendingDelete?.kind === 'directory'
-        ? t('确定删除空目录“{value0}”吗？此操作无法撤销。', {
-            value0: state.pendingDelete?.name ?? '',
-          })
-        : t('确定删除远端文件“{value0}”吗？此操作无法撤销。', {
-            value0: state.pendingDelete?.name ?? '',
-          })
+      state.pendingDelete.length > 1
+        ? t('files.confirmBatchDelete', { count: state.pendingDelete.length })
+        : state.pendingDelete[0]?.kind === 'directory'
+          ? t('确定删除空目录“{value0}”吗？此操作无法撤销。', {
+              value0: state.pendingDelete[0]?.name ?? '',
+            })
+          : t('确定删除远端文件“{value0}”吗？此操作无法撤销。', {
+              value0: state.pendingDelete[0]?.name ?? '',
+            })
     "
     :confirm-label="t('删除')"
     danger
-    @close="state.pendingDelete = null"
+    @close="state.pendingDelete = []"
     @confirm="confirmDelete"
   />
 

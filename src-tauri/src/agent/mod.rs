@@ -1033,12 +1033,14 @@ pub async fn ai_send(
     prompt: String,
     attachments: Option<Vec<attachments::Attachment>>,
     approval_mode: Option<policy::ApprovalMode>,
+    guidance: Option<bool>,
 ) -> AppResult<Snapshot> {
     guard(&window, false)?;
     let cell = state.get(&run_id).await?;
     let mut run = cell.run.lock().await;
     run.check(&cell)?;
-    if !matches!(run.status.as_str(), "completed" | "truncated") {
+    let continuing = guidance.unwrap_or(false) && run.status == "running";
+    if !continuing && !matches!(run.status.as_str(), "completed" | "truncated") {
         return Err(AppError::invalid_input("请等待当前任务结束或开始新对话"));
     }
     let attachments = attachments.unwrap_or_default();
@@ -1061,9 +1063,11 @@ pub async fn ai_send(
     }
     run.messages.push(message);
     run.entries.push(entry);
-    run.turn_started = Instant::now();
+    if !continuing {
+        run.turn_started = Instant::now();
+        run.steps = 0;
+    }
     run.approval_mode.store(approval_mode.unwrap_or_default());
-    run.steps = 0;
     run.status = "running".into();
     Ok(state.snapshot(&app, &run, &cell).await)
 }

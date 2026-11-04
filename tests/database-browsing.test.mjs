@@ -23,7 +23,7 @@ const load = sourceLoader(
   {
     '@/api/database': api,
     '@/composables/useToast': dataModule(
-      'export const toast = { error(){}, warning(){} }'
+      'export const toast = { error(){}, warning(){}, success(){} }'
     ),
     '@/components/ui/AppIcon.vue': dataModule(`
       import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
@@ -61,6 +61,15 @@ const load = sourceLoader(
       export default { props:['open','mode'], setup: props => () =>
         props.open ? h('dialog', { 'data-transfer-mode': props.mode }) : null }
     `),
+    '@/components/agent/AiAgentPanel.vue': dataModule(`
+      import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
+      export default { props:['target'], emits:['applySql'], setup:(props,{emit})=>()=>h('button',{
+        'data-apply-agent-sql':true,onClick:()=>emit('applySql','SELECT generated FROM users;',props.target)
+      },'Apply AI SQL fixture') }
+    `),
+    '@/components/ui/AppSidePane.vue': dataModule(`
+      export default { props:['open','width'], setup:(_props,{slots})=>()=>slots.default?.() }
+    `),
   },
   [
     'src/components/workspace/DatabaseView.vue',
@@ -81,6 +90,9 @@ const { default: DatabaseView } = await load(
   'src/components/workspace/DatabaseView.vue'
 )
 i18n.global.locale.value = 'zh-CN'
+const { provideDatabaseWorkspaceTabs } = await load(
+  'src/composables/useDatabaseWorkspaceTabs.ts'
+)
 
 const node = (type, text = '') =>
   markRaw({ type, text, style: {}, props: {}, children: [], parent: null })
@@ -178,24 +190,28 @@ async function fixture(
   }
   const root = node('root')
   const errors = []
+  let mainTabs
   const app = renderer.createApp({
-    render: () =>
-      h(DatabaseView, {
-        connection: {
-          id: 'browse-test',
-          kind,
-          name: 'Fixture connection',
-          host: 'fixture.invalid',
-          port: 3306,
-          username: 'fixture',
-          settings: { database, password: '', ssl: false },
-          tags: [],
-          tagColor: 'green',
-          group: '',
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      }),
+    setup() {
+      mainTabs = provideDatabaseWorkspaceTabs()
+      return () =>
+        h(DatabaseView, {
+          connection: {
+            id: 'browse-test',
+            kind,
+            name: 'Fixture connection',
+            host: 'fixture.invalid',
+            port: 3306,
+            username: 'fixture',
+            settings: { database, password: '', ssl: false },
+            tags: [],
+            tagColor: 'green',
+            group: '',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        })
+    },
   })
   app.config.errorHandler = error => errors.push(error)
   app.use(createPinia()).use(i18n).mount(root)
@@ -210,6 +226,7 @@ async function fixture(
   await flush()
   return {
     root,
+    mainTabs: () => mainTabs.get('browse-test'),
     overview: () =>
       all(root).find(el => el.props['aria-label'] === '当前数据库的表'),
     tree: () => all(root).find(el => el.props['aria-label'] === '数据库对象'),
@@ -445,40 +462,38 @@ test('switching keeps both database trees and reuses loaded metadata, including 
   assert.equal(mock.calls.filter(([name]) => name === 'listObjects').length, 2)
 })
 
-test('table tabs include their database and remain mounted across database switches and splits', async t => {
+test('table tabs move to the main registry and remain mounted across database switches', async t => {
   const view = await fixture(t)
   await view.select('alpha')
   const table = all(view.overview()).find(el => el.props.onDblclick)
   assert.ok(table)
   table.props.onDblclick()
   await flush()
-  assert.match(textOf(view.root), /alpha_table @alpha/)
+  assert.match(
+    view
+      .mainTabs()
+      .tabs()
+      .map(tab => tab.label)
+      .join(' '),
+    /alpha_table @alpha/
+  )
   await view.select('beta')
-  assert.match(textOf(view.root), /alpha_table @alpha/)
-  const split = all(view.root).find(
-    el => el.props.title === '分屏（拖拽选择方向）'
-  )
-  split.props.onClick()
-  await flush()
+  const content = view.mainTabs().tabs()[0]
+  assert.match(content.label, /alpha_table @alpha/)
   assert.equal(
-    all(view.root).filter(el => el.props['data-database-pane']).length,
-    2
+    all(view.root).some(el => el.props.role === 'tablist'),
+    false,
+    'no database-local tab bar remains'
   )
-  assert.match(textOf(view.root), /alpha_table @alpha/)
+  view.mainTabs().select('')
+  await flush()
+  view.mainTabs().select(content.id)
+  await flush()
   assert.equal(
     mock.mounts,
     1,
-    'moving a tab must preserve the mounted table instance'
+    'switching from the main tab registry preserves the mounted table instance'
   )
-  const close = all(view.root).find(el => el.props.title === '关闭分屏')
-  await close.props.onClick()
-  await flush()
-  assert.equal(
-    all(view.root).filter(el => el.props['data-database-pane']).length,
-    1
-  )
-  assert.equal(mock.mounts, 1)
-  assert.match(textOf(view.root), /alpha_table @alpha/)
 })
 
 test('rapid database changes serialize pool switches and keep the last selection', async t => {
@@ -576,7 +591,7 @@ test('PostgreSQL transfers target the current database instead of its selected s
   )
 })
 
-test('query tabs keep independent SQL and results while switching databases and splitting', async t => {
+test('main query tabs keep independent SQL and results while switching databases and content', async t => {
   const view = await fixture(t)
   await view.select('alpha')
   const add = () =>
@@ -609,9 +624,10 @@ test('query tabs keep independent SQL and results while switching databases and 
     .find(el => el.type === 'button')
     .props.onClick()
   await flush()
-  all(view.root)
-    .find(el => el.props.title === '分屏（拖拽选择方向）')
-    .props.onClick()
+  const tabs = view.mainTabs().tabs()
+  view.mainTabs().select(tabs[0].id)
+  await flush()
+  view.mainTabs().select(tabs[1].id)
   await flush()
   assert.match(textOf(alpha()), /SELECT alpha/)
   assert.match(textOf(beta()), /SELECT beta/)
@@ -619,6 +635,39 @@ test('query tabs keep independent SQL and results while switching databases and 
     all(alpha()).find(el => el.type === 'textarea').props.value,
     'SELECT alpha'
   )
-  assert.match(textOf(view.root), /Query 1 @alpha/)
-  assert.match(textOf(view.root), /Query 2 @beta/)
+  assert.match(tabs.map(tab => tab.label).join(' '), /Query 1 @alpha/)
+  assert.match(tabs.map(tab => tab.label).join(' '), /Query 2 @beta/)
+})
+
+test('applying AI SQL creates a main query tab without overwriting the current draft or running SQL', async t => {
+  const view = await fixture(t)
+  await view.select('alpha')
+  view.mainTabs().add()
+  await flush()
+  const original = all(view.root).find(
+    el => el.props['data-query-db'] === 'alpha'
+  )
+  all(original)
+    .find(el => el.type === 'textarea')
+    .props.onInput('SELECT original_draft')
+  await flush()
+  const executions = mock.calls.filter(([name]) => name === 'execute').length
+  all(view.root)
+    .find(el => el.props['data-apply-agent-sql'])
+    .props.onClick()
+  await flush()
+  const editors = all(view.root).filter(
+    el => el.props['data-query-db'] === 'alpha'
+  )
+  assert.deepEqual(
+    editors.map(
+      editor => all(editor).find(el => el.type === 'textarea').props.value
+    ),
+    ['SELECT original_draft', 'SELECT generated FROM users;']
+  )
+  assert.equal(view.mainTabs().tabs().length, 2)
+  assert.equal(
+    mock.calls.filter(([name]) => name === 'execute').length,
+    executions
+  )
 })

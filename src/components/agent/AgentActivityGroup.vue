@@ -13,7 +13,9 @@ const props = defineProps<{
   entries: AgentEntry[]
   progress: AgentProgress | null
   busy: boolean
+  canApplySql?: boolean
 }>()
+const emit = defineEmits<{ applySql: [sql: string] }>()
 const { t } = useI18n()
 const state = reactive({ open: props.busy })
 watch(
@@ -79,6 +81,8 @@ const preparing = computed(
           <AgentExecutionCard
             :operation="entry.operation"
             :output="entry.detail"
+            :can-apply-sql="canApplySql"
+            @apply-sql="emit('applySql', $event)"
           />
           <AgentQueryResult
             v-for="(result, resultIndex) in entry.operation.results ?? []"
@@ -95,6 +99,8 @@ const preparing = computed(
           <div class="group/thought text-txt-2 relative min-w-0">
             <AgentMarkdown
               :content="entry.text"
+              :can-apply-sql="canApplySql"
+              @apply-sql="emit('applySql', $event)"
               class="[&_.markdown-body]:text-agent-body [&_.markdown-body_strong]:text-txt [&_.markdown-body]:leading-[1.35] [&_.markdown-body_p]:mt-0 [&_.markdown-body_p]:mb-1 [&_.markdown-body_strong]:font-semibold [&_.markdown-body>:first-child]:min-h-[22px] [&_.markdown-body>:first-child]:pl-[26px] [&_.markdown-body>:last-child]:mb-0"
             />
             <AgentCopyButton

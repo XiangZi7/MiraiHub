@@ -331,6 +331,7 @@ function fixture(reset = true) {
     mock.runs.clear()
     mock.serial = 0
     mock.starts = []
+    mock.lastSend = undefined
     mock.forgotten = []
     mock.stepGate = null
     mock.steps = []
@@ -844,5 +845,72 @@ test('an idle selection is not rolled back by an older in-flight policy failure'
   await Promise.all([changing, sending])
   assert.equal(state.approvalMode.value, 'ask')
   assert.equal(state.error.value, '')
+  app.unmount()
+})
+
+test('hidden SSH agents continue independently while another connection runs', async () => {
+  const first = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const sending = first.state.send('后台检查')
+  await flush()
+  const firstId = first.state.run.value.id
+  first.active.value = false
+  await flush()
+  assert.equal(first.state.busy.value, true)
+  assert.equal(first.state.run.value.status, 'running')
+  assert.equal(mock.forgotten.includes(firstId), false)
+  mock.stepGate = null
+  const second = fixture(false)
+  second.target.value = { kind: 'ssh', sessionId: 'server-b', database: '' }
+  await flush()
+  await second.state.send('另一个服务器')
+  assert.equal(second.state.run.value.status, 'completed')
+  assert.equal(first.state.busy.value, true)
+  const completed = structuredClone(mock.runs.get(firstId))
+  completed.status = 'completed'
+  completed.entries.push({ role: 'assistant', text: '后台完成' })
+  mock.runs.set(firstId, completed)
+  finish(completed)
+  await sending
+  assert.equal(first.state.run.value.status, 'completed')
+  assert.equal(first.state.run.value.entries.at(-1).text, '后台完成')
+  first.active.value = true
+  assert.equal(first.state.run.value.id, firstId)
+  first.app.unmount()
+  second.app.unmount()
+})
+
+test('guidance is editable while queued and is delivered to the same run after a complete step', async () => {
+  const { app, state } = fixture()
+  await flush()
+  let finish
+  mock.stepGate = new Promise(resolve => {
+    finish = resolve
+  })
+  const sending = state.send('检查应用')
+  await flush()
+  const id = state.run.value.id
+  await state.send('先检查日志')
+  await state.send('这一条撤回')
+  assert.equal(state.guidance.value.length, 2)
+  assert.equal(mock.lastSend, undefined)
+  assert.equal(state.removeGuidance(state.guidance.value[1].id), '这一条撤回')
+  const completed = structuredClone(mock.runs.get(id))
+  completed.status = 'completed'
+  mock.runs.set(id, completed)
+  mock.stepGate = null
+  finish(completed)
+  await sending
+  assert.equal(mock.lastSend.id, id)
+  assert.equal(mock.lastSend.prompt, '先检查日志')
+  assert.equal(state.guidance.value.length, 0)
+  assert.equal(
+    state.run.value.entries.filter(entry => entry.role === 'user').length,
+    2
+  )
   app.unmount()
 })

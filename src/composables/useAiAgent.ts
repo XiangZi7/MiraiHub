@@ -45,6 +45,8 @@ export function useAiAgent(
     historyMutating: false,
     // 当前模型请求的流式预览；最终快照到达后清除
     progress: null as AgentProgress | null,
+    // 运行中追加的文字引导，在当前模型或工具步骤结束后按顺序送入同一会话
+    guidance: [] as { id: string; text: string }[],
   })
   let generation = 0
   let historyVersion = 0
@@ -82,6 +84,7 @@ export function useAiAgent(
     })
     return approvalQueue
   }
+  // 更新本会话审批策略；已发起的自动复核在页面隐藏后也继续完成。
   async function setApprovalMode(mode: AgentApprovalMode): Promise<void> {
     const token = generation
     state.approvalMode = mode
@@ -90,7 +93,6 @@ export function useAiAgent(
       token !== generation ||
       state.approvalMode !== mode ||
       state.busy ||
-      !active.value ||
       !awaitingApproval.value
     )
       return
@@ -199,6 +201,7 @@ export function useAiAgent(
       if (version === historyVersion) state.historyLoading = false
     }
   }
+  // 主动切换目标或会话时隔离旧异步响应，并清理该会话尚未送出的引导。
   function detach(): { token: number; id: string | undefined } {
     const token = ++generation
     historyVersion++
@@ -207,6 +210,7 @@ export function useAiAgent(
     const id = state.run?.id
     state.run = null
     state.progress = null
+    state.guidance = []
     state.busy = false
     state.error = ''
     state.historyLoading = false
@@ -359,6 +363,7 @@ export function useAiAgent(
       if (version === mutationVersion) state.historyMutating = false
     }
   }
+  // 用户主动停止时终止后续步骤，并撤回尚未送入模型的引导消息。
   async function stop(): Promise<void> {
     const token = ++generation
     approvalQueue = Promise.resolve()
@@ -371,6 +376,7 @@ export function useAiAgent(
       state.run.approval = null
     }
     state.progress = null
+    state.guidance = []
     if (id) {
       try {
         await api.cancel(id)
@@ -392,6 +398,7 @@ export function useAiAgent(
     state.run = run
     return true
   }
+  // 连续推进当前会话；页面隐藏不影响循环，引导消息只在完整步骤之间插入。
   async function advance(
     token: number,
     recheckApproval = false
@@ -399,8 +406,31 @@ export function useAiAgent(
     while (
       token === generation &&
       (state.run?.status === 'running' ||
+        (state.guidance.length > 0 &&
+          ['completed', 'truncated'].includes(state.run?.status ?? '')) ||
         (recheckApproval && state.run?.status === 'approval'))
     ) {
+      while (
+        token === generation &&
+        state.guidance.length &&
+        state.run?.id &&
+        ['running', 'completed', 'truncated'].includes(state.run.status)
+      ) {
+        const message = state.guidance.shift()!
+        try {
+          const next = await api.send(
+            state.run.id,
+            message.text,
+            [],
+            state.approvalMode,
+            true
+          )
+          if (!accept(next, token)) return
+        } catch (error) {
+          if (token === generation) state.guidance.unshift(message)
+          throw error
+        }
+      }
       const recheck = recheckApproval
       recheckApproval = false
       await flushApprovalMode()
@@ -444,6 +474,7 @@ export function useAiAgent(
       }
     }
   }
+  // 空闲时开始新一轮，运行中则收下文字引导，避免中断正在执行的工具。
   async function send(
     prompt: string,
     attachments: AgentAttachment[] = [],
@@ -454,13 +485,18 @@ export function useAiAgent(
       !target.value.sessionId ||
       !active.value ||
       !profileId.value ||
-      state.busy ||
       state.historyLoading ||
       state.historyMutating ||
       state.switchingConversation ||
       awaitingApproval.value
     )
       return false
+    if (state.busy) {
+      if (attachments.length || !prompt.trim() || state.guidance.length >= 16)
+        return false
+      state.guidance.push({ id: crypto.randomUUID(), text: prompt.trim() })
+      return true
+    }
     const token = ++generation
     state.busy = true
     state.error = ''
@@ -506,6 +542,7 @@ export function useAiAgent(
       }
     }
   }
+  // 审批结果绑定当前会话；拒绝时同步撤回尚未处理的引导。
   async function decide(approve: boolean): Promise<void> {
     const run = state.run
     if (!run?.id || !run.approval || state.busy || !active.value) return
@@ -540,6 +577,7 @@ export function useAiAgent(
       if (!accept(next, token)) return
       state.progress = null
       if (approve) await advance(token)
+      else state.guidance = []
     } catch (error) {
       if (token === generation) {
         state.error = i18n.global.t(
@@ -574,13 +612,7 @@ export function useAiAgent(
     },
     { flush: 'sync', immediate: true }
   )
-  watch(
-    active,
-    value => {
-      if (!value && (state.busy || awaitingApproval.value)) void stop()
-    },
-    { flush: 'sync' }
-  )
+  // active 只控制界面交互；切换标签、文件页或收起面板均不停止后台执行。
   onBeforeUnmount(() => {
     clearTimeout(approvalTimer)
     const { id } = detach()
@@ -599,5 +631,11 @@ export function useAiAgent(
     removeConversation,
     renameConversation,
     refreshHistory,
+    // 撤回尚未发送的引导，返回正文供输入框继续编辑。
+    removeGuidance(id: string): string {
+      const message = state.guidance.find(item => item.id === id)
+      state.guidance = state.guidance.filter(item => item.id !== id)
+      return message?.text ?? ''
+    },
   }
 }

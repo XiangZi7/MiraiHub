@@ -53,3 +53,13 @@ test('unfinished Markdown keeps readable text and preserves code whitespace', ()
   assert.match(html, /SELECT id,\n  name\nFROM users/)
   assert.match(html, /<\/code><\/pre>/)
 })
+
+test('SQL application is explicitly enabled only for SQL blocks in a database view', () => {
+  const source =
+    '```sql\nSELECT name FROM users WHERE id < 2;\n```\n\n```bash\nls -la\n```'
+  assert.doesNotMatch(renderAgentMarkdown(source), /data-apply-sql/)
+  const html = renderAgentMarkdown(source, true)
+  assert.equal((html.match(/data-apply-sql/g) ?? []).length, 1)
+  assert.match(html, /SELECT name FROM users WHERE id &lt; 2;/)
+  assert.equal((html.match(/data-copy-code/g) ?? []).length, 2)
+})

@@ -69,7 +69,8 @@ import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppSidePane from '@/components/ui/AppSidePane.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
-import type { AgentContextRequest } from '@/types/agent'
+import type { AgentContextRequest, AgentTarget } from '@/types/agent'
+import { registerDatabaseWorkspaceTabs } from '@/composables/useDatabaseWorkspaceTabs'
 
 const { t } = useI18n()
 
@@ -692,6 +693,21 @@ function addQueryTab(
   return tab
 }
 
+// 将 AI 生成的 SQL 放入当前库的查询页；有内容的查询保留在原标签，避免覆盖草稿。
+function applyAgentSql(sql: string, target: AgentTarget): void {
+  if (
+    !sql.trim() ||
+    JSON.stringify(target) !== JSON.stringify(agentTarget.value)
+  )
+    return
+  const tab = activeQuery.value
+  if (tab && !tab.sql.trim() && tab.database === target.database) tab.sql = sql
+  else addQueryTab(sql, target.database)
+  agentState.agentOpen = true
+  agentState.agentSplit = true
+  toast.success(t('agent.sqlApplied'))
+}
+
 function closeTab(id: string): void {
   closeQueryTabs([id])
 }
@@ -731,6 +747,7 @@ const queryTabActions = useDatabaseTabActions({
   },
 })
 
+// 顶部主标签栏拖动同一连接的内容标签时，只调整内容顺序并保留编辑器实例。
 function reorderTabs(fromIndex: number, toIndex: number): void {
   if (
     fromIndex === toIndex ||
@@ -743,6 +760,26 @@ function reorderTabs(fromIndex: number, toIndex: number): void {
   const [tab] = queryState.tabs.splice(fromIndex, 1)
   if (tab) queryState.tabs.splice(toIndex, 0, tab)
 }
+
+registerDatabaseWorkspaceTabs(props.connection?.id, {
+  tabs: () =>
+    queryState.tabs.map(tab => ({
+      ...tab,
+      label: tabLabel(tab),
+      tooltip: tabTooltip(tab),
+    })),
+  activeId: () => queryState.activeId,
+  select: id => {
+    queryState.activeId = id
+  },
+  add: () => {
+    addQueryTab()
+  },
+  close: queryTabActions.requestClose,
+  reorder: reorderTabs,
+  contextItems: queryTabActions.contextItems,
+  action: queryTabActions.action,
+})
 
 function closeObjectTab(object: DatabaseObject): void {
   const id = objectTabId(object)
@@ -1670,14 +1707,6 @@ watch(
           v-else
           v-model:active="queryState.activeId"
           :tabs="queryState.tabs"
-          :tab-label="tabLabel"
-          :tab-tooltip="tabTooltip"
-          :context-items="queryTabActions.contextItems"
-          @add="addQueryTab()"
-          @close="queryTabActions.requestClose([$event])"
-          @close-many="queryTabActions.requestClose"
-          @context-action="queryTabActions.action"
-          @reorder="reorderTabs"
         >
           <template #empty>
             <DatabaseTableOverview
@@ -1783,6 +1812,7 @@ watch(
           @split="toggleAgentSplit"
           @close="agentOpen = false"
           @context-consumed="agentState.contextRequest = null"
+          @apply-sql="applyAgentSql"
         />
       </AppSidePane>
     </div>

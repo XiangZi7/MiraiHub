@@ -56,6 +56,7 @@ function tagColor(name: string): string {
   )
 }
 
+// 添加标签时保留用户输入的大小写；共享目录只提供颜色和去重判断，不替换正文。
 function addTag(rawName = draft.value): void {
   const name = rawName
     .trim()
@@ -69,7 +70,7 @@ function addTag(rawName = draft.value): void {
   const definition = definitionOf(name)
   if (definition) color.value = definition.color
 
-  tags.value = [...selectedTags.value, definition?.name ?? name].join(', ')
+  tags.value = [...selectedTags.value, name].join(', ')
   draft.value = ''
 }
 

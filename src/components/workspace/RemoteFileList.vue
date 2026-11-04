@@ -8,12 +8,17 @@ import { FILE_KIND_META, extensionOf } from '@/constants/files'
 import { formatBytes } from '@/utils/format'
 import { formatDateTime } from '@/utils/time'
 import type { SshRemoteFile } from '@/types/ssh'
+import { useRemoteFileSelection } from '@/components/workspace/useRemoteFileSelection'
 
 const { t } = useI18n()
 
-const props = defineProps<{ files: SshRemoteFile[]; selected: string }>()
+const props = defineProps<{
+  files: SshRemoteFile[]
+  selected: string
+  selection: string[]
+}>()
 const emit = defineEmits<{
-  select: [path: string]
+  select: [paths: string[], focus: string]
   open: [file: SshRemoteFile]
   contextmenu: [event: MouseEvent, file: SshRemoteFile]
 }>()
@@ -23,6 +28,15 @@ const { list, containerProps, wrapperProps, scrollTo } = useVirtualList(
   toRef(props, 'files'),
   { itemHeight: rowHeight, overscan: 6 }
 )
+const { box, selectedSet, select, pointerDown, pointerMove, stopDrag } =
+  useRemoteFileSelection(
+    toRef(props, 'files'),
+    toRef(props, 'selection'),
+    toRef(props, 'selected'),
+    containerProps.ref,
+    (paths, focus) => emit('select', paths, focus),
+    rowHeight
+  )
 const selectedIndex = computed(() =>
   props.files.findIndex(file => file.path === props.selected)
 )
@@ -50,11 +64,22 @@ watch(
   () => scrollTo(0),
   { flush: 'post' }
 )
-function select(file: SshRemoteFile): void {
-  emit('select', file.path)
-  containerProps.ref.value?.focus({ preventScroll: true })
-}
+// 键盘支持全选、取消选择和 Shift 连选，焦点移动后滚动到可见位置。
 async function navigate(event: KeyboardEvent): Promise<void> {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+    event.preventDefault()
+    emit(
+      'select',
+      props.files.map(file => file.path),
+      props.selected || props.files[0]?.path || ''
+    )
+    return
+  }
+  if (event.key === 'Escape') {
+    stopDrag()
+    emit('select', [], '')
+    return
+  }
   if (!props.files.length) return
   if (event.key === 'Enter' && selectedIndex.value >= 0) {
     event.preventDefault()
@@ -82,7 +107,7 @@ async function navigate(event: KeyboardEvent): Promise<void> {
     0,
     Math.min(props.files.length - 1, targets[event.key])
   )
-  emit('select', props.files[index].path)
+  select(index, event.shiftKey, event.ctrlKey || event.metaKey)
   const container = containerProps.ref.value
   if (
     container &&
@@ -98,12 +123,18 @@ async function navigate(event: KeyboardEvent): Promise<void> {
 <template>
   <div
     v-bind="containerProps"
-    class="scroll-thin focus-visible:ring-accent/60 min-h-0 flex-1 outline-none focus-visible:ring-1 focus-visible:ring-inset"
+    class="scroll-thin focus-visible:ring-accent/60 relative min-h-0 flex-1 outline-none select-none focus-visible:ring-1 focus-visible:ring-inset"
     role="listbox"
+    aria-multiselectable="true"
     :aria-label="t('远端文件')"
     :aria-activedescendant="activeDescendant"
     tabindex="0"
     @keydown="navigate"
+    @pointerdown="pointerDown"
+    @pointermove="pointerMove"
+    @pointerup="stopDrag"
+    @pointercancel="stopDrag"
+    @lostpointercapture="stopDrag"
   >
     <div v-bind="wrapperProps">
       <div
@@ -111,14 +142,18 @@ async function navigate(event: KeyboardEvent): Promise<void> {
         :id="`${id}-${row.index}`"
         :key="row.file.path"
         role="option"
-        :aria-selected="selected === row.file.path"
+        :aria-selected="selectedSet.has(row.file.path)"
+        :data-file-index="row.index"
         :aria-posinset="row.index + 1"
         :aria-setsize="files.length"
         class="remote-file-columns grid w-full cursor-default grid-cols-[1fr_80px_130px] items-center gap-3 px-3 text-left text-xs"
-        :class="selected === row.file.path ? 'bg-raised' : 'hover:bg-hover'"
+        :class="
+          selectedSet.has(row.file.path)
+            ? 'bg-accent/20 ring-accent/30 ring-1 ring-inset'
+            : 'hover:bg-hover'
+        "
         :style="{ height: `${rowHeight}px` }"
         :title="`${row.file.permissions}  ${row.file.owner}:${row.file.group}`"
-        @click="select(row.file)"
         @dblclick="emit('open', row.file)"
         @contextmenu.prevent.stop="emit('contextmenu', $event, row.file)"
       >
@@ -142,5 +177,16 @@ async function navigate(event: KeyboardEvent): Promise<void> {
       </div>
     </div>
     <slot />
+    <div
+      v-if="box"
+      class="border-accent bg-accent/15 pointer-events-none absolute z-10 border"
+      :style="{
+        left: `${box.left}px`,
+        top: `${box.top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
+      }"
+      aria-hidden="true"
+    />
   </div>
 </template>

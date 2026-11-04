@@ -31,6 +31,7 @@ import RemoteEditorHost from '@/components/operations/RemoteEditorHost.vue'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { provideWorkspaceControllers } from '@/composables/useWorkspaceControllers'
+import { provideDatabaseWorkspaceTabs } from '@/composables/useDatabaseWorkspaceTabs'
 import {
   provideWorkspaceTabSplit,
   useWorkspaceTabSplit,
@@ -81,6 +82,7 @@ const {
   followActiveTab,
 } = useWorkspaceNavigation()
 const controllers = provideWorkspaceControllers()
+provideDatabaseWorkspaceTabs()
 const tabSplit = useWorkspaceTabSplit({
   tabs: () => openTabs,
   activeId: () => activeId.value,

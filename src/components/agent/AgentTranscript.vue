@@ -17,7 +17,9 @@ const props = defineProps<{
   busy: boolean
   awaitingApproval: boolean
   progress: AgentProgress | null
+  canApplySql?: boolean
 }>()
+const emit = defineEmits<{ applySql: [sql: string] }>()
 const { t } = useI18n()
 const turns = computed(() =>
   buildAgentTranscript(
@@ -93,6 +95,8 @@ const turns = computed(() =>
         :entries="turn.activity"
         :progress="index === turns.length - 1 ? progress : null"
         :busy="index === turns.length - 1 && busy"
+        :can-apply-sql="canApplySql"
+        @apply-sql="emit('applySql', $event)"
       />
       <article
         v-for="(reply, replyIndex) in turn.replies"
@@ -103,6 +107,8 @@ const turns = computed(() =>
       >
         <AgentMarkdown
           :content="reply.text"
+          :can-apply-sql="canApplySql"
+          @apply-sql="emit('applySql', $event)"
           class="[&_.markdown-body]:text-agent-body [&_.markdown-body_:not(pre)>code]:text-violet [&_.markdown-body]:leading-[1.3] [&_.markdown-body_:not(pre)>code]:bg-transparent [&_.markdown-body_:not(pre)>code]:p-0 [&_.markdown-body_:not(pre)>code]:text-[11px] [&_.markdown-body_li]:my-0 [&_.markdown-body_li]:pl-0 [&_.markdown-body_ol]:mt-1 [&_.markdown-body_ol]:mb-0 [&_.markdown-body_ol]:pl-4 [&_.markdown-body_p]:mb-1 [&_.markdown-body_ul]:mt-1 [&_.markdown-body_ul]:mb-0 [&_.markdown-body_ul]:pl-4"
         />
         <div

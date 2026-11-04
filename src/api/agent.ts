@@ -88,12 +88,21 @@ export const deleteConversation = (
   target: AgentTarget,
   conversationId: string
 ) => call<void>('ai_delete_conversation', { target, conversationId })
+// 运行中引导由前端在完整步骤之间提交，保留当前会话和本轮执行预算。
 export const send = (
   runId: string,
   prompt: string,
   attachments: AgentAttachment[] = [],
-  approvalMode: AgentApprovalMode = 'auto'
-) => call<AgentRun>('ai_send', { runId, prompt, attachments, approvalMode })
+  approvalMode: AgentApprovalMode = 'auto',
+  guidance = false
+) =>
+  call<AgentRun>('ai_send', {
+    runId,
+    prompt,
+    attachments,
+    approvalMode,
+    guidance,
+  })
 export const setApprovalMode = (
   runId: string,
   approvalMode: AgentApprovalMode
