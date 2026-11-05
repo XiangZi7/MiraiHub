@@ -172,7 +172,7 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
 }
 
-/* 居中握把常驻显示，提示可以调整宽高；悬停、聚焦和拖拽时进一步高亮。 */
+/* 居中握把默认隐藏，仅在悬停、键盘聚焦或拖拽时显示。 */
 .split-divider-line i {
   position: absolute;
   top: 50%;
@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-line-strong);
   border-radius: 999px;
   background: color-mix(in oklch, var(--color-panel) 86%, transparent);
-  opacity: 0.65;
+  opacity: 0;
   transform: translate(-50%, -50%);
   transition:
     opacity 120ms ease,
