@@ -122,8 +122,8 @@ onBeforeUnmount(() => {
     :class="[
       'split-divider relative z-20 flex-none touch-none outline-none',
       alongBlockAxis
-        ? 'is-block min-h-2.5 cursor-row-resize'
-        : 'is-inline w-2.5 cursor-col-resize self-stretch',
+        ? 'is-block min-h-3 cursor-row-resize'
+        : 'is-inline w-3 cursor-col-resize self-stretch',
       dragging && 'is-dragging',
     ]"
     :title="t('拖动调整分屏比例；双击均分')"
@@ -172,7 +172,7 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
 }
 
-/* 居中握把：静止时隐身，让分屏看起来只有一条细线 */
+/* 居中握把常驻显示，提示可以调整宽高；悬停、聚焦和拖拽时进一步高亮。 */
 .split-divider-line i {
   position: absolute;
   top: 50%;
@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-line-strong);
   border-radius: 999px;
   background: color-mix(in oklch, var(--color-panel) 86%, transparent);
-  opacity: 0;
+  opacity: 0.65;
   transform: translate(-50%, -50%);
   transition:
     opacity 120ms ease,
@@ -190,11 +190,11 @@ onBeforeUnmount(() => {
 
 .is-block .split-divider-line i {
   width: 34px;
-  height: 4px;
+  height: 6px;
 }
 
 .is-inline .split-divider-line i {
-  width: 4px;
+  width: 6px;
   height: 34px;
 }
 
