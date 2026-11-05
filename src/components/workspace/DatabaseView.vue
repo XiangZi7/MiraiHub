@@ -1456,119 +1456,6 @@ watch(
 </script>
 
 <template>
-  <DefineDatabaseActions v-slot="{ tab }">
-    <div
-      class="scroll-none flex max-w-full min-w-0 items-center gap-1.5 overflow-x-auto"
-      role="group"
-      :aria-label="t('数据库工具栏')"
-    >
-      <template v-if="tab?.kind === 'query'">
-        <IconButton
-          :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'"
-          :size="12"
-          :class="[
-            'bg-accent-deep hover:bg-accent size-6 shrink-0 text-white hover:text-white',
-            queryLoading && '[&_svg]:animate-spin',
-          ]"
-          :title="t('执行选中内容或全部 SQL（Ctrl+Enter）')"
-          :disabled="
-            !connected ||
-            queryLoading ||
-            state.preparingQuery ||
-            !tab.sql.trim()
-          "
-          @click="runQuery(undefined, tab.id)"
-        />
-        <div class="w-32 shrink-0">
-          <AppSelect
-            v-model="queryRowLimit"
-            :label="t('查询返回行数上限')"
-            :options="queryRowLimitOptions"
-            :disabled="queryLoading"
-            compact
-            hide-label
-          />
-        </div>
-        <IconButton
-          icon="lucide:history"
-          :size="13"
-          class="shrink-0"
-          :title="t('查询历史')"
-          aria-haspopup="menu"
-          :aria-expanded="historyMenu.open"
-          @click="showHistory"
-        />
-        <IconButton
-          :icon="tab.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'"
-          :size="13"
-          class="shrink-0"
-          :title="
-            tab.savedQueryId
-              ? t('立即保存查询（Ctrl+S）')
-              : t('保存到 Queries（Ctrl+S）')
-          "
-          @click="saveQueryTab(tab.id)"
-        />
-      </template>
-      <AppButton
-        v-if="queryLoading"
-        variant="danger"
-        size="sm"
-        class="h-6 shrink-0"
-        :title="t('取消当前查询')"
-        @click="cancelQuery"
-      >
-        <AppIcon
-          name="lucide:square"
-          :size="10"
-        />
-        <span>{{ t('停止') }}</span>
-      </AppButton>
-      <div
-        v-if="connected && databaseOptions.length"
-        class="w-32 shrink-0"
-      >
-        <AppSelect
-          :model-value="tab?.kind === 'query' ? tab.database : browsedDatabase"
-          :label="t('活动数据库')"
-          :options="databaseOptions"
-          :disabled="
-            databasesLoading ||
-            queryLoading ||
-            state.preparingQuery ||
-            preparingTransfer ||
-            transferMode !== null
-          "
-          hide-label
-          compact
-          searchable
-          @update:model-value="selectToolbarDatabase($event, tab)"
-        />
-      </div>
-      <span
-        class="bg-line-soft mx-0.5 h-4 w-px shrink-0"
-        aria-hidden="true"
-      />
-      <IconButton
-        :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
-        :size="13"
-        class="shrink-0"
-        :title="connected ? t('断开连接') : t('重新连接')"
-        :disabled="status === 'connecting'"
-        @click="connected ? disconnect() : connect()"
-      />
-      <IconButton
-        icon="lucide:bot"
-        :size="14"
-        class="shrink-0"
-        :title="agentOpen ? t('关闭 AI Agent') : t('打开 AI Agent')"
-        :aria-pressed="agentOpen"
-        :class="agentOpen && 'text-accent'"
-        @click="toggleAgent"
-      />
-    </div>
-  </DefineDatabaseActions>
-
   <div
     v-if="!connection"
     class="pane flex-1 items-center justify-center"
@@ -1602,6 +1489,122 @@ watch(
     ref="databaseContainer"
     class="pane flex-1 flex-row"
   >
+    <!-- 工具栏模板放在根元素内，让父级 v-show 能正确隐藏缓存的连接视图。 -->
+    <DefineDatabaseActions v-slot="{ tab }">
+      <div
+        class="scroll-none flex max-w-full min-w-0 items-center gap-1.5 overflow-x-auto"
+        role="group"
+        :aria-label="t('数据库工具栏')"
+      >
+        <template v-if="tab?.kind === 'query'">
+          <IconButton
+            :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'"
+            :size="12"
+            :class="[
+              'bg-accent-deep hover:bg-accent size-6 shrink-0 text-white hover:text-white',
+              queryLoading && '[&_svg]:animate-spin',
+            ]"
+            :title="t('执行选中内容或全部 SQL（Ctrl+Enter）')"
+            :disabled="
+              !connected ||
+              queryLoading ||
+              state.preparingQuery ||
+              !tab.sql.trim()
+            "
+            @click="runQuery(undefined, tab.id)"
+          />
+          <div class="w-32 shrink-0">
+            <AppSelect
+              v-model="queryRowLimit"
+              :label="t('查询返回行数上限')"
+              :options="queryRowLimitOptions"
+              :disabled="queryLoading"
+              compact
+              hide-label
+            />
+          </div>
+          <IconButton
+            icon="lucide:history"
+            :size="13"
+            class="shrink-0"
+            :title="t('查询历史')"
+            aria-haspopup="menu"
+            :aria-expanded="historyMenu.open"
+            @click="showHistory"
+          />
+          <IconButton
+            :icon="tab.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'"
+            :size="13"
+            class="shrink-0"
+            :title="
+              tab.savedQueryId
+                ? t('立即保存查询（Ctrl+S）')
+                : t('保存到 Queries（Ctrl+S）')
+            "
+            @click="saveQueryTab(tab.id)"
+          />
+        </template>
+        <AppButton
+          v-if="queryLoading"
+          variant="danger"
+          size="sm"
+          class="h-6 shrink-0"
+          :title="t('取消当前查询')"
+          @click="cancelQuery"
+        >
+          <AppIcon
+            name="lucide:square"
+            :size="10"
+          />
+          <span>{{ t('停止') }}</span>
+        </AppButton>
+        <div
+          v-if="connected && databaseOptions.length"
+          class="w-32 shrink-0"
+        >
+          <AppSelect
+            :model-value="
+              tab?.kind === 'query' ? tab.database : browsedDatabase
+            "
+            :label="t('活动数据库')"
+            :options="databaseOptions"
+            :disabled="
+              databasesLoading ||
+              queryLoading ||
+              state.preparingQuery ||
+              preparingTransfer ||
+              transferMode !== null
+            "
+            hide-label
+            compact
+            searchable
+            @update:model-value="selectToolbarDatabase($event, tab)"
+          />
+        </div>
+        <span
+          class="bg-line-soft mx-0.5 h-4 w-px shrink-0"
+          aria-hidden="true"
+        />
+        <IconButton
+          :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
+          :size="13"
+          class="shrink-0"
+          :title="connected ? t('断开连接') : t('重新连接')"
+          :disabled="status === 'connecting'"
+          @click="connected ? disconnect() : connect()"
+        />
+        <IconButton
+          icon="lucide:bot"
+          :size="14"
+          class="shrink-0"
+          :title="agentOpen ? t('关闭 AI Agent') : t('打开 AI Agent')"
+          :aria-pressed="agentOpen"
+          :class="agentOpen && 'text-accent'"
+          @click="toggleAgent"
+        />
+      </div>
+    </DefineDatabaseActions>
+
     <DatabaseObjectTree
       :key="`${sessionId}:${browserEpoch}`"
       v-show="!agentOpen || agentSplit"

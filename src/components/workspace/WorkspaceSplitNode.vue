@@ -7,7 +7,7 @@ import {
 } from '@/composables/useWorkspaceTabSplit'
 import type { WorkspaceViewTab } from '@/composables/useDatabaseWorkspaceTabs'
 import type { TabDragEvent } from '@/composables/useTabReorder'
-import WorkspaceTabBar from './WorkspaceTabBar.vue'
+import WorkspaceTabBar from '@/components/workspace/WorkspaceTabBar.vue'
 import ServerOperations from '@/components/operations/ServerOperations.vue'
 import SplitDivider from '@/components/ui/SplitDivider.vue'
 import SplitDropIndicator from '@/components/ui/SplitDropIndicator.vue'
@@ -52,7 +52,8 @@ function focusGroup(): void {
 function dropTab(drag: TabDragEvent): void {
   if (layout.drop(drag)) activate(drag.id)
 }
-function merge(): void {
+/** 收起当前分屏，把标签移入相邻分组，保留连接、编辑内容和执行中的任务。 */
+function closeSplit(): void {
   const id = layout.mergeGroup(props.node.id)
   if (id) activate(id)
 }
@@ -137,10 +138,11 @@ function merge(): void {
         />
         <IconButton
           v-if="layout.split.value"
-          icon="lucide:panel-top-close"
+          icon="lucide:x"
           :size="14"
-          :title="t('合并分组（保留全部连接标签）')"
-          @click="merge"
+          :aria-label="t('关闭分屏')"
+          :title="t('关闭此分屏，标签移至相邻分屏，连接保持运行')"
+          @click="closeSplit"
         />
       </div>
     </div>

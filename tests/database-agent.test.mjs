@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createRenderer, h, markRaw, nextTick } from 'vue'
+import {
+  createRenderer,
+  h,
+  markRaw,
+  nextTick,
+  shallowRef,
+  vShow,
+  withDirectives,
+} from 'vue'
 import { createPinia } from 'pinia'
 import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 
@@ -40,6 +48,7 @@ const load = sourceLoader(
   },
   [
     'src/components/workspace/DatabaseView.vue',
+    'src/components/workspace/database/DatabaseTabWorkspace.vue',
     'src/components/ui/IconButton.vue',
   ]
 )
@@ -85,7 +94,7 @@ const find = (el, predicate) =>
     ? el
     : el.children.map(child => find(child, predicate)).find(Boolean)
 
-test('database view initializes its AI context watcher with and without a saved connection', async () => {
+test('database view initializes AI and hides cached connections without changing their instances', async () => {
   const originalWindow = globalThis.window
   const originalStorage = globalThis.localStorage
   globalThis.window = new EventTarget()
@@ -115,11 +124,17 @@ test('database view initializes its AI context watcher with and without a saved 
       connection,
       { ...connection, kind: 'mysql' },
     ]) {
+      const visible = shallowRef(true)
       const app = renderer.createApp({
-        render: () => h(DatabaseView, { connection: target }),
+        render: () =>
+          withDirectives(h(DatabaseView, { connection: target }), [
+            [vShow, visible.value],
+          ]),
       })
       const errors = []
+      const warnings = []
       app.config.errorHandler = error => errors.push(error)
+      app.config.warnHandler = message => warnings.push(message)
       app.use(createPinia()).use(i18n)
       const root = node('root')
       app.mount(root)
@@ -129,6 +144,29 @@ test('database view initializes its AI context watcher with and without a saved 
           errors,
           [],
           'Database setup must not fail before the AI panel can render'
+        )
+        const pane = find(root, el =>
+          el.props.class?.split(' ').includes('pane')
+        )
+        visible.value = false
+        await nextTick()
+        assert.equal(
+          pane.style.display,
+          'none',
+          'Inactive database connections must not occupy space beside SSH'
+        )
+        visible.value = true
+        await nextTick()
+        assert.notEqual(pane.style.display, 'none')
+        assert.equal(
+          find(root, el => el.props.class?.split(' ').includes('pane')),
+          pane,
+          'Switching tabs must reuse the cached database view'
+        )
+        assert.deepEqual(
+          warnings.filter(message => message.includes('non-element root')),
+          [],
+          'The database view must support visibility directives on its root'
         )
         if (target) {
           const panel = () => find(root, el => el.props['data-ai-panel'])

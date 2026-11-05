@@ -85,6 +85,8 @@ export const en = {
     'Could not read the Office parsing result. Please retry.',
   移动到此标签分组: 'Move to this tab group',
   '合并分组（保留全部连接标签）': 'Merge group (keep all connection tabs)',
+  '关闭此分屏，标签移至相邻分屏，连接保持运行':
+    'Close this pane and move its tabs to an adjacent pane; connections keep running',
   '{value0} · 拖到内容区边缘分屏；拖动或 Alt + ←/→ 排序':
     '{value0} · Drag to a content edge to split; drag or Alt + ←/→ to reorder',
   '退出分屏（保留连接标签）': 'Remove from split (keep connection tab)',

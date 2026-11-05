@@ -35,6 +35,8 @@ const load = sourceLoader(
     'src/components/workspace/SidebarProjects.vue',
     'src/components/connection/ConnectionTagEditor.vue',
     'src/components/workspace/WorkspaceTabBar.vue',
+    'src/components/workspace/WorkspaceSplitNode.vue',
+    'src/components/ui/IconButton.vue',
     'src/components/workspace/database/DatabaseTabWorkspace.vue',
   ]
 )
@@ -62,6 +64,9 @@ const { useWorkspaceTabSplit, provideWorkspaceTabSplit } = await load(
 )
 const { default: DatabaseTabWorkspace } = await load(
   'src/components/workspace/database/DatabaseTabWorkspace.vue'
+)
+const { default: WorkspaceSplitNode } = await load(
+  'src/components/workspace/WorkspaceSplitNode.vue'
 )
 const node = (type, text = '') =>
   markRaw({
@@ -126,6 +131,64 @@ const connection = (id, name) => ({
   group: '',
   createdAt: 1,
   updatedAt: 1,
+})
+
+test('关闭分屏按钮收起所在分组并保留全部标签和会话', async t => {
+  const tabs = ['ssh', 'db'].map(id => ({
+    id,
+    connection: connection(id, id),
+    status: 'connected',
+    sessionId: `session-${id}`,
+  }))
+  const active = shallowRef('ssh')
+  let layout
+  const closedTabs = []
+  const root = mount(
+    {
+      setup() {
+        layout = useWorkspaceTabSplit({
+          tabs: () => tabs,
+          activeId: () => active.value,
+          enabled: () => true,
+        })
+        provideWorkspaceTabSplit(layout)
+        return () =>
+          h(WorkspaceSplitNode, {
+            node: layout.tree.value,
+            tabs,
+            closeWarning: () => '',
+            onActivate: id => (active.value = id),
+            onCloseMany: ids => closedTabs.push(...ids),
+          })
+      },
+    },
+    t
+  )
+  const closeButtons = () =>
+    all(root).filter(
+      el => el.type === 'button' && el.props['aria-label'] === '关闭分屏'
+    )
+  assert.equal(closeButtons().length, 0)
+  layout.moveTab('db', layout.tree.value.id, 'right')
+  active.value = 'db'
+  await nextTick()
+  assert.equal(closeButtons().length, 2)
+  const closingGroup = all(root).find(
+    el => el.props['data-workspace-tab-group'] === layout.groupForTab('db').id
+  )
+  all(closingGroup)
+    .find(el => el.type === 'button' && el.props['aria-label'] === '关闭分屏')
+    .props.onClick()
+  await nextTick()
+  assert.equal(layout.split.value, false)
+  assert.equal(closeButtons().length, 0)
+  assert.equal(layout.groups.value[0].activeId, 'db')
+  assert.deepEqual(layout.groups.value[0].tabIds, ['ssh', 'db'])
+  assert.deepEqual(closedTabs, [])
+  assert.deepEqual(
+    tabs.map(tab => tab.sessionId),
+    ['session-ssh', 'session-db']
+  )
 })
 
 test('server search temporarily expands matches and restores manual group folding when cleared', async t => {
