@@ -27,6 +27,7 @@ import CommandPalette from '@/components/workspace/CommandPalette.vue'
 import NotificationCenter from '@/components/workspace/NotificationCenter.vue'
 import WorkspaceHelp from '@/components/workspace/WorkspaceHelp.vue'
 import TransferCenter from '@/components/workspace/TransferCenter.vue'
+import AppUpdateControl from '@/components/workspace/AppUpdateControl.vue'
 import RemoteEditorHost from '@/components/operations/RemoteEditorHost.vue'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
@@ -325,6 +326,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       />
 
       <div class="flex items-center gap-1.5">
+        <AppUpdateControl />
         <IconButton
           :icon="lightScheme ? 'lucide:sun' : 'lucide:moon'"
           :title="lightScheme ? t('切换到深色外观') : t('切换到浅色外观')"

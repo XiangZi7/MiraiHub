@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, toRefs } from 'vue'
 import * as api from '@/api/agent'
 import type { AgentSettings } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
+import { agentProviderIcon } from '@/utils/agent-provider-icon'
 
 export function useAgentProfiles(onChanged: () => void) {
   const state = reactive({
@@ -21,6 +22,7 @@ export function useAgentProfiles(onChanged: () => void) {
   const options = computed(() =>
     state.settings.profiles.map(item => ({
       value: item.id,
+      iconSrc: agentProviderIcon(item),
       label: `${item.name === item.model ? item.model : `${item.name} · ${item.model || i18n.global.t('未设置模型')}`}${!item.enabled ? i18n.global.t('（已停用）') : ''}`,
       disabled: !item.enabled || !item.model,
     }))

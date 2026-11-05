@@ -12,6 +12,7 @@ import {
 } from '@/constants/agent-limits'
 import { IS_TAURI } from '@/utils/window'
 import { useI18n } from 'vue-i18n'
+import { agentProviderIcon } from '@/utils/agent-provider-icon'
 
 function editProfile(profile: AgentConfig): AgentProfileDraft {
   return {
@@ -41,6 +42,7 @@ export function useAgentSettings() {
   const options = computed(() =>
     Object.entries(state.drafts).map(([id, item]) => ({
       value: id,
+      iconSrc: agentProviderIcon(item),
       label: `${item.name || t('未命名配置')}${state.settings.activeId === id ? ' · ' + t('使用中') : ''}${!item.id ? ' · ' + t('未保存') : ''}`,
     }))
   )

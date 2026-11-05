@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { agentProviderIcon } from '@/utils/agent-provider-icon'
 import { toast } from '@/composables/useToast'
 import { useI18n } from 'vue-i18n'
 import { useResizeObserver } from '@vueuse/core'
@@ -89,6 +90,7 @@ const {
   switching,
   error: profileError,
 } = profiles
+const activeProfileIcon = computed(() => agentProviderIcon(activeProfile.value))
 // 响应式状态
 const state = reactive({
   // 对话复制状态
@@ -348,7 +350,13 @@ watch(
       <span
         v-if="!embedded"
         class="text-txt-2 px-[5px] py-2.5 text-[11px] font-medium whitespace-nowrap"
-        >AI Agent</span
+        ><img
+          v-if="activeProfile"
+          :src="activeProfileIcon"
+          class="mr-1.5 inline-block size-4 align-text-bottom"
+          alt=""
+          aria-hidden="true"
+        />AI Agent</span
       >
       <div class="flex-1" />
       <IconButton

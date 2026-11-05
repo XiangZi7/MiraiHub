@@ -123,7 +123,7 @@ async function navigate(event: KeyboardEvent): Promise<void> {
 <template>
   <div
     v-bind="containerProps"
-    class="scroll-thin focus-visible:ring-accent/60 relative min-h-0 flex-1 outline-none select-none focus-visible:ring-1 focus-visible:ring-inset"
+    class="scroll-thin relative min-h-0 flex-1 outline-none select-none"
     role="listbox"
     aria-multiselectable="true"
     :aria-label="t('远端文件')"

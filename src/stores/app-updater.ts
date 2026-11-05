@@ -3,20 +3,21 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { emit, emitTo, listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { check } from '@tauri-apps/plugin-updater'
+import { checkAppUpdate } from '@/api/app-updater'
 import { IS_TAURI } from '@/utils/window'
 import {
   createUpdateController,
   initialUpdateState,
   type UpdateState,
 } from '@/utils/app-updater'
-import { useWorkspaceStore } from './workspace'
-import { useSettingsStore } from './settings'
-import { useTransfersStore } from './transfers'
+import { useWorkspaceStore } from '@/stores/workspace'
+import { useSettingsStore } from '@/stores/settings'
+import { useTransfersStore } from '@/stores/transfers'
 
 const STATE_EVENT = 'miraihub://update-state'
 const COMMAND_EVENT = 'miraihub://update-command'
-type Command = 'status' | 'check' | 'install' | 'defer' | 'resume' | 'dismiss'
+type Command =
+  'status' | 'check' | 'download' | 'install' | 'defer' | 'resume' | 'dismiss'
 
 export const useAppUpdaterStore = defineStore('app-updater', () => {
   const state = reactive(initialUpdateState())
@@ -33,7 +34,11 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
   const controller = owner
     ? createUpdateController({
         state,
-        check: () => check({ timeout: 30_000 }),
+        check: () =>
+          checkAppUpdate(
+            settings.values.updateSource,
+            settings.values.updateDownloadProxy
+          ),
         enabled: () => settings.values.autoUpdate,
         canInstall: async () => {
           const idle = () =>
@@ -47,6 +52,7 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
       })
     : undefined
 
+  /** 主窗口负责检查与下载，其余窗口订阅状态；安装仅响应用户的明确操作。 */
   async function subscribe() {
     if (!IS_TAURI) {
       Object.assign(state, { phase: 'unsupported', reason: 'development' })
@@ -55,6 +61,7 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
     const unlisten = owner
       ? await listen<Command>(COMMAND_EVENT, event => {
           if (event.payload === 'check') void controller?.check()
+          else if (event.payload === 'download') void controller?.download()
           else if (event.payload === 'install') void controller?.installNow()
           else if (event.payload === 'defer') controller?.defer()
           else if (event.payload === 'resume') controller?.resume()
@@ -86,6 +93,14 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
     broadcast()
     controller?.startAutoChecks()
     cleanup.push(
+      // 切换线路后刷新尚未下载的清单，避免继续使用先前线路。
+      watch(
+        [
+          () => settings.values.updateSource,
+          () => settings.values.updateDownloadProxy,
+        ],
+        () => void controller?.resetSource()
+      ),
       watch(
         () => settings.values.autoUpdate,
         () => controller?.refreshAutoChecks()
@@ -96,13 +111,6 @@ export const useAppUpdaterStore = defineStore('app-updater', () => {
       window.addEventListener('online', online)
       cleanup.push(() => window.removeEventListener('online', online))
     }
-    const install = setInterval(
-      () => void controller?.installWhenIdle(),
-      10_000
-    )
-    cleanup.push(() => {
-      clearInterval(install)
-    })
   }
   function start() {
     return (startup ??= subscribe().catch(error => {

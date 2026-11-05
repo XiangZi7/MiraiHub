@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source('../../');
 
 /* 等宽字体只内置 latin 子集：变体包没有分子集的 css 入口，整包引入会把
    cyrillic / greek / vietnamese / latin-ext 五份 woff2 一起塞进安装包。 */
@@ -65,7 +65,11 @@
   /* Agent 对话界面：复用基础明暗色，提供可直接使用的 Tailwind token。 */
   --color-agent-mint: var(--color-accent);
   --color-agent-line: var(--color-line-strong);
-  --color-agent-user: color-mix(in oklch, var(--color-accent) 14%, var(--color-card));
+  --color-agent-user: color-mix(
+    in oklch,
+    var(--color-accent) 14%,
+    var(--color-card)
+  );
   --color-agent-user-text: var(--color-txt);
   --color-agent-answer: var(--color-card);
   --text-agent-body: 12px;

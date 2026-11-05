@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS = {
   language: 'system',
   launchAtStartup: false,
   autoUpdate: true,
+  updateSource: 'auto',
+  updateDownloadProxy: '',
   restoreLastSession: true,
   timeFormat: '24-hour',
   dateFormat: 'YYYY-MM-DD',

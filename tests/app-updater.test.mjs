@@ -61,6 +61,56 @@ test('downloads one update, tracks bytes and installs only after idle preflight'
   assert.equal(state.phase, 'installing')
 })
 
+test('automatic checks expose the update without downloading; clicking download reuses it once', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] })
+  const { controller, state, calls } = fixture()
+  controller.startAutoChecks()
+  context.mock.timers.tick(15_000)
+  await flushUpdates()
+  assert.equal(state.phase, 'available')
+  assert.equal(state.version, '2.1.0')
+  assert.equal(calls.check, 1)
+  assert.equal(calls.download, 0)
+  await controller.installNow()
+  assert.equal(calls.install, 0)
+  await Promise.all([controller.download(), controller.download()])
+  assert.equal(calls.check, 1)
+  assert.equal(calls.download, 1)
+  assert.equal(state.phase, 'ready')
+  await controller.dispose()
+})
+
+test('changing source during a check refreshes the pending manifest but preserves a verified download', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] })
+  let resolveCheck
+  const { controller, state, calls, update } = fixture({
+    check: () =>
+      new Promise(resolve => {
+        resolveCheck = resolve
+      }),
+  })
+  controller.startAutoChecks()
+  context.mock.timers.tick(15_000)
+  await flushUpdates()
+  assert.equal(state.phase, 'checking')
+  await controller.resetSource()
+  resolveCheck(update)
+  await flushUpdates()
+  assert.equal(state.phase, 'idle')
+  assert.equal(calls.close, 1)
+  context.mock.timers.tick(1)
+  await flushUpdates()
+  assert.equal(state.phase, 'checking')
+  resolveCheck(update)
+  await flushUpdates()
+  assert.equal(state.phase, 'available')
+  await controller.download()
+  await controller.resetSource()
+  assert.equal(state.phase, 'ready')
+  assert.equal(calls.close, 1)
+  await controller.dispose()
+})
+
 test('update now installs a verified package without waiting for idle, even after postponing or disabling auto-update', async () => {
   let preflights = 0
   const { controller, state, calls } = fixture({
@@ -349,6 +399,8 @@ test('signature failures use the normal cadence and never install unverified byt
   controller.startAutoChecks()
   context.mock.timers.tick(15_000)
   await flushUpdates()
+  assert.equal(state.phase, 'available')
+  await controller.download()
   assert.equal(state.errorStage, 'download')
   controller.retryOnReconnect()
   controller.refreshAutoChecks()
@@ -411,6 +463,7 @@ test('only the main window schedules updates; settings routes actions and receiv
       data.checks++;
       return { version:'2.1.0', download:async () => {data.downloads++}, install:async () => {data.installs++}, close:async () => {data.closes++} };
     };
+    export const checkAppUpdate = check;
   `)
   const { data } = await import(boundary)
   const load = sourceLoader(
@@ -420,10 +473,11 @@ test('only the main window schedules updates; settings routes actions and receiv
         '@tauri-apps/api/core',
         '@tauri-apps/api/window',
         '@tauri-apps/plugin-updater',
+        '@/api/app-updater',
         '@/utils/window',
-        './workspace',
-        './settings',
-        './transfers',
+        '@/stores/workspace',
+        '@/stores/settings',
+        '@/stores/transfers',
       ].map(name => [name, boundary])
     )
   )
@@ -443,8 +497,21 @@ test('only the main window schedules updates; settings routes actions and receiv
     context.mock.timers.tick(15_000)
     await flush()
     assert.equal(data.checks, 1)
+    assert.equal(data.downloads, 0)
+    assert.equal(settings.state.phase, 'available')
+    await settings.command('download')
+    await flush()
     assert.equal(data.downloads, 1)
     assert.equal(settings.state.phase, 'ready')
+    data.tabs.length = 0
+    context.mock.timers.tick(30_000)
+    await flush()
+    assert.equal(
+      data.installs,
+      0,
+      'even an idle app waits for install confirmation'
+    )
+    data.tabs.push(1)
     await settings.command('dismiss')
     assert.equal(main.state.dismissed, true)
     assert.equal(settings.state.dismissed, true)

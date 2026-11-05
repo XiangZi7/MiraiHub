@@ -213,7 +213,7 @@ fn returns_rows(statement: &str) -> bool {
 }
 
 macro_rules! run_dialect {
-    ($conn:expr, $statement:expr, $max_rows:expr, $running:expr, $columns_of:path, $decode_row:path) => {{
+    ($conn:expr, $statement:expr, $max_rows:expr, $running:expr, $columns_of:expr, $decode_row:expr) => {{
         let conn = $conn;
         let mut outcome = StatementOutcome::empty();
         let mut stream = sqlx::raw_sql($statement).fetch_many(&mut **conn);
@@ -233,13 +233,13 @@ macro_rules! run_dialect {
                 Either::Left(result) => outcome.rows_affected += result.rows_affected(),
                 Either::Right(row) => {
                     if outcome.columns.is_empty() {
-                        outcome.columns = $columns_of(&row);
+                        outcome.columns = ($columns_of)(&row);
                     }
                     if outcome.rows.len() >= $max_rows {
                         outcome.truncated = true;
                         break;
                     }
-                    outcome.rows.push($decode_row(&row));
+                    outcome.rows.push(($decode_row)(&row));
                 }
             }
         }
@@ -270,13 +270,27 @@ async fn run_mysql(
     max_rows: usize,
     running: &RunningQuery,
 ) -> DatabaseResult<StatementOutcome> {
+    let metadata_text = mysql_returns_text_metadata(statement);
     run_dialect!(
         conn,
         statement,
         max_rows,
         running,
-        mysql_columns,
-        decode_mysql_row
+        |row: &MySqlRow| {
+            let mut columns = mysql_columns(row);
+            if metadata_text {
+                for column in &mut columns {
+                    if matches!(
+                        column.data_type.as_str(),
+                        "BINARY" | "VARBINARY" | "TINYBLOB" | "BLOB" | "MEDIUMBLOB" | "LONGBLOB"
+                    ) {
+                        column.data_type = "TEXT".to_owned();
+                    }
+                }
+            }
+            columns
+        },
+        |row: &MySqlRow| decode_mysql_query_row(row, metadata_text)
     )
 }
 
@@ -325,14 +339,27 @@ pub(super) fn postgresql_columns(row: &PgRow) -> Vec<DatabaseQueryColumn> {
 }
 
 pub(super) fn decode_mysql_row(row: &MySqlRow) -> Vec<Option<String>> {
+    decode_mysql_query_row(row, false)
+}
+
+/// 系统元数据结果按文本解释二进制标记；普通表浏览仍保留原始二进制表示。
+fn decode_mysql_query_row(row: &MySqlRow, metadata_text: bool) -> Vec<Option<String>> {
     row.columns()
         .iter()
         .enumerate()
-        .map(|(index, column)| decode_mysql_value(row, index, column.type_info().name()))
+        .map(|(index, column)| {
+            decode_mysql_value(row, index, column.type_info().name(), metadata_text)
+        })
         .collect()
 }
 
-fn decode_mysql_value(row: &MySqlRow, index: usize, type_name: &str) -> Option<String> {
+/// 根据结果类型解码单元格，仅对已知文本元数据放宽驱动的二进制类型标记。
+fn decode_mysql_value(
+    row: &MySqlRow,
+    index: usize,
+    type_name: &str,
+    metadata_text: bool,
+) -> Option<String> {
     if is_null(row.try_get_raw(index).ok()) {
         return None;
     }
@@ -370,9 +397,9 @@ fn decode_mysql_value(row: &MySqlRow, index: usize, type_name: &str) -> Option<S
         "JSON" => row
             .try_get::<serde_json::Value, _>(index)
             .map(|value| value.to_string()),
-        "BINARY" | "VARBINARY" | "TINYBLOB" | "BLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BIT" => {
-            row.try_get::<Vec<u8>, _>(index).map(format_binary)
-        }
+        "BINARY" | "VARBINARY" | "TINYBLOB" | "BLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BIT" => row
+            .try_get::<Vec<u8>, _>(index)
+            .map(|bytes| format_mysql_binary(bytes, metadata_text)),
         _ => row.try_get::<String, _>(index),
     };
 
@@ -380,7 +407,11 @@ fn decode_mysql_value(row: &MySqlRow, index: usize, type_name: &str) -> Option<S
         .ok()
         // 类型映射没覆盖到时退回文本，再退回字节 —— 好过给用户一个 `<TYPE>` 占位符。
         .or_else(|| row.try_get::<String, _>(index).ok())
-        .or_else(|| row.try_get::<Vec<u8>, _>(index).ok().map(format_binary))
+        .or_else(|| {
+            row.try_get::<Vec<u8>, _>(index)
+                .ok()
+                .map(|bytes| format_mysql_binary(bytes, metadata_text))
+        })
         .or_else(|| Some(format!("<{type_name}>")))
 }
 
@@ -445,6 +476,40 @@ fn format_binary(bytes: Vec<u8>) -> String {
     )
 }
 
+/// SHOW、DESC 和 EXPLAIN 返回服务端生成的元数据；不按版本号或列名猜测用户字段。
+fn mysql_returns_text_metadata(statement: &str) -> bool {
+    let mut source = statement.trim_start();
+    loop {
+        if source.starts_with("--") || source.starts_with('#') {
+            source = source
+                .split_once('\n')
+                .map(|(_, rest)| rest.trim_start())
+                .unwrap_or("");
+        } else if let Some(comment) = source.strip_prefix("/*") {
+            let Some((_, rest)) = comment.split_once("*/") else {
+                return false;
+            };
+            source = rest.trim_start();
+        } else {
+            break;
+        }
+    }
+    matches!(
+        sql::leading_keyword(source).as_str(),
+        "SHOW" | "DESC" | "DESCRIBE" | "EXPLAIN"
+    )
+}
+
+/// 元数据标记为 VARBINARY 时尝试严格 UTF-8 解码；真实二进制与无效文本保持无损 Base64。
+fn format_mysql_binary(bytes: Vec<u8>, metadata_text: bool) -> String {
+    if metadata_text {
+        if let Ok(text) = std::str::from_utf8(&bytes) {
+            return text.to_owned();
+        }
+    }
+    format_binary(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,6 +517,48 @@ mod tests {
     #[test]
     fn binary_values_are_labeled() {
         assert_eq!(format_binary(vec![0, 1, 2]), "base64:AAEC");
+    }
+
+    #[test]
+    fn mysql_text_metadata_is_not_displayed_as_base64() {
+        for text in [
+            "information_schema",
+            "mysql",
+            "performance_schema",
+            "中文库名",
+            "",
+        ] {
+            assert_eq!(format_mysql_binary(text.as_bytes().to_vec(), true), text);
+        }
+        assert_eq!(format_mysql_binary(vec![0xff, 0xfe], true), "base64://4=");
+        assert_eq!(
+            format_mysql_binary(b"mysql".to_vec(), false),
+            "base64:bXlzcWw="
+        );
+        assert_eq!(format_mysql_binary(vec![0, 1, 2], false), "base64:AAEC");
+    }
+
+    #[test]
+    fn mysql_metadata_decoding_does_not_affect_user_queries() {
+        for query in [
+            "show databases;",
+            "SHOW FULL TABLES",
+            "DESC users",
+            "EXPLAIN SELECT 1",
+            "-- comment\n/* context */ SHOW DATABASES",
+            "# comment\n SHOW TABLES",
+        ] {
+            assert!(mysql_returns_text_metadata(query), "{query}");
+        }
+        for query in [
+            "SELECT binary_column FROM users",
+            "SELECT 'SHOW DATABASES'",
+            "/* comment */ SELECT 1",
+            "WITH q AS (SELECT 1) SELECT * FROM q",
+            "/* unterminated",
+        ] {
+            assert!(!mysql_returns_text_metadata(query), "{query}");
+        }
     }
 
     #[test]

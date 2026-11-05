@@ -1,5 +1,84 @@
 //! Native update preflight. Only the main window may drive the installer.
 use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri_plugin_updater::UpdaterExt;
+
+const MANIFEST_URL: &str =
+    "https://github.com/XiangZi7/MiraiHub/releases/latest/download/latest.json";
+
+/// 将清单与安装包统一交给 HTTPS 转发源，限制为本项目的公开 Release 文件。
+fn forwarded_url(prefix: &str, original: &str) -> Result<tauri::Url, String> {
+    let target = tauri::Url::parse(original).map_err(|error| error.to_string())?;
+    if prefix.is_empty() {
+        return Ok(target);
+    }
+    let base =
+        tauri::Url::parse(prefix).map_err(|_| "下载加速地址必须是有效的 HTTPS 地址".to_owned())?;
+    if base.scheme() != "https"
+        || base.host_str().is_none()
+        || !base.username().is_empty()
+        || base.password().is_some()
+        || base.query().is_some()
+        || base.fragment().is_some()
+    {
+        return Err("下载加速地址必须是无凭据、查询参数和片段的 HTTPS 地址".to_owned());
+    }
+    if target.scheme() != "https"
+        || target.host_str() != Some("github.com")
+        || !target.path().starts_with("/XiangZi7/MiraiHub/releases/")
+    {
+        return Err("仅支持转发 MiraiHub 的 GitHub Release 文件".to_owned());
+    }
+    tauri::Url::parse(&format!("{}/{}", prefix.trim_end_matches('/'), target))
+        .map_err(|error| error.to_string())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMetadata {
+    rid: tauri::ResourceId,
+    current_version: String,
+    version: String,
+    date: Option<String>,
+    body: Option<String>,
+    raw_json: serde_json::Value,
+}
+
+/// 主窗口按所选线路检查更新；仍交由原生 updater 下载、校验签名和执行安装。
+#[tauri::command]
+pub async fn updater_check_source(
+    window: WebviewWindow,
+    prefix: String,
+) -> Result<Option<UpdateMetadata>, String> {
+    if window.label() != "main" || !updater_environment().supported {
+        return Err("当前窗口或安装方式不支持应用更新".to_owned());
+    }
+    let endpoint = forwarded_url(prefix.trim(), MANIFEST_URL)?;
+    let updater = window
+        .updater_builder()
+        .configure_client(|client| client.connect_timeout(std::time::Duration::from_secs(12)))
+        .endpoints(vec![endpoint])
+        .map_err(|error| error.to_string())?
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let Some(mut update) = updater.check().await.map_err(|error| error.to_string())? else {
+        return Ok(None);
+    };
+    update.download_url = forwarded_url(prefix.trim(), update.download_url.as_str())?;
+    let metadata = UpdateMetadata {
+        current_version: update.current_version.clone(),
+        version: update.version.clone(),
+        date: update
+            .raw_json
+            .get("pub_date")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        body: update.body.clone(),
+        raw_json: update.raw_json.clone(),
+        rid: window.resources_table().add(update),
+    };
+    Ok(Some(metadata))
+}
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +130,27 @@ pub fn updater_can_install(app: AppHandle, window: WebviewWindow) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn forwarding_covers_manifest_and_installer_without_changing_signatures() {
+        let prefix = "https://proxy.example/";
+        for original in [super::MANIFEST_URL, "https://github.com/XiangZi7/MiraiHub/releases/download/v3.0.14/MiraiHub_3.0.14_windows_x64_setup.exe"] {
+            assert_eq!(super::forwarded_url(prefix, original).unwrap().as_str(), format!("{prefix}{original}"));
+            assert_eq!(super::forwarded_url("", original).unwrap().as_str(), original);
+        }
+        for prefix in [
+            "http://proxy.example",
+            "https://user:pass@proxy.example",
+            "https://proxy.example/?target=",
+            "https://proxy.example/#target",
+        ] {
+            assert!(super::forwarded_url(prefix, super::MANIFEST_URL).is_err());
+        }
+        assert!(super::forwarded_url(prefix, "https://example.com/installer.exe").is_err());
+        assert!(
+            super::forwarded_url(prefix, "https://github.com/other/project/releases/latest")
+                .is_err()
+        );
+    }
     /// Opt-in network smoke test: use the same HTTP stack and release parser as
     /// the updater. This checks availability only; it never runs an installer.
     #[tokio::test]

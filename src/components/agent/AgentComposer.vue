@@ -15,10 +15,10 @@ import {
 } from '@/utils/agent-attachments'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
-import AgentProfileSelect from './AgentProfileSelect.vue'
-import AgentPermissionSelect from './AgentPermissionSelect.vue'
-import AgentContextPreview from './AgentContextPreview.vue'
-import AgentUsageStats from './AgentUsageStats.vue'
+import AgentProfileSelect from '@/components/agent/AgentProfileSelect.vue'
+import AgentPermissionSelect from '@/components/agent/AgentPermissionSelect.vue'
+import AgentContextPreview from '@/components/agent/AgentContextPreview.vue'
+import AgentUsageStats from '@/components/agent/AgentUsageStats.vue'
 import { useAgentErrorToasts } from '@/composables/useAgentErrorToasts'
 import { useAgentDictation } from '@/composables/useAgentDictation'
 
@@ -254,7 +254,7 @@ watch(
         @keydown="keydown"
         @paste="paste"
       />
-      <div class="flex min-w-0 flex-wrap items-center gap-1 pt-1.5">
+      <div class="flex min-w-0 items-center gap-1.5 pt-1.5">
         <IconButton
           :icon="reading ? 'lucide:loader-circle' : 'lucide:plus'"
           :size="18"
@@ -270,11 +270,12 @@ watch(
         />
         <AgentPermissionSelect
           v-model="approvalMode"
+          class="max-w-28 shrink-0"
           :disabled="permissionDisabled ?? disabled"
         />
         <button
           type="button"
-          class="bg-txt/5 text-txt-3 flex h-[25px] shrink-0 cursor-default items-center gap-1 rounded-full border-0 px-1.5 text-[10.5px] @min-[37.5rem]/agent:gap-[7px] @min-[37.5rem]/agent:px-3"
+          class="bg-txt/5 text-txt-3 hidden h-[25px] shrink-0 cursor-default items-center gap-[7px] rounded-full border-0 px-3 text-[10.5px] @min-[37.5rem]/agent:flex"
           :title="t('agent.defaultReasoningDescription')"
           :aria-label="t('agent.defaultReasoningDescription')"
           disabled
@@ -293,9 +294,11 @@ watch(
           />
         </button>
 
-        <div class="ml-auto flex max-w-full min-w-0 items-center gap-1.5">
+        <div
+          class="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5"
+        >
           <AgentProfileSelect
-            class="max-w-[160px] min-w-0 @min-[37.5rem]/agent:min-w-0"
+            class="min-w-0 flex-1 @min-[37.5rem]/agent:max-w-48"
             :active-id="activeId"
             :options="profileOptions"
             :disabled="profileDisabled || busy || awaitingApproval"

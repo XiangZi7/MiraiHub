@@ -163,7 +163,7 @@ export function filterSqlSuggestions(
     .slice(0, 60)
 }
 
-/** 字段可用于任意子句；解析器限定当前语句并排除字符串、注释中的伪别名。 */
+/** 字段可用于任意子句；空白行仅响应手动补全，避免回车或缩进时自动弹窗。 */
 export function completeSql(
   document: SqlDocument,
   cursor: number,
@@ -177,7 +177,7 @@ export function completeSql(
   if (
     !explicit &&
     !range.prefix &&
-    (!before.trim() || !/[\s.,(=<>]$/u.test(before))
+    (/(?:^|\n)[^\S\n]*$/u.test(before) || !/[\s.,(=<>]$/u.test(before))
   )
     return null
   const statements = tree.topNode.getChildren('Statement')
@@ -217,7 +217,7 @@ export function completeSql(
       }
     }
   }
-  // GROUP/ORDER/PARTITION 后优先 BY；空格、换行、点号后也可以自动触发。
+  // GROUP/ORDER/PARTITION 后优先 BY；同一行的空格、点号后也可以自动触发。
   const preceding = lexemes
     .filter(token => token.to <= range.from && !/Comment$/u.test(token.name))
     .at(-1)

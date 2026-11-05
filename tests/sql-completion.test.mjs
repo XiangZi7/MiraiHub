@@ -6,10 +6,10 @@ const { parseSql, completeSql } = await sourceLoader()(
   'src/utils/sql-completion.ts'
 )
 const fields = ['device', 'path', 'payload', 'created_at', 'app_logs']
-function complete(source, kind = 'mysql') {
+function complete(source, kind = 'mysql', explicit = false) {
   const cursor = source.indexOf('|')
   const sql = source.replace('|', '')
-  return completeSql(parseSql(sql, kind), cursor, fields)
+  return completeSql(parseSql(sql, kind), cursor, fields, explicit)
 }
 const labels = result => result?.options.map(option => option.label) ?? []
 
@@ -29,11 +29,10 @@ test('SELECT、过滤、关联、分组、排序、写入和窗口子句均可�
     assert.ok(labels(complete(source)).includes('path'), source)
 })
 
-test('子句后的空格、换行及点号自动触发，组合关键字一次插入', () => {
+test('子句后的同行空格及点号自动触发，组合关键字一次插入', () => {
   for (const source of [
     'SELECT |',
     'SELECT * FROM app_logs GROUP BY |',
-    'SELECT * FROM app_logs ORDER BY\n|',
     'SELECT l.| FROM app_logs l',
   ])
     assert.ok(labels(complete(source)).includes('path'), source)
@@ -45,6 +44,24 @@ test('子句后的空格、换行及点号自动触发，组合关键字一次�
   assert.ok(
     labels(complete('SELECT * FROM app_logs ord|')).includes('ORDER BY')
   )
+})
+
+test('回车及空白行缩进不自动补全，手动补全与继续输入仍可用', () => {
+  for (const kind of ['mysql', 'postgresql']) {
+    for (const source of [
+      '|',
+      '  |',
+      'SHOW DATABASES\n|',
+      'SHOW DATABASES;\n  |',
+      'SELECT * FROM app_logs ORDER BY\n|',
+      'SELECT\r\n\t|',
+      'SELECT\n  |path FROM app_logs',
+    ]) {
+      assert.equal(complete(source, kind), null, source)
+      assert.ok(labels(complete(source, kind, true)).includes('path'), source)
+    }
+    assert.ok(labels(complete('SELECT\n  p|', kind)).includes('path'))
+  }
 })
 
 test('用户示例：ORDER BY 提示聚合别名 count，并保留其大小写', () => {

@@ -53,6 +53,8 @@ const label = computed(() => {
       return t('正在检查更新…')
     case 'latest':
       return t('当前已是最新版本')
+    case 'available':
+      return t('发现新版本')
     case 'downloading':
       return t('正在下载更新')
     case 'ready':
@@ -78,6 +80,7 @@ const label = computed(() => {
       return t('从 GitHub Releases 获取最新正式版')
   }
 })
+/** 从关于页面打开正式发行说明。 */
 function openReleases() {
   void openUrl('https://github.com/XiangZi7/MiraiHub/releases').catch(
     console.warn

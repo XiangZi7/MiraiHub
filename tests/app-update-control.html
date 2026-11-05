@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>工具栏更新流程验证</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h } from 'vue'
+      import { createPinia } from 'pinia'
+      import { addCollection } from '@iconify/vue'
+      import icons from 'virtual:mirai-icons'
+      import '/src/assets/styles/main.css'
+      import { i18n } from '/src/i18n/index.ts'
+      import { useAppUpdaterStore } from '/src/stores/app-updater.ts'
+      import { createUpdateController } from '/src/utils/app-updater.ts'
+      import UpdateControl from '/src/components/workspace/AppUpdateControl.vue'
+
+      addCollection(icons)
+      i18n.global.locale.value = 'zh-CN'
+      const pinia = createPinia()
+      const updater = useAppUpdaterStore(pinia)
+      await updater.start()
+      updater.state.phase = 'idle'
+      let finishDownload
+      const fixture = {
+        updater,
+        commands: [],
+        installs: 0,
+        finish: () => finishDownload?.(),
+      }
+      const controller = createUpdateController({
+        state: updater.state,
+        enabled: () => true,
+        canInstall: async () => true,
+        changed() {},
+        check: async () => ({
+          version: '3.0.99',
+          download: async report => {
+            report({ event: 'Started', data: { contentLength: 100 } })
+            report({ event: 'Progress', data: { chunkLength: 40 } })
+            await new Promise(resolve => {
+              finishDownload = resolve
+            })
+            report({ event: 'Progress', data: { chunkLength: 60 } })
+            report({ event: 'Finished' })
+          },
+          install: async () => {
+            fixture.installs++
+          },
+          close: async () => {},
+        }),
+      })
+      updater.command = async command => {
+        fixture.commands.push(command)
+        if (command === 'download') await controller.download()
+        else if (command === 'install') await controller.installNow()
+        else if (command === 'defer') controller.defer()
+        else if (command === 'dismiss') controller.dismiss()
+      }
+      fixture.discover = () => controller.check(false)
+      fixture.locale = locale => {
+        i18n.global.locale.value = locale
+      }
+      window.updateFixture = fixture
+      createApp({
+        render: () =>
+          h('main', { class: 'h-screen bg-window font-sans' }, [
+            h(
+              'header',
+              { class: 'win-bar flex items-center justify-end gap-3 px-6' },
+              [
+                h('span', { class: 'text-txt-3 text-xs' }, 'MiraiHub'),
+                h(UpdateControl),
+                h('span', { class: 'text-txt-3 text-xs' }, '☀'),
+              ]
+            ),
+            h(
+              'p',
+              { class: 'p-6 text-txt-3 text-xs' },
+              '本页仅模拟发现、下载和确认；不会下载或安装软件。'
+            ),
+          ]),
+      })
+        .use(pinia)
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

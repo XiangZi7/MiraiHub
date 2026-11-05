@@ -10,8 +10,8 @@ import {
   watch,
 } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import AppIcon from './AppIcon.vue'
-import AppMenuSurface from './AppMenuSurface.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
 
 const { t } = useI18n()
 
@@ -21,6 +21,8 @@ interface SelectOption {
   description?: string
   /** 选项的辅助图标，使用项目内置的 Iconify 图标名。 */
   icon?: string
+  /** 本地彩色品牌图标，同时用于触发按钮和候选项。 */
+  iconSrc?: string
   group?: string
   disabled?: boolean
 }
@@ -320,6 +322,13 @@ watch(
       @click="toggleMenu"
       @keydown="handleKeydown"
     >
+      <img
+        v-if="selectedOption?.iconSrc"
+        :src="selectedOption.iconSrc"
+        alt=""
+        aria-hidden="true"
+        class="size-4 shrink-0 object-contain"
+      />
       <span
         :class="[
           'app-select-value min-w-0 flex-1 truncate',
@@ -405,8 +414,15 @@ watch(
                   class="app-select-indicator"
                   aria-hidden="true"
                 />
+                <img
+                  v-if="option.iconSrc"
+                  :src="option.iconSrc"
+                  alt=""
+                  aria-hidden="true"
+                  class="size-4 shrink-0 object-contain"
+                />
                 <AppIcon
-                  v-if="option.icon"
+                  v-else-if="option.icon"
                   :name="option.icon"
                   :size="15"
                   :class="model === option.value ? 'text-violet' : 'text-txt-3'"

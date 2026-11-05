@@ -4,6 +4,7 @@ export type UpdatePhase =
   | 'idle'
   | 'checking'
   | 'latest'
+  | 'available'
   | 'downloading'
   | 'ready'
   | 'installing'
@@ -58,6 +59,7 @@ export function createUpdateController(options: {
   let immediateRequested = false
   let automatic = false
   let checkFailures = 0
+  let sourceResetRequested = false
   let checkTimer: ReturnType<typeof setTimeout> | undefined
   const normalInterval = 6 * 60 * 60 * 1000
   const retryIntervals = [60_000, 5 * 60_000, 15 * 60_000]
@@ -80,40 +82,45 @@ export function createUpdateController(options: {
     if (!automatic || disposed || !options.enabled()) return
     checkTimer = setTimeout(() => {
       checkTimer = undefined
-      if (options.enabled()) void check()
+      if (options.enabled()) void check(false)
     }, delay)
   }
-  async function check() {
+  /** 自动检查仅发现新版本；用户主动检查或下载时才获取并校验安装包。 */
+  async function check(downloadUpdate = true) {
     if (
       disposed ||
       busy ||
-      pending ||
+      (pending && state.phase !== 'available') ||
       state.phase === 'unsupported' ||
       state.phase === 'installing'
     )
       return
+    if (pending && !downloadUpdate) return
     clearCheckTimer()
     busy = true
-    change({
-      phase: 'checking',
-      error: '',
-      errorStage: '',
-      version: '',
-      downloaded: 0,
-      total: 0,
-    })
+    if (!pending)
+      change({
+        phase: 'checking',
+        error: '',
+        errorStage: '',
+        version: '',
+        downloaded: 0,
+        total: 0,
+      })
     try {
-      pending = await options.check()
+      if (!pending) pending = await options.check()
       if (disposed) return
       if (!pending) {
         change({ phase: 'latest', dismissed: false })
         return
       }
       change({
-        phase: 'downloading',
+        phase: 'available',
         version: pending.version,
         dismissed: false,
       })
+      if (!downloadUpdate) return
+      change({ phase: 'downloading' })
       await pending.download(
         event => {
           if (disposed) return
@@ -134,8 +141,18 @@ export function createUpdateController(options: {
         change({ phase: 'error', error: String(error), errorStage })
     } finally {
       if (disposed) await release()
+      const resetSource =
+        sourceResetRequested && !disposed && state.phase !== 'ready'
+      sourceResetRequested = false
+      if (resetSource) {
+        await release()
+        change({ phase: 'idle', version: '', error: '', errorStage: '' })
+      }
       busy = false
-      if (state.phase === 'error' && state.errorStage === 'check') {
+      if (resetSource) {
+        checkFailures = 0
+        scheduleCheck(0)
+      } else if (state.phase === 'error' && state.errorStage === 'check') {
         // A release can briefly lack its manifest, or GitHub can be offline.
         // Retry with backoff, then return to the normal interval.
         scheduleCheck(retryIntervals[checkFailures++] ?? normalInterval)
@@ -187,6 +204,29 @@ export function createUpdateController(options: {
   }
   return {
     check,
+    // 下载入口复用同一并发锁，连续点击也只会下载一次。
+    download: () => check(true),
+    /** 线路设置变化时释放尚未下载的清单，保留已经校验成功的安装包。 */
+    resetSource: async () => {
+      if (
+        disposed ||
+        ['ready', 'downloading', 'installing'].includes(state.phase)
+      )
+        return
+      if (busy) {
+        sourceResetRequested = true
+        return
+      }
+      busy = true
+      try {
+        await release()
+        change({ phase: 'idle', version: '', error: '', errorStage: '' })
+      } finally {
+        busy = false
+      }
+      checkFailures = 0
+      scheduleCheck(0)
+    },
     installWhenIdle,
     installNow: async () => {
       // Only a fully downloaded, signature-verified package can reach ready.

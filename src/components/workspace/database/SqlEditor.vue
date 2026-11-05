@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { useEventListener, useResizeObserver } from '@vueuse/core'
 
 import type { CSSProperties } from 'vue'
 import {
@@ -49,6 +50,7 @@ const emit = defineEmits<{
 const sql = defineModel<string>({ required: true })
 const editorRef = useTemplateRef<HTMLTextAreaElement>('editor')
 const gutterRef = useTemplateRef<HTMLElement>('gutter')
+const autocompleteRef = useTemplateRef<HTMLElement>('autocomplete')
 const scroll = reactive({ top: 0, left: 0 })
 const autocompleteOpen = shallowRef(false)
 const autocompleteForced = shallowRef(false)
@@ -59,6 +61,8 @@ const replaceEnd = shallowRef(0)
 const filteredSuggestions = shallowRef<SqlSuggestion[]>([])
 // 响应式状态
 const state = reactive({
+  // 补全浮层使用窗口坐标，避免编辑器和分屏容器裁剪阴影。
+  autocompleteStyle: {} as CSSProperties,
   // 菜单打开时保存选区，菜单获取焦点后仍能精确执行原选区
   contextMenu: {
     open: false,
@@ -76,7 +80,7 @@ const state = reactive({
     source: string
   } | null,
 })
-const { contextMenu } = toRefs(state)
+const { contextMenu, autocompleteStyle } = toRefs(state)
 const contextItems = computed<ContextMenuItem[]>(() => [
   {
     id: 'ai-explain',
@@ -215,8 +219,16 @@ const lineNumbers = computed(() =>
   )
 )
 
-const autocompleteStyle = computed<CSSProperties>(() => {
+/** 将补全菜单定位到光标附近，并按实际缩放和窗口边缘调整浮层位置。 */
+function positionAutocomplete(): void {
   const editor = editorRef.value
+  const menu = autocompleteRef.value
+  if (!autocompleteOpen.value || !editor || !menu) return
+  const rect = editor.getBoundingClientRect()
+  const bounds = menu.getBoundingClientRect()
+  const scale = bounds.width / menu.offsetWidth || 1
+  const style = getComputedStyle(editor)
+  const lineHeight = Number.parseFloat(style.lineHeight) || 19.8
   const before = sql.value.slice(
     0,
     replaceStart.value + currentPrefix.value.length
@@ -224,11 +236,31 @@ const autocompleteStyle = computed<CSSProperties>(() => {
   const lines = before.split('\n')
   const row = lines.length - 1
   const column = lines.at(-1)?.length ?? 0
-  return {
-    left: `${Math.max(8, Math.min(column * 7.25 + 12 - scroll.left, (editor?.clientWidth ?? 320) - 220))}px`,
-    top: `${Math.max(8, Math.min(row * 19.8 + 30 - scroll.top, (editor?.clientHeight ?? 320) - 160))}px`,
+  const left = rect.left + (column * 7.25 + 12 - editor.scrollLeft) * scale
+  const lineTop = rect.top + (row * lineHeight + 8 - editor.scrollTop) * scale
+  const below = lineTop + (lineHeight + 4) * scale
+  const padding = 8 * scale
+  const top =
+    below + bounds.height + padding <= window.innerHeight
+      ? below
+      : lineTop - bounds.height - 4 * scale
+  state.autocompleteStyle = {
+    left: `${Math.max(padding, Math.min(left, window.innerWidth - bounds.width - padding)) / scale}px`,
+    top: `${Math.max(padding, Math.min(top, window.innerHeight - bounds.height - padding)) / scale}px`,
+    maxWidth: `${Math.max(0, window.innerWidth / scale - 16)}px`,
+    maxHeight: `${Math.min(160, Math.max(0, window.innerHeight / scale - 16))}px`,
   }
-})
+}
+
+// 等待菜单渲染后测量；候选内容、滚动或分屏尺寸变化时同步浮层位置。
+watch(
+  [autocompleteOpen, replaceStart, currentPrefix, filteredSuggestions],
+  positionAutocomplete,
+  { flush: 'post' }
+)
+useResizeObserver([editorRef, autocompleteRef], positionAutocomplete)
+useEventListener('resize', positionAutocomplete)
+useEventListener('scroll', positionAutocomplete, { capture: true })
 
 function runnableSql(): string {
   const editor = editorRef.value
@@ -239,6 +271,7 @@ function runnableSql(): string {
   return selected || sql.value.trim()
 }
 
+/** 输入或手动请求时更新补全；选区、禁用状态和空白行由规则统一过滤。 */
 function updateAutocomplete(forced = false): void {
   const editor = editorRef.value
   if (
@@ -270,10 +303,14 @@ function updateAutocomplete(forced = false): void {
   autocompleteOpen.value = filteredSuggestions.value.length > 0
 }
 
-watch([() => props.suggestions, () => props.databaseKind], () => {
-  if (editorRef.value === document.activeElement)
-    updateAutocomplete(autocompleteForced.value)
-})
+// 只刷新已经打开的候选列表，避免迟到的元数据在换行或关闭菜单后重新弹窗。
+watch(
+  [() => props.suggestions, () => props.databaseKind, () => props.disabled],
+  () => {
+    if (autocompleteOpen.value && editorRef.value === document.activeElement)
+      updateAutocomplete(autocompleteForced.value)
+  }
+)
 
 function insertSuggestion(value: SqlSuggestion): void {
   const editor = editorRef.value
@@ -284,6 +321,7 @@ function insertSuggestion(value: SqlSuggestion): void {
   void nextTick(() => editor.focus())
 }
 
+/** 保留运行、保存和补全快捷键，并在候选列表内处理选择与滚动。 */
 function handleKeydown(event: KeyboardEvent): void {
   if (event.isComposing) return
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
@@ -318,7 +356,7 @@ function handleKeydown(event: KeyboardEvent): void {
           filteredSuggestions.value.length) %
         filteredSuggestions.value.length
       void nextTick(() =>
-        editorRef.value?.parentElement
+        autocompleteRef.value
           ?.querySelector('[aria-selected="true"]')
           ?.scrollIntoView({ block: 'nearest' })
       )
@@ -348,8 +386,18 @@ function handleKeydown(event: KeyboardEvent): void {
   void nextTick(() => editor.setSelectionRange(start + 2, start + 2))
 }
 
+/** 换行只关闭补全，普通输入继续匹配；输入法组合期间不干扰候选文字。 */
 function handleInput(event: Event): void {
-  if ((event as InputEvent).isComposing) return
+  const input = event as InputEvent
+  if (input.isComposing) return
+  if (
+    input.inputType === 'insertLineBreak' ||
+    input.inputType === 'insertParagraph'
+  ) {
+    autocompleteOpen.value = false
+    autocompleteForced.value = false
+    return
+  }
   updateAutocomplete()
 }
 
@@ -405,10 +453,14 @@ defineExpose({ runnableSql })
         @pointerdown="captureContextSelection"
         @compositionend="updateAutocomplete()"
       />
-
+    </div>
+    <Teleport
+      v-if="autocompleteOpen && filteredSuggestions.length"
+      to="body"
+    >
       <div
-        v-if="autocompleteOpen && filteredSuggestions.length"
-        class="border-line-strong bg-panel/96 shadow-pop scroll-thin absolute z-30 max-h-40 w-52 overflow-y-auto rounded-lg border p-1 backdrop-blur-xl"
+        ref="autocomplete"
+        class="border-line-strong bg-panel/96 shadow-pop scroll-thin fixed z-80 max-h-40 w-52 overflow-y-auto rounded-lg border p-1 font-mono backdrop-blur-xl"
         :style="autocompleteStyle"
         role="listbox"
       >
@@ -443,7 +495,7 @@ defineExpose({ runnableSql })
           }}</span>
         </AppButton>
       </div>
-    </div>
+    </Teleport>
     <AppContextMenu
       :open="contextMenu.open"
       :x="contextMenu.x"

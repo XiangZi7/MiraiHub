@@ -603,10 +603,34 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         fields: [
           {
             key: 'autoUpdate',
-            label: '自动下载并安装更新',
+            label: '自动检查更新',
             description:
-              '启动时及每 6 小时检查正式版并自动下载，空闲时安装；也可选择立即更新或暂不更新。',
+              '启动时及每 6 小时检查新版本，在右上角提示；点击后下载，下载完成后选择立即更新或稍后。',
             control: 'switch',
+          },
+          {
+            key: 'updateSource',
+            label: '更新下载线路',
+            description:
+              '自动尝试公共加速线路，失败后回退 GitHub；所有线路均校验安装包签名。',
+            control: 'select',
+            options: [
+              { value: 'auto', label: '自动（优先加速）' },
+              { value: 'github', label: 'GitHub 直连' },
+              { value: 'ghproxy', label: 'GH-Proxy 加速' },
+              { value: 'ghfast', label: 'ghfast 加速' },
+              { value: 'custom', label: '自定义转发' },
+            ],
+          },
+          {
+            key: 'updateDownloadProxy',
+            label: '下载加速地址',
+            description:
+              '选择自定义转发时使用，填写 HTTPS 前缀地址，例如 https://ghfast.top/。',
+            control: 'text',
+            inputmode: 'url',
+            placeholder: 'https://ghfast.top/',
+            size: 'lg',
           },
         ],
       },

@@ -75,6 +75,25 @@ export default {
   '正在读取导出数据…': 'Reading export data…',
   导出已取消: 'Export cancelled',
   应用更新: 'Application updates',
+  自动检查更新: 'Automatically check for updates',
+  更新下载线路: 'Update download source',
+  '自动尝试公共加速线路，失败后回退 GitHub；所有线路均校验安装包签名。':
+    'Try public download proxies and fall back to GitHub. Every download is signature-verified.',
+  '自动（优先加速）': 'Automatic (prefer proxies)',
+  'GitHub 直连': 'GitHub direct',
+  'GH-Proxy 加速': 'GH-Proxy',
+  'ghfast 加速': 'ghfast',
+  自定义转发: 'Custom proxy',
+  下载加速地址: 'Download proxy URL',
+  '选择自定义转发时使用，填写 HTTPS 前缀地址，例如 https://ghfast.top/。':
+    'Used for a custom proxy. Enter an HTTPS prefix, such as https://ghfast.top/.',
+  '启动时及每 6 小时检查新版本，在右上角提示；点击后下载，下载完成后选择立即更新或稍后。':
+    'Check at startup and every 6 hours. Download from the toolbar, then choose Update now or Later.',
+  发现新版本: 'Update available',
+  下载更新: 'Download update',
+  更新下载完成: 'Update downloaded',
+  '更新包已下载，是否立即更新？': 'The update is downloaded. Update now?',
+  稍后: 'Later',
   显示连接地址: 'Show connection addresses',
   '在侧栏显示 SSH 和数据库连接的 IP 地址或域名':
     'Show IP addresses or hostnames for SSH and database connections in the sidebar',
