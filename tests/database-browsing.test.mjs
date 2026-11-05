@@ -42,7 +42,7 @@ const load = sourceLoader(
         'data-tree-search':true,value:props.modelValue,onInput:value=>emit('update:modelValue',value)
       })}
     `),
-    './database/DatabaseTableView.vue': dataModule(`
+    '@/components/workspace/database/DatabaseTableView.vue': dataModule(`
       import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
       import { mock } from ${JSON.stringify(api)}
       export default { props:['object'], setup(props) {

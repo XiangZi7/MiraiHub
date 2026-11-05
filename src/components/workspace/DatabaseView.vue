@@ -11,7 +11,12 @@ import {
   watch,
   useTemplateRef,
 } from 'vue'
-import { useDebounceFn, useEventListener, useStorage } from '@vueuse/core'
+import {
+  createReusableTemplate,
+  useDebounceFn,
+  useEventListener,
+  useStorage,
+} from '@vueuse/core'
 import * as database from '@/api/database'
 import {
   addQueryHistory,
@@ -57,11 +62,11 @@ import DatabaseConnectingSkeleton from './database/DatabaseConnectingSkeleton.vu
 import DatabaseObjectNameDialog from './database/DatabaseObjectNameDialog.vue'
 import DatabaseObjectTree from './database/DatabaseObjectTree.vue'
 import DatabaseQueryPane from './database/DatabaseQueryPane.vue'
-import DatabaseTabWorkspace from './database/DatabaseTabWorkspace.vue'
-import DatabaseRoutineView from './database/DatabaseRoutineView.vue'
-import DatabaseTableDesigner from './database/DatabaseTableDesigner.vue'
+import DatabaseTabWorkspace from '@/components/workspace/database/DatabaseTabWorkspace.vue'
+import DatabaseRoutineView from '@/components/workspace/database/DatabaseRoutineView.vue'
+import DatabaseTableDesigner from '@/components/workspace/database/DatabaseTableDesigner.vue'
 import DatabaseTableOverview from './database/DatabaseTableOverview.vue'
-import DatabaseTableView from './database/DatabaseTableView.vue'
+import DatabaseTableView from '@/components/workspace/database/DatabaseTableView.vue'
 import DatabaseTransferDialog, {
   type DatabaseTransferMode,
 } from './database/DatabaseTransferDialog.vue'
@@ -146,6 +151,7 @@ const {
   max: agentMax,
   style: agentStyle,
 } = useAgentPaneWidth(agentContainer, 'database', () => props.connection?.id)
+/** 从当前数据库功能栏打开或收起 AI 面板，首次打开时使用分栏布局。 */
 function toggleAgent(): void {
   if (agentState.agentOpen) {
     agentState.agentOpen = false
@@ -392,19 +398,23 @@ const databaseName = computed(() => {
 const databaseOptions = computed(() =>
   databases.value.map(name => ({ value: name, label: name }))
 )
-const selectedDatabase = computed({
-  get: () => activeQuery.value?.database || browsedDatabase.value,
-  set: (value: string) => {
-    const tab = activeQuery.value
-    void changeDatabase(value).then(() => {
-      if (tab && session.value?.database === value) {
-        tab.database = value
-        if (tab.savedQueryId)
-          updateSavedQuery(tab.savedQueryId, { database: value })
-      }
-    })
-  },
-})
+// 各内容标签复用同一组操作，直接放进对应的功能栏，避免额外的信息栏。
+const [DefineDatabaseActions, DatabaseActions] = createReusableTemplate<{
+  tab?: WorkspaceTab
+}>({ inheritAttrs: false })
+
+/** 从所在标签的工具栏切库；查询单独记录目标库，分屏时不会修改其他查询。 */
+async function selectToolbarDatabase(
+  value: string,
+  tab?: WorkspaceTab
+): Promise<void> {
+  await changeDatabase(value)
+  if (tab?.kind === 'query' && session.value?.database === value) {
+    tab.database = value
+    if (tab.savedQueryId)
+      updateSavedQuery(tab.savedQueryId, { database: value })
+  }
+}
 
 const overviewSchema = computed(() =>
   databaseKind.value === 'mysql' ? browsedDatabase.value : state.overviewSchema
@@ -436,12 +446,6 @@ const activeTab = computed(() =>
 )
 const activeQuery = computed(() =>
   activeTab.value?.kind === 'query' ? activeTab.value : undefined
-)
-const activeObject = computed(() =>
-  activeTab.value?.kind === 'object' ? activeTab.value : undefined
-)
-const activeDesigner = computed(() =>
-  activeTab.value?.kind === 'table-designer' ? activeTab.value : undefined
 )
 const selectedSavedQueryId = computed(
   () => activeQuery.value?.savedQueryId ?? ''
@@ -484,16 +488,7 @@ function setDesignerDirty(id: string, dirty: boolean): void {
   if (dirty) dirtyDesignerIds.add(id)
   else dirtyDesignerIds.delete(id)
 }
-const activeSql = computed({
-  get: () => activeQuery.value?.sql ?? '',
-  set: (value: string) => {
-    const tab = activeQuery.value
-    if (!tab) return
-    tab.sql = value
-    if (tab.savedQueryId)
-      updateSavedQuery(tab.savedQueryId, { sql: value, database: tab.database })
-  },
-})
+
 const persistedQueryTabs = computed<PersistedDatabaseQueryTab[]>(() =>
   queryState.tabs.flatMap(tab =>
     tab.kind === 'query'
@@ -542,13 +537,7 @@ useEventListener(window, 'beforeunload', () => {
   persistQueryWorkspace()
   persistQueries()
 })
-const canRun = computed(
-  () =>
-    connected.value &&
-    Boolean(activeSql.value.trim()) &&
-    !queryLoading.value &&
-    !state.preparingQuery
-)
+
 const completionSessionId = computed(() =>
   browsedDatabase.value && browsedDatabase.value === session.value?.database
     ? sessionId.value
@@ -918,9 +907,7 @@ async function openSavedQuery(query: SavedDatabaseQuery): Promise<void> {
   queryState.activeId = id
 }
 
-function saveActiveQuery(): void {
-  if (activeQuery.value) saveQueryTab(activeQuery.value.id)
-}
+/** 保存工具栏所属查询标签的 SQL 和目标库，未命名查询先打开命名弹窗。 */
 function saveQueryTab(id: string): void {
   const tab = queryState.tabs.find(tab => tab.id === id)
   if (tab?.kind !== 'query') return
@@ -1469,6 +1456,119 @@ watch(
 </script>
 
 <template>
+  <DefineDatabaseActions v-slot="{ tab }">
+    <div
+      class="scroll-none flex max-w-full min-w-0 items-center gap-1.5 overflow-x-auto"
+      role="group"
+      :aria-label="t('数据库工具栏')"
+    >
+      <template v-if="tab?.kind === 'query'">
+        <IconButton
+          :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'"
+          :size="12"
+          :class="[
+            'bg-accent-deep hover:bg-accent size-6 shrink-0 text-white hover:text-white',
+            queryLoading && '[&_svg]:animate-spin',
+          ]"
+          :title="t('执行选中内容或全部 SQL（Ctrl+Enter）')"
+          :disabled="
+            !connected ||
+            queryLoading ||
+            state.preparingQuery ||
+            !tab.sql.trim()
+          "
+          @click="runQuery(undefined, tab.id)"
+        />
+        <div class="w-32 shrink-0">
+          <AppSelect
+            v-model="queryRowLimit"
+            :label="t('查询返回行数上限')"
+            :options="queryRowLimitOptions"
+            :disabled="queryLoading"
+            compact
+            hide-label
+          />
+        </div>
+        <IconButton
+          icon="lucide:history"
+          :size="13"
+          class="shrink-0"
+          :title="t('查询历史')"
+          aria-haspopup="menu"
+          :aria-expanded="historyMenu.open"
+          @click="showHistory"
+        />
+        <IconButton
+          :icon="tab.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'"
+          :size="13"
+          class="shrink-0"
+          :title="
+            tab.savedQueryId
+              ? t('立即保存查询（Ctrl+S）')
+              : t('保存到 Queries（Ctrl+S）')
+          "
+          @click="saveQueryTab(tab.id)"
+        />
+      </template>
+      <AppButton
+        v-if="queryLoading"
+        variant="danger"
+        size="sm"
+        class="h-6 shrink-0"
+        :title="t('取消当前查询')"
+        @click="cancelQuery"
+      >
+        <AppIcon
+          name="lucide:square"
+          :size="10"
+        />
+        <span>{{ t('停止') }}</span>
+      </AppButton>
+      <div
+        v-if="connected && databaseOptions.length"
+        class="w-32 shrink-0"
+      >
+        <AppSelect
+          :model-value="tab?.kind === 'query' ? tab.database : browsedDatabase"
+          :label="t('活动数据库')"
+          :options="databaseOptions"
+          :disabled="
+            databasesLoading ||
+            queryLoading ||
+            state.preparingQuery ||
+            preparingTransfer ||
+            transferMode !== null
+          "
+          hide-label
+          compact
+          searchable
+          @update:model-value="selectToolbarDatabase($event, tab)"
+        />
+      </div>
+      <span
+        class="bg-line-soft mx-0.5 h-4 w-px shrink-0"
+        aria-hidden="true"
+      />
+      <IconButton
+        :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
+        :size="13"
+        class="shrink-0"
+        :title="connected ? t('断开连接') : t('重新连接')"
+        :disabled="status === 'connecting'"
+        @click="connected ? disconnect() : connect()"
+      />
+      <IconButton
+        icon="lucide:bot"
+        :size="14"
+        class="shrink-0"
+        :title="agentOpen ? t('关闭 AI Agent') : t('打开 AI Agent')"
+        :aria-pressed="agentOpen"
+        :class="agentOpen && 'text-accent'"
+        @click="toggleAgent"
+      />
+    </div>
+  </DefineDatabaseActions>
+
   <div
     v-if="!connection"
     class="pane flex-1 items-center justify-center"
@@ -1582,149 +1682,10 @@ watch(
         class="flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div
-          class="database-tab-toolbar border-line-soft flex h-10 min-w-0 shrink-0 items-center gap-1.5 border-b px-2"
+          v-if="!connected"
+          class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center justify-end border-b px-2.5 py-1"
         >
-          <div
-            class="scroll-none flex h-full max-w-3/4 min-w-0 shrink-0 items-center gap-1.5 overflow-x-auto"
-            role="group"
-            :aria-label="t('数据库工具栏')"
-          >
-            <IconButton
-              v-if="activeQuery"
-              :icon="queryLoading ? 'lucide:loader-circle' : 'lucide:play'"
-              :size="12"
-              :class="[
-                'bg-accent-deep hover:bg-accent size-6 text-white hover:text-white',
-                queryLoading && '[&_svg]:animate-spin',
-              ]"
-              :title="t('执行选中内容或全部 SQL（Ctrl+Enter）')"
-              :disabled="!canRun"
-              @click="runQuery()"
-            />
-            <IconButton
-              :icon="connected ? 'lucide:unplug' : 'lucide:plug-zap'"
-              :size="13"
-              :title="connected ? t('断开连接') : t('重新连接')"
-              :disabled="status === 'connecting'"
-              @click="connected ? disconnect() : connect()"
-            />
-            <div
-              v-if="activeQuery"
-              class="w-32 shrink-0"
-            >
-              <AppSelect
-                v-model="queryRowLimit"
-                :label="t('查询返回行数上限')"
-                :options="queryRowLimitOptions"
-                :disabled="queryLoading"
-                compact
-                hide-label
-              />
-            </div>
-            <IconButton
-              v-if="activeQuery"
-              icon="lucide:history"
-              :size="13"
-              :title="t('查询历史')"
-              aria-haspopup="menu"
-              :aria-expanded="historyMenu.open"
-              @click="showHistory"
-            />
-            <IconButton
-              v-if="activeQuery"
-              :icon="
-                activeQuery.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'
-              "
-              :size="13"
-              :title="
-                activeQuery.savedQueryId
-                  ? t('立即保存查询（Ctrl+S）')
-                  : t('保存到 Queries（Ctrl+S）')
-              "
-              @click="saveActiveQuery"
-            />
-            <AppButton
-              v-if="queryLoading"
-              variant="danger"
-              size="sm"
-              class="h-6"
-              :title="t('取消当前查询')"
-              @click="cancelQuery"
-              ><AppIcon
-                name="lucide:square"
-                :size="10"
-              /><span> {{ t('停止') }} </span></AppButton
-            >
-            <span
-              v-if="activeObject"
-              class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
-              >{{ activeObject.object.schema }}.<span class="text-txt-2">{{
-                activeObject.object.name
-              }}</span></span
-            >
-            <span
-              v-else-if="activeDesigner"
-              class="database-toolbar-detail text-txt-3 max-w-40 min-w-0 truncate text-[11px]"
-              >{{ activeDesigner.schema }}.<span class="text-txt-2">
-                {{ activeDesigner.editTarget?.name ?? t('新建表') }}
-              </span></span
-            >
-            <span
-              v-else-if="activeQuery?.savedQueryId"
-              class="database-toolbar-detail text-cyan flex shrink-0 items-center gap-1 text-[9.5px]"
-              ><AppIcon
-                name="lucide:cloud-check"
-                :size="10"
-              />
-              {{ t('自动保存') }}
-            </span>
-            <div
-              v-if="connected && databaseOptions.length"
-              class="database-toolbar-select w-40 shrink-0"
-            >
-              <AppSelect
-                v-model="selectedDatabase"
-                :label="t('活动数据库')"
-                :options="databaseOptions"
-                :disabled="
-                  databasesLoading ||
-                  queryLoading ||
-                  state.preparingQuery ||
-                  preparingTransfer ||
-                  transferMode !== null
-                "
-                hide-label
-                compact
-                searchable
-              />
-            </div>
-            <span
-              v-if="status !== 'connecting'"
-              class="database-toolbar-detail text-txt-3 max-w-32 truncate text-[11px]"
-              :title="
-                session
-                  ? `${session.endpoint}\n${session.serverVersion}`
-                  : sessionId || connectionError
-              "
-              >{{
-                connected
-                  ? `${databaseKind} · ${session?.serverVersion || databaseName}`
-                  : 'Disconnected'
-              }}</span
-            >
-          </div>
-          <span
-            class="bg-line-soft mx-0.5 h-4 w-px shrink-0"
-            aria-hidden="true"
-          />
-          <IconButton
-            icon="lucide:bot"
-            :size="14"
-            :title="agentOpen ? t('关闭 AI Agent') : t('打开 AI Agent')"
-            :aria-pressed="agentOpen"
-            :class="agentOpen && 'text-accent'"
-            @click="toggleAgent"
-          />
+          <DatabaseActions />
         </div>
 
         <div
@@ -1759,30 +1720,12 @@ watch(
           :connection-id="connection?.id"
           :workspace-host-id="workspaceHostId"
         >
-          <template #toolbar="{ tab }">
-            <div
-              v-if="tab.kind === 'query'"
-              class="border-line-soft text-txt-2 flex h-10 shrink-0 items-center gap-2 border-b px-3 text-xs"
-            >
-              <span class="min-w-0 flex-1 truncate"
-                >{{ tabLabel(tab) }} · {{ connection?.name }}</span
-              >
-              <IconButton
-                icon="lucide:play"
-                :size="14"
-                :title="t('Run SQL')"
-                :disabled="queryLoading || !tab.sql.trim()"
-                @click="runQuery(undefined, tab.id)"
-              />
-              <IconButton
-                icon="lucide:save"
-                :size="14"
-                :title="t('保存查询')"
-                @click="saveQueryTab(tab.id)"
-              />
-            </div>
-          </template>
           <template #empty>
+            <div
+              class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center justify-end border-b px-2.5 py-1"
+            >
+              <DatabaseActions />
+            </div>
             <DatabaseTableOverview
               :objects="overviewObjects"
               :selected="Boolean(overviewSchema)"
@@ -1801,6 +1744,12 @@ watch(
             />
           </template>
           <template #default="{ tab }">
+            <div
+              v-if="tab.kind === 'query'"
+              class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center border-b px-2.5 py-1"
+            >
+              <DatabaseActions :tab="tab" />
+            </div>
             <DatabaseQueryPane
               v-if="tab.kind === 'query'"
               :ref="editor => setEditor(tab.id, editor)"
@@ -1837,14 +1786,22 @@ watch(
               :initial-panel="tab.panel"
               :panel-nonce="tab.panelNonce"
               @query="openQuery"
-            />
+            >
+              <template #toolbar>
+                <DatabaseActions :tab="tab" />
+              </template>
+            </DatabaseTableView>
             <DatabaseRoutineView
               v-else-if="tab.kind === 'object'"
               :session-id="sessionId"
               :database-kind="databaseKind"
               :object="tab.object"
               @query="openQuery"
-            />
+            >
+              <template #toolbar>
+                <DatabaseActions :tab="tab" />
+              </template>
+            </DatabaseRoutineView>
             <DatabaseTableDesigner
               v-else-if="tab.kind === 'table-designer'"
               :session-id="sessionId"
@@ -1860,7 +1817,11 @@ watch(
                 (schema, name) => handleTableApplied(tab.id, schema, name)
               "
               @dirty="value => setDesignerDirty(tab.id, value)"
-            />
+            >
+              <template #toolbar>
+                <DatabaseActions :tab="tab" />
+              </template>
+            </DatabaseTableDesigner>
           </template>
         </DatabaseTabWorkspace>
       </div>
@@ -1942,26 +1903,6 @@ watch(
 </template>
 
 <style scoped>
-.database-tab-toolbar {
-  container: database-toolbar / inline-size;
-}
-
-@container database-toolbar (max-width: 760px) {
-  .database-toolbar-detail {
-    display: none;
-  }
-
-  .database-toolbar-select {
-    width: 128px;
-  }
-}
-
-@container database-toolbar (max-width: 420px) {
-  .database-toolbar-select {
-    width: 96px;
-  }
-}
-
 .query-workspace {
   display: grid;
   min-height: 0;

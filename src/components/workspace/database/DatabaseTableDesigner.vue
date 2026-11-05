@@ -623,6 +623,7 @@ const editorDisabled = computed(
           />{{ applying ? t('正在保存…') : t('保存修改') }}</AppButton
         >
       </div>
+      <slot name="toolbar" />
     </div>
 
     <fieldset
@@ -771,13 +772,14 @@ const editorDisabled = computed(
 }
 .designer-toolbar {
   display: flex;
-  height: 36px;
+  min-height: 36px;
+  flex-wrap: wrap;
   flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   border-bottom: 1px solid var(--color-line-soft);
-  padding: 0 8px 0 4px;
+  padding: 4px 8px 4px 4px;
   background: color-mix(in oklch, var(--color-panel) 54%, transparent);
 }
 .designer-tabs {

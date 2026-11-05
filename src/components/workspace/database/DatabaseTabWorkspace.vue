@@ -13,7 +13,6 @@ const props = defineProps<{
 const layout = injectWorkspaceTabSplit()
 defineSlots<{
   default(props: { tab: T; visible: boolean }): unknown
-  toolbar(props: { tab: T }): unknown
   empty(): unknown
 }>()
 
@@ -53,11 +52,6 @@ function visible(tab: T): boolean {
         class="bg-panel border-line-soft flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[10px]"
         :data-database-content="tab.id"
       >
-        <slot
-          v-if="detachedTarget(tab)"
-          name="toolbar"
-          :tab="tab"
-        />
         <slot
           :tab="tab"
           :visible="visible(tab)"

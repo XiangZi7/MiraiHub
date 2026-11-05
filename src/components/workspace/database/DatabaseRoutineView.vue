@@ -112,7 +112,7 @@ watch(
 <template>
   <section class="bg-workspace flex min-h-0 flex-1 flex-col">
     <header
-      class="border-line-soft flex h-10 shrink-0 items-center border-b px-3"
+      class="border-line-soft flex min-h-10 min-w-0 shrink-0 flex-wrap items-center gap-1 border-b px-3 py-1"
     >
       <div class="text-txt flex min-w-0 items-center gap-2 text-[12px]">
         <AppIcon
@@ -144,6 +144,7 @@ watch(
         :title="t('生成调用语句')"
         @click="emit('query', queryTemplate())"
       />
+      <slot name="toolbar" />
     </header>
 
     <div class="flex min-h-0 flex-1">

@@ -712,33 +712,35 @@ watch(
 <template>
   <section class="bg-terminal flex min-h-0 flex-1 flex-col">
     <header
-      class="border-line-soft flex h-10 shrink-0 items-center gap-1 border-b px-2.5"
+      class="border-line-soft flex min-h-10 min-w-0 shrink-0 flex-wrap items-center gap-1 border-b px-2.5 py-1"
     >
-      <AppButton
-        v-for="panel in panels"
-        :key="panel.id"
-        variant="bare"
-        :class="
-          cn(
-            'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors',
-            state.activePanel === panel.id
-              ? 'bg-raised text-txt'
-              : 'text-txt-3 hover:bg-hover hover:text-txt-2'
-          )
-        "
-        @click="state.activePanel = panel.id"
-      >
-        <AppIcon
-          :name="panel.icon"
-          :size="12"
-        />
-        {{ panel.label }}
-        <span
-          v-if="panel.id === 'columns' && state.detail"
-          class="text-txt-4 text-[9px]"
-          >{{ state.detail.columns.length }}</span
+      <div class="scroll-none flex min-w-0 items-center gap-1 overflow-x-auto">
+        <AppButton
+          v-for="panel in panels"
+          :key="panel.id"
+          variant="bare"
+          :class="
+            cn(
+              'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors',
+              state.activePanel === panel.id
+                ? 'bg-raised text-txt'
+                : 'text-txt-3 hover:bg-hover hover:text-txt-2'
+            )
+          "
+          @click="state.activePanel = panel.id"
         >
-      </AppButton>
+          <AppIcon
+            :name="panel.icon"
+            :size="12"
+          />
+          {{ panel.label }}
+          <span
+            v-if="panel.id === 'columns' && state.detail"
+            class="text-txt-4 text-[9px]"
+            >{{ state.detail.columns.length }}</span
+          >
+        </AppButton>
+      </div>
       <div class="flex-1" />
       <DatabaseExportMenu
         :data="exportData"
@@ -777,6 +779,7 @@ watch(
         :disabled="state.loading || state.pageLoading"
         @click="loadDetailAndRows"
       />
+      <slot name="toolbar" />
     </header>
 
     <div
