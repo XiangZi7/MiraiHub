@@ -150,7 +150,13 @@ const {
   min: agentMin,
   max: agentMax,
   style: agentStyle,
-} = useAgentPaneWidth(agentContainer, 'database', () => props.connection?.id)
+} = useAgentPaneWidth(
+  agentContainer,
+  'database',
+  () => props.connection?.id,
+  () =>
+    !agentState.agentOpen || agentState.agentSplit ? sidebarWidth.value + 2 : 0
+)
 /** 从当前数据库功能栏打开或收起 AI 面板，首次打开时使用分栏布局。 */
 function toggleAgent(): void {
   if (agentState.agentOpen) {
@@ -1487,7 +1493,8 @@ watch(
   <div
     v-else
     ref="databaseContainer"
-    class="pane flex-1 flex-row"
+    data-database-layout
+    class="relative flex min-h-0 min-w-0 flex-1"
   >
     <!-- 工具栏模板放在根元素内，让父级 v-show 能正确隐藏缓存的连接视图。 -->
     <DefineDatabaseActions v-slot="{ tab }">
@@ -1605,228 +1612,234 @@ watch(
       </div>
     </DefineDatabaseActions>
 
-    <DatabaseObjectTree
-      :key="`${sessionId}:${browserEpoch}`"
-      v-show="!agentOpen || agentSplit"
-      :style="sidebarStyle"
-      :database-name="databaseName"
-      :database-kind="databaseKind"
-      :ready="connected && !databasesLoading && !state.browserResetPending"
-      :active-database="overviewSchema"
-      :current-database="session?.database"
-      :database-names="databaseKind === 'mysql' ? databases : []"
-      :objects="objects"
-      :saved-queries="savedQueries"
-      :selected-saved-query-id="selectedSavedQueryId"
-      :columns-by-object="columnsByObject"
-      :inspecting-keys="inspectingKeys"
-      :loaded-databases="loadedDatabases"
-      :switching-disabled="!connected || queryLoading || state.preparingQuery"
-      :loading="objectsLoading"
-      :databases-loading="
-        databasesLoading ||
-        status === 'connecting' ||
-        (state.browserResetPending && active !== false)
-      "
-      :preparing-transfer="preparingTransfer"
-      :error="objectsError"
-      @refresh="refreshAll"
-      @inspect="inspectObject"
-      @ask-agent="askAgentStructure"
-      @open="openObject"
-      @query="createObjectQuery"
-      @copy="copyObjectName"
-      @select-database="changeDatabase"
-      @select-schema="selectSchema"
-      @export-database="openDatabaseTransfer($event, 'export')"
-      @import-database="openDatabaseTransfer($event, 'import')"
-      @create-database="showNameDialog('create-database')"
-      @create-object="createObjectTemplate"
-      @new-query="newQueryForSchema"
-      @create-saved-query="
-        targetDatabase =>
-          showQueryNameDialog('create-saved-query', targetDatabase)
-      "
-      @open-saved-query="openSavedQuery"
-      @duplicate-saved-query="duplicateSavedQuery"
-      @rename-saved-query="
-        query =>
-          showQueryNameDialog(
-            'rename-saved-query',
-            query.database,
-            query.sql,
-            query
-          )
-      "
-      @remove-saved-query="requestDeleteSavedQuery"
-      @rename-database="showNameDialog('rename-database', $event)"
-      @remove-database="requestDeleteDatabase"
-      @rename-object="showNameDialog('rename-object', $event)"
-      @remove-object="requestDeleteObject"
-      @design-object="openTableDesignerForObject"
-      @truncate-object="requestTruncateTable"
-    />
-    <AppResizeHandle
-      v-show="!agentOpen || agentSplit"
-      v-model="sidebarWidth"
-      pane-side="left"
-      :min="sidebarMin"
-      :max="sidebarMax"
-      :label="t('调整数据库侧栏宽度')"
-      overlay
-    />
-
+    <!-- 主区与 AI 各自拥有面板表面，分隔条所在的共享布局保持透明。 -->
     <div
       ref="agentContainer"
       class="flex min-h-0 min-w-0 flex-1"
     >
       <div
         v-show="!agentOpen || agentSplit"
-        class="flex min-h-0 min-w-0 flex-1 flex-col"
+        data-database-pane
+        class="pane flex-1 flex-row"
       >
-        <div
-          v-if="!connected"
-          class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center justify-end border-b px-2.5 py-1"
-        >
-          <DatabaseActions />
-        </div>
-
-        <div
-          v-if="preparingTransfer"
-          class="border-line-soft bg-accent/5 text-txt-2 flex shrink-0 items-center gap-2 border-b px-3 py-2 text-[11px]"
-          role="status"
-          aria-live="polite"
-        >
-          <AppIcon
-            name="lucide:loader-circle"
-            :size="13"
-            class="text-accent animate-spin"
-          />
-          {{ t('正在读取数据库结构…') }}
-        </div>
-
-        <!-- 连接中只铺骨架：等待时就能看出界面即将长成什么样，
-             真正需要用户操作的失败/未连接态才用居中卡片 -->
-        <DatabaseConnectingSkeleton v-if="status === 'connecting'" />
-        <DatabaseConnectionState
-          v-else-if="!connected"
-          v-model:password="password"
-          :status="status"
-          :needs-password="needsPassword"
-          :error="connectionError"
-          @connect="connect"
+        <DatabaseObjectTree
+          :key="`${sessionId}:${browserEpoch}`"
+          v-show="!agentOpen || agentSplit"
+          :style="sidebarStyle"
+          :database-name="databaseName"
+          :database-kind="databaseKind"
+          :ready="connected && !databasesLoading && !state.browserResetPending"
+          :active-database="overviewSchema"
+          :current-database="session?.database"
+          :database-names="databaseKind === 'mysql' ? databases : []"
+          :objects="objects"
+          :saved-queries="savedQueries"
+          :selected-saved-query-id="selectedSavedQueryId"
+          :columns-by-object="columnsByObject"
+          :inspecting-keys="inspectingKeys"
+          :loaded-databases="loadedDatabases"
+          :switching-disabled="
+            !connected || queryLoading || state.preparingQuery
+          "
+          :loading="objectsLoading"
+          :databases-loading="
+            databasesLoading ||
+            status === 'connecting' ||
+            (state.browserResetPending && active !== false)
+          "
+          :preparing-transfer="preparingTransfer"
+          :error="objectsError"
+          @refresh="refreshAll"
+          @inspect="inspectObject"
+          @ask-agent="askAgentStructure"
+          @open="openObject"
+          @query="createObjectQuery"
+          @copy="copyObjectName"
+          @select-database="changeDatabase"
+          @select-schema="selectSchema"
+          @export-database="openDatabaseTransfer($event, 'export')"
+          @import-database="openDatabaseTransfer($event, 'import')"
+          @create-database="showNameDialog('create-database')"
+          @create-object="createObjectTemplate"
+          @new-query="newQueryForSchema"
+          @create-saved-query="
+            targetDatabase =>
+              showQueryNameDialog('create-saved-query', targetDatabase)
+          "
+          @open-saved-query="openSavedQuery"
+          @duplicate-saved-query="duplicateSavedQuery"
+          @rename-saved-query="
+            query =>
+              showQueryNameDialog(
+                'rename-saved-query',
+                query.database,
+                query.sql,
+                query
+              )
+          "
+          @remove-saved-query="requestDeleteSavedQuery"
+          @rename-database="showNameDialog('rename-database', $event)"
+          @remove-database="requestDeleteDatabase"
+          @rename-object="showNameDialog('rename-object', $event)"
+          @remove-object="requestDeleteObject"
+          @design-object="openTableDesignerForObject"
+          @truncate-object="requestTruncateTable"
         />
-        <DatabaseTabWorkspace
-          v-else
-          :active="displayedTabId"
-          :tabs="queryState.tabs"
-          :connection-id="connection?.id"
-          :workspace-host-id="workspaceHostId"
-        >
-          <template #empty>
-            <div
-              class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center justify-end border-b px-2.5 py-1"
-            >
-              <DatabaseActions />
-            </div>
-            <DatabaseTableOverview
-              :objects="overviewObjects"
-              :selected="Boolean(overviewSchema)"
-              :loading="objectsLoading"
-              :error="objectsError"
-              @open="openObject"
-              @inspect="inspectObject"
-              @ask-agent="askAgentStructure"
-              @query="createObjectQuery"
-              @copy="copyObjectName"
-              @rename-object="showNameDialog('rename-object', $event)"
-              @remove-object="requestDeleteObject"
-              @design-object="openTableDesignerForObject"
-              @truncate-object="requestTruncateTable"
-              @refresh="refreshAll"
+        <AppResizeHandle
+          v-show="!agentOpen || agentSplit"
+          v-model="sidebarWidth"
+          pane-side="left"
+          :min="sidebarMin"
+          :max="sidebarMax"
+          :label="t('调整数据库侧栏宽度')"
+          overlay
+        />
+
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div
+            v-if="!connected"
+            class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center justify-end border-b px-2.5 py-1"
+          >
+            <DatabaseActions />
+          </div>
+
+          <div
+            v-if="preparingTransfer"
+            class="border-line-soft bg-accent/5 text-txt-2 flex shrink-0 items-center gap-2 border-b px-3 py-2 text-[11px]"
+            role="status"
+            aria-live="polite"
+          >
+            <AppIcon
+              name="lucide:loader-circle"
+              :size="13"
+              class="text-accent animate-spin"
             />
-          </template>
-          <template #default="{ tab }">
-            <div
-              v-if="tab.kind === 'query'"
-              class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center border-b px-2.5 py-1"
-            >
-              <DatabaseActions :tab="tab" />
-            </div>
-            <DatabaseQueryPane
-              v-if="tab.kind === 'query'"
-              :ref="editor => setEditor(tab.id, editor)"
-              v-model="tab.sql"
-              v-model:ratio="queryEditorRatio"
-              :database-kind="databaseKind"
-              :database-name="tab.database"
-              :execution="state.queryResults[tab.id]?.execution ?? null"
-              :error="state.queryResults[tab.id]?.error ?? ''"
-              :loading="
-                state.runningQueryId === tab.id &&
-                (queryLoading || state.preparingQuery)
-              "
-              :suggestions="sqlSuggestions"
-              @update:model-value="
-                value => {
-                  if (tab.savedQueryId)
-                    updateSavedQuery(tab.savedQueryId, { sql: value })
-                }
-              "
-              @run="sql => runQuery(sql, tab.id)"
-              @save="saveQueryTab(tab.id)"
-              @ask-agent="askAgent"
-            />
-            <DatabaseTableView
-              v-else-if="
-                tab.kind === 'object' &&
-                (tab.object.kind === 'table' || tab.object.kind === 'view')
-              "
-              :session-id="sessionId"
-              :database-kind="databaseKind"
-              :database-name="tabDatabase(tab)"
-              :object="tab.object"
-              :initial-panel="tab.panel"
-              :panel-nonce="tab.panelNonce"
-              @query="openQuery"
-            >
-              <template #toolbar>
+            {{ t('正在读取数据库结构…') }}
+          </div>
+
+          <!-- 连接中只铺骨架：等待时就能看出界面即将长成什么样，
+             真正需要用户操作的失败/未连接态才用居中卡片 -->
+          <DatabaseConnectingSkeleton v-if="status === 'connecting'" />
+          <DatabaseConnectionState
+            v-else-if="!connected"
+            v-model:password="password"
+            :status="status"
+            :needs-password="needsPassword"
+            :error="connectionError"
+            @connect="connect"
+          />
+          <DatabaseTabWorkspace
+            v-else
+            :active="displayedTabId"
+            :tabs="queryState.tabs"
+            :connection-id="connection?.id"
+            :workspace-host-id="workspaceHostId"
+          >
+            <template #empty>
+              <div
+                class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center justify-end border-b px-2.5 py-1"
+              >
+                <DatabaseActions />
+              </div>
+              <DatabaseTableOverview
+                :objects="overviewObjects"
+                :selected="Boolean(overviewSchema)"
+                :loading="objectsLoading"
+                :error="objectsError"
+                @open="openObject"
+                @inspect="inspectObject"
+                @ask-agent="askAgentStructure"
+                @query="createObjectQuery"
+                @copy="copyObjectName"
+                @rename-object="showNameDialog('rename-object', $event)"
+                @remove-object="requestDeleteObject"
+                @design-object="openTableDesignerForObject"
+                @truncate-object="requestTruncateTable"
+                @refresh="refreshAll"
+              />
+            </template>
+            <template #default="{ tab }">
+              <div
+                v-if="tab.kind === 'query'"
+                class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center border-b px-2.5 py-1"
+              >
                 <DatabaseActions :tab="tab" />
-              </template>
-            </DatabaseTableView>
-            <DatabaseRoutineView
-              v-else-if="tab.kind === 'object'"
-              :session-id="sessionId"
-              :database-kind="databaseKind"
-              :object="tab.object"
-              @query="openQuery"
-            >
-              <template #toolbar>
-                <DatabaseActions :tab="tab" />
-              </template>
-            </DatabaseRoutineView>
-            <DatabaseTableDesigner
-              v-else-if="tab.kind === 'table-designer'"
-              :session-id="sessionId"
-              :database-kind="databaseKind"
-              :schema="tab.schema"
-              :objects="objects"
-              :edit-table="tab.editTarget"
-              @query="openQuery"
-              @created="
-                (schema, name) => handleTableCreated(tab.id, schema, name)
-              "
-              @applied="
-                (schema, name) => handleTableApplied(tab.id, schema, name)
-              "
-              @dirty="value => setDesignerDirty(tab.id, value)"
-            >
-              <template #toolbar>
-                <DatabaseActions :tab="tab" />
-              </template>
-            </DatabaseTableDesigner>
-          </template>
-        </DatabaseTabWorkspace>
+              </div>
+              <DatabaseQueryPane
+                v-if="tab.kind === 'query'"
+                :ref="editor => setEditor(tab.id, editor)"
+                v-model="tab.sql"
+                v-model:ratio="queryEditorRatio"
+                :database-kind="databaseKind"
+                :database-name="tab.database"
+                :execution="state.queryResults[tab.id]?.execution ?? null"
+                :error="state.queryResults[tab.id]?.error ?? ''"
+                :loading="
+                  state.runningQueryId === tab.id &&
+                  (queryLoading || state.preparingQuery)
+                "
+                :suggestions="sqlSuggestions"
+                @update:model-value="
+                  value => {
+                    if (tab.savedQueryId)
+                      updateSavedQuery(tab.savedQueryId, { sql: value })
+                  }
+                "
+                @run="sql => runQuery(sql, tab.id)"
+                @save="saveQueryTab(tab.id)"
+                @ask-agent="askAgent"
+              />
+              <DatabaseTableView
+                v-else-if="
+                  tab.kind === 'object' &&
+                  (tab.object.kind === 'table' || tab.object.kind === 'view')
+                "
+                :session-id="sessionId"
+                :database-kind="databaseKind"
+                :database-name="tabDatabase(tab)"
+                :object="tab.object"
+                :initial-panel="tab.panel"
+                :panel-nonce="tab.panelNonce"
+                @query="openQuery"
+              >
+                <template #toolbar>
+                  <DatabaseActions :tab="tab" />
+                </template>
+              </DatabaseTableView>
+              <DatabaseRoutineView
+                v-else-if="tab.kind === 'object'"
+                :session-id="sessionId"
+                :database-kind="databaseKind"
+                :object="tab.object"
+                @query="openQuery"
+              >
+                <template #toolbar>
+                  <DatabaseActions :tab="tab" />
+                </template>
+              </DatabaseRoutineView>
+              <DatabaseTableDesigner
+                v-else-if="tab.kind === 'table-designer'"
+                :session-id="sessionId"
+                :database-kind="databaseKind"
+                :schema="tab.schema"
+                :objects="objects"
+                :edit-table="tab.editTarget"
+                @query="openQuery"
+                @created="
+                  (schema, name) => handleTableCreated(tab.id, schema, name)
+                "
+                @applied="
+                  (schema, name) => handleTableApplied(tab.id, schema, name)
+                "
+                @dirty="value => setDesignerDirty(tab.id, value)"
+              >
+                <template #toolbar>
+                  <DatabaseActions :tab="tab" />
+                </template>
+              </DatabaseTableDesigner>
+            </template>
+          </DatabaseTabWorkspace>
+        </div>
       </div>
       <AppSidePane
         :open="agentOpen"

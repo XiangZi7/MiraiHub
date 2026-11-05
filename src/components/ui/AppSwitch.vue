@@ -84,11 +84,10 @@ const descriptionId = useId()
 }
 
 .app-switch-track-on {
-  border-color: color-mix(in oklch, var(--color-violet) 72%, white 6%);
+  border-color: var(--color-violet);
   background-color: var(--color-violet);
-  box-shadow:
-    inset 0 1px 0 var(--glass-highlight-strong),
-    0 3px 9px color-mix(in oklch, var(--color-violet) 20%, transparent);
+  box-shadow: 0 3px 9px
+    color-mix(in oklch, var(--color-violet) 20%, transparent);
 }
 
 .app-switch-thumb {
@@ -112,7 +111,7 @@ const descriptionId = useId()
 }
 
 .app-switch-input:focus-visible + .app-switch-track {
-  border-color: color-mix(in oklch, var(--color-violet) 62%, white 8%);
+  border-color: var(--color-violet);
   box-shadow: 0 0 0 3px
     color-mix(in oklch, var(--color-violet) 12%, transparent);
 }

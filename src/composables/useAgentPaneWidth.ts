@@ -1,11 +1,12 @@
 import { computed, toValue, type MaybeRefOrGetter, type Ref } from 'vue'
 import { useElementSize, useStorage } from '@vueuse/core'
 
-/** Remember the user's width while fitting both panes into the current container. */
+/** 按连接记住 AI 面板宽度；共享容器中可预留侧栏空间，避免挤占主内容的最小宽度。 */
 export function useAgentPaneWidth(
   container: Ref<HTMLElement | null>,
   kind: 'ssh' | 'database',
-  connectionId?: MaybeRefOrGetter<string | undefined>
+  connectionId?: MaybeRefOrGetter<string | undefined>,
+  reservedWidth: MaybeRefOrGetter<number> = 0
 ) {
   const key = computed(
     () =>
@@ -14,7 +15,7 @@ export function useAgentPaneWidth(
   const preferred = useStorage(key, 400)
   const { width: containerWidth } = useElementSize(container)
   const available = computed(() =>
-    Math.max(0, (containerWidth.value || 900) - 10)
+    Math.max(0, (containerWidth.value || 900) - toValue(reservedWidth) - 10)
   )
   const min = computed(() => Math.round(Math.min(280, available.value * 0.5)))
   const max = computed(() =>

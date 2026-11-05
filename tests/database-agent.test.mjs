@@ -145,22 +145,21 @@ test('database view initializes AI and hides cached connections without changing
           [],
           'Database setup must not fail before the AI panel can render'
         )
-        const pane = find(root, el =>
-          el.props.class?.split(' ').includes('pane')
-        )
+        const view = root.children.find(el => el.type === 'div')
+        assert.ok(view, 'The database view must have an element root')
         visible.value = false
         await nextTick()
         assert.equal(
-          pane.style.display,
+          view.style.display,
           'none',
           'Inactive database connections must not occupy space beside SSH'
         )
         visible.value = true
         await nextTick()
-        assert.notEqual(pane.style.display, 'none')
+        assert.notEqual(view.style.display, 'none')
         assert.equal(
-          find(root, el => el.props.class?.split(' ').includes('pane')),
-          pane,
+          root.children.find(el => el.type === 'div'),
+          view,
           'Switching tabs must reuse the cached database view'
         )
         assert.deepEqual(

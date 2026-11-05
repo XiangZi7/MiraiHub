@@ -116,7 +116,7 @@ const expired = computed(() => seconds.value === 0)
       ><input
         v-model="reviewed"
         type="checkbox"
-        class="mt-0.5 accent-amber-400"
+        class="accent-amber mt-0.5"
         :disabled="busy || expired"
       />
       {{ t('我已核对目标、完整命令及其影响') }}
@@ -142,11 +142,12 @@ const expired = computed(() => seconds.value === 0)
 <style scoped>
 .approval {
   user-select: text;
-  border: 1px solid #e9b45466;
-  background: #e9b4540a;
+  border: 1px solid
+    color-mix(in srgb, var(--color-amber) 40%, var(--color-line));
+  background: color-mix(in srgb, var(--color-amber) 5%, var(--color-panel));
   border-radius: 10px;
   padding: 14px;
-  color: #ebc478;
+  color: color-mix(in srgb, var(--color-amber) 70%, var(--color-txt));
 }
 .command {
   margin: 8px 0 12px;
@@ -158,10 +159,11 @@ const expired = computed(() => seconds.value === 0)
     transparent;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  background: #0006;
-  border: 1px solid #ffffff0c;
+  background: var(--color-terminal);
+  border: 1px solid var(--color-line);
   border-radius: 6px;
   color: var(--color-txt);
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
   unicode-bidi: plaintext;

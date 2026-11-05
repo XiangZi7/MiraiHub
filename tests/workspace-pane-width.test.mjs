@@ -145,3 +145,26 @@ test('Agent and machine panes expand beyond 720px while retaining a draggable wo
   assert.equal(machine.width.value, 1442)
   assert.equal(agent.width.value, 1442)
 })
+
+test('数据库共享布局为侧栏预留空间，窗口收窄后仍保留主区且不覆盖用户宽度偏好', async t => {
+  const { scope } = fixture(t)
+  const container = shallowRef({ width: 1200 })
+  const reserved = shallowRef(250)
+  const agent = scope.run(() =>
+    useAgentPaneWidth(container, 'database', 'with-sidebar', reserved)
+  )
+  agent.width.value = 800
+  assert.equal(agent.width.value, 800)
+  assert.equal(agent.max.value, 892)
+  sizes.get(container).value = 700
+  await nextTick()
+  assert.equal(agent.width.value, 392)
+  assert.equal(700 - reserved.value - agent.width.value - 10, 48)
+  sizes.get(container).value = 1200
+  await nextTick()
+  assert.equal(agent.width.value, 800)
+  reserved.value = 350
+  assert.equal(agent.width.value, 792)
+  reserved.value = 250
+  assert.equal(agent.width.value, 800)
+})
