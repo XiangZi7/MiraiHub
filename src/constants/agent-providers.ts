@@ -67,6 +67,7 @@ export function newAgentProfile(presetId = 'openai'): AgentProfileDraft {
     apiFormat: preset.apiFormat,
     baseUrl: preset.baseUrl,
     model: '',
+    pricing: { input: null, output: null, cached: null },
     apiKey: '',
     hasApiKey: false,
     clearKey: false,

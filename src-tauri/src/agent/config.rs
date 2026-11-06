@@ -4,9 +4,28 @@ use crate::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct Pricing {
+    pub input: Option<f64>,
+    pub output: Option<f64>,
+    pub cached: Option<f64>,
+}
+impl Pricing {
+    /// 只接受用户填写的非负单价，不内置可能过期的供应商报价。
+    fn validate(&self) -> AppResult<()> {
+        if [self.input, self.output, self.cached].into_iter().flatten().any(|value| !value.is_finite() || !(0.0..=1000000.0).contains(&value)) {
+            return Err(AppError::invalid_input("Token 单价必须是有效的非负数"));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub pricing: Pricing,
     #[serde(default)]
     pub limits: Limits,
     #[serde(default)]
@@ -20,6 +39,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            pricing: Pricing::default(),
             limits: Limits::default(),
             api_format: ApiFormat::Openai,
             enabled: false,
@@ -32,6 +52,7 @@ impl Default for Config {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicConfig {
+    pub pricing: Pricing,
     pub limits: Limits,
     pub id: String,
     pub name: String,
@@ -44,6 +65,7 @@ pub struct PublicConfig {
 impl Config {
     pub fn public(&self, id: &str, name: &str) -> PublicConfig {
         PublicConfig {
+            pricing: self.pricing.clone(),
             limits: self.limits,
             id: id.into(),
             name: name.into(),
@@ -239,6 +261,7 @@ pub(super) fn resolve_credentials(
     clear_key: bool,
 ) -> AppResult<Config> {
     next.limits.validate()?;
+    next.pricing.validate()?;
     next.base_url = next.base_url.trim().trim_end_matches('/').into();
     next.model = next.model.trim().into();
     next.api_key = next.api_key.trim().into();
@@ -885,6 +908,7 @@ mod http_tests {
             base_url: url,
             model: "mock-tool-model".into(),
             api_key: "test-placeholder-only".into(),
+            pricing: Pricing::default(),
         }
     }
     #[tokio::test]

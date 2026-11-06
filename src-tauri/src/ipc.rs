@@ -58,6 +58,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         agent::ai_set_approval_mode,
         agent::ai_step,
         agent::ai_respond,
+        agent::ai_retry_operation,
         agent::ai_cancel,
         agent::ai_forget,
         agent::history::ai_list_conversations,
@@ -85,6 +86,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         platform::skins::skin_directory,
         platform::skins::open_skin_directory,
         // ---------- SSH：会话 ----------
+        ssh::workspace_files::local_list_directory,
+        ssh::workspace_files::ssh_sync_scan,
         ssh::commands::ssh_connect,
         ssh::commands::ssh_disconnect,
         ssh::commands::ssh_list_sessions,

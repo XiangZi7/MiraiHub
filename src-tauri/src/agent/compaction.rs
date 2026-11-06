@@ -341,10 +341,11 @@ pub(super) async fn if_needed(
                 request.await
             };
             if let Ok(response) = &response {
-                metrics.lock().unwrap().record(
+                metrics.lock().unwrap().record_priced(
                     response,
                     config.api_format,
                     started.elapsed().as_millis() as u64,
+                &config.pricing,
                 );
             }
             response

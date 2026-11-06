@@ -118,6 +118,10 @@ const formatHelp: Record<AgentApiFormat, string> = {
       v-model="draft.limits"
       :disabled="disabled"
     />
+    <div v-if="draft.pricing" class="grid gap-3">
+      <p class="text-txt-2 text-xs">{{ t('每百万 Token 单价（USD，留空不估算费用）') }}</p>
+      <label v-for="field in (['input', 'output', 'cached'] as const)" :key="field" class="text-txt-3 grid grid-cols-2 items-center gap-2 text-xs">{{ t({input: '输入单价', output: '输出单价', cached: '缓存读取单价'}[field]) }}<input v-model.number="draft.pricing[field]" type="number" min="0" max="1000000" step="any" class="field" @change="draft.pricing[field] = typeof draft.pricing[field] === 'number' ? draft.pricing[field] : null" /></label>
+    </div>
   </fieldset>
 </template>
 <style scoped>

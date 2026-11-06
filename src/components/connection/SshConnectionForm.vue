@@ -60,6 +60,12 @@ const sections: Array<{ id: SectionId; label: string }> = [
   { id: 'proxy', label: 'Proxy' },
 ]
 
+// 跳板机引用已有连接，凭据仍随原连接管理，表单不复制密码。
+onMounted(async () => {
+  const connections = await connectionsStore.list()
+  jumpOptions.value = connections.filter(connection => isSshConnection(connection) && connection.id !== props.connectionId).map(connection => ({value: connection.id, label: `${connection.name} (${connection.username}@${connection.host})`}))
+})
+
 const authenticationOptions = [
   { value: 'password', label: 'Password' },
   { value: 'private-key', label: 'Private Key' },
@@ -86,7 +92,10 @@ const saving = shallowRef(false)
 const browsingPrivateKeys = shallowRef(false)
 const loadingConnection = shallowRef(Boolean(props.connectionId))
 const savePassword = shallowRef<boolean>(settings.rememberPasswords)
+const jumpOptions = shallowRef<{value: string; label: string}[]>([])
 const form = reactive({
+  // 按连接顺序排列的跳板主机
+  jumpHostIds: [] as string[],
   name: '',
   group: props.defaultGroup,
   host: '',
@@ -159,6 +168,7 @@ async function loadConnection(): Promise<void> {
         settings.auth.type === 'privateKey'
           ? (settings.auth.passphrase ?? '')
           : '',
+      jumpHostIds: settings.jumpHostIds?.slice() ?? [],
       proxyType: settings.proxy?.kind ?? 'none',
       proxyHost: settings.proxy?.host ?? '',
       proxyPort: settings.proxy ? String(settings.proxy.port) : '',
@@ -242,6 +252,7 @@ function buildConfig(): SshConfig {
     keepaliveSecs,
     verifyHostKey: settings.verifyHostKey,
     proxy: buildProxy(),
+    jumpHostIds: form.jumpHostIds.filter(Boolean),
   }
 }
 
@@ -415,6 +426,7 @@ async function saveConnection(): Promise<void> {
         terminalType: form.terminalType,
         startupCommand: form.startupCommand.trim(),
         proxy: buildProxy(),
+    jumpHostIds: form.jumpHostIds.filter(Boolean),
       },
     }
 
@@ -656,6 +668,12 @@ async function saveConnection(): Promise<void> {
             proxyOptions.map(option => ({ ...option, label: t(option.label) }))
           "
         />
+        <div class="col-span-full grid gap-3">
+          <p class="text-txt-2 text-xs">{{ t('跳板链（按顺序连接）') }}</p>
+          <div v-for="(_, index) in form.jumpHostIds" :key="index" class="flex items-end gap-2"><AppSelect v-model="form.jumpHostIds[index]" class="flex-1" :label="t('跳板主机') + ' ' + (index + 1)" :options="jumpOptions" /><AppButton size="sm" @click="form.jumpHostIds.splice(index, 1)">{{ t('移除') }}</AppButton></div>
+          <AppButton :disabled="form.jumpHostIds.length >= 5 || form.proxyType !== 'none'" @click="form.jumpHostIds.push('')">{{ t('添加跳板') }}</AppButton>
+          <p class="text-txt-3 text-xs">{{ t('选择已有 SSH 连接作为中转；代理只作用于第一跳。') }}</p>
+        </div>
         <template v-if="form.proxyType !== 'none'">
           <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
             <AppTextField

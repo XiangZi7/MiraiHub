@@ -74,6 +74,7 @@ const {
   refreshHistory,
   send,
   decide,
+  retryOperation,
   stop,
   clear,
   changeProfile,
@@ -522,6 +523,7 @@ watch(
             aria-live="polite"
           >
             <AgentTranscript
+                @retry-operation="retryOperation"
               :key="run.conversationId"
               :entries="run.entries"
               :busy="busy"

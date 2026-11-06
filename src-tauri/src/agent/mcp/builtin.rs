@@ -18,6 +18,9 @@ fn spec(name: &str, description: &str, properties: Value, required: Value) -> To
 pub fn specs(kind: &str) -> Vec<ToolSpec> {
     let mut tools = match kind {
         "ssh" => vec![
+            spec("tail_log", "Read the last 1-1000 lines of an absolute log path on the bound host. No writes.", json!({"path":{"type":"string"},"lines":{"type":"integer","minimum":1,"maximum":1000}}), json!(["path","lines"])),
+            spec("list_tunnels", "List SSH tunnels configured in this workspace. Read only.", json!({}), json!([])),
+            spec("hosts_status", "Compare fixed system status of 1-20 connected SSH session IDs. Read only. Obtain IDs from user context; never invent IDs.", json!({"sessions":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":20}}), json!(["sessions"])),
             spec(
                 "server_status",
                 "Run a fixed Linux read-only probe under the user's approval mode. No file contents, secrets or environment variables.",
@@ -34,6 +37,7 @@ pub fn specs(kind: &str) -> Vec<ToolSpec> {
             spec("propose_file_edit", "Replace an existing UTF-8 configuration file. Use only when the user asked to edit it. expected MUST match the complete LF-normalized original text from read_remote_file or an attached file. content is the complete replacement (max 64 KB). Backend shows a diff in Ask/Auto, checks original content, retains a backup, preserves BOM/line endings and verifies the write. Do not use shell redirection for text configuration edits. Does not reload services.", json!({"path":{"type":"string"},"expected":{"type":"string"},"content":{"type":"string"},"reason":{"type":"string"}}), json!(["path","expected","content","reason"])),
         ],
         "database" => vec![
+            spec("explain_sql", "Return optimizer plan for one SQL statement without ANALYZE and without executing it.", json!({"sql":{"type":"string"}}), json!(["sql"])),
             spec(
                 "database_schema",
                 "Read metadata only. Empty schema and table lists objects; supply both for column structure. No row data.",

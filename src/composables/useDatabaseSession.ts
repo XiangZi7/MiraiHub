@@ -126,7 +126,7 @@ export function useDatabaseSession(
     state.databasesLoading = true
     await databaseSwitch
     if (state.sessionId !== sessionId || version !== metadataGeneration) return
-    if (connection.value?.kind === 'postgresql')
+    if (connection.value?.kind !== 'mysql')
       state.selectedDatabase = state.session?.database ?? ''
     await Promise.all([refreshDatabases(), refreshObjects()])
   }
@@ -161,7 +161,7 @@ export function useDatabaseSession(
       setStatus('connected', session.sessionId)
       // MySQL 先只读取库名，用户选择后才读取对应库的对象。
       // PostgreSQL 需要先读取当前库的 schema，供侧栏选择。
-      if (target.kind === 'postgresql')
+      if (target.kind !== 'mysql')
         state.selectedDatabase = session.database
       await Promise.all([refreshDatabases(), refreshObjects()])
     } catch (error) {

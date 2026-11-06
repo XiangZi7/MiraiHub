@@ -15,9 +15,10 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import * as ssh from '@/api/ssh'
-import type { SshConfig, SshSessionStatus } from '@/types/ssh'
+import type { SshConfig, SshSessionStatus, SshRouteProgress } from '@/types/ssh'
 import { currentTerminalTheme } from '@/constants/terminal'
 import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
+import { recordOutput, recordResize } from '@/utils/terminal-recording'
 import {
   settingNumber,
   settingsSnapshot,
@@ -57,6 +58,8 @@ export function useSshTerminal() {
   const state = reactive({
     // 会话 id，未连接时为空
     sessionId: '',
+    // 当前连接请求的逐跳状态
+    route: [] as SshRouteProgress[],
     // 连接状态，驱动工具条上的状态点
     status: 'disconnected' as SshSessionStatus,
     // 连接失败或异常断开的原因
@@ -65,7 +68,7 @@ export function useSshTerminal() {
     inputLine: '',
   })
 
-  const { sessionId, status, error, inputLine } = toRefs(state)
+  const { sessionId, status, error, inputLine, route } = toRefs(state)
 
   // 事件订阅的取消函数，断开时逐个调用
   let unlisteners: UnlistenFn[] = []
@@ -104,6 +107,7 @@ export function useSshTerminal() {
 
     // 用户输入直接转发给远端。未连接时丢弃：
     // 否则在断开的终端里敲字会攒下一堆无处可去的 invoke
+    terminal.onResize(({ cols, rows }) => recordResize(terminal, cols, rows))
     terminal.onData(data => {
       // vim/top 等切到 alternate buffer 后，按键属于应用本身，不做 shell 补全。
       if (terminal.buffer.active.type === 'alternate') {
@@ -153,6 +157,7 @@ export function useSshTerminal() {
     if (state.sessionId) await disconnect()
 
     const currentOperation = ++operation
+    state.route = []
     state.status = 'connecting'
     state.error = ''
     state.inputLine = ''
@@ -160,7 +165,9 @@ export function useSshTerminal() {
     let id = ''
 
     try {
-      id = await ssh.connect(config)
+      id = await ssh.connect(config, progress => {
+        if (isActive(currentOperation)) state.route[progress.hop] = progress
+      })
 
       if (!isActive(currentOperation)) {
         await discardSession(id)
@@ -172,8 +179,11 @@ export function useSshTerminal() {
       // 先订阅再开 shell：反过来的话 shell 启动瞬间的输出（登录 banner、
       // 提示符）会在订阅建立前就推送出来，前几行就丢了
       const stopOutput = await ssh.onOutput(id, payload => {
-        if (state.sessionId === id)
-          terminal.write(ssh.decodeBase64(payload.data))
+        if (state.sessionId === id) {
+          const data = ssh.decodeBase64(payload.data)
+          recordOutput(terminal, data)
+          terminal.write(data)
+        }
       })
 
       if (!isActive(currentOperation)) {
@@ -374,6 +384,7 @@ export function useSshTerminal() {
 
   return {
     term,
+    route,
     sessionId,
     status,
     error,

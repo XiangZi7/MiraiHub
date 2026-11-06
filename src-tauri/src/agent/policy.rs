@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU8, Ordering};
 
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Risk { Low, Medium, High, Critical }
+
 #[derive(Clone, Copy, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[repr(u8)]
@@ -41,6 +45,7 @@ impl ApprovalMode {
                 // tools are approved one by one unless the user picked Full access.
                 Action::RedisCommand { .. }
                 | Action::Mcp { .. }
+                | Action::TailLog { .. }
                 | Action::FileRead { .. }
                 | Action::FileEdit { .. } => true,
                 _ => false,
@@ -59,6 +64,10 @@ impl ApprovalMode {
 
 #[derive(Clone, Debug)]
 pub enum Action {
+    Explain { sql: String },
+    TailLog { path: String, lines: usize },
+    ListTunnels,
+    HostsStatus { sessions: Vec<String> },
     AttachmentList {
         offset: usize,
     },
@@ -118,8 +127,33 @@ pub enum Action {
     },
 }
 impl Action {
+    /// 审批卡片展示的风险等级；只用后端原始参数判断，忽略模型描述。
+    pub fn risk(&self) -> Risk {
+        match self {
+            Self::Shell { command, .. } => {
+                let words: Vec<String> = command.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').map(str::to_ascii_lowercase).collect();
+                if words.iter().any(|w| matches!(w.as_str(), "rm" | "mkfs" | "dd" | "shutdown" | "reboot" | "poweroff" | "wipefs")) { Risk::Critical }
+                else if super::read_only::shell(command) { Risk::Low } else { Risk::High }
+            }
+            Self::Sql { sql, .. } => sql_risk(sql),
+            Self::RedisCommand { command, .. } => {
+                if command.split_whitespace().any(|w| matches!(w.trim_matches(['\'', '"']).to_ascii_uppercase().as_str(), "FLUSHALL" | "FLUSHDB" | "SHUTDOWN")) { Risk::Critical } else { Risk::High }
+            }
+            Self::FileEdit { .. } | Self::Mcp { .. } => Risk::High,
+            Self::FileRead { .. } | Self::TailLog { .. } => Risk::Medium,
+            _ => Risk::Low,
+        }
+    }
+    /// 记住授权仅匹配相同目标下的完整参数，不能放宽到任意 Shell 或 SQL。
+    pub fn permission_key(&self) -> Option<String> {
+        (self.risk() != Risk::Critical).then(|| format!("{}:{}", self.label(), self.approval_details().0))
+    }
     pub fn approval_details(&self) -> (String, String) {
         match self {
+            Self::Explain { sql } => (sql.clone(), "只生成执行计划，不运行 ANALYZE".into()),
+            Self::TailLog { path, lines } => (format!("tail -n {lines} -- {}", crate::ssh::shell::quote(path)), "读取日志尾部，最多 1000 行".into()),
+            Self::ListTunnels => ("list_tunnels".into(), "列出本机已配置的 SSH 隧道".into()),
+            Self::HostsStatus { sessions } => (json!({"sessions": sessions}).to_string(), "比较选定已连接主机的固定状态信息".into()),
             Self::AttachmentList { offset } => (
                 json!({"offset":offset,"limit":100}).to_string(),
                 "列出当前聊天中的本地附件".into(),
@@ -189,6 +223,10 @@ impl Action {
     }
     pub fn label(&self) -> &'static str {
         match self {
+            Self::Explain { .. } => "分析执行计划",
+            Self::TailLog { .. } => "读取日志尾部",
+            Self::ListTunnels => "列出 SSH 隧道",
+            Self::HostsStatus { .. } => "比较服务器状态",
             Self::AttachmentList { .. } => "列出聊天附件",
             Self::AttachmentRead { .. } => "读取聊天附件",
             Self::AttachmentSearch { .. } => "搜索聊天附件",
@@ -205,11 +243,74 @@ impl Action {
         }
     }
 }
+
+/// 按 SQL 词法识别危险语句，不把注释、字符串或子查询的 WHERE 当成外层条件。
+fn sql_risk(sql: &str) -> Risk {
+    let bytes = sql.as_bytes();
+    let mut index = 0;
+    let mut depth = 0usize;
+    let mut mutation = false;
+    let mut filtered = false;
+    let mut result = Risk::Low;
+    while index <= bytes.len() {
+        let ch = bytes.get(index).copied().unwrap_or(b';');
+        if ch == b';' && depth == 0 {
+            if mutation && !filtered { return Risk::Critical; }
+            mutation = false; filtered = false; index += 1; continue;
+        }
+        if ch == b'-' && bytes.get(index + 1) == Some(&b'-') || ch == b'#' {
+            while index < bytes.len() && bytes[index] != b'\n' { index += 1; }
+            continue;
+        }
+        if ch == b'/' && bytes.get(index + 1) == Some(&b'*') {
+            index += 2;
+            while index + 1 < bytes.len() && &bytes[index..index + 2] != b"*/" { index += 1; }
+            index += 2; continue;
+        }
+        if matches!(ch, b'\'' | b'"' | b'`' | b'[') {
+            let delimiter = if ch == b'[' { b']' } else { ch };
+            index += 1;
+            while index < bytes.len() {
+                if bytes[index] == b'\\' { index += 2; continue; }
+                if bytes[index] == delimiter {
+                    index += 1;
+                    if bytes.get(index) != Some(&delimiter) { break; }
+                }
+                index += 1;
+            }
+            continue;
+        }
+        if ch == b'(' { depth += 1; }
+        if ch == b')' { depth = depth.saturating_sub(1); }
+        if ch.is_ascii_alphabetic() || ch == b'_' {
+            let start = index;
+            while index < bytes.len() && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_') { index += 1; }
+            match sql[start..index].to_ascii_uppercase().as_str() {
+                "DROP" | "TRUNCATE" => return Risk::Critical,
+                "UPDATE" | "DELETE" if depth == 0 => { mutation = true; result = Risk::High; }
+                "INSERT" | "ALTER" | "CREATE" | "GRANT" | "REVOKE" => result = Risk::High,
+                "WHERE" if depth == 0 => filtered = true,
+                _ => {}
+            }
+        } else { index += 1; }
+    }
+    if result == Risk::Low && !super::read_only::sql(sql) { Risk::Medium } else { result }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Probe {
     probe: String,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Explain { sql: String }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TailLog { path: String, lines: usize }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostsStatus { sessions: Vec<String> }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AttachmentList {
@@ -319,6 +420,26 @@ pub fn classify(
         return Err(AppError::invalid_input("工具参数过长"));
     }
     match (kind, name) {
+        ("database", "explain_sql") => {
+            let a: Explain = parse(args)?;
+            bounded(&a.sql, 8192)?;
+            Ok(Action::Explain { sql: a.sql })
+        }
+        ("ssh", "tail_log") => {
+            let a: TailLog = parse(args)?;
+            bounded(&a.path, 4096)?;
+            if !a.path.starts_with('/') || !(1..=1000).contains(&a.lines) { return Err(AppError::invalid_input("日志路径或行数无效")); }
+            Ok(Action::TailLog { path: a.path, lines: a.lines })
+        }
+        ("ssh", "list_tunnels") => {
+            let _: std::collections::HashMap<String, String> = parse(args)?;
+            Ok(Action::ListTunnels)
+        }
+        ("ssh", "hosts_status") => {
+            let a: HostsStatus = parse(args)?;
+            if a.sessions.is_empty() || a.sessions.len() > 20 { return Err(AppError::invalid_input("请选择 1 到 20 个已连接会话")); }
+            Ok(Action::HostsStatus { sessions: a.sessions })
+        }
         ("ssh" | "database" | "redis", "list_attachments") => {
             let a: AttachmentList = parse(args)?;
             if a.offset > 1_000_000 {

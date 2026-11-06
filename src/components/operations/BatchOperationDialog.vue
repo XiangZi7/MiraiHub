@@ -12,12 +12,13 @@ import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import { copyText } from '@/utils/clipboard'
 
 const { t } = useI18n()
+const props = defineProps<{ initialCommand?: string }>()
 const emit = defineEmits<{ close: [] }>()
 // 预览后只执行后端锁定的计划，编辑表单不会改变已审批内容。
 const state = reactive({
   sessions: [] as SshSessionInfo[],
   selected: [] as string[],
-  command: '',
+  command: props.initialCommand ?? '',
   plan: null as api.BatchPlan | null,
   busy: false,
   polling: false,

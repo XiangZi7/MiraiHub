@@ -303,10 +303,11 @@ pub(super) async fn completion(
             }
         };
         if let Ok(response) = &result {
-            run.metrics.record(
+            run.metrics.record_priced(
                 response,
                 run.config.api_format,
                 request_started.elapsed().as_millis() as u64,
+                &run.config.pricing,
             );
             run.metrics.last_input_bytes = Some(input_bytes);
             run.metrics.context_input_tokens = run.metrics.last_input_tokens;

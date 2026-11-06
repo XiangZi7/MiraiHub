@@ -11,7 +11,8 @@ use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use std::io::SeekFrom;
 use tokio::sync::Semaphore;
 
 use super::error::{SshError, SshResult};
@@ -549,10 +550,22 @@ async fn upload_inner(
     total: u64,
     destination_exists: bool,
 ) -> SshResult<()> {
-    // 直接以截断方式创建临时文件，不必先探测残留；同一任务 ID 的残留会被覆盖掉。
+    // 续传只使用同一任务的临时文件，逐字节验证已传前缀后才从断点继续。
     let temp_path = remote_temp_path(&request.remote_path, &request.task_id);
     let mut source = tokio::fs::File::open(&request.local_path).await?;
-    let mut target = sftp.create(&temp_path).await.map_err(sftp_error)?;
+    let partial = if request.resume { sftp.symlink_metadata(&temp_path).await.ok() } else { None };
+    if partial.as_ref().is_some_and(|meta| !meta.is_regular()) { return Err(SshError::InvalidInput("续传临时路径不是普通文件".into())); }
+    let offset = partial.and_then(|meta| meta.size).unwrap_or(0);
+    if offset > source.metadata().await?.len() { return Err(SshError::InvalidInput("源文件已变化，不能续传".into())); }
+    let mut target = if offset > 0 {
+        sftp.open_with_flags(&temp_path, OpenFlags::READ | OpenFlags::WRITE).await.map_err(sftp_error)?
+    } else { sftp.create(&temp_path).await.map_err(sftp_error)? };
+    if offset > 0 {
+        verify_prefix(&mut source, &mut target, offset, control).await?;
+        source.seek(SeekFrom::Start(offset)).await?;
+        target.seek(SeekFrom::Start(offset)).await?;
+        control.add_transferred(offset);
+    }
     let result: SshResult<()> = async {
         let mut buffer = vec![0_u8; upload_buffer_size(request.buffer_size_kb)];
 
@@ -605,7 +618,9 @@ async fn upload_inner(
 
     if result.is_err() {
         let _ = target.shutdown().await;
-        let _ = sftp.remove_file(&temp_path).await;
+        if !request.resume || matches!(result, Err(SshError::TransferCancelled)) {
+            let _ = sftp.remove_file(&temp_path).await;
+        }
     }
     result
 }
@@ -704,16 +719,22 @@ async fn download_inner(
     control: &TransferControl,
     total: u64,
 ) -> SshResult<()> {
-    if temp_path.exists() {
-        let _ = tokio::fs::remove_file(temp_path).await;
-    }
-
+    let partial = if request.resume { tokio::fs::symlink_metadata(temp_path).await.ok() } else { None };
+    if partial.as_ref().is_some_and(|meta| !meta.is_file() || meta.is_symlink()) { return Err(SshError::InvalidInput("续传临时路径不是普通文件".into())); }
+    let offset = partial.map(|meta| meta.len()).unwrap_or(0);
+    if offset > total { return Err(SshError::InvalidInput("源文件已变化，不能续传".into())); }
     let mut source = sftp.open(&request.remote_path).await.map_err(sftp_error)?;
-    let mut target = tokio::fs::File::create(temp_path).await?;
+    let mut target = tokio::fs::OpenOptions::new().create(true).truncate(offset == 0).read(true).write(true).open(temp_path).await?;
+    if offset > 0 {
+        verify_prefix(&mut source, &mut target, offset, control).await?;
+        source.seek(SeekFrom::Start(offset)).await?;
+        target.seek(SeekFrom::Start(offset)).await?;
+    }
     let result: SshResult<()> = async {
         let mut buffer = vec![0_u8; transfer_buffer_size(request.buffer_size_kb)];
-        let mut transferred = 0_u64;
-        emit_transfer(app, TransferEvent::progress(&request.task_id, 0, total));
+        let mut transferred = offset;
+        control.set_transferred(offset);
+        emit_transfer(app, TransferEvent::progress(&request.task_id, offset, total));
 
         loop {
             control.checkpoint().await?;
@@ -760,10 +781,26 @@ async fn download_inner(
     }
     .await;
 
-    if result.is_err() {
+    if result.is_err() && (!request.resume || matches!(result, Err(SshError::TransferCancelled))) {
+        drop(target);
         let _ = tokio::fs::remove_file(temp_path).await;
     }
     result
+}
+
+/// 校验已有内容确实来自当前源文件，源已变化时保留断点并拒绝混合写入。
+async fn verify_prefix<A: AsyncRead + Unpin, B: AsyncRead + Unpin>(source: &mut A, target: &mut B, mut remaining: u64, control: &TransferControl) -> SshResult<()> {
+    let mut left = vec![0u8; 65536];
+    let mut right = vec![0u8; 65536];
+    while remaining > 0 {
+        control.checkpoint().await?;
+        let count = remaining.min(left.len() as u64) as usize;
+        source.read_exact(&mut left[..count]).await?;
+        target.read_exact(&mut right[..count]).await?;
+        if left[..count] != right[..count] { return Err(SshError::InvalidInput("源文件内容已变化，不能续传；请重新创建传输任务".into())); }
+        remaining -= count as u64;
+    }
+    Ok(())
 }
 
 fn validate_remote_path(path: &str) -> SshResult<()> {

@@ -25,6 +25,7 @@ export interface FileTransferTask {
   completedAt: number
   /** 数据库导出共用传输队列，读取数据时不伪造字节百分比。 */
   kind?: 'database-export' | 'database-import'
+  resumable?: boolean
   phase?: 'reading' | 'encoding' | 'writing'
   processedRows?: number
 }
@@ -120,6 +121,7 @@ export const useTransfersStore = defineStore('transfers', () => {
   }
 
   const pendingJobs: PendingJob[] = []
+  const retryJobs = new Map<string, PendingJob>()
   const exportControls = new Map<
     string,
     { controller: AbortController; cancelNative?: () => Promise<void> }
@@ -236,10 +238,12 @@ export const useTransfersStore = defineStore('transfers', () => {
         continue
       }
 
+      if (!task.kind) { retryJobs.set(task.id, job); task.resumable = true }
       runningJobs += 1
       if (task.kind) runningDatabaseJobs += 1
       task.status = 'running'
       void job.run().finally(() => {
+        if (task.status !== 'error') { retryJobs.delete(task.id); task.resumable = false }
         runningJobs -= 1
         if (task.kind) runningDatabaseJobs -= 1
         pumpQueue()
@@ -302,6 +306,7 @@ export const useTransfersStore = defineStore('transfers', () => {
               localPath: options.localPath,
               remotePath: options.remotePath,
               overwrite: options.overwrite ?? false,
+              resume: true,
               bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
               concurrency: Math.min(
                 32,
@@ -355,6 +360,7 @@ export const useTransfersStore = defineStore('transfers', () => {
               remotePath: options.remotePath,
               localPath: options.localPath ?? '',
               overwrite: options.overwrite ?? false,
+              resume: true,
               bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
             })
             if (findTask(task.id)?.status === 'cancelled') {
@@ -396,9 +402,19 @@ export const useTransfersStore = defineStore('transfers', () => {
     }
   }
 
+  /** 失败任务重用原任务 ID 和临时文件，暂停任务继续已有网络通道。 */
   async function resume(taskId: string): Promise<void> {
     const task = findTask(taskId)
-    if (!task || task.status !== 'paused') return
+    if (!task) return
+    if (task.status === 'error') {
+      const job = retryJobs.get(taskId)
+      if (!job) return
+      task.status = 'queued'; task.error = ''; task.completedAt = 0
+      pendingJobs.push(job)
+      pumpQueue()
+      return
+    }
+    if (task.status !== 'paused') return
     task.status = 'running'
     try {
       await ssh.resumeTransfer(taskId)

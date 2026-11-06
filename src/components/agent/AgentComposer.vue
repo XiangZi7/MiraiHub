@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, toRefs, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type {
   AgentApprovalMode,
@@ -21,6 +21,10 @@ import AgentContextPreview from '@/components/agent/AgentContextPreview.vue'
 import AgentUsageStats from '@/components/agent/AgentUsageStats.vue'
 import { useAgentErrorToasts } from '@/composables/useAgentErrorToasts'
 import { useAgentDictation } from '@/composables/useAgentDictation'
+
+import AgentPromptsDialog from '@/components/agent/agent-prompts-dialog.vue'
+import { listAgentPrompts, type AgentPrompt } from '@/api/agent-prompts'
+import { toast } from '@/composables/useToast'
 
 const props = withDefaults(
   defineProps<{
@@ -73,6 +77,25 @@ useAgentErrorToasts(
   () => props.profileError,
   speechError
 )
+// 响应式状态
+const state = reactive({
+  // 已保存的提示词模板
+  prompts: [] as AgentPrompt[],
+  // 当前键盘选中的斜杠菜单项
+  promptIndex: 0,
+  // 模板管理弹窗
+  managingPrompts: false,
+  // Escape 关闭当前菜单，直到再次修改输入
+  promptsDismissed: false,
+})
+const { managingPrompts, promptIndex } = toRefs(state)
+const promptOptions = computed(() => !state.promptsDismissed && prompt.value.startsWith('/') && !/\s/u.test(prompt.value) ? state.prompts.filter(item => item.name.toLowerCase().startsWith(prompt.value.toLowerCase())) : [])
+/** 重新读取本地模板，跨窗口改动在下一次打开菜单时生效。 */
+function refreshPrompts(): void { try { state.prompts = listAgentPrompts() } catch (error) { toast.error(String(error)) } }
+/** 用模板回填草稿，只填写内容，不触发自动发送。 */
+function choosePrompt(item: AgentPrompt): void { prompt.value = item.content; void nextTick(() => textarea.value?.focus()) }
+onMounted(refreshPrompts)
+watch(prompt, value => { state.promptsDismissed = false; state.promptIndex = 0; if (value === '/') refreshPrompts() })
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
 defineExpose({ focus: () => textarea.value?.focus() })
@@ -89,6 +112,11 @@ const placeholder = computed(() =>
 )
 // Enter 提交引导或普通消息，Shift+Enter 保留换行；兼容输入法组合输入。
 function keydown(event: KeyboardEvent): void {
+  if (!event.isComposing && promptOptions.value.length) {
+    if (event.key === 'Escape') { event.preventDefault(); state.promptsDismissed = true; return }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); state.promptIndex = (state.promptIndex + (event.key === 'ArrowDown' ? 1 : -1) + promptOptions.value.length) % promptOptions.value.length; return }
+    if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') { event.preventDefault(); choosePrompt(promptOptions.value[state.promptIndex]!); return }
+  }
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault()
     event.stopPropagation()
@@ -132,6 +160,11 @@ watch(
     data-agent-composer
     class="min-w-0 shrink-0 px-3 pt-2 pb-2"
   >
+    <div v-if="promptOptions.length && !disabled && !busy" class="border-line bg-panel mb-2 grid gap-1 rounded-lg border p-1" role="listbox" :aria-label="t('斜杠命令')">
+      <button v-for="(item, index) in promptOptions" :key="item.id" type="button" role="option" :aria-selected="index === promptIndex" :class="index === promptIndex && 'bg-hover'" class="text-txt-2 flex gap-2 rounded px-2 py-1.5 text-left text-xs" @click="choosePrompt(item)"><span class="text-accent shrink-0">{{ item.name }}</span><span class="truncate">{{ item.content }}</span></button>
+      <button type="button" class="text-txt-3 p-2 text-left text-xs" @click="managingPrompts = true">{{ t('管理提示词模板') }}</button>
+    </div>
+    <Teleport to="body"><AgentPromptsDialog v-if="managingPrompts" @close="managingPrompts = false" @saved="refreshPrompts" /></Teleport>
     <ul
       v-if="guidance?.length"
       class="border-line bg-card mb-1.5 max-h-32 overflow-auto rounded-xl border px-2 py-1"

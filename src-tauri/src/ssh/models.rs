@@ -84,6 +84,8 @@ impl ProxyConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshConfig {
+    #[serde(default)]
+    pub jump_hosts: Vec<SshConfig>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -187,6 +189,8 @@ pub struct UploadFileRequest {
     pub local_path: String,
     pub remote_path: String,
     pub overwrite: bool,
+    #[serde(default)]
+    pub resume: bool,
     #[serde(default = "default_transfer_buffer_size_kb")]
     pub buffer_size_kb: usize,
     #[serde(default = "default_upload_concurrency")]
@@ -205,6 +209,8 @@ pub struct DownloadFileRequest {
     pub remote_path: String,
     pub local_path: String,
     pub overwrite: bool,
+    #[serde(default)]
+    pub resume: bool,
     #[serde(default = "default_transfer_buffer_size_kb")]
     pub buffer_size_kb: usize,
 }

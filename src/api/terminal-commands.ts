@@ -35,17 +35,24 @@ export function list(): TerminalCommand[] {
       seen.add(item.id)
       return true
     })
-    .map(({ id, name, command }) => ({ id, name, command }))
+    .map(({ id, name, command, folder, tags, description }) => ({
+      id, name, command,
+      ...(typeof folder === 'string' && folder ? { folder: folder.slice(0, 80) } : {}),
+      ...(Array.isArray(tags) ? { tags: tags.filter(tag => typeof tag === 'string').slice(0, 20).map(tag => tag.slice(0, 40)) } : {}),
+      ...(typeof description === 'string' && description ? { description: description.slice(0, 500) } : {}),
+    }))
 }
 function write(items: TerminalCommand[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT))
 }
-export function save(name: string, command: string, id?: string): void {
+/** 保存片段及可选分组、标签，兼容旧版仅包含名称和命令的数据。 */
+export function save(name: string, command: string, id?: string, metadata: Pick<TerminalCommand, 'folder' | 'tags' | 'description'> = {}): void {
   const item = {
     id: id ?? `command-${crypto.randomUUID()}`,
     name: name.trim(),
     command: command.trim(),
+    ...metadata,
   }
   if (!validCommand(item))
     throw new Error(

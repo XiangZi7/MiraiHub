@@ -22,10 +22,12 @@ use super::{events, files, keys, stats};
 /// 建立连接，返回会话 id。
 #[tauri::command]
 pub async fn ssh_connect(
+    app: AppHandle,
     manager: State<'_, SessionManager>,
     config: SshConfig,
+    request_id: Option<String>,
 ) -> AppResult<String> {
-    Ok(manager.connect(config).await?)
+    Ok(if let Some(request_id) = request_id { manager.connect_report(config, app, request_id).await? } else { manager.connect(config).await? })
 }
 
 /// 断开会话。

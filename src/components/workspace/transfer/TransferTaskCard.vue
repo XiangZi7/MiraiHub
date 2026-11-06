@@ -216,10 +216,10 @@ const exportPhase = computed(() => {
         />
       </button>
       <button
-        v-else-if="task.status === 'paused'"
+        v-else-if="task.status === 'paused' || (task.status === 'error' && task.resumable)"
         type="button"
         class="transfer-action"
-        :title="t('继续')"
+        :title="task.status === 'error' ? t('校验并续传') : t('继续')"
         :aria-label="t('Resume transfer')"
         @click="emit('resume', task.id)"
       >

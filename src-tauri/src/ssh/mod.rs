@@ -38,3 +38,5 @@ pub use transfers::TransferManager;
 pub mod batch;
 pub mod editor;
 pub mod tunnels;
+
+pub mod workspace_files;

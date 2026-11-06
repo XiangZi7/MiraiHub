@@ -19,7 +19,7 @@ const props = defineProps<{
   progress: AgentProgress | null
   canApplySql?: boolean
 }>()
-const emit = defineEmits<{ applySql: [sql: string] }>()
+const emit = defineEmits<{ applySql: [sql: string]; retryOperation: [id: string] }>()
 const { t } = useI18n()
 const turns = computed(() =>
   buildAgentTranscript(
@@ -95,6 +95,7 @@ const turns = computed(() =>
           (index === turns.length - 1 && (busy || awaitingApproval))
         "
         :entries="turn.activity"
+        @retry-operation="emit('retryOperation', $event)"
         :progress="index === turns.length - 1 ? progress : null"
         :busy="index === turns.length - 1 && busy"
         :can-apply-sql="canApplySql"

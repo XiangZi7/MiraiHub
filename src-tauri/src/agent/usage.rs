@@ -9,6 +9,11 @@ pub(super) struct Metrics {
     pub context_pressure_limit: Option<usize>,
     pub requests: u64,
     pub total_tokens: u64,
+    pub cost: f64,
+    pub priced_reports: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub split_reports: u64,
     pub token_reports: u64,
     pub cached_tokens: u64,
     pub cache_input_tokens: u64,
@@ -22,6 +27,16 @@ pub(super) struct Metrics {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    #[serde(default)]
+    pub output_tokens: Option<u64>,
+    #[serde(default)]
+    pub cached_tokens: Option<u64>,
+    #[serde(default)]
+    pub estimated_cost: Option<f64>,
+    #[serde(default)]
+    pub estimated_turn_cost: Option<f64>,
     pub rounds: usize,
     pub steps: u64,
     pub total_tokens: Option<u64>,
@@ -60,6 +75,11 @@ impl Metrics {
             read("prompt_tokens").or_else(|| read("input_tokens"))
         };
         let output = read("completion_tokens").or_else(|| read("output_tokens"));
+        if let Some((input, output)) = input.zip(output) {
+            self.input_tokens = self.input_tokens.saturating_add(input);
+            self.output_tokens = self.output_tokens.saturating_add(output);
+            self.split_reports = self.split_reports.saturating_add(1);
+        }
         let total = input
             .zip(output)
             .map(|(a, b)| a.saturating_add(b))
@@ -78,6 +98,27 @@ impl Metrics {
             .filter(|_| elapsed_ms > 0)
             .map(|output| output as f64 * 1000.0 / elapsed_ms as f64);
     }
+    /// 按每次请求当时的模型单价累加，切换模型不会重算历史用量。
+    pub fn record_priced(&mut self, response: &Value, format: ApiFormat, elapsed_ms: u64, pricing: &super::config::Pricing) {
+        self.record(response, format, elapsed_ms);
+        let usage = &response["usage"];
+        let input = if format == ApiFormat::Anthropic {
+            usage["input_tokens"].as_u64().map(|value| value.saturating_add(usage["cache_read_input_tokens"].as_u64().unwrap_or(0)))
+        } else { usage["prompt_tokens"].as_u64().or_else(|| usage["input_tokens"].as_u64()) };
+        let output = usage["completion_tokens"].as_u64().or_else(|| usage["output_tokens"].as_u64());
+        let cached = usage["prompt_cache_hit_tokens"].as_u64().or_else(|| usage["prompt_tokens_details"]["cached_tokens"].as_u64()).or_else(|| usage["input_tokens_details"]["cached_tokens"].as_u64()).or_else(|| usage["cache_read_input_tokens"].as_u64());
+        if usage["cache_creation_input_tokens"].as_u64().unwrap_or(0) > 0 { return; }
+        if let (Some(input), Some(output), Some(input_price), Some(output_price)) = (input, output, pricing.input, pricing.output) {
+            let cached = cached.or_else(|| (pricing.cached == Some(input_price)).then_some(0));
+            if let Some(cached) = cached {
+                let cached = cached.min(input);
+                if cached == 0 || pricing.cached.is_some() {
+                    self.cost += ((input - cached) as f64 * input_price + cached as f64 * pricing.cached.unwrap_or(0.0) + output as f64 * output_price) / 1000000.0;
+                    self.priced_reports = self.priced_reports.saturating_add(1);
+                }
+            }
+        }
+    }
     pub fn snapshot(
         &self,
         entries: &[Entry],
@@ -85,6 +126,11 @@ impl Metrics {
         context_limit_bytes: usize,
     ) -> Snapshot {
         Snapshot {
+            input_tokens: (self.split_reports > 0).then_some(self.input_tokens),
+            output_tokens: (self.split_reports > 0).then_some(self.output_tokens),
+            cached_tokens: (self.cache_reports > 0).then_some(self.cached_tokens),
+            estimated_cost: (self.priced_reports > 0 && self.priced_reports == self.requests && self.token_reports == self.requests).then_some(self.cost),
+            estimated_turn_cost: None,
             rounds: entries.iter().filter(|entry| entry.role == "user").count(),
             steps: self.requests,
             total_tokens: (self.token_reports > 0).then_some(self.total_tokens),

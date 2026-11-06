@@ -41,6 +41,7 @@ import RemoteFileList from './RemoteFileList.vue'
 import RemotePathInput from './RemotePathInput.vue'
 import RemoteFileTransferDialog from './RemoteFileTransferDialog.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
+import LocalFilePane from '@/components/workspace/local-file-pane.vue'
 import { formatBytes } from '@/utils/format'
 
 const { t } = useI18n()
@@ -78,6 +79,7 @@ const {
 } = useRemoteFiles(toRef(props, 'sessionId'))
 
 const { save: saveSettings } = useSettings()
+const dualPane = shallowRef(false)
 const filterText = shallowRef('')
 const createMenuTrigger = shallowRef<HTMLElement | null>(null)
 function toggleHidden(): void {
@@ -702,6 +704,13 @@ async function confirmDelete(): Promise<void> {
 }
 
 function handleBrowserDrop(event: DragEvent): void {
+  const internal = event.dataTransfer?.getData('application/x-miraihub-local')
+  if (internal) {
+    browserDragging.value = false
+    try { const paths: unknown = JSON.parse(internal); if (Array.isArray(paths) && paths.every(path => typeof path === 'string')) void uploadPaths(paths) } catch (error) { toast.error(String(error)) }
+    return
+  }
+
   browserDragging.value = false
   const paths = [...(event.dataTransfer?.files ?? [])]
     .map(file => (file as File & { path?: string }).path ?? '')
@@ -720,6 +729,10 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     @dragleave.prevent="browserDragging = false"
     @drop.prevent="handleBrowserDrop"
   >
+    <div class="border-line-soft flex shrink-0 justify-end border-b px-2"><IconButton icon="lucide:columns-2" :size="14" :title="t('本地与远端双栏')" :class="dualPane && 'text-accent'" @click="dualPane = !dualPane" /></div>
+    <div class="flex min-h-0 flex-1">
+    <LocalFilePane v-if="dualPane" :key="sessionId" :session-id="sessionId" :remote-path="path" @upload="uploadPaths" @refreshed="refresh" />
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
     <div
       class="scroll-none border-line-soft flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2"
     >
@@ -854,6 +867,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
 
     <RemoteFileList
       :files="visibleEntries"
+      :drag-session-id="dualPane ? sessionId : undefined"
       :selected="selected"
       :selection="selection"
       @select="selectFiles"
@@ -884,6 +898,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       />
     </RemoteFileList>
 
+    </div></div>
     <footer
       class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px]"
     >

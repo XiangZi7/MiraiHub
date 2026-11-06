@@ -15,7 +15,11 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
-import TerminalCommandEditor from './TerminalCommandEditor.vue'
+import TerminalCommandEditor from '@/components/workspace/TerminalCommandEditor.vue'
+import TerminalSnippetDialog from '@/components/workspace/terminal-snippet-dialog.vue'
+import BatchOperationDialog from '@/components/operations/BatchOperationDialog.vue'
+import { snippetVariables } from '@/utils/terminal-snippets'
+import { toast } from '@/composables/useToast'
 import { useTerminalCommandsStore } from '@/stores/terminal-commands'
 import { terminalCommandLabel } from '@/constants/terminal-commands'
 import { useTabReorder } from '@/composables/useTabReorder'
@@ -35,6 +39,12 @@ const titleId = useId()
 const state = reactive({
   // 是否显示常用指令菜单
   open: false,
+  // 名称、命令、分组和标签的检索词
+  search: '',
+  // 需要用户填写变量的片段
+  snippet: null as TerminalCommand | null,
+  // 等待批量预览的完整命令
+  batchCommand: '',
   // 是否显示编辑、排序和删除按钮
   managing: false,
   // 是否显示指令编辑表单
@@ -52,7 +62,11 @@ const state = reactive({
   // 浮层适配窗口后的最大高度
   maxHeight: 500,
 })
-const { open, managing, editing, current, error } = toRefs(state)
+const { open, managing, editing, current, error, search, snippet, batchCommand } = toRefs(state)
+const filteredCommands = computed(() => {
+  const words = state.search.toLowerCase().trim().split(/\s+/u).filter(Boolean)
+  return commands.value.filter(item => words.every(word => `${item.name} ${item.command} ${item.folder ?? ""} ${item.tags?.join(" ") ?? ""} ${item.description ?? ""}`.toLowerCase().includes(word)))
+})
 const style = computed(() => ({
   left: `${state.left}px`,
   top: `${state.top}px`,
@@ -60,13 +74,13 @@ const style = computed(() => ({
   maxHeight: `${state.maxHeight}px`,
 }))
 const reorder = useTabReorder({
-  tabs: () => commands.value,
+  tabs: () => filteredCommands.value,
   container: () => (state.open && !state.editing ? commandList.value : null),
   axis: 'vertical',
   handle: '[data-command-drag-handle]',
   onReorder: (from, to) => {
-    const source = commands.value[from]
-    const target = commands.value[to]
+    const source = filteredCommands.value[from]
+    const target = filteredCommands.value[to]
     if (source && target)
       update(() =>
         store.reorder(source.id, target.id, from < to ? 'after' : 'before')
@@ -116,14 +130,15 @@ function edit(command: TerminalCommand | null): void {
   state.editing = true
   state.error = ''
 }
-function save(name: string, command: string): void {
+/** 保存片段名称、正文和分类，错误通过公共通知展示。 */
+function save(name: string, command: string, metadata: Pick<TerminalCommand, 'folder' | 'tags' | 'description'>): void {
   try {
-    store.save(name, command, state.current?.id)
+    store.save(name, command, state.current?.id, metadata)
     state.editing = false
     state.error = ''
     void nextTick(() => menu.value?.focus())
   } catch (error) {
-    state.error = String(error)
+    toast.error(String(error))
   }
 }
 function update(action: () => void): void {
@@ -131,13 +146,15 @@ function update(action: () => void): void {
     action()
     state.error = ''
   } catch (error) {
-    state.error = String(error)
+    toast.error(String(error))
   }
 }
+/** 带变量的片段先填写，再交给终端手动执行。 */
 function insert(command: TerminalCommand): void {
   if (reorder.consumeSuppressedClick(command.id)) return
   close(false)
-  emit('insert', command.command)
+  if (snippetVariables(command.command).length) state.snippet = command
+  else emit('insert', command.command)
 }
 function escape(): void {
   if (state.editing) {
@@ -173,6 +190,8 @@ useEventListener(window, 'resize', () => {
     />
   </button>
   <Teleport to="body">
+    <TerminalSnippetDialog v-if="snippet" :command="snippet.command" @close="snippet = null" @insert="snippet = null; emit('insert', $event)" @batch="snippet = null; batchCommand = $event" />
+    <BatchOperationDialog v-if="batchCommand" :initial-command="batchCommand" @close="batchCommand = ''" />
     <section
       v-if="open"
       ref="menu"
@@ -210,6 +229,7 @@ useEventListener(window, 'resize', () => {
           @click="close()"
         />
       </header>
+      <input v-if="!editing" v-model="search" class="field mx-3 my-2" :placeholder="t('搜索命令、分组或标签')" :aria-label="t('搜索命令、分组或标签')" />
       <div
         ref="commandList"
         class="scroll-thin min-h-0 overflow-y-auto"
@@ -227,7 +247,7 @@ useEventListener(window, 'resize', () => {
           :aria-label="t('常用指令列表')"
         >
           <li
-            v-for="(command, index) in commands"
+            v-for="(command, index) in filteredCommands"
             :key="command.id"
             class="command-row"
             :data-reorderable-tab-id="command.id"
@@ -272,6 +292,7 @@ useEventListener(window, 'resize', () => {
               @pointerdown="reorder.start($event, command.id)"
               @click="insert(command)"
             >
+              <span v-if="command.folder" class="text-accent text-[10px]">{{ command.folder }}</span>
               <span class="min-w-0 truncate">{{
                 terminalCommandLabel(command)
               }}</span>
@@ -279,6 +300,7 @@ useEventListener(window, 'resize', () => {
                 command.command
               }}</code>
             </button>
+            <IconButton icon="lucide:send" :size="12" :title="t('发送到多台主机')" @click="close(false); snippetVariables(command.command).length ? state.snippet = command : state.batchCommand = command.command" />
             <div
               v-if="managing"
               class="flex shrink-0 items-center"

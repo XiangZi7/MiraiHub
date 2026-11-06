@@ -58,6 +58,8 @@ const contextTitle = computed(() =>
     data-agent-usage
     class="text-txt-3 mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[10px] leading-5 tabular-nums"
   >
+    <span v-if="usage?.inputTokens != null" :title="t('输入 / 输出 / 缓存 Token')">{{ compact(usage.inputTokens) }} / {{ compact(usage.outputTokens) }} / {{ compact(usage.cachedTokens) }}</span>
+    <span v-if="usage?.estimatedCost != null" :title="t('按自定义单价估算，实际账单以供应商为准')">{{ t('本轮') }} ≈ ${{ (usage.estimatedTurnCost ?? 0).toFixed(6) }} · {{ t('会话') }} ≈ ${{ usage.estimatedCost.toFixed(6) }}</span>
     <span
       class="inline-flex items-center gap-1"
       :title="t('agent.speedDescription')"

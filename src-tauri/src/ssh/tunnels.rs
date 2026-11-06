@@ -84,6 +84,18 @@ fn validate(request: &ForwardRequest) -> AppResult<SocketAddr> {
     Ok(SocketAddr::new(ip, request.bind_port))
 }
 impl TunnelManager {
+    /// 读取隧道列表，Agent 与工作区列表共用同一份状态快照。
+    pub async fn snapshot(&self) -> Vec<Tunnel> {
+        let mut rows = Vec::new();
+        for control in self.tunnels.lock().await.values() {
+            let mut row = control.view.lock().await.clone();
+            row.connections = control.active.load(Ordering::SeqCst);
+            rows.push(row);
+        }
+        rows.sort_by_key(|row| row.bind_port);
+        rows
+    }
+
     pub async fn stop_session(&self, id: &str) {
         for c in self.tunnels.lock().await.values() {
             if c.view.lock().await.session_id == id {

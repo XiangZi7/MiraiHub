@@ -18,7 +18,9 @@ import { toast } from '@/composables/useToast'
 import { copyText } from '@/utils/clipboard'
 import { findTerminalMatches } from '@/utils/terminal-search'
 import type { SshSessionStatus } from '@/types/ssh'
-import TerminalCommandMenu from './TerminalCommandMenu.vue'
+import TerminalCommandMenu from '@/components/workspace/TerminalCommandMenu.vue'
+import TerminalReplayDialog from '@/components/workspace/terminal-replay-dialog.vue'
+import { startRecording, stopRecording, parseCast, type TerminalCast } from '@/utils/terminal-recording'
 
 const { t } = useI18n()
 
@@ -40,12 +42,17 @@ const emit = defineEmits<{
   reconnect: []
   disconnect: []
 }>()
+const castInput = useTemplateRef<HTMLInputElement>('castInput')
 const input = useTemplateRef<HTMLInputElement>('input')
 const menuTrigger = shallowRef<HTMLElement | null>(null)
 // 响应式状态
 const state = reactive({
   // 是否展开搜索栏
   searchOpen: false,
+  // 当前终端是否正在录制输出
+  recording: false,
+  // 最近录制或导入的回放
+  cast: null as TerminalCast | null,
   // 搜索文本
   query: '',
   // 当前匹配索引
@@ -61,7 +68,7 @@ const state = reactive({
   // xterm 选区由事件同步，菜单打开时和工具栏按钮都能及时更新。
   hasSelection: false,
 })
-const { searchOpen, query, matchIndex, matchCount, menuOpen, menuX, menuY } =
+const { recording, cast, searchOpen, query, matchIndex, matchCount, menuOpen, menuX, menuY } =
   toRefs(state)
 const items = computed(() => {
   return [
@@ -271,6 +278,30 @@ async function runAction(id: string): Promise<void> {
     toast.error({ title: t('终端操作失败'), description: String(error) })
   }
 }
+/** 切换输出录制；停止后立即打开回放以便导出。 */
+function toggleRecording(): void {
+  if (!props.terminal) return
+  if (state.recording) state.cast = stopRecording(props.terminal)
+  else startRecording(props.terminal)
+  state.recording = !state.recording
+}
+/** 从本地选择标准 cast 文件，在只读终端中回放。 */
+async function importCast(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  try {
+    if (file) {
+      if (file.size > 32 * 1024 * 1024) throw new Error(t('录制文件过大'))
+      state.cast = parseCast(await file.text())
+    }
+  } catch (error) { toast.error({title: t('读取录制失败'), description: String(error)}) }
+  finally { input.value = '' }
+}
+// 切换终端时结束上一实例的录制，防止录到新的会话。
+watch(() => props.terminal, (_next, previous) => {
+  if (previous && state.recording) state.cast = stopRecording(previous)
+  state.recording = false
+})
 function insertCommand(command: string): void {
   if (props.status !== 'connected' || !props.terminal) return
   props.terminal.paste(command)
@@ -307,6 +338,10 @@ function insertCommand(command: string): void {
       @click="emit('close')"
     />
     <slot />
+    <IconButton v-if="!local" :icon="recording ? 'lucide:square' : 'lucide:circle-dot'" :size="14" :class="recording && 'text-danger'" :title="recording ? t('停止录制') : t('开始录制')" :disabled="!terminal" @click="toggleRecording" />
+    <IconButton v-if="!local" icon="lucide:film" :size="14" :title="t('导入录制回放')" @click="castInput?.click()" />
+    <input ref="castInput" type="file" accept=".cast" hidden @change="importCast" />
+    <Teleport to="body"><TerminalReplayDialog v-if="cast" :cast="cast" @close="cast = null" /></Teleport>
     <IconButton
       icon="lucide:copy"
       class="terminal-secondary-action"

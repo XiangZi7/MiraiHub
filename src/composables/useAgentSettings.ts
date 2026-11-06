@@ -17,6 +17,7 @@ import { agentProviderIcon } from '@/utils/agent-provider-icon'
 function editProfile(profile: AgentConfig): AgentProfileDraft {
   return {
     ...profile,
+    pricing: { input: null, output: null, cached: null, ...profile.pricing },
     limits: { ...DEFAULT_AGENT_LIMITS, ...profile.limits },
     apiKey: '',
     clearKey: false,
@@ -118,6 +119,7 @@ export function useAgentSettings() {
             model: current.model,
             apiKey: current.apiKey,
             limits: { ...current.limits },
+            pricing: current.pricing,
           },
         },
         current.clearKey

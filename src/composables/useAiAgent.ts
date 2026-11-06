@@ -543,7 +543,7 @@ export function useAiAgent(
     }
   }
   // 审批结果绑定当前会话；拒绝时同步撤回尚未处理的引导。
-  async function decide(approve: boolean): Promise<void> {
+  async function decide(approve: boolean, remember = false): Promise<void> {
     const run = state.run
     if (!run?.id || !run.approval || state.busy || !active.value) return
     const current = generation
@@ -571,7 +571,8 @@ export function useAiAgent(
             state.run.approval = null
             state.run.status = 'running'
           }
-        }
+        },
+        remember
       )
       receiving = false
       if (!accept(next, token)) return
@@ -597,6 +598,16 @@ export function useAiAgent(
         await refreshHistory(token)
       }
     }
+  }
+  /** 重试仅重新发起所选步骤，其参数和目标仍由后端校验。 */
+  async function retryOperation(operationId: string): Promise<void> {
+    if (!state.run || state.busy || state.run.approval || !active.value) return
+    const token = ++generation
+    state.busy = true
+    state.error = ''
+    try { accept(await api.retryOperation(state.run.id, operationId), token) }
+    catch (error) { if (token === generation) state.error = api.errorMessage(error) }
+    finally { if (token === generation) state.busy = false }
   }
   watch(
     targetKey,
@@ -624,6 +635,7 @@ export function useAiAgent(
     setApprovalMode,
     send,
     decide,
+    retryOperation,
     stop,
     clear,
     changeProfile,

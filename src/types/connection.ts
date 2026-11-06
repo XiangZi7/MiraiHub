@@ -61,6 +61,7 @@ export interface ConnectionGroupView extends ConnectionGroup {
 
 /** SSH 连接的专属配置 */
 export interface SshConnectionSettings {
+  jumpHostIds?: readonly string[]
   auth: SshAuthMethod
   /** 连接超时秒数 */
   timeoutSecs: number
@@ -202,6 +203,7 @@ export function toSshConfig(connection: SavedConnection): SshConfig {
     keepaliveSecs: settings.keepaliveSecs,
     verifyHostKey: settingsSnapshot().verifyHostKey,
     proxy: settings.proxy,
+    jumpHostIds: settings.jumpHostIds?.slice(),
   }
 }
 

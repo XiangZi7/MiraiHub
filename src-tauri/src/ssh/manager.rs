@@ -46,6 +46,14 @@ impl SessionManager {
         Ok(id)
     }
 
+    /// 连接期间推送跳板链进度，成功后才登记为可用会话。
+    pub async fn connect_report(&self, config: SshConfig, app: tauri::AppHandle, request_id: String) -> SshResult<String> {
+        let id = new_session_id();
+        let session = SshSession::connect_report(id.clone(), config, Some((app, request_id))).await?;
+        self.sessions.write().await.insert(id.clone(), SessionEntry { session: Arc::new(session), connected_at: now_millis() });
+        Ok(id)
+    }
+
     /// 按 id 取会话。
     ///
     /// 返回 Arc 而不是持有读锁的引用：调用方常要 await 会话上的异步操作，

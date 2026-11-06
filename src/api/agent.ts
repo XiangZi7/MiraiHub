@@ -124,10 +124,11 @@ export async function respond(
   runId: string,
   approvalId: string,
   approve: boolean,
-  onProgress: (progress: AgentProgress) => void = () => {}
+  onProgress: (progress: AgentProgress) => void = () => {},
+  remember = false
 ): Promise<AgentRun> {
   if (!IS_TAURI)
-    return call<AgentRun>('ai_respond', { runId, approvalId, approve })
+    return call<AgentRun>('ai_respond', { runId, approvalId, approve, remember })
   const channel = new Channel<AgentProgress>()
   channel.onmessage = onProgress
   try {
@@ -135,12 +136,16 @@ export async function respond(
       runId,
       approvalId,
       approve,
+      remember,
       onProgress: channel,
     })
   } finally {
-    channel.onmessage = () => {}
+    channel.onmessage = () => {},
+  remember = false
   }
 }
+/** 重建单个失败步骤并获取新的审批，不自动执行写操作。 */
+export const retryOperation = (runId: string, operationId: string) => call<AgentRun>('ai_retry_operation', { runId, operationId })
 export const cancel = (runId: string) => call<void>('ai_cancel', { runId })
 export const forget = (runId: string) => call<void>('ai_forget', { runId })
 export function errorMessage(error: unknown): string {

@@ -1034,6 +1034,16 @@ function openTableDesigner(
   schema: string,
   editTarget: { schema: string; name: string } | null = null
 ): void {
+  // SQLite 的 ALTER TABLE 能力很弱，可视化设计器生成的语句不可靠，改为打开建表模板
+  if (databaseKind.value === 'sqlite') {
+    toast.info(t('SQLite 暂不支持可视化设计表，已打开 SQL 模板'))
+    openQuery(
+      editTarget
+        ? `-- ${t('SQLite 只支持 ADD / RENAME / DROP COLUMN')}\nALTER TABLE "${editTarget.name.replaceAll('"', '""')}" ADD COLUMN new_column TEXT;`
+        : 'CREATE TABLE new_table (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL\n);'
+    )
+    return
+  }
   const id = `table-designer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
   queryState.tabs.push({
     id,

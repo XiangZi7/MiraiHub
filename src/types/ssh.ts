@@ -26,6 +26,9 @@ export interface SshProxyConfig {
 
 /** 建立连接的入参 */
 export interface SshConfig {
+  /** 已保存的跳板连接 ID，连接前解析成不含嵌套路由的配置。 */
+  jumpHostIds?: string[]
+  jumpHosts?: SshConfig[]
   host: string
   port: number
   username: string
@@ -223,3 +226,5 @@ export interface ShellSuggestion {
   kind: ShellSuggestionKind
   description: string
 }
+
+export interface SshRouteProgress { requestId: string; hop: number; total: number; endpoint: string; status: 'connecting' | 'connected' | 'failed' }

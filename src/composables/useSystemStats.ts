@@ -25,9 +25,10 @@ import type { SshSystemStats } from '@/types/ssh'
 const POLL_INTERVAL = 5000
 
 /** 折线图保留的采样点数。44 个点约 3.5 分钟，够看出趋势又不至于挤成一团 */
-const HISTORY_SIZE = 44
+interface SessionHistory { stats: SshSystemStats | null; history: { cpu: number[]; memory: number[]; disk: number[]; network: number[] }; times: number[] }
+const sessions = new Map<string, SessionHistory>()
 
-export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>) {
+export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>, historyMinutes?: Ref<number>) {
   // 响应式状态
   const state = reactive({
     // 最近一次采集结果，未采集时为 null
@@ -47,6 +48,7 @@ export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>) {
 
   const { stats, loading, error, history } = toRefs(state)
 
+  let times: number[] = []
   let timer: ReturnType<typeof setTimeout> | undefined
   // 每次会话变化都递增。旧请求回来时用它判断结果是否已经过期，
   // 同时只阻止同一代请求重入，不妨碍切换服务器后立刻采新机器。
@@ -62,9 +64,13 @@ export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>) {
 
   /** 把新采样推进历史，超长丢最早的 */
   function pushHistory(snapshot: SshSystemStats): void {
+    times.push(Date.now())
+    const cutoff = Date.now() - Math.min(30, Math.max(1, historyMinutes?.value ?? 5)) * 60000
+    let expired = 0
+    while (times.length && (times[0]! < cutoff || times.length > 1800)) { times.shift(); expired++ }
     const push = (list: number[], value: number): void => {
       list.push(Number.isFinite(value) ? value : 0)
-      if (list.length > HISTORY_SIZE) list.shift()
+      list.splice(0, expired)
     }
 
     const { memory, disk, network } = snapshot
@@ -74,6 +80,9 @@ export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>) {
     push(state.history.disk, percentOf(disk.usedKb, disk.totalKb))
     // 网络没有"百分比"可言，直接放绝对速率，SparkLine 会按自身的最值归一化
     push(state.history.network, network.rxBytesPerSec + network.txBytesPerSec)
+    sessions.delete(sessionId.value)
+    sessions.set(sessionId.value, { stats: snapshot, history: state.history, times })
+    while (sessions.size > 20) sessions.delete(sessions.keys().next().value!)
   }
 
   /** 采集一次 */
@@ -149,9 +158,11 @@ export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>) {
       inflightGeneration = -1
       state.loading = false
       if (!previous || id !== previous[0]) {
-        state.stats = null
+        const cached = sessions.get(id)
+        state.stats = cached?.stats ?? null
         state.error = ''
-        state.history = { cpu: [], memory: [], disk: [], network: [] }
+        state.history = cached?.history ?? { cpu: [], memory: [], disk: [], network: [] }
+        times = cached?.times ?? []
       }
       if (!id || !enabled) return
       await refresh()

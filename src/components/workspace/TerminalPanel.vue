@@ -75,6 +75,7 @@ const terminalAreaRef = useTemplateRef<HTMLElement>('terminalArea')
 
 const {
   term,
+  route,
   status,
   sessionId,
   error,
@@ -502,6 +503,7 @@ defineExpose({
       /></TerminalActions>
     </div>
 
+    <div v-if="route.length > 1" class="border-line-soft text-txt-3 flex shrink-0 items-center gap-2 overflow-x-auto border-b px-3 py-1 text-[10px]" :aria-label="t('SSH 连接链路')"><span>{{ t('本机') }}</span><span v-for="hop in route" :key="hop.hop" class="shrink-0" :class="hop.status === 'failed' ? 'text-danger' : hop.status === 'connected' && status === 'connected' ? 'text-success' : 'text-txt-3'">→ {{ hop.endpoint }} · {{ t(hop.status === 'connecting' ? '连接中' : hop.status === 'failed' ? '失败' : status === 'disconnected' ? '已断开' : '已连接') }}</span></div>
     <!-- 终端输出区。xterm 自己接管这个容器的滚动与渲染，底色由这里给 -->
     <div
       v-if="config"

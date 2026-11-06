@@ -4,7 +4,9 @@ export interface AgentTarget {
   database: string
 }
 export type AgentApprovalMode = 'ask' | 'auto' | 'full'
+export interface AgentPricing { input: number | null; output: number | null; cached: number | null }
 export interface AgentConfig {
+  pricing?: AgentPricing
   id: string
   name: string
   apiFormat: AgentApiFormat
@@ -23,6 +25,7 @@ export interface AgentLimits {
   maxRetries: number
 }
 export interface AgentConfigInput {
+  pricing?: AgentPricing
   apiFormat: AgentApiFormat
   enabled: boolean
   baseUrl: string
@@ -127,6 +130,9 @@ export interface AgentStoredAttachment {
   preview: string
 }
 export interface AgentApproval {
+  preview?: { estimatedRows: number | null }
+  risk?: 'low' | 'medium' | 'high' | 'critical'
+  canRemember?: boolean
   id: string
   command: string
   reason: string
@@ -135,6 +141,11 @@ export interface AgentApproval {
   fileChange?: AgentFileChange
 }
 export interface AgentUsage {
+  inputTokens?: number | null
+  outputTokens?: number | null
+  cachedTokens?: number | null
+  estimatedCost?: number | null
+  estimatedTurnCost?: number | null
   rounds: number
   steps: number
   totalTokens: number | null

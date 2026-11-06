@@ -14,7 +14,7 @@ use russh::keys::{
 };
 use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect};
 use russh_sftp::client::SftpSession;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
 use super::error::{SshError, SshResult};
@@ -74,6 +74,7 @@ impl client::Handler for ClientHandler {
 pub struct SshSession {
     id: String,
     config: SshConfig,
+    jump_handles: Mutex<Vec<Handle<ClientHandler>>>,
     /// russh 的连接句柄。开新 channel 时用，故加锁
     handle: Mutex<Handle<ClientHandler>>,
     /// 交互式 shell 的写半边。未开 shell 时为 None
@@ -85,53 +86,46 @@ pub struct SshSession {
 impl SshSession {
     /// 建立连接并完成认证。
     pub async fn connect(id: String, config: SshConfig) -> SshResult<Self> {
+        Self::connect_report(id, config, None).await
+    }
+
+    /// 将每一跳的连接状态推送给发起请求的终端，事件不包含认证信息。
+    pub async fn connect_report(id: String, config: SshConfig, progress: Option<(AppHandle, String)>) -> SshResult<Self> {
         validate_config(&config)?;
-
-        let endpoint = config.endpoint();
-
-        let ssh_config = client::Config {
-            // 空闲超过 keepalive 的若干倍仍无响应就判定连接已死。
-            // 设成 keepalive 的 4 倍，容忍偶发的网络抖动
-            inactivity_timeout: (config.keepalive_secs > 0)
-                .then(|| Duration::from_secs(config.keepalive_secs * 4)),
-            keepalive_interval: (config.keepalive_secs > 0)
-                .then(|| Duration::from_secs(config.keepalive_secs)),
-            ..Default::default()
+        if config.jump_hosts.len() > 5 || config.jump_hosts.iter().any(|hop| !hop.jump_hosts.is_empty()) || (!config.jump_hosts.is_empty() && config.proxy.is_some()) {
+            return Err(SshError::InvalidInput("跳板链最多 5 跳且不能嵌套；目标代理与跳板不能同时使用".into()));
+        }
+        let mut endpoints = std::collections::HashSet::new();
+        for (index, hop) in config.jump_hosts.iter().enumerate() {
+            validate_config(hop)?;
+            if !endpoints.insert((hop.host.to_lowercase(), hop.port)) || (hop.host.eq_ignore_ascii_case(&config.host) && hop.port == config.port) || (index > 0 && hop.proxy.is_some()) {
+                return Err(SshError::InvalidInput("跳板链存在重复目标或中间跳配置了代理".into()));
+            }
+        }
+        let mut jump_handles = Vec::new();
+        let report = |index: usize, endpoint: String, status: &str| {
+            if let Some((app, request_id)) = &progress {
+                let _ = app.emit("ssh://connect-progress", serde_json::json!({"requestId": request_id, "hop": index, "total": config.jump_hosts.len() + 1, "endpoint": endpoint, "status": status}));
+            }
         };
-
-        // 整段（代理握手 + TCP + SSH 握手）共用一个超时窗口：
-        // russh 自身没有连接超时，靠外层 timeout 兜住，
-        // 否则连一个丢包的地址会一直挂着，用户只看到界面卡住。
-        let handler = ClientHandler {
-            host: config.host.clone(),
-            port: config.port,
-            verify_host_key: config.verify_host_key,
+        for (index, hop) in config.jump_hosts.iter().enumerate() {
+            report(index, hop.endpoint(), "connecting");
+            match connect_handle(hop, jump_handles.last()).await {
+                Ok(handle) => { jump_handles.push(handle); report(index, hop.endpoint(), "connected"); }
+                Err(error) => { report(index, hop.endpoint(), "failed"); return Err(error); }
+            }
+        }
+        report(config.jump_hosts.len(), config.endpoint(), "connecting");
+        let handle = match connect_handle(&config, jump_handles.last()).await {
+            Ok(handle) => { report(config.jump_hosts.len(), config.endpoint(), "connected"); handle }
+            Err(error) => { report(config.jump_hosts.len(), config.endpoint(), "failed"); return Err(error); }
         };
-        let connect_fut = async {
-            let stream = proxy::connect(&config.host, config.port, config.proxy.as_ref()).await?;
-            client::connect_stream(Arc::new(ssh_config), stream, handler)
-                .await
-                .map_err(|source| SshError::Connect {
-                    endpoint: config.endpoint(),
-                    source,
-                })
-        };
-
-        let mut handle =
-            tokio::time::timeout(Duration::from_secs(config.timeout_secs), connect_fut)
-                .await
-                .map_err(|_| SshError::Timeout {
-                    endpoint: endpoint.clone(),
-                    secs: config.timeout_secs,
-                })??;
-
-        authenticate(&mut handle, &config).await?;
-
-        log::info!("SSH 已连接：{endpoint}（{}）", config.auth.label());
+        log::info!("SSH 已连接：{}（{} 跳）", config.endpoint(), jump_handles.len());
 
         Ok(Self {
             id,
             config,
+            jump_handles: Mutex::new(jump_handles),
             handle: Mutex::new(handle),
             shell: Mutex::new(None),
             transfer_slots: Arc::new(Semaphore::new(MAX_TRANSFER_CHANNELS)),
@@ -423,9 +417,34 @@ impl SshSession {
             .disconnect(Disconnect::ByApplication, "用户主动断开", "")
             .await?;
 
+        for hop in self.jump_handles.lock().await.iter().rev() {
+            let _ = hop.disconnect(Disconnect::ByApplication, "用户主动断开", "").await;
+        }
         log::info!("SSH 已断开：{}", self.config.endpoint());
         Ok(())
     }
+}
+
+/// 每跳均独立校验主机密钥和认证，后续 TCP 流由上一跳 direct-tcpip 承载。
+async fn connect_handle(config: &SshConfig, previous: Option<&Handle<ClientHandler>>) -> SshResult<Handle<ClientHandler>> {
+    let connect = async {
+        let handler = ClientHandler { host: config.host.clone(), port: config.port, verify_host_key: config.verify_host_key };
+        let ssh_config = Arc::new(client::Config {
+            inactivity_timeout: (config.keepalive_secs > 0).then(|| Duration::from_secs(config.keepalive_secs.saturating_mul(4))),
+            keepalive_interval: (config.keepalive_secs > 0).then(|| Duration::from_secs(config.keepalive_secs)),
+            ..Default::default()
+        });
+        let mut handle = if let Some(previous) = previous {
+            let channel = previous.channel_open_direct_tcpip(&config.host, config.port as u32, "127.0.0.1", 0).await?;
+            client::connect_stream(ssh_config, channel.into_stream(), handler).await
+        } else {
+            let stream = proxy::connect(&config.host, config.port, config.proxy.as_ref()).await?;
+            client::connect_stream(ssh_config, stream, handler).await
+        }.map_err(|source| SshError::Connect { endpoint: config.endpoint(), source })?;
+        authenticate(&mut handle, config).await?;
+        Ok(handle)
+    };
+    tokio::time::timeout(Duration::from_secs(config.timeout_secs.clamp(1, 300)), connect).await.map_err(|_| SshError::Timeout { endpoint: config.endpoint(), secs: config.timeout_secs })?
 }
 
 /// 后台读循环：把远端输出源源不断推给前端，直到 channel 关闭。
@@ -720,6 +739,7 @@ mod tests {
             SshSession {
                 id: "test".into(),
                 config: config_with("test", "test", 22),
+                jump_handles: Mutex::new(Vec::new()),
                 handle: Mutex::new(handle),
                 shell: Mutex::new(None),
                 transfer_slots: Arc::new(Semaphore::new(MAX_TRANSFER_CHANNELS)),
@@ -780,6 +800,7 @@ mod tests {
 
     fn config_with(host: &str, username: &str, port: u16) -> SshConfig {
         SshConfig {
+            jump_hosts: Vec::new(),
             host: host.to_owned(),
             port,
             username: username.to_owned(),
