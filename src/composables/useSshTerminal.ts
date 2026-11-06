@@ -9,32 +9,13 @@ import { i18n } from '@/i18n'
  * 事件订阅、生命周期清理都在这里收口。
  */
 
-import { onBeforeUnmount, reactive, shallowRef, toRefs, watch } from 'vue'
-import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { onBeforeUnmount, reactive, toRefs } from 'vue'
+import { useDebounceFn } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import { FitAddon } from '@xterm/addon-fit'
-import { Terminal } from '@xterm/xterm'
 import * as ssh from '@/api/ssh'
 import type { SshConfig, SshSessionStatus, SshRouteProgress } from '@/types/ssh'
-import { currentTerminalTheme } from '@/constants/terminal'
-import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
 import { recordOutput, recordResize } from '@/utils/terminal-recording'
-import {
-  settingNumber,
-  settingsSnapshot,
-  useSettings,
-} from '@/composables/useSettings'
-
-function terminalFontFamily(): string {
-  const families: Record<string, string> = {
-    'jetbrains-mono': '"JetBrains Mono Variable", ui-monospace, monospace',
-    'cascadia-code': '"Cascadia Code", ui-monospace, monospace',
-    consolas: 'Consolas, ui-monospace, monospace',
-  }
-  return (
-    families[settingsSnapshot().terminalFont] ?? families['jetbrains-mono']!
-  )
-}
+import { useXterm } from '@/composables/useXterm'
 
 interface TerminalConnectOptions {
   terminalType?: string
@@ -45,14 +26,7 @@ type InputInterceptor = (data: string) => boolean
 type SubmitHandler = (line: string) => void
 
 export function useSshTerminal() {
-  const { settings } = useSettings()
-  // xterm 实例不参与响应式：它内部持有大量 DOM 与缓冲区，
-  // 被 Vue 深度代理会显著拖慢渲染
-  const term = shallowRef<Terminal>()
-  const fitAddon = shallowRef<FitAddon>()
-  useEventListener(window, SKIN_CHANGE_EVENT, () => {
-    if (term.value) term.value.options.theme = currentTerminalTheme()
-  })
+  const { term, fitAddon, open, stopSettingsWatch } = useXterm(() => resize())
 
   // 响应式状态
   const state = reactive({
@@ -83,27 +57,7 @@ export function useSshTerminal() {
    * 与 connect 分开：先把终端画出来，用户能看到"正在连接"，而不是一片空白。
    */
   function mount(container: HTMLElement): void {
-    const terminal = new Terminal({
-      fontFamily: terminalFontFamily(),
-      fontSize: settingNumber('terminalFontSize', 13),
-      lineHeight: 1.4,
-      cursorStyle: settings.terminalCursor as 'block' | 'bar' | 'underline',
-      cursorBlink: settings.terminalCursorBlink,
-      // 回滚缓冲给足：排查日志时经常要往回翻很多屏
-      scrollback: settingNumber('terminalScrollback', 5000),
-      theme: currentTerminalTheme(),
-      allowTransparency: true,
-      // 让 xterm 自己吞掉 Ctrl+C 之类的组合键交给远端，而不是被浏览器截走
-      macOptionIsMeta: true,
-    })
-
-    const fit = new FitAddon()
-    terminal.loadAddon(fit)
-    terminal.open(container)
-    fit.fit()
-
-    term.value = terminal
-    fitAddon.value = fit
+    const terminal = open(container)
 
     // 用户输入直接转发给远端。未连接时丢弃：
     // 否则在断开的终端里敲字会攒下一堆无处可去的 invoke
@@ -121,28 +75,6 @@ export function useSshTerminal() {
       sendInput(data)
     })
   }
-
-  const stopSettingsWatch = watch(
-    () =>
-      [
-        settings.terminalFont,
-        settings.terminalFontSize,
-        settings.terminalCursor,
-        settings.terminalCursorBlink,
-        settings.terminalScrollback,
-      ] as const,
-    () => {
-      const terminal = term.value
-      if (!terminal) return
-      terminal.options.fontFamily = terminalFontFamily()
-      terminal.options.fontSize = settingNumber('terminalFontSize', 13)
-      terminal.options.cursorStyle = settings.terminalCursor as
-        'block' | 'bar' | 'underline'
-      terminal.options.cursorBlink = settings.terminalCursorBlink
-      terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
-      resize()
-    }
-  )
 
   /** 建立连接并打开交互式 shell */
   async function connect(

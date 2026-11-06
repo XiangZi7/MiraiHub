@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { AgentApiFormat, AgentProfileDraft } from '@/types/agent'
+import type {
+  AgentApiFormat,
+  AgentPricing,
+  AgentProfileDraft,
+} from '@/types/agent'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AiModelField from './AiModelField.vue'
@@ -20,6 +26,24 @@ const formatHelp: Record<AgentApiFormat, string> = {
     'OpenAI Responses 格式；适用于使用 /responses 接口的模型或中转站。',
   anthropic: 'Claude Messages 格式；例如 https://api.anthropic.com/v1。',
 }
+const pricingFields = ['input', 'output', 'cached'] as const
+/**
+ * AppInput 的模型声明为 string，但 type="number" 时 Vue 的 v-model 会回传数字（清空时为 ''），
+ * 与原生 v-model.number 一致。这里原样透传，避免 String() 往返改写正在输入的 "0.0"。
+ */
+function priceInput(value: number | null): string {
+  return value as unknown as string
+}
+function setPrice(field: keyof AgentPricing, value: string): void {
+  if (draft.value.pricing)
+    draft.value.pricing[field] = value as unknown as number | null
+}
+/** 清空或非法输入在提交（change）时归一为 null，表示不估算费用。 */
+function normalizePrice(field: keyof AgentPricing): void {
+  const pricing = draft.value.pricing
+  if (pricing)
+    pricing[field] = typeof pricing[field] === 'number' ? pricing[field] : null
+}
 </script>
 <template>
   <fieldset
@@ -27,9 +51,9 @@ const formatHelp: Record<AgentApiFormat, string> = {
     class="grid min-w-0 gap-5 border-0 p-0"
     :aria-label="t('模型服务配置')"
   >
-    <div class="ai-setting-field">
+    <div class="text-txt-2 grid min-w-0 gap-2 text-xs">
       <label for="ai-profile-name">{{ t('配置名称') }}</label>
-      <input
+      <AppInput
         id="ai-profile-name"
         v-model="draft.name"
         :placeholder="t('例如：Claude 官网、OpenAI 中转站')"
@@ -47,12 +71,13 @@ const formatHelp: Record<AgentApiFormat, string> = {
       :label="t('启用此配置')"
       :description="t('使用你配置的模型服务；发送消息后才会读取目标数据')"
     />
-    <div class="ai-setting-field">
+    <div class="text-txt-2 grid min-w-0 gap-2 text-xs">
       <label for="ai-base-url">{{ t('API 地址') }}</label>
-      <input
+      <!-- 原 type="url" 会裁掉首尾空白，这里用 .trim 保持一致。 -->
+      <AppInput
         id="ai-base-url"
-        v-model="draft.baseUrl"
-        type="url"
+        v-model.trim="draft.baseUrl"
+        inputmode="url"
         placeholder="https://api.openai.com/v1"
         autocomplete="off"
         spellcheck="false"
@@ -60,7 +85,7 @@ const formatHelp: Record<AgentApiFormat, string> = {
       />
       <p
         id="ai-base-url-help"
-        class="ai-field-help"
+        class="text-txt-4 text-[10px] leading-[1.6] wrap-anywhere"
       >
         {{ t(formatHelp[draft.apiFormat]) }}
         {{ t('基础地址可按服务商要求修改。') }}
@@ -75,16 +100,16 @@ const formatHelp: Record<AgentApiFormat, string> = {
       :clear-key="draft.clearKey"
       :disabled="disabled"
     />
-    <div class="ai-setting-field">
-      <div class="ai-key-label">
+    <div class="text-txt-2 grid min-w-0 gap-2 text-xs">
+      <div class="flex flex-wrap items-center gap-2">
         <label for="ai-api-key">API Key</label
         ><span
           v-if="draft.hasApiKey"
-          class="text-success"
+          class="text-success text-[10px]"
           >{{ t('已安全保存') }}</span
         >
       </div>
-      <input
+      <AppInput
         id="ai-api-key"
         v-model="draft.apiKey"
         type="password"
@@ -101,19 +126,17 @@ const formatHelp: Record<AgentApiFormat, string> = {
       />
       <p
         id="ai-key-help"
-        class="ai-field-help"
+        class="text-txt-4 text-[10px] leading-[1.6] wrap-anywhere"
       >
         {{ t('Windows 用户级加密存储，不进入聊天或普通设置备份。') }}
       </p>
     </div>
-    <label
+    <AppCheckbox
       v-if="draft.hasApiKey"
-      class="text-txt-3 flex items-center gap-2 text-[11px]"
-      ><input
-        v-model="draft.clearKey"
-        type="checkbox"
-      />{{ t('保存时清除旧密钥') }}</label
-    >
+      v-model="draft.clearKey"
+      :label="t('保存时清除旧密钥')"
+      :disabled="disabled"
+    />
     <AiCapacityFields
       v-model="draft.limits"
       :disabled="disabled"
@@ -126,7 +149,7 @@ const formatHelp: Record<AgentApiFormat, string> = {
         {{ t('每百万 Token 单价（USD，留空不估算费用）') }}
       </p>
       <label
-        v-for="field in ['input', 'output', 'cached'] as const"
+        v-for="field in pricingFields"
         :key="field"
         class="text-txt-3 grid grid-cols-2 items-center gap-2 text-xs"
         >{{
@@ -135,60 +158,15 @@ const formatHelp: Record<AgentApiFormat, string> = {
               field
             ]
           )
-        }}<input
-          v-model.number="draft.pricing[field]"
+        }}<AppInput
+          :model-value="priceInput(draft.pricing[field])"
           type="number"
           min="0"
           max="1000000"
           step="any"
-          class="field"
-          @change="
-            draft.pricing[field] =
-              typeof draft.pricing[field] === 'number'
-                ? draft.pricing[field]
-                : null
-          "
+          @update:model-value="setPrice(field, $event)"
+          @change="normalizePrice(field)"
       /></label>
     </div>
   </fieldset>
 </template>
-<style scoped>
-.ai-setting-field {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--color-txt-2);
-}
-.ai-setting-field input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 36px;
-  border: 1px solid var(--color-line);
-  background: var(--color-input, #ffffff04);
-  padding: 9px 10px;
-  border-radius: 6px;
-  outline: none;
-  font-size: 12px;
-  color: var(--color-txt);
-}
-.ai-setting-field input:focus {
-  border-color: var(--color-accent);
-}
-.ai-field-help {
-  font-size: 10px;
-  color: var(--color-txt-4);
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-.ai-key-label {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.ai-key-label span {
-  font-size: 10px;
-}
-</style>

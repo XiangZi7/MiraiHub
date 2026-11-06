@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { reactive, watch } from 'vue'
+import { computed, reactive, useTemplateRef, watch } from 'vue'
+import { useIntersectionObserver } from '@vueuse/core'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { databaseObjectKey } from '@/composables/useDatabaseSession'
@@ -36,10 +37,42 @@ const emit = defineEmits<{
   categoryContext: [event: MouseEvent, schema: string, kind: DatabaseObjectKind]
 }>()
 
+/**
+ * 每批渲染的对象数。库里有几千张表时一次性挂出所有行（每行两个图标加提示）
+ * 会让展开分类卡顿，先渲染一批，滚到底部再接着加。
+ */
+const PAGE_SIZE = 200
+
 const state = reactive({
   expanded: Boolean(props.defaultExpanded),
   expandedObjects: new Set<string>(),
+  limit: PAGE_SIZE,
 })
+
+const visibleObjects = computed(() => props.objects.slice(0, state.limit))
+const remaining = computed(() => props.objects.length - state.limit)
+const sentinel = useTemplateRef<InstanceType<typeof AppButton>>('sentinel')
+
+function showMore(): void {
+  state.limit += PAGE_SIZE
+}
+
+useIntersectionObserver(sentinel, entries => {
+  if (entries.some(entry => entry.isIntersecting)) showMore()
+})
+
+// 选中项可能来自搜索或标签页切换，落在未渲染的批次里时把它所在批次也渲染出来。
+watch(
+  [() => props.selectedKey, () => props.objects],
+  ([key]) => {
+    const index = props.objects.findIndex(
+      object => databaseObjectKey(object) === key
+    )
+    if (index >= state.limit)
+      state.limit = Math.ceil((index + 1) / PAGE_SIZE) * PAGE_SIZE
+  },
+  { immediate: true }
+)
 
 const hasColumns = () => props.kind === 'table' || props.kind === 'view'
 
@@ -122,7 +155,7 @@ watch(
     </div>
 
     <template
-      v-for="object in objects"
+      v-for="object in visibleObjects"
       :key="databaseObjectKey(object)"
     >
       <AppButton
@@ -211,5 +244,14 @@ watch(
         </div>
       </template>
     </template>
+    <AppButton
+      v-if="remaining > 0"
+      ref="sentinel"
+      variant="bare"
+      class="nav-item text-txt-4 h-7 w-full pl-10 text-[10.5px]"
+      @click="showMore"
+    >
+      {{ t('显示更多（还有 {count} 个）', { count: remaining }) }}
+    </AppButton>
   </template>
 </template>

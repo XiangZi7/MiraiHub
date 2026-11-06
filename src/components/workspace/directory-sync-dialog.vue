@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, reactive, toRefs, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { scanSyncDirectories, type SyncScan } from '@/api/workspace-files'
 import { directoryDifferences } from '@/utils/directory-sync'
 import { useFileTransfers } from '@/composables/useFileTransfers'
@@ -31,6 +32,10 @@ const { direction, scan, selected, busy } = toRefs(state)
 const differences = computed(() =>
   state.scan ? directoryDifferences(state.scan, state.direction) : []
 )
+const directionOptions = computed(() => [
+  { value: 'upload', label: t('本地 → 远端') },
+  { value: 'download', label: t('远端 → 本地') },
+])
 let generation = 0
 watch(
   () => state.direction,
@@ -139,14 +144,13 @@ async function execute(): Promise<void> {
       <p class="text-txt-3">
         {{ t('按大小和修改时间比较，选中项目会覆盖目标文件；不会删除文件。') }}
       </p>
-      <select
+      <AppSelect
         v-model="direction"
-        class="field"
+        :label="t('同步方向')"
+        hide-label
+        :options="directionOptions"
         :disabled="busy"
-      >
-        <option value="upload">{{ t('本地 → 远端') }}</option>
-        <option value="download">{{ t('远端 → 本地') }}</option>
-      </select>
+      />
       <AppButton
         :disabled="busy"
         @click="preview"

@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 
 import { computed, shallowRef, toRef, watch } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SparkLine from '@/components/ui/SparkLine.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
@@ -30,6 +31,19 @@ const props = defineProps<{
 const emit = defineEmits<{ action: [id: string] }>()
 
 const historyMinutes = shallowRef(5)
+// AppSelect 只处理字符串，这里与原 v-model.number 一样把选择结果转回分钟数。
+const historyMinutesValue = computed({
+  get: () => String(historyMinutes.value),
+  set: (value: string) => {
+    historyMinutes.value = Number(value)
+  },
+})
+const historyOptions = computed(() =>
+  [5, 15, 30].map(minutes => ({
+    value: String(minutes),
+    label: `${minutes} ${t('分钟')}`,
+  }))
+)
 const { stats, loading, error, history, ready, refresh } = useSystemStats(
   toRef(props, 'sessionId'),
   undefined,
@@ -212,21 +226,16 @@ async function runAction(id: string): Promise<void> {
       />
     </header>
 
-    <label class="text-txt-3 mb-3 flex items-center justify-end gap-2 text-xs"
-      >{{ t('趋势时间范围')
-      }}<select
-        v-model.number="historyMinutes"
-        class="field w-24"
-      >
-        <option
-          v-for="minutes in [5, 15, 30]"
-          :key="minutes"
-          :value="minutes"
-        >
-          {{ minutes }} {{ t('分钟') }}
-        </option>
-      </select></label
-    >
+    <div class="text-txt-3 mb-3 flex items-center justify-end gap-2 text-xs">
+      <span aria-hidden="true">{{ t('趋势时间范围') }}</span>
+      <AppSelect
+        v-model="historyMinutesValue"
+        :label="t('趋势时间范围')"
+        hide-label
+        :options="historyOptions"
+        class="w-24"
+      />
+    </div>
     <!-- 资源指标 -->
     <div
       v-if="ready"

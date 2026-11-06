@@ -828,6 +828,7 @@ export const en = {
   下一年: 'Next year',
   此刻: 'Now',
   今天: 'Today',
+  '显示更多（还有 {count} 个）': 'Show more ({count} remaining)',
   当前条件下没有数据: 'No data matches the current filter',
   上一页: 'Previous page',
   下一页: 'Next page',
@@ -1516,6 +1517,7 @@ export const en = {
   连接失败: 'Connection failed',
   重试: 'Retry',
   关闭提示: 'Dismiss notice',
+  同步方向: 'Sync direction',
 }
 
 export const zh = {

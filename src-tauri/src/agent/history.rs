@@ -321,7 +321,23 @@ pub async fn ai_list_conversations(
     let scope = scope(&app, &target).await?;
     let _store = state.history.lock().await;
     let dir = directory(&app)?;
-    let files = match std::fs::read_dir(&dir) {
+    // 逐个读文件并用 DPAPI 解密是阻塞操作，放到阻塞线程池，不占异步运行时的工作线程。
+    let mut summaries = tauri::async_runtime::spawn_blocking(move || list_summaries(&dir, &scope))
+        .await
+        .map_err(|error| AppError::invalid_input(format!("读取聊天记录失败：{error}")))??;
+    summaries.sort_by(|a, b| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(summaries)
+}
+/// 扫描历史目录，返回属于当前范围的会话摘要。
+///
+/// 单个文件损坏、过大或与 ID 对不上时只跳过并记日志，
+/// 不让一条坏记录把整个历史列表都拖成报错。
+fn list_summaries(dir: &Path, scope: &str) -> AppResult<Vec<Summary>> {
+    let files = match std::fs::read_dir(dir) {
         Ok(files) => files,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
         Err(error) => return Err(error.into()),
@@ -332,28 +348,29 @@ pub async fn ai_list_conversations(
         if path.extension().and_then(|v| v.to_str()) != Some("bin") {
             continue;
         }
-        if std::fs::metadata(&path)?.len() > MAX_RECORD_BYTES {
-            return Err(AppError::invalid_input("聊天记录文件过大"));
-        }
-        let bytes = config::protect(&std::fs::read(&path)?, false)?;
-        if bytes.len() as u64 > MAX_RECORD_BYTES {
-            return Err(record_too_large());
-        }
-        let record: Record = serde_json::from_slice(&bytes)
-            .map_err(|_| AppError::invalid_input("聊天记录已损坏，无法加载历史列表"))?;
-        if record_path(&dir, &record.summary.id)? != path {
-            return Err(AppError::invalid_input("聊天记录文件与会话 ID 不匹配"));
-        }
-        if record.scope == scope {
-            summaries.push(record.summary);
+        match read_summary(dir, &path) {
+            Ok((record_scope, summary)) if record_scope == scope => summaries.push(summary),
+            Ok(_) => {}
+            Err(error) => log::warn!("跳过无法读取的聊天记录 {}：{error}", path.display()),
         }
     }
-    summaries.sort_by(|a, b| {
-        b.updated_at
-            .cmp(&a.updated_at)
-            .then_with(|| a.id.cmp(&b.id))
-    });
     Ok(summaries)
+}
+
+fn read_summary(dir: &Path, path: &Path) -> AppResult<(String, Summary)> {
+    if std::fs::metadata(path)?.len() > MAX_RECORD_BYTES {
+        return Err(AppError::invalid_input("聊天记录文件过大"));
+    }
+    let bytes = config::protect(&std::fs::read(path)?, false)?;
+    if bytes.len() as u64 > MAX_RECORD_BYTES {
+        return Err(record_too_large());
+    }
+    let record: Record =
+        serde_json::from_slice(&bytes).map_err(|_| AppError::invalid_input("聊天记录已损坏"))?;
+    if record_path(dir, &record.summary.id)? != path {
+        return Err(AppError::invalid_input("聊天记录文件与会话 ID 不匹配"));
+    }
+    Ok((record.scope, record.summary))
 }
 #[tauri::command]
 pub async fn ai_open_conversation(

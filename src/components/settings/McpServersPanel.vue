@@ -3,9 +3,12 @@ import { translateNativeMessage } from '@/i18n/native'
 import { useI18n } from 'vue-i18n'
 import { useMcpServers } from '@/composables/useMcpServers'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import AppTextarea from '@/components/ui/AppTextarea.vue'
 import type { McpSecretDraft, McpTarget } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
 
@@ -110,9 +113,13 @@ function addSecret(list: McpSecretDraft[]): void {
       :disabled="loading || busy || !IS_TAURI"
       class="mcp-form"
     >
-      <div class="ai-setting-field">
-        <label for="mcp-name">{{ t('名称') }}</label>
-        <input
+      <div class="grid min-w-0 gap-1.5">
+        <label
+          for="mcp-name"
+          class="text-txt-2 text-[11px] font-medium"
+          >{{ t('名称') }}</label
+        >
+        <AppInput
           id="mcp-name"
           v-model="draft.name"
           maxlength="80"
@@ -130,9 +137,13 @@ function addSecret(list: McpSecretDraft[]): void {
         :disabled="loading || busy || !IS_TAURI"
       />
       <template v-if="draft.transport === 'stdio'">
-        <div class="ai-setting-field">
-          <label for="mcp-command">{{ t('启动命令') }}</label>
-          <input
+        <div class="grid min-w-0 gap-1.5">
+          <label
+            for="mcp-command"
+            class="text-txt-2 text-[11px] font-medium"
+            >{{ t('启动命令') }}</label
+          >
+          <AppInput
             id="mcp-command"
             v-model="draft.command"
             spellcheck="false"
@@ -140,25 +151,27 @@ function addSecret(list: McpSecretDraft[]): void {
             placeholder="npx"
           />
         </div>
-        <div class="ai-setting-field">
-          <label for="mcp-args">{{ t('参数（每行一个）') }}</label>
-          <textarea
-            id="mcp-args"
-            v-model="draft.argsText"
-            rows="3"
-            spellcheck="false"
-          />
-        </div>
+        <AppTextarea
+          v-model="draft.argsText"
+          :label="t('参数（每行一个）')"
+          :rows="3"
+          spellcheck="false"
+        />
       </template>
       <div
         v-else
-        class="ai-setting-field"
+        class="grid min-w-0 gap-1.5"
       >
-        <label for="mcp-url">{{ t('服务地址') }}</label>
-        <input
+        <label
+          for="mcp-url"
+          class="text-txt-2 text-[11px] font-medium"
+          >{{ t('服务地址') }}</label
+        >
+        <!-- 原 type="url" 会裁掉首尾空白，这里用 .trim 保持一致。 -->
+        <AppInput
           id="mcp-url"
-          v-model="draft.url"
-          type="url"
+          v-model.trim="draft.url"
+          inputmode="url"
           spellcheck="false"
           placeholder="https://mcp.example/rpc"
         />
@@ -174,13 +187,13 @@ function addSecret(list: McpSecretDraft[]): void {
           :key="index"
           class="mcp-secret"
         >
-          <input
+          <AppInput
             v-model="secret.key"
             :aria-label="t('名称')"
             spellcheck="false"
             maxlength="128"
           />
-          <input
+          <AppInput
             v-model="secret.value"
             type="password"
             :placeholder="secret.hasValue ? t('留空保留已保存的值') : ''"
@@ -212,16 +225,14 @@ function addSecret(list: McpSecretDraft[]): void {
       </fieldset>
       <fieldset class="mcp-targets">
         <legend>{{ t('适用目标（不选则全部可用）') }}</legend>
-        <label
+        <AppCheckbox
           v-for="option in targetOptions"
           :key="option.value"
-        >
-          <input
-            type="checkbox"
-            :checked="draft.targets.includes(option.value)"
-            @change="toggle(option.value)"
-          />{{ option.label }}
-        </label>
+          :model-value="draft.targets.includes(option.value)"
+          :label="option.label"
+          :disabled="loading || busy || !IS_TAURI"
+          @update:model-value="toggle(option.value)"
+        />
       </fieldset>
       <p
         v-if="draft.tools.length"
@@ -334,10 +345,6 @@ function addSecret(list: McpSecretDraft[]): void {
   border: 0;
   padding: 0;
 }
-.mcp-form textarea,
-.mcp-form input {
-  width: 100%;
-}
 .mcp-secrets,
 .mcp-targets {
   display: grid;
@@ -354,11 +361,6 @@ function addSecret(list: McpSecretDraft[]): void {
   grid-auto-flow: column;
   justify-content: start;
   gap: 14px;
-}
-.mcp-targets label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 .mcp-tools {
   font-size: 11px;

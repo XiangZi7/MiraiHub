@@ -8,6 +8,7 @@ import {
   agentCapacityPreset,
   formatAgentContextSize,
 } from '@/constants/agent-limits'
+import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 
 const { t } = useI18n()
@@ -47,6 +48,16 @@ const options = computed(() => [
     description: t('分别调整请求次数、上下文容量和历史消息数'),
   },
 ])
+/**
+ * AppInput 的模型声明为 string，但 type="number" 时 Vue 的 v-model 会回传数字（清空时为 ''），
+ * 与原生 v-model.number 一致。这里原样透传并就地写回，避免 String() 往返改写正在输入的值。
+ */
+function limitInput(key: keyof AgentLimits): string {
+  return limits.value[key] as unknown as string
+}
+function setLimit(key: keyof AgentLimits, value: string): void {
+  limits.value[key] = value as unknown as number
+}
 </script>
 
 <template>
@@ -83,16 +94,18 @@ const options = computed(() => [
           }}</label
         >
         <template v-if="preset === 'custom'">
-          <input
+          <AppInput
             :id="`ai-capacity-${field.key}`"
-            v-model.number="limits[field.key]"
+            :model-value="limitInput(field.key)"
             type="number"
+            class="invalid:border-danger"
             step="1"
             :min="AGENT_LIMIT_RANGES[field.key].min"
             :max="AGENT_LIMIT_RANGES[field.key].max"
             :disabled="disabled"
             required
             :aria-describedby="`ai-capacity-range-${field.key}`"
+            @update:model-value="setLimit(field.key, $event)"
           />
           <span
             :id="`ai-capacity-range-${field.key}`"
@@ -128,10 +141,9 @@ const options = computed(() => [
         class="text-txt-3 text-[11px]"
         >{{ t('agent.modelWindow') }}</label
       >
-      <input
+      <AppInput
         id="ai-context-window"
-        v-model.number="limits.contextWindowTokens"
-        class="border-line bg-input text-txt h-8 w-full rounded-md border px-2 text-xs"
+        :model-value="limitInput('contextWindowTokens')"
         type="number"
         step="1"
         min="16384"
@@ -139,16 +151,16 @@ const options = computed(() => [
         :disabled="disabled"
         required
         aria-describedby="ai-model-budget-help"
+        @update:model-value="setLimit('contextWindowTokens', $event)"
       />
       <label
         for="ai-output-tokens"
         class="text-txt-3 text-[11px]"
         >{{ t('agent.outputLimit') }}</label
       >
-      <input
+      <AppInput
         id="ai-output-tokens"
-        v-model.number="limits.maxOutputTokens"
-        class="border-line bg-input text-txt h-8 w-full rounded-md border px-2 text-xs"
+        :model-value="limitInput('maxOutputTokens')"
         type="number"
         step="1"
         min="256"
@@ -156,6 +168,7 @@ const options = computed(() => [
         :disabled="disabled"
         required
         aria-describedby="ai-model-budget-help"
+        @update:model-value="setLimit('maxOutputTokens', $event)"
       />
       <p
         id="ai-model-budget-help"
@@ -166,16 +179,18 @@ const options = computed(() => [
     </div>
     <div class="capacity-field">
       <label for="ai-max-retries">{{ t('ai.maxRetries') }}</label>
-      <input
+      <AppInput
         id="ai-max-retries"
-        v-model.number="limits.maxRetries"
+        :model-value="limitInput('maxRetries')"
         type="number"
+        class="invalid:border-danger"
         step="1"
         :min="AGENT_LIMIT_RANGES.maxRetries.min"
         :max="AGENT_LIMIT_RANGES.maxRetries.max"
         :disabled="disabled"
         required
         aria-describedby="ai-retries-help"
+        @update:model-value="setLimit('maxRetries', $event)"
       />
       <p
         id="ai-retries-help"
@@ -226,25 +241,6 @@ const options = computed(() => [
   font-size: 16px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-}
-.capacity-field input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  padding: 6px 8px;
-  border: 1px solid var(--color-line);
-  border-radius: 6px;
-  background: var(--color-input, #ffffff04);
-  color: var(--color-txt);
-  font-size: 12px;
-  outline: none;
-}
-.capacity-field input:focus {
-  border-color: var(--color-accent);
-}
-.capacity-field input:invalid {
-  border-color: var(--color-danger);
 }
 .capacity-help {
   color: var(--color-txt-4);

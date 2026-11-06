@@ -5,6 +5,8 @@ import { computed, useId } from 'vue'
 import type { SshSessionInfo } from '@/types/ssh'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 
 const { t } = useI18n()
 
@@ -27,6 +29,38 @@ const missingSession = computed(
     Boolean(sessionId.value) &&
     !props.sessions.some(session => session.id === sessionId.value)
 )
+const sessionOptions = computed(() => [
+  // 原连接断开时保留一个不可选的占位项，提示用户重新选择。
+  ...(missingSession.value
+    ? [
+        {
+          value: sessionId.value,
+          label: t('原连接已断开，请重新选择'),
+          disabled: true,
+        },
+      ]
+    : []),
+  ...props.sessions.map(session => ({
+    value: session.id,
+    label: `${session.username}@${session.host}:${session.port}`,
+  })),
+])
+/**
+ * AppInput 的模型声明为 string，但 type="number" 时 Vue 的 v-model 会把输入转成数字回传，
+ * 与原生数字输入框一致。这里原样透传，避免 String() 往返在重渲染时改写正在输入的值。
+ */
+const bindPortInput = computed({
+  get: () => bindPort.value as string,
+  set: (value: string) => {
+    bindPort.value = value
+  },
+})
+const targetPortInput = computed({
+  get: () => targetPort.value as string,
+  set: (value: string) => {
+    targetPort.value = value
+  },
+})
 </script>
 
 <template>
@@ -36,45 +70,23 @@ const missingSession = computed(
   >
     <div class="tunnel-connection-row">
       <div class="tunnel-form-field">
-        <label
-          :for="`${fieldId}-session`"
+        <span
           class="tunnel-field-label"
+          aria-hidden="true"
         >
           {{ t('SSH 连接') }}
-        </label>
-        <select
-          :id="`${fieldId}-session`"
+        </span>
+        <AppSelect
           v-model="sessionId"
-          class="tunnel-control"
-          :disabled="busy || !sessions.length"
-          :aria-describedby="
-            !sessions.length || missingSession
-              ? `${fieldId}-session-hint`
-              : undefined
+          :label="t('SSH 连接')"
+          hide-label
+          :options="sessionOptions"
+          :placeholder="
+            loading ? t('正在读取连接…') : t('请选择已连接的服务器')
           "
+          :disabled="busy || !sessions.length"
           required
-        >
-          <option
-            value=""
-            disabled
-          >
-            {{ loading ? t('正在读取连接…') : t('请选择已连接的服务器') }}
-          </option>
-          <option
-            v-if="missingSession"
-            :value="sessionId"
-            disabled
-          >
-            {{ t('原连接已断开，请重新选择') }}
-          </option>
-          <option
-            v-for="session in sessions"
-            :key="session.id"
-            :value="session.id"
-          >
-            {{ session.username }}@{{ session.host }}:{{ session.port }}
-          </option>
-        </select>
+        />
       </div>
       <AppButton
         class="tunnel-refresh"
@@ -124,10 +136,10 @@ const missingSession = computed(
             >
               {{ t('监听地址') }}
             </label>
-            <input
+            <AppInput
               :id="`${fieldId}-bind-host`"
-              class="tunnel-control tunnel-control-readonly"
-              value="127.0.0.1"
+              model-value="127.0.0.1"
+              class="text-txt-2! bg-transparent!"
               readonly
             />
           </div>
@@ -138,10 +150,9 @@ const missingSession = computed(
             >
               {{ t('本地端口') }}
             </label>
-            <input
+            <AppInput
               :id="`${fieldId}-bind-port`"
-              v-model="bindPort"
-              class="tunnel-control"
+              v-model="bindPortInput"
               type="number"
               min="0"
               max="65535"
@@ -190,10 +201,9 @@ const missingSession = computed(
             >
               {{ t('目标主机') }}
             </label>
-            <input
+            <AppInput
               :id="`${fieldId}-target-host`"
               v-model="targetHost"
-              class="tunnel-control"
               :placeholder="t('主机名或 IP 地址')"
               spellcheck="false"
               required
@@ -208,10 +218,9 @@ const missingSession = computed(
             >
               {{ t('目标端口') }}
             </label>
-            <input
+            <AppInput
               :id="`${fieldId}-target-port`"
-              v-model="targetPort"
-              class="tunnel-control"
+              v-model="targetPortInput"
               type="number"
               min="1"
               max="65535"
@@ -279,38 +288,9 @@ const missingSession = computed(
   font-size: 11px;
   line-height: 1.5;
 }
-.tunnel-control {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  height: 36px;
-  padding: 7px 9px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 7px;
-  background: var(--color-panel);
-  color: var(--color-txt);
-  font-size: 12px;
-  line-height: 20px;
-  outline: none;
-}
-.tunnel-control:focus-visible {
-  border-color: var(--color-violet);
-  box-shadow: 0 0 0 3px
-    color-mix(in oklch, var(--color-violet) 16%, transparent);
-}
-.tunnel-control:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.tunnel-control-readonly {
-  color: var(--color-txt-2);
-  background: transparent;
-}
-.tunnel-control::placeholder {
-  color: var(--color-txt-3);
-}
+/* 与 AppSelect 触发按钮同高，底边对齐。 */
 .tunnel-refresh {
-  min-height: 36px;
+  min-height: 34px;
   justify-content: center;
   white-space: nowrap;
 }

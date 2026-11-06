@@ -132,7 +132,8 @@ watch(
   ([open]) => {
     if (open) void positionMenu()
   },
-  { deep: true, immediate: true }
+  // 菜单项每次打开都是新数组，按引用比较即可，无需深度遍历每一项。
+  { immediate: true }
 )
 
 useEventListener(

@@ -15,7 +15,10 @@ import {
 import { useSettings } from '@/composables/useSettings'
 import { IS_TAURI } from '@/utils/window'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 
 const { t } = useI18n()
 
@@ -70,6 +73,11 @@ const counts = computed(() => ({
   update: plan.value?.changes.filter(c => c.action === 'update').length ?? 0,
   skip: plan.value?.changes.filter(c => c.action === 'skip').length ?? 0,
 }))
+const modeOptions = computed(() => [
+  { value: 'skip', label: t('跳过已有连接（默认）') },
+  { value: 'update', label: t('更新同 ID 连接，保留其他连接') },
+  { value: 'copy', label: t('全部作为新连接导入') },
+])
 watch(
   () => settings.rememberPasswords,
   value => {
@@ -191,15 +199,15 @@ function apply(): void {
           t('backup.count', { count: snapshot?.connections.length ?? 0 })
         }}</span>
       </h3>
-      <label class="check"
-        ><input
-          v-model="includeCredentials"
-          type="checkbox"
-          :disabled="busy"
-        />{{ t('包含连接密码、私钥口令和终端启动命令（需要加密）') }}</label
-      ><label class="backup-field"
+      <AppCheckbox
+        v-model="includeCredentials"
+        :label="t('包含连接密码、私钥口令和终端启动命令（需要加密）')"
+        :disabled="busy"
+        class="[&_span]:whitespace-normal"
+      />
+      <label class="flex flex-col gap-1.75"
         >{{ t('备份密码')
-        }}<input
+        }}<AppInput
           v-model="password"
           type="password"
           autocomplete="new-password"
@@ -233,9 +241,9 @@ function apply(): void {
           >{{ path || t('尚未选择') }}</span
         >
       </div>
-      <label class="backup-field"
+      <label class="flex flex-col gap-1.75"
         >{{ t('解密密码')
-        }}<input
+        }}<AppInput
           v-model="restorePassword"
           type="password"
           autocomplete="off"
@@ -247,34 +255,25 @@ function apply(): void {
         >{{ busy ? t('处理中…') : t('读取并预览恢复内容') }}</AppButton
       >
       <template v-if="archive && plan"
-        ><label class="backup-field"
-          >{{ t('同 ID 连接的处理方式')
-          }}<select
-            v-model="mode"
-            @change="reviewed = false"
-          >
-            <option value="skip">{{ t('跳过已有连接（默认）') }}</option>
-            <option value="update">
-              {{ t('更新同 ID 连接，保留其他连接') }}
-            </option>
-            <option value="copy">{{ t('全部作为新连接导入') }}</option>
-          </select></label
-        ><label class="check"
-          ><input
-            v-model="restoreCredentials"
-            type="checkbox"
-            :disabled="!settings.rememberPasswords"
-            @change="reviewed = false"
-          />{{ t('恢复备份中的连接密码和私钥口令') }}</label
-        ><label class="check"
-          ><input
-            v-model="startupCommands"
-            type="checkbox"
-            @change="reviewed = false"
-          />{{
+        ><AppSelect
+          v-model="mode"
+          :label="t('同 ID 连接的处理方式')"
+          :options="modeOptions"
+          @update:model-value="reviewed = false"
+        /><AppCheckbox
+          v-model="restoreCredentials"
+          :label="t('恢复备份中的连接密码和私钥口令')"
+          :disabled="!settings.rememberPasswords"
+          class="[&_span]:whitespace-normal"
+          @update:model-value="reviewed = false"
+        /><AppCheckbox
+          v-model="startupCommands"
+          :label="
             t('恢复终端启动命令（下次连接时会自动执行，请先核对备份来源）')
-          }}</label
-        >
+          "
+          class="[&_span]:whitespace-normal"
+          @update:model-value="reviewed = false"
+        />
         <details
           v-if="startupCommands"
           class="startup-review"
@@ -318,12 +317,11 @@ function apply(): void {
             >
           </div>
         </div>
-        <label class="check"
-          ><input
-            v-model="reviewed"
-            type="checkbox"
-          />{{ t('已核对连接目标和恢复方式') }}</label
-        ><AppButton
+        <AppCheckbox
+          v-model="reviewed"
+          :label="t('已核对连接目标和恢复方式')"
+          class="[&_span]:whitespace-normal"
+        /><AppButton
           variant="primary"
           :disabled="!reviewed || busy"
           @click="apply"
@@ -387,32 +385,6 @@ function apply(): void {
   font-size: 10.5px;
   line-height: 1.7;
   color: var(--color-txt-3);
-}
-.backup-field {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.backup-field input,
-.backup-field select {
-  padding: 8px;
-  border: 1px solid var(--color-line);
-  border-radius: 6px;
-  background: var(--color-panel);
-  color: var(--color-txt);
-  font-size: 11px;
-  min-width: 0;
-}
-.check {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  font-size: 11px;
-  line-height: 1.6;
-}
-.check input {
-  margin-top: 3px;
-  accent-color: var(--color-accent);
 }
 .startup-review {
   font-size: 11px;

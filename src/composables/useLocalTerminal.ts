@@ -1,18 +1,10 @@
 import { i18n } from '@/i18n'
-import { onBeforeUnmount, reactive, shallowRef, toRefs, watch } from 'vue'
-import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { onBeforeUnmount, reactive, toRefs } from 'vue'
+import { useDebounceFn } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import { FitAddon } from '@xterm/addon-fit'
-import { Terminal } from '@xterm/xterm'
 import * as localTerminal from '@/api/local-terminal'
 import { errorMessage } from '@/api/ssh'
-import { currentTerminalTheme } from '@/constants/terminal'
-import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
-import {
-  settingNumber,
-  settingsSnapshot,
-  useSettings,
-} from '@/composables/useSettings'
+import { useXterm } from '@/composables/useXterm'
 import type { LocalConnectionSettings } from '@/types/connection'
 import type {
   LocalTerminalOutputEvent,
@@ -20,24 +12,8 @@ import type {
 } from '@/types/local-terminal'
 import type { SshSessionStatus } from '@/types/ssh'
 
-function terminalFontFamily(): string {
-  const families: Record<string, string> = {
-    'jetbrains-mono': '"JetBrains Mono Variable", ui-monospace, monospace',
-    'cascadia-code': '"Cascadia Code", ui-monospace, monospace',
-    consolas: 'Consolas, ui-monospace, monospace',
-  }
-  return (
-    families[settingsSnapshot().terminalFont] ?? families['jetbrains-mono']!
-  )
-}
-
 export function useLocalTerminal() {
-  const { settings } = useSettings()
-  const term = shallowRef<Terminal>()
-  const fitAddon = shallowRef<FitAddon>()
-  useEventListener(window, SKIN_CHANGE_EVENT, () => {
-    if (term.value) term.value.options.theme = currentTerminalTheme()
-  })
+  const { term, fitAddon, open, stopSettingsWatch } = useXterm(() => resize())
   const state = reactive({
     sessionId: '',
     status: 'disconnected' as SshSessionStatus,
@@ -50,51 +26,12 @@ export function useLocalTerminal() {
   let operation = 0
 
   function mount(container: HTMLElement): void {
-    const terminal = new Terminal({
-      fontFamily: terminalFontFamily(),
-      fontSize: settingNumber('terminalFontSize', 13),
-      lineHeight: 1.4,
-      cursorStyle: settings.terminalCursor as 'block' | 'bar' | 'underline',
-      cursorBlink: settings.terminalCursorBlink,
-      scrollback: settingNumber('terminalScrollback', 5000),
-      theme: currentTerminalTheme(),
-      allowTransparency: true,
-      macOptionIsMeta: true,
-    })
-    const fit = new FitAddon()
-    terminal.loadAddon(fit)
-    terminal.open(container)
-    fit.fit()
+    const terminal = open(container)
     terminal.onData(data => {
       if (state.status === 'connected' && state.sessionId)
         void localTerminal.write(state.sessionId, data).catch(handleWriteError)
     })
-
-    term.value = terminal
-    fitAddon.value = fit
   }
-
-  const stopSettingsWatch = watch(
-    () =>
-      [
-        settings.terminalFont,
-        settings.terminalFontSize,
-        settings.terminalCursor,
-        settings.terminalCursorBlink,
-        settings.terminalScrollback,
-      ] as const,
-    () => {
-      const terminal = term.value
-      if (!terminal) return
-      terminal.options.fontFamily = terminalFontFamily()
-      terminal.options.fontSize = settingNumber('terminalFontSize', 13)
-      terminal.options.cursorStyle = settings.terminalCursor as
-        'block' | 'bar' | 'underline'
-      terminal.options.cursorBlink = settings.terminalCursorBlink
-      terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
-      resize()
-    }
-  )
 
   async function connect(settings: LocalConnectionSettings): Promise<void> {
     const terminal = term.value

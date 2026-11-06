@@ -5,6 +5,7 @@ import { computed, reactive, toRefs, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import type { AgentApproval } from '@/types/agent'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AgentCopyButton from './AgentCopyButton.vue'
 import AgentFileDiff from './AgentFileDiff.vue'
@@ -148,25 +149,19 @@ const expired = computed(() => seconds.value === 0)
         )
       }}
     </p>
-    <label
-      class="text-txt-2 my-3 flex cursor-pointer items-start gap-2 text-[11px]"
-      ><input
-        v-model="reviewed"
-        type="checkbox"
-        class="accent-amber mt-0.5"
-        :disabled="busy || expired"
-      />
-      {{ t('我已核对目标、完整命令及其影响') }}
-    </label>
-    <label
+    <AppCheckbox
+      v-model="reviewed"
+      :label="t('我已核对目标、完整命令及其影响')"
+      :disabled="busy || expired"
+      class="my-3 w-full [&_span]:whitespace-normal"
+    />
+    <AppCheckbox
       v-if="approval.risk === 'critical'"
-      class="text-danger my-3 flex items-start gap-2 text-[11px]"
-      ><input
-        v-model="criticalReviewed"
-        type="checkbox"
-        :disabled="busy || expired"
-      />{{ t('我理解此操作可能造成不可恢复的数据丢失或服务中断') }}</label
-    >
+      v-model="criticalReviewed"
+      :label="t('我理解此操作可能造成不可恢复的数据丢失或服务中断')"
+      :disabled="busy || expired"
+      class="[&_span]:text-danger my-3 w-full [&_span]:whitespace-normal"
+    />
     <div class="flex flex-wrap gap-2">
       <AppButton
         size="sm"

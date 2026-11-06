@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 
 import { onMounted, reactive, toRefs, useTemplateRef } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import type { TerminalCommand } from '@/types/terminal-command'
 
 const { t } = useI18n()
@@ -28,8 +29,9 @@ const state = reactive({
   description: props.command?.description ?? '',
 })
 const { name, value, folder, tags, description } = toRefs(state)
-const nameInput = useTemplateRef<HTMLInputElement>('nameInput')
-onMounted(() => nameInput.value?.focus())
+const nameInput = useTemplateRef<InstanceType<typeof AppInput>>('nameInput')
+// AppInput 的根节点就是 <input>，挂载后直接聚焦名称输入框。
+onMounted(() => (nameInput.value?.$el as HTMLInputElement | undefined)?.focus())
 /** 连同片段分类一起保存，变量使用双花括号占位。 */
 function save(): void {
   emit('save', state.name, state.value, {
@@ -50,19 +52,18 @@ function save(): void {
   >
     <label class="grid gap-1.5 text-xs">
       {{ t('名称') }}
-      <input
+      <AppInput
         ref="nameInput"
         v-model="name"
-        class="field"
         maxlength="80"
         required
         :placeholder="t('例如：查看 Docker 容器')"
     /></label>
     <label class="grid gap-1.5 text-xs">
       {{ t('命令（单行）') }}
-      <input
+      <AppInput
         v-model="value"
-        class="field font-mono"
+        monospace
         maxlength="8192"
         required
         placeholder="docker ps"
@@ -72,23 +73,20 @@ function save(): void {
     <p class="text-txt-3 text-xs">{{ t('使用双花括号填写变量') }}</p>
     <label class="grid gap-1.5 text-xs"
       >{{ t('分组')
-      }}<input
+      }}<AppInput
         v-model="folder"
-        class="field"
         maxlength="80"
     /></label>
     <label class="grid gap-1.5 text-xs"
       >{{ t('标签（逗号分隔）')
-      }}<input
+      }}<AppInput
         v-model="tags"
-        class="field"
         maxlength="500"
     /></label>
     <label class="grid gap-1.5 text-xs"
       >{{ t('说明')
-      }}<input
+      }}<AppInput
         v-model="description"
-        class="field"
         maxlength="500"
     /></label>
     <div class="flex justify-end gap-2">

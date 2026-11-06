@@ -17,6 +17,8 @@ const components = [
   'src/components/agent/AgentMarkdown.vue',
   'src/components/agent/AgentRetryStatus.vue',
   'src/components/settings/AiCapacityFields.vue',
+  // 容量输入框改用公共 AppInput；需真实渲染才能断言 input 的 id/min/max/step。
+  'src/components/ui/AppInput.vue',
 ]
 const load = sourceLoader({}, components)
 const { i18n } = await load('src/i18n/index.ts')

@@ -12,6 +12,7 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { currentTerminalTheme } from '@/constants/terminal'
 import { serializeCast, type TerminalCast } from '@/utils/terminal-recording'
 const props = defineProps<{ cast: TerminalCast }>()
@@ -27,7 +28,18 @@ const state = reactive({
   // 播放倍率
   speed: 1,
 })
-const { position, playing, speed } = toRefs(state)
+const { position, playing } = toRefs(state)
+const speedOptions = [0.5, 1, 2, 4].map(rate => ({
+  value: String(rate),
+  label: `${rate}×`,
+}))
+// AppSelect 只处理字符串值，倍率在这里换算回数字。
+const speedValue = computed({
+  get: () => String(state.speed),
+  set: value => {
+    state.speed = Number(value)
+  },
+})
 const duration = computed(() => props.cast.events.at(-1)?.[0] ?? 0)
 let terminal: Terminal | undefined
 let frame = 0
@@ -147,19 +159,14 @@ onBeforeUnmount(() => {
           @click="togglePlayback"
           >{{ playing ? t('暂停') : t('播放') }}</AppButton
         >
-        <select
-          v-model="speed"
-          class="field w-20"
-          :aria-label="t('播放速度')"
-        >
-          <option
-            v-for="rate in [0.5, 1, 2, 4]"
-            :key="rate"
-            :value="rate"
-          >
-            {{ rate }}×
-          </option>
-        </select>
+        <AppSelect
+          v-model="speedValue"
+          class="w-20"
+          :label="t('播放速度')"
+          :options="speedOptions"
+          hide-label
+          compact
+        />
         <span class="text-txt-3"
           >{{ position.toFixed(1) }} / {{ duration.toFixed(1) }}s</span
         >
