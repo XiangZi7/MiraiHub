@@ -538,9 +538,8 @@ impl DatabaseManager {
             .drain()
             .map(|(_, entry)| entry.pool)
             .collect();
-        for pool in pools {
-            pool.close().await;
-        }
+        // 各连接池互不依赖，并行关闭，一个慢连接不拖住其余的。
+        futures_util::future::join_all(pools.iter().map(|pool| pool.close())).await;
     }
 }
 

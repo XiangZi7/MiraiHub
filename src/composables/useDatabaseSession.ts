@@ -8,7 +8,11 @@ import {
 } from 'vue'
 import * as database from '@/api/database'
 import type { SavedConnection } from '@/types/connection'
-import { isSqlConnection, toDatabaseConfig } from '@/types/connection'
+import {
+  connectionFingerprint,
+  isSqlConnection,
+  toDatabaseConfig,
+} from '@/types/connection'
 import type {
   DatabaseColumn,
   DatabaseExecution,
@@ -365,13 +369,14 @@ export function useDatabaseSession(
     }
   }
 
+  // 只在连接参数变化时重连，重新打开标签刷新 lastUsedAt 不应断开会话。
   watch(
-    connection,
+    () => connectionFingerprint(connection.value),
     () => {
       runtimePassword = undefined
       void connect()
     },
-    { immediate: true, deep: true }
+    { immediate: true }
   )
 
   onBeforeUnmount(() => void disconnect())

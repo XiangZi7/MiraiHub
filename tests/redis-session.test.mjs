@@ -120,6 +120,20 @@ test('Redis joins database groups, keeps credential policy, and cannot enter SQL
   )
 })
 
+test('reopening a tab only refreshes lastUsedAt and keeps the live session', async t => {
+  const { state, target } = await fixture(t)
+  const connects = () =>
+    mock.calls.filter(([name]) => name === 'connect').length
+  assert.equal(connects(), 1)
+  target.value = { ...connection(), lastUsedAt: 99, name: 'Renamed' }
+  await flush()
+  assert.equal(connects(), 1)
+  assert.equal(state.session.value?.sessionId, 's1')
+  target.value = { ...connection(), port: 6380 }
+  await flush()
+  assert.equal(connects(), 2)
+})
+
 test('late connect is released after close and cannot resurrect the session', async t => {
   const pending = deferred()
   const { state } = await fixture(t, { connect: () => pending.promise })

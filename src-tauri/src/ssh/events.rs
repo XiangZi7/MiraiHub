@@ -10,6 +10,8 @@ use tauri::{AppHandle, Emitter};
 
 /// 终端有新输出。
 pub const EVENT_OUTPUT: &str = "ssh://output";
+/// 渲染终端的窗口 label。
+pub const TERMINAL_WINDOW: &str = "main";
 /// 会话状态变化（连上、断开）。
 pub const EVENT_STATUS: &str = "ssh://status";
 /// 文件传输进度与状态变化。
@@ -129,8 +131,11 @@ impl StatusEvent {
 ///
 /// 发送失败只记日志不上抛：调用方多在后台读取循环里，
 /// 前端窗口已关闭属于正常情况，不该让整个会话因此中断。
+///
+/// 终端只渲染在主窗口，输出是最高频的事件，只发给主窗口，
+/// 设置、远端编辑器等窗口不必为每一块输出反序列化一次。
 pub fn emit_output(app: &AppHandle, payload: OutputEvent) {
-    if let Err(err) = app.emit(EVENT_OUTPUT, payload) {
+    if let Err(err) = app.emit_to(TERMINAL_WINDOW, EVENT_OUTPUT, payload) {
         log::warn!("推送终端输出失败：{err}");
     }
 }

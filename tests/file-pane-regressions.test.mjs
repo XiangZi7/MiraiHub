@@ -4,9 +4,9 @@ import { effectScope, shallowRef } from 'vue'
 import { sourceLoader } from './helpers/source-module.mjs'
 const load = sourceLoader()
 const { fileIcon } = await load('src/constants/files.ts')
-const { databaseInputType, dateInputValue, databaseDateValue } = await load(
-  'src/utils/database-value.ts'
-)
+const { databaseInputType } = await load('src/utils/database-value.ts')
+const { parseDateValue, formatDateValue, calendarDays, shiftMonth } =
+  await load('src/utils/date-value.ts')
 const { useFilePaneDrag } = await load(
   'src/components/workspace/useFilePaneDrag.ts'
 )
@@ -37,29 +37,51 @@ test('文件图标按格式区分，大小写、点文件、目录和快捷方�
   assert.match(fileIcon('photos', 'directory').icon, /folder/)
 })
 
-test('日期输入保留本地时间，不转换时区或把 NULL 打开动作变成空值写入', () => {
+test('日期列按类型挂选择器，值按文本解析和拼回，保留小数秒与时区后缀', () => {
   assert.equal(databaseInputType('date'), 'date')
-  assert.equal(databaseInputType('DATETIME(6)'), 'datetime-local')
-  assert.equal(
-    databaseInputType('timestamp without time zone'),
-    'datetime-local'
-  )
-  assert.equal(databaseInputType('timestamp with time zone'), 'text')
-  assert.equal(
-    databaseInputType('datetime(6)', '2026-11-06 09:30:45.123456'),
-    'text'
-  )
-  assert.equal(databaseInputType('date', '0000-00-00'), 'text')
-  assert.equal(databaseInputType('time', '120:30:00'), 'text')
-  assert.equal(
-    dateInputValue('2026-11-06 09:30:45.123', 'datetime-local'),
-    '2026-11-06T09:30:45.123'
+  assert.equal(databaseInputType('DATETIME(6)'), 'datetime')
+  assert.equal(databaseInputType('timestamp(3) with time zone'), 'datetime')
+  assert.equal(databaseInputType('time without time zone'), 'time')
+  assert.equal(databaseInputType('varchar(32)'), 'text')
+
+  const precise = parseDateValue('2026-11-06 09:30:45.123456+08', 'datetime')
+  assert.deepEqual(
+    [precise.year, precise.month, precise.day, precise.hour, precise.second],
+    [2026, 11, 6, 9, 45]
   )
   assert.equal(
-    databaseDateValue('2026-11-06T09:30', 'datetime-local'),
+    formatDateValue({ ...precise, day: 7, hour: 0 }, 'datetime'),
+    '2026-11-07 00:30:45.123456+08'
+  )
+  assert.equal(
+    formatDateValue(parseDateValue('2026-11-06T09:30', 'datetime'), 'datetime'),
     '2026-11-06 09:30:00'
   )
-  assert.equal(databaseDateValue('', 'date'), '')
+  assert.equal(
+    formatDateValue(
+      parseDateValue('2026-11-06 09:30:45.1234567 +08:00', 'datetime'),
+      'datetime'
+    ),
+    '2026-11-06 09:30:45.1234567 +08:00'
+  )
+  // 零日期、闰年外的 2 月 29 日、超过 24 小时的 TIME 都交给文本框原样保留。
+  assert.equal(parseDateValue('0000-00-00', 'date'), null)
+  assert.equal(parseDateValue('2025-02-29', 'date'), null)
+  assert.equal(parseDateValue('120:30:00', 'time'), null)
+  assert.equal(parseDateValue('', 'datetime'), null)
+  assert.equal(
+    formatDateValue(parseDateValue('0050-03-01', 'date'), 'date'),
+    '0050-03-01'
+  )
+
+  const days = calendarDays(2026, 11, 1)
+  assert.equal(days.length, 42)
+  // 2026-11-01 是周日，周一开头时前面补 6 天十月。
+  assert.deepEqual(days[6], { year: 2026, month: 11, day: 1, outside: false })
+  assert.equal(days[0].outside, true)
+  assert.deepEqual(calendarDays(2026, 11, 0)[0].day, 1)
+  assert.deepEqual(shiftMonth(2026, 1, -1), { year: 2025, month: 12 })
+  assert.deepEqual(shiftMonth(2026, 12, 12), { year: 2027, month: 12 })
 })
 
 test('跨栏拖拽保留整组选择，只允许同会话的另一侧接收，取消后不传输', t => {

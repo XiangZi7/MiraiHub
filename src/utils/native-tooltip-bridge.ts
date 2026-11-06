@@ -3,6 +3,9 @@ interface NativeTooltip {
   label: string | null
 }
 
+/** 高频变动、不含提示的子树：xterm 终端与 CodeMirror 编辑区。 */
+const HIGH_FREQUENCY_SUBTREES = '.xterm, .cm-content'
+
 /** 接管现有原生 title，保留空属性供 Vue 正常更新或移除，不改动组件的标题 prop。 */
 export function startNativeTooltipBridge(
   root: HTMLElement,
@@ -56,7 +59,15 @@ export function startNativeTooltipBridge(
     node.querySelectorAll('[title]').forEach(element => targets.add(element))
   }
 
-  const observer = new MutationObserver(records => {
+  const observer = new MutationObserver(allRecords => {
+    // 终端与代码编辑器每次输出、每个按键都在改 DOM，里面不会有 title，
+    // 直接跳过，免得持续输出时每帧都全量 querySelectorAll。
+    const records = allRecords.filter(
+      record =>
+        !(record.target instanceof Element) ||
+        !record.target.closest(HIGH_FREQUENCY_SUBTREES)
+    )
+    if (!records.length) return
     const targets = new Set<Element>()
     const changedTitles = new Set<Element>()
     for (const record of records) {

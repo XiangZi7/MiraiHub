@@ -128,11 +128,13 @@ impl SessionManager {
     pub async fn shutdown(&self) {
         let entries: Vec<_> = self.sessions.write().await.drain().collect();
 
-        for (id, entry) in entries {
+        // 并行断开：一台网络已断的服务器不该让其余会话等它超时。
+        futures_util::future::join_all(entries.iter().map(|(id, entry)| async move {
             if let Err(err) = entry.session.disconnect().await {
                 log::warn!("退出时断开会话 {id} 失败：{err}");
             }
-        }
+        }))
+        .await;
     }
 }
 

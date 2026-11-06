@@ -8,6 +8,7 @@ import {
 } from 'vue'
 import * as redis from '@/api/redis'
 import {
+  connectionFingerprint,
   toDatabaseConnectionConfig,
   type SavedConnection,
 } from '@/types/connection'
@@ -273,13 +274,14 @@ export function useRedisSession(
     )
       await inspect(detail.key)
   }
+  // 只在连接参数变化时重连，重新打开标签刷新 lastUsedAt 不应断开会话。
   watch(
-    connection,
+    () => connectionFingerprint(connection.value),
     () => {
       runtimePassword = undefined
       void connect()
     },
-    { immediate: true, deep: true }
+    { immediate: true }
   )
   onBeforeUnmount(() => {
     runtimePassword = undefined

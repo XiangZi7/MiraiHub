@@ -1,49 +1,46 @@
 <script setup lang="ts">
 import { computed, onMounted, useTemplateRef } from 'vue'
-import {
-  databaseInputType,
-  dateInputValue,
-  databaseDateValue,
-} from '@/utils/database-value'
+import AppDatePicker from '@/components/ui/AppDatePicker.vue'
+import AppInput from '@/components/ui/AppInput.vue'
+import { databaseInputType } from '@/utils/database-value'
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{ dataType?: string; autofocus?: boolean }>()
 const model = defineModel<string>({ required: true })
-const type = computed(() => databaseInputType(props.dataType, model.value))
-const input = useTemplateRef<HTMLInputElement>('input')
-const value = computed({
-  get: () => dateInputValue(model.value, type.value),
-  set: value => {
-    model.value = databaseDateValue(value, type.value)
-  },
-})
-/** 用户点击日期单元格时展开原生日历；不支持时仍可直接键入日期。 */
-function showPicker(): void {
-  if (type.value === 'text') return
-  try {
-    input.value?.showPicker?.()
-  } catch {
-    /* 浏览器要求用户手势时保留日历按钮。 */
-  }
-}
+const type = computed(() => databaseInputType(props.dataType))
+const picker = useTemplateRef<InstanceType<typeof AppDatePicker>>('picker')
+const text = useTemplateRef<InstanceType<typeof AppInput>>('text')
+/** 点开日期单元格时直接展开日历，仍可直接键入；光标统一放到末尾。 */
 onMounted(() => {
-  if (!props.autofocus || !input.value) return
-  input.value.focus()
-  if (type.value === 'text') {
-    const end = input.value.value.length
-    input.value.setSelectionRange(end, end)
-  } else showPicker()
+  if (!props.autofocus) return
+  const element: HTMLElement | undefined = (picker.value ?? text.value)?.$el
+  const input =
+    element instanceof HTMLInputElement
+      ? element
+      : element?.querySelector('input')
+  if (!input) return
+  input.focus()
+  const end = input.value.length
+  input.setSelectionRange(end, end)
+  void picker.value?.open()
 })
 </script>
 <template>
-  <input
-    ref="input"
+  <AppDatePicker
+    v-if="type !== 'text'"
+    ref="picker"
     v-bind="$attrs"
-    v-model="value"
-    :type="type"
-    :step="type === 'time' || type === 'datetime-local' ? 'any' : undefined"
-    class="placeholder:text-txt-4 focus:border-violet/40 focus:bg-card focus:ring-violet/45 h-7 w-full min-w-0 border border-transparent bg-transparent px-2.5 font-mono text-inherit outline-none placeholder:italic focus:ring-1 focus:ring-inset"
+    v-model="model"
+    :mode="type"
+    variant="cell"
+  />
+  <AppInput
+    v-else
+    ref="text"
+    v-bind="$attrs"
+    v-model="model"
+    variant="cell"
+    monospace
     autocomplete="off"
     spellcheck="false"
-    @click="showPicker"
   />
 </template>

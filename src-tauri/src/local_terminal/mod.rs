@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, AppResult};
+use crate::ssh::events::TERMINAL_WINDOW;
 
 const EVENT_OUTPUT: &str = "local-terminal://output";
 const EVENT_STATUS: &str = "local-terminal://status";
@@ -231,7 +232,7 @@ fn pump_output(
                         data: encoder.encode(&buffer[..read]),
                         is_stderr: false,
                     };
-                    if let Err(error) = app.emit(EVENT_OUTPUT, payload) {
+                    if let Err(error) = app.emit_to(TERMINAL_WINDOW, EVENT_OUTPUT, payload) {
                         log::warn!("推送本地终端输出失败：{error}");
                     }
                 }

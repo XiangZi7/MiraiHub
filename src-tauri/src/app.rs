@@ -176,17 +176,37 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
     // 退出前给每条连接发一个正常的 disconnect，
     // 否则远端要等 TCP 超时才回收 session
     if let RunEvent::Exit = event {
-        tauri::async_runtime::block_on(app.state::<ssh::tunnels::TunnelManager>().shutdown());
-        tauri::async_runtime::block_on(app.state::<ssh::batch::BatchManager>().shutdown());
+        let tunnels = app.state::<ssh::tunnels::TunnelManager>();
+        let batches = app.state::<ssh::batch::BatchManager>();
         let transfers = app.state::<ssh::TransferManager>();
-        tauri::async_runtime::block_on(transfers.cancel_all());
-        let manager = app.state::<ssh::SessionManager>();
-        tauri::async_runtime::block_on(manager.shutdown());
+        let sessions = app.state::<ssh::SessionManager>();
         let databases = app.state::<db::DatabaseManager>();
-        tauri::async_runtime::block_on(databases.shutdown());
         let redis = app.state::<redis_db::RedisManager>();
-        tauri::async_runtime::block_on(redis.shutdown());
-        let local_terminals = app.state::<local_terminal::LocalTerminalManager>();
-        local_terminals.shutdown();
+        tauri::async_runtime::block_on(async {
+            // 隧道、批量任务和传输都跑在 SSH 会话上，先收尾它们再断会话；
+            // 数据库与 Redis 互不相关，和第一批一起并行关闭。
+            tokio::join!(
+                bounded_shutdown("隧道", tunnels.shutdown()),
+                bounded_shutdown("批量任务", batches.shutdown()),
+                bounded_shutdown("文件传输", transfers.cancel_all()),
+                bounded_shutdown("数据库连接", databases.shutdown()),
+                bounded_shutdown("Redis 连接", redis.shutdown()),
+            );
+            bounded_shutdown("SSH 会话", sessions.shutdown()).await;
+        });
+        app.state::<local_terminal::LocalTerminalManager>()
+            .shutdown();
+    }
+}
+
+/// 退出时每项清理的最长等待。
+///
+/// sqlx 关闭连接池要等借出的连接归还，长查询还在跑时会一直挂着；
+/// 网络已断的 SSH 也可能卡在 disconnect。超时就放弃，进程退出后系统会回收。
+const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+async fn bounded_shutdown(name: &str, task: impl std::future::Future<Output = ()>) {
+    if tokio::time::timeout(SHUTDOWN_TIMEOUT, task).await.is_err() {
+        log::warn!("退出时关闭{name}超时，已跳过");
     }
 }

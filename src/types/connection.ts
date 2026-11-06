@@ -134,6 +134,18 @@ export interface SavedConnection {
     SshConnectionSettings | LocalConnectionSettings | DatabaseConnectionSettings
 }
 
+/**
+ * 影响实际连接的字段指纹。
+ *
+ * 会话按它决定是否重连：重新打开连接时 `lastUsedAt` 会刷新、改名或改分组
+ * 也会换出新对象，这些都不该断开正在跑的查询或丢掉输入过的密码。
+ */
+export function connectionFingerprint(connection?: SavedConnection): string {
+  if (!connection) return ''
+  const { id, kind, host, port, username, settings } = connection
+  return JSON.stringify([id, kind, host, port, username, settings])
+}
+
 /** 保存新连接时的入参，id 与时间戳由存储层生成 */
 export type NewConnection = Omit<
   SavedConnection,
