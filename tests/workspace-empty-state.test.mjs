@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createRenderer, h, nextTick } from 'vue'
+import { createRenderer, h, nextTick, reactive } from 'vue'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { dataModule, sourceLoader } from './helpers/source-module.mjs'
 
@@ -25,9 +25,9 @@ const markersUrl = dataModule(`
     return () => h('section', { 'data-session': props.connectionId })
   } }
   export const Terminal = { render: () => h('section', { 'data-empty-kind': 'servers' }) }
-  export const Database = { props: ['connection'], render() {
+  export const Database = { props: ['connection', 'workspaceHostId'], render() {
     return h('section', this.connection
-      ? { 'data-session': this.connection.id }
+      ? { 'data-session': this.connection.id, 'data-workspace-host': this.workspaceHostId }
       : { 'data-empty-kind': 'databases' })
   } }
 `)
@@ -86,6 +86,11 @@ const { useWorkspaceNavigation } = await load(
 const { useWorkspaceTabSplit, provideWorkspaceTabSplit } = await load(
   'src/composables/useWorkspaceTabSplit.ts'
 )
+const {
+  provideDatabaseWorkspaceTabs,
+  workspaceViewTabs,
+  databaseWorkspaceTabId,
+} = await load('src/composables/useDatabaseWorkspaceTabs.ts')
 const { default: Views } = await load(
   'src/components/workspace/WorkspaceConnectionViews.vue'
 )
@@ -165,13 +170,19 @@ async function fixture(t, connections) {
     nextSibling: child =>
       child.parent?.children[child.parent.children.indexOf(child) + 1] ?? null,
   })
-  let layout, navigation
+  let layout, navigation, databaseTabs
   const app = renderer.createApp({
     setup() {
       navigation = useWorkspaceNavigation()
+      databaseTabs = provideDatabaseWorkspaceTabs()
       layout = useWorkspaceTabSplit({
-        tabs: () => workspace.tabs,
-        activeId: () => workspace.activeId,
+        tabs: () => workspaceViewTabs(workspace.tabs, databaseTabs),
+        activeId: () => {
+          const content = databaseTabs.get(workspace.activeId)?.activeId()
+          return content
+            ? databaseWorkspaceTabId(workspace.activeId, content)
+            : workspace.activeId
+        },
         enabled: () => navigation.hasOpenSectionTabs.value,
       })
       provideWorkspaceTabSplit(layout)
@@ -188,8 +199,84 @@ async function fixture(t, connections) {
   await flush()
   const find = attribute =>
     descendants(root).filter(node => attribute in node.props)
-  return { workspace, layout, navigation, root, find }
+  return { workspace, layout, navigation, databaseTabs, root, find }
 }
+
+test('数据库跨屏显示时新增表不搬走目录树，只有拖动连接标签才改变所在分屏', async t => {
+  const f = await fixture(t, [connection('db', 'mysql')])
+  const record = reactive({
+    tabs: [
+      { id: 'a', label: 'Left table' },
+      { id: 'b', label: 'Right table' },
+    ],
+    activeId: 'a',
+  })
+  f.databaseTabs.set('db', {
+    tabs: () => record.tabs,
+    activeId: () => record.activeId,
+    select: id => {
+      record.activeId = id
+    },
+    add() {},
+    close() {},
+    reorder() {},
+    contextItems: () => [],
+    action: async () => {},
+  })
+  await flush()
+  const content = id => databaseWorkspaceTabId('db', id)
+  const leftGroup = f.layout.groupForTab('db').id
+  const target = type => ({
+    type,
+    props: {},
+    style: {},
+    children: [],
+    parent: null,
+  })
+  const left = target('left'),
+    right = target('right')
+  f.layout.setTarget(leftGroup, left)
+  assert.ok(f.layout.moveTab(content('b'), leftGroup, 'right'))
+  const rightGroup = f.layout.groupForTab(content('b')).id
+  f.layout.setTarget(rightGroup, right)
+  f.layout.activate(content('a'))
+  await flush()
+  const shell = () =>
+    descendants(left).find(node => node.props['data-session'] === 'db')
+  const original = shell()
+  assert.ok(original)
+  assert.equal(original.props['data-workspace-host'], content('a'))
+
+  // 新表追加在已分屏的旧表之后，复现按可见标签顺序选择宿主的错误。
+  record.tabs.push({ id: 'c', label: 'New table' })
+  record.activeId = 'c'
+  await flush()
+  assert.equal(f.layout.groupForTab(content('c')).id, leftGroup)
+  assert.equal(shell(), original)
+  assert.equal(original.props['data-workspace-host'], content('c'))
+  assert.equal(
+    descendants(right).some(node => node.props['data-session'] === 'db'),
+    false
+  )
+
+  // 切到右侧已有表也不搬侧栏；改变标签顺序不会改变连接归属。
+  record.activeId = 'b'
+  await flush()
+  record.tabs.reverse()
+  await flush()
+  assert.equal(shell(), original)
+  assert.equal(original.props['data-workspace-host'], content('c'))
+
+  // 用户显式拖动连接标签后，目录树才跟随连接进入另一屏。
+  assert.ok(f.layout.moveTab('db', rightGroup, 'center'))
+  record.activeId = ''
+  await flush()
+  assert.equal(
+    descendants(right).find(node => node.props['data-session'] === 'db'),
+    original
+  )
+  assert.equal(original.props['data-workspace-host'], 'db')
+})
 
 test('切换服务器与数据库分类始终保留已打开标签、会话和分屏', async t => {
   const f = await fixture(t, [connection('ssh-a'), connection('ssh-b')])

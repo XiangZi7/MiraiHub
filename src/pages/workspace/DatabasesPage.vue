@@ -47,8 +47,11 @@ const databaseTabViews = computed(() =>
         databaseWorkspaceTabId(tab.id, content.id)
       ),
     ]
-    // 连接壳优先停留在连接标签所在屏，其余内容独立投放，聚焦其他屏不会把侧栏搬走。
-    const hostId = ids.find(id => visible(id)) ?? tab.id
+    // 连接壳固定在连接标签所属分组，只承载该组的活动内容。
+    // 其他分屏的表独立投放，新增表或标签排序不能把目录树搬到另一屏。
+    const groupActiveId = tabSplit?.groupForTab(tab.id)?.activeId
+    const hostId =
+      groupActiveId && ids.includes(groupActiveId) ? groupActiveId : tab.id
     return [{ id: tab.id, connection, hostId }]
   })
 )
