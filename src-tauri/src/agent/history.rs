@@ -203,23 +203,39 @@ impl Store {
         self.owners
             .insert(conversation_id.into(), Arc::downgrade(cell));
     }
-    pub fn save(&self, app: &AppHandle, run: &Run, cell: &Cell) -> AppResult<()> {
-        self.save_at(&directory(app)?, run, cell)
+    /// 每一步都会保存完整记录，序列化、DPAPI 加密和写盘放到阻塞线程池执行。
+    /// 调用方持有 Store 锁直到写完，删除与改名仍然排在这次写入之后。
+    pub async fn save(&self, app: &AppHandle, run: &Run, cell: &Cell) -> AppResult<()> {
+        let Some(record) = self.record_for(run, cell) else {
+            return Ok(());
+        };
+        let dir = directory(app)?;
+        tauri::async_runtime::spawn_blocking(move || write(&dir, &record))
+            .await
+            .map_err(|error| AppError::internal(format!("保存聊天记录失败：{error}")))?
     }
+    #[cfg(test)]
     fn save_at(&self, dir: &Path, run: &Run, cell: &Cell) -> AppResult<()> {
-        if self
+        match self.record_for(run, cell) {
+            Some(record) => write(dir, &record),
+            None => Ok(()),
+        }
+    }
+    /// 只有当前持有该会话的运行才能写记录，返回待写入的快照。
+    fn record_for(&self, run: &Run, cell: &Cell) -> Option<Record> {
+        if !self
             .owners
             .get(&run.history.id)
             .and_then(Weak::upgrade)
             .is_some_and(|owner| std::ptr::eq(owner.as_ref(), cell))
         {
-            let mut record = Record::from_run(run, cell);
-            if let Some(title) = self.titles.get(&run.history.id) {
-                record.summary.title = title.clone();
-            }
-            write(dir, &record)?;
+            return None;
         }
-        Ok(())
+        let mut record = Record::from_run(run, cell);
+        if let Some(title) = self.titles.get(&run.history.id) {
+            record.summary.title = title.clone();
+        }
+        Some(record)
     }
     fn rename_at(
         &mut self,
@@ -256,7 +272,9 @@ impl Store {
                     "此会话仍在处理中，请先停止当前操作",
                 ));
             }
-            self.save(app, &run, &owner)?;
+            if let Some(record) = self.record_for(&run, &owner) {
+                write(&dir, &record)?;
+            }
             owner.cancel();
             return read(&dir, conversation_id, scope);
         }

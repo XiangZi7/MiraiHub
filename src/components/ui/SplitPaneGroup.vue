@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { VNode } from 'vue'
 import SplitDivider from './SplitDivider.vue'
 import type { SplitOrientation, SplitPane } from '@/composables/useSplitPanes'
 
@@ -17,7 +18,7 @@ const emit = defineEmits<{
 }>()
 
 defineSlots<{
-  pane(props: { pane: SplitPane; index: number; active: boolean }): any
+  pane(props: { pane: SplitPane; index: number; active: boolean }): VNode[]
 }>()
 </script>
 

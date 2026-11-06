@@ -11,6 +11,7 @@ import {
   toRefs,
   useTemplateRef,
   watch,
+  type VNode,
 } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -66,8 +67,8 @@ const emit = defineEmits<{
 }>()
 
 defineSlots<{
-  metrics(): any
-  actions(): any
+  metrics(): VNode[]
+  actions(): VNode[]
 }>()
 
 const containerRef = useTemplateRef<HTMLElement>('terminal')

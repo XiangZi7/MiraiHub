@@ -39,6 +39,7 @@
     "@tauri-apps/plugin-updater": "~2.10.1",
     "@vueuse/core": "^14.4.0",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "exceljs": "4.4.0",
     "markdown-it": "^15.0.1",
@@ -58,8 +59,8 @@
     "prettier": "^3.9.6",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4.3.3",
-    "typescript": "~5.6.2",
+    "typescript": "~5.9.3",
     "vite": "^8.2.2",
-    "vue-tsc": "^2.1.10"
+    "vue-tsc": "^3.3.14"
   }
 }

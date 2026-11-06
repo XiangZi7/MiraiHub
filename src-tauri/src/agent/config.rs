@@ -246,6 +246,20 @@ fn decode(bytes: &[u8]) -> AppResult<Settings> {
     }
     Ok(settings)
 }
+/// 读写设置都要 DPAPI 加解密并落盘（写入还会 fsync），
+/// 异步命令里走这两个包装，放到阻塞线程池执行，不占异步运行时的工作线程。
+pub async fn load(app: &AppHandle) -> AppResult<Settings> {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || read(&app))
+        .await
+        .map_err(|error| AppError::internal(format!("读取 AI 设置失败：{error}")))?
+}
+pub async fn store(app: &AppHandle, next: Settings) -> AppResult<PublicSettings> {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || save(&app, &next))
+        .await
+        .map_err(|error| AppError::internal(format!("保存 AI 设置失败：{error}")))?
+}
 pub fn read(app: &AppHandle) -> AppResult<Settings> {
     let path = app
         .path()
