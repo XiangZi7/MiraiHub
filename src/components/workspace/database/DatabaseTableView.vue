@@ -42,6 +42,7 @@ import { cn } from '@/utils/cn'
 import { IS_TAURI } from '@/utils/window'
 import DatabaseColumnTagDialog from './DatabaseColumnTagDialog.vue'
 import DatabaseDataRow from './DatabaseDataRow.vue'
+import DatabaseValueInput from '@/components/workspace/database/database-value-input.vue'
 import DatabaseExportMenu from './DatabaseExportMenu.vue'
 import type {
   DatabaseExportData,
@@ -584,6 +585,7 @@ function setCellValue(
   else edits.set(key, value)
 }
 
+/** 新行字段直接写入响应式记录，使提交计数随第一次输入更新。 */
 function setInsertedValue(
   rowIndex: number,
   column: string,
@@ -593,9 +595,10 @@ function setInsertedValue(
   if (row) row[column] = value
 }
 
+/** 使用可追踪的属性存在判断，未填写字段仍交给数据库默认值。 */
 function insertedValue(rowIndex: number, column: string): string | null {
   const row = insertedRows[rowIndex]
-  return row && Object.hasOwn(row, column) ? (row[column] ?? null) : null
+  return row && column in row ? (row[column] ?? null) : null
 }
 
 function toggleDelete(rowIndex: number): void {
@@ -615,6 +618,7 @@ function primaryKeys(row: Array<string | null>): CellValue[] {
   })
 }
 
+/** 生成当前暂存变更；显式 NULL、空字符串与未填写字段保持区分。 */
 function buildMutations(): RowMutation[] {
   const detail = state.detail
   const page = state.page
@@ -639,7 +643,7 @@ function buildMutations(): RowMutation[] {
 
   for (const row of insertedRows) {
     const values = detail.columns.flatMap((column): CellValue[] => {
-      if (!Object.hasOwn(row, column.name)) return []
+      if (!(column.name in row)) return []
       const value = row[column.name] ?? null
       if (column.autoIncrement && (value === null || value === '')) return []
       return [{ column: column.name, value }]
@@ -1061,10 +1065,9 @@ watch(
                     :key="column.name"
                     class="group/cell border-line-soft relative border-r border-b p-0 last:border-r-0"
                   >
-                    <AppInput
+                    <DatabaseValueInput
                       :model-value="insertedValue(rowIndex, column.name) ?? ''"
-                      variant="cell"
-                      monospace
+                      :data-type="column.dataType"
                       :placeholder="
                         column.autoIncrement
                           ? t('自动生成')
@@ -1079,7 +1082,12 @@ watch(
                     <AppButton
                       v-if="column.nullable"
                       variant="bare"
-                      class="bg-raised text-txt-4 hover:text-violet absolute top-1/2 right-1 hidden -translate-y-1/2 rounded px-1 text-[9px] group-focus-within/cell:block"
+                      class="bg-raised text-txt-4 hover:text-violet absolute top-1/2 hidden -translate-y-1/2 rounded px-1 text-[9px] group-focus-within/cell:block"
+                      :class="
+                        /date|time/i.test(column.dataType)
+                          ? 'right-8'
+                          : 'right-1'
+                      "
                       :title="t('设为 NULL')"
                       @click="setInsertedValue(rowIndex, column.name, null)"
                       >NULL</AppButton
@@ -1422,8 +1430,7 @@ watch(
       <pre
         v-if="previewStatements.length"
         class="scroll-thin bg-terminal border-line-soft text-txt-2 mt-2.5 max-h-48 overflow-auto rounded-md border p-2 font-mono text-[10.5px] leading-4 whitespace-pre-wrap select-text"
-        >{{ previewText }}</pre
-      >
+        >{{ previewText }}</pre>
     </AppConfirmDialog>
     <AppContextMenu
       :open="rowMenu.open"

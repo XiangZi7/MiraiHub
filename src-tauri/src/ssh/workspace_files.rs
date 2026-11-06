@@ -30,7 +30,17 @@ pub struct SyncScan {
     remote: Vec<FileEntry>,
 }
 
-/// 在阻塞线程读取本地目录，不跟随符号链接；空路径对应用户主目录。
+/// Windows 规范化路径用于 IO，但展示时移除扩展路径前缀，UNC 路径仍保留服务器名。
+fn display_local_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else {
+        value.strip_prefix(r"\\?\").unwrap_or(&value).to_owned()
+    }
+}
+
+/// 在阻塞线程读取本地目录，不跟随符号链接；空路径优先对应系统桌面。
 fn local_listing(path: &Path) -> AppResult<LocalListing> {
     let path = std::fs::canonicalize(path)?;
     let mut entries = Vec::new();
@@ -46,7 +56,7 @@ fn local_listing(path: &Path) -> AppResult<LocalListing> {
             ));
         }
         entries.push(FileEntry {
-            path: entry.path().to_string_lossy().into_owned(),
+            path: display_local_path(&entry.path()),
             name: entry.file_name().to_string_lossy().into_owned(),
             directory: meta.is_dir(),
             size: meta.len(),
@@ -63,10 +73,8 @@ fn local_listing(path: &Path) -> AppResult<LocalListing> {
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     Ok(LocalListing {
-        parent: path
-            .parent()
-            .map(|value| value.to_string_lossy().into_owned()),
-        path: path.to_string_lossy().into_owned(),
+        parent: path.parent().map(display_local_path),
+        path: display_local_path(&path),
         entries,
     })
 }
@@ -75,7 +83,10 @@ fn local_listing(path: &Path) -> AppResult<LocalListing> {
 pub async fn local_list_directory(window: WebviewWindow, path: String) -> AppResult<LocalListing> {
     super::tunnels::main_window(&window)?;
     let path = if path.is_empty() {
-        dirs::home_dir().ok_or_else(|| AppError::internal("无法定位主目录"))?
+        dirs::desktop_dir()
+            .filter(|path| path.is_dir())
+            .or_else(dirs::home_dir)
+            .ok_or_else(|| AppError::internal("无法定位桌面目录"))?
     } else {
         PathBuf::from(path)
     };
@@ -85,7 +96,7 @@ pub async fn local_list_directory(window: WebviewWindow, path: String) -> AppRes
 }
 
 /// 跨平台同步只接收单个文件名，避免远端名称在 Windows 上变成路径或备用数据流。
-fn valid_name(name: &str) -> bool {
+pub(super) fn valid_name(name: &str) -> bool {
     let base = name
         .split('.')
         .next()

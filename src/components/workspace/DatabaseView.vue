@@ -276,9 +276,8 @@ const restoredQueryTabs = restoredWorkspace.tabs.map((tab): QueryTab => {
 })
 const queryState = reactive({
   tabs: [...restoredQueryTabs] as WorkspaceTab[],
-  activeId: restoredQueryTabs.some(tab => tab.id === restoredWorkspace.activeId)
-    ? restoredWorkspace.activeId
-    : (restoredQueryTabs[0]?.id ?? ''),
+  // 恢复 SQL 草稿标签，但打开连接时先显示数据库概览，查询由用户主动选择。
+  activeId: '',
 })
 const historyEntries = shallowRef<DatabaseHistoryEntry[]>([])
 const historyMenu = reactive({ open: false, x: 0, y: 0 })

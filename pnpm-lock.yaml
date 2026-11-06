@@ -81,12 +81,15 @@ importers:
       '@iconify-json/lucide':
         specifier: ^1.2.128
         version: 1.2.128
+      '@iconify-json/vscode-icons':
+        specifier: ^1.2.96
+        version: 1.2.96
       '@tauri-apps/cli':
         specifier: ^2
         version: 2.11.4
       '@vitejs/plugin-vue':
-        specifier: ^5.2.1
-        version: 5.2.4(vite@8.2.2(@types/node@26.4.1)(jiti@2.7.0))(vue@3.5.42(typescript@5.6.3))
+        specifier: ^6.0.10
+        version: 6.0.10(vite@8.2.2(@types/node@26.4.1)(jiti@2.7.0))(vue@3.5.42(typescript@5.6.3))
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
@@ -145,6 +148,9 @@ packages:
 
   '@iconify-json/lucide@1.2.128':
     resolution: {integrity: sha512-s8tZ6BIQfkwl6INcdHMri3bokShU/MwOVM8cyFUgE7QJ3EuwmIhXFsrqtA0WD8YrhoII1K+KA5EEIJ4x0JWIdw==}
+
+  '@iconify-json/vscode-icons@1.2.96':
+    resolution: {integrity: sha512-JkH2lqzkp1dimpiZH5X7NmMo5ppPaQHf3ABTDc7BCahT1rHsmfkxroGBtl3JKVY3PwTnN6Sv0ehoR4ScHyOeOg==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -642,12 +648,12 @@ packages:
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
 
-  '@vitejs/plugin-vue@5.2.4':
-    resolution: {integrity: sha512-7Yx/SXSOcQq5HiiV3orevHUFn+pmMB4cgbEkDYgnkUWb0WfeQ/wa2yFv6D5ICiCQOVpjA7vYDXrC7AGO8yjDHA==}
-    engines: {node: ^18.0.0 || >=20.0.0}
+  '@vitejs/plugin-vue@6.0.10':
+    resolution: {integrity: sha512-b80aUQh3n+qEzzZm5oQp3rT2QImeCx58K6eFl/RkJ3d65KW0kTuv5lNsLRVAjbW9YRUpo/wzmvzMgV34bTAItA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
-      vite: ^5.0.0 || ^6.0.0
-      vue: ^3.2.25
+      vite: ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
+      vue: ^3.2.25 || ^3.6.0-rc.10
 
   '@volar/language-core@2.4.15':
     resolution: {integrity: sha512-3VHw+QZU0ZG9IuQmzT68IyN4hZNd9GchGPhbD9+pa8CVv7rnoOZwo7T8weIbrRmihqy3ATpdfXFnqRrfPVK6CA==}
@@ -2041,6 +2047,10 @@ snapshots:
     dependencies:
       '@iconify/types': 2.0.0
 
+  '@iconify-json/vscode-icons@1.2.96':
+    dependencies:
+      '@iconify/types': 2.0.0
+
   '@iconify/types@2.0.0': {}
 
   '@iconify/vue@5.0.1(vue@3.5.42(typescript@5.6.3))':
@@ -2366,8 +2376,9 @@ snapshots:
 
   '@types/web-bluetooth@0.0.21': {}
 
-  '@vitejs/plugin-vue@5.2.4(vite@8.2.2(@types/node@26.4.1)(jiti@2.7.0))(vue@3.5.42(typescript@5.6.3))':
+  '@vitejs/plugin-vue@6.0.10(vite@8.2.2(@types/node@26.4.1)(jiti@2.7.0))(vue@3.5.42(typescript@5.6.3))':
     dependencies:
+      '@rolldown/pluginutils': 1.0.1
       vite: 8.2.2(@types/node@26.4.1)(jiti@2.7.0)
       vue: 3.5.42(typescript@5.6.3)
 

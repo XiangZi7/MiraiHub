@@ -162,7 +162,13 @@ const object = (schema, name = `${schema}_table`) => ({
 
 async function fixture(
   t,
-  { database = '', kind = 'mysql', handlers = {}, savedQueries = [] } = {}
+  {
+    database = '',
+    kind = 'mysql',
+    handlers = {},
+    savedQueries = [],
+    queryWorkspace = null,
+  } = {}
 ) {
   const originalWindow = globalThis.window
   const originalStorage = globalThis.localStorage
@@ -172,6 +178,11 @@ async function fixture(
     'miraihub.database-saved-queries.v1',
     JSON.stringify(savedQueries)
   )
+  if (queryWorkspace)
+    storage.set(
+      'miraihub.database-query-workspace.v1:browse-test',
+      JSON.stringify(queryWorkspace)
+    )
   globalThis.localStorage = {
     getItem: key => storage.get(key) ?? null,
     setItem: (key, value) => storage.set(key, String(value)),
@@ -282,6 +293,38 @@ test('MySQL initially shows no tables or metadata requests, including configured
       )
     })
   }
+})
+
+test('打开数据库保留恢复的 SQL 草稿，但不自动弹出查询编辑页', async t => {
+  const view = await fixture(t, {
+    queryWorkspace: {
+      activeId: 'draft',
+      tabs: [
+        {
+          id: 'draft',
+          label: 'SQL draft',
+          sql: 'SELECT 1;',
+          database: 'alpha',
+          savedQueryId: null,
+        },
+      ],
+    },
+  })
+  assert.equal(view.mainTabs().tabs().length, 1)
+  assert.equal(view.mainTabs().activeId(), '')
+  const shown = element =>
+    !element || (element.style.display !== 'none' && shown(element.parent))
+  assert.equal(
+    all(view.root).some(el => el.type === 'textarea' && shown(el)),
+    false
+  )
+  view.mainTabs().select('draft')
+  await flush()
+  assert.equal(
+    all(view.root).find(el => el.type === 'textarea').props.value,
+    'SELECT 1;'
+  )
+  assert.ok(shown(all(view.root).find(el => el.type === 'textarea')))
 })
 
 test('unloaded databases spin their collapsed arrow and expand only after metadata arrives', async t => {

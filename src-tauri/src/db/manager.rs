@@ -268,7 +268,9 @@ fn postgresql_ssl_mode(mode: DatabaseSslMode) -> PgSslMode {
 fn validate_config(config: &DatabaseConfig) -> DatabaseResult<()> {
     if config.kind == DatabaseKind::Sqlite {
         if config.host.trim().is_empty() {
-            return Err(DatabaseError::InvalidInput("请选择 SQLite 数据库文件".to_owned()));
+            return Err(DatabaseError::InvalidInput(
+                "请选择 SQLite 数据库文件".to_owned(),
+            ));
         }
         return Ok(());
     }
@@ -604,7 +606,7 @@ mod tests {
     #[tokio::test]
     async fn cancelling_idle_session_is_a_no_op() {
         let manager = DatabaseManager::new();
-        assert_eq!(manager.cancel("db-missing").await.unwrap(), false);
+        assert!(!manager.cancel("db-missing").await.unwrap());
     }
 
     #[tokio::test]

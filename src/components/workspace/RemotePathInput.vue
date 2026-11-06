@@ -13,6 +13,7 @@ const props = defineProps<{
   entries: readonly SshRemoteFile[]
   connected: boolean
   loading: boolean
+  local?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -34,7 +35,9 @@ const suggestions = computed<PathSuggestion[]>(() => {
   if (!props.connected) return []
 
   const value = draft.value.trim()
-  const slash = value.lastIndexOf('/')
+  const slash = props.local
+    ? Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'))
+    : value.lastIndexOf('/')
   const prefix = slash >= 0 ? value.slice(slash + 1) : value
   const directoryPrefix = slash >= 0 ? value.slice(0, slash + 1) : ''
 
@@ -48,7 +51,11 @@ const suggestions = computed<PathSuggestion[]>(() => {
     .slice(0, 10)
     .map(entry => ({
       label: entry.name,
-      path: directoryPrefix ? `${directoryPrefix}${entry.name}` : entry.name,
+      path: props.local
+        ? entry.path
+        : directoryPrefix
+          ? `${directoryPrefix}${entry.name}`
+          : entry.name,
     }))
 })
 
@@ -64,9 +71,19 @@ watch(suggestions, items => {
   if (activeIndex.value >= items.length) activeIndex.value = 0
 })
 
+// 本地路径支持盘符、UNC 和相对路径，远端路径继续按 POSIX 处理。
 function absolutePath(value: string): string {
   const target = value.trim()
   if (!target) return props.path || ''
+  if (props.local) {
+    if (
+      /^[a-z]:[\\/]/i.test(target) ||
+      target.startsWith('\\\\') ||
+      target.startsWith('/')
+    )
+      return target
+    return `${props.path.replace(/[\\/]$/, '')}/${target}`
+  }
   if (target.startsWith('/') || target === '~' || target.startsWith('~/'))
     return target
   if (!props.path || props.path === '/') return `/${target}`
@@ -143,7 +160,7 @@ defineExpose({
         type="text"
         spellcheck="false"
         autocomplete="off"
-        :aria-label="t('远端文件路径')"
+        :aria-label="local ? t('本地目录路径') : t('远端文件路径')"
         :disabled="!connected"
         :placeholder="connected ? '/path/to/folder' : t('连接后可输入目录路径')"
         @focus="showSuggestions"

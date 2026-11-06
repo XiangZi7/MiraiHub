@@ -49,16 +49,34 @@ impl ExportProgress<'_> {
     }
 }
 
+/// SQL 导出内容选项在 IPC 和文件导出器之间共享，避免分散的布尔参数顺序出错。
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlExportOptions {
+    pub include_data: bool,
+    pub drop_existing: bool,
+    #[serde(default = "default_structure")]
+    pub include_structure: bool,
+    #[serde(default)]
+    pub include_database: bool,
+}
+fn default_structure() -> bool {
+    true
+}
+
 pub async fn export_sql(
     manager: &DatabaseManager,
     session_id: &str,
     path: &str,
-    include_data: bool,
-    drop_existing: bool,
-    include_structure: bool,
-    include_database: bool,
+    options: SqlExportOptions,
     progress: Option<&ExportProgress<'_>>,
 ) -> DatabaseResult<DatabaseExportResult> {
+    let SqlExportOptions {
+        include_data,
+        drop_existing,
+        include_structure,
+        include_database,
+    } = options;
     let path = validate_path(path)?;
     if !include_data && !include_structure {
         return Err(DatabaseError::InvalidInput("请至少选择结构或数据".into()));

@@ -171,7 +171,7 @@ fn shell_metrics(action: &Action, value: &Value) -> Vec<Metric> {
         return metrics;
     }
     let words: Vec<_> = command.split_whitespace().collect();
-    if words.get(0) == Some(&"systemctl") && words.get(1) == Some(&"status") {
+    if words.first() == Some(&"systemctl") && words.get(1) == Some(&"status") {
         if let Some(active) = stdout
             .lines()
             .find_map(|line| line.trim().strip_prefix("Active: "))
@@ -183,7 +183,7 @@ fn shell_metrics(action: &Action, value: &Value) -> Vec<Metric> {
             });
         }
     }
-    if words.get(0) == Some(&"curl") && command.contains("%{http_code}") {
+    if words.first() == Some(&"curl") && command.contains("%{http_code}") {
         let code = stdout.trim();
         if code.len() == 3 && code.bytes().all(|c| c.is_ascii_digit()) {
             metrics.push(Metric {

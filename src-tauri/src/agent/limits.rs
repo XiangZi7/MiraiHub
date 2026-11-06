@@ -108,7 +108,7 @@ mod tests {
             .message
             .contains("8 次模型请求"));
         assert!(standard
-            .check_request(0, &[message.clone()])
+            .check_request(0, std::slice::from_ref(&message))
             .unwrap_err()
             .message
             .contains("180 KB"));

@@ -153,9 +153,9 @@ fn safe_boundary(messages: &[Value], index: usize) -> bool {
     index > 1
         && index < messages.len()
         && messages[index]["role"] != "tool"
-        && !messages[index - 1]["tool_calls"]
+        && messages[index - 1]["tool_calls"]
             .as_array()
-            .is_some_and(|calls| !calls.is_empty())
+            .is_none_or(|calls| calls.is_empty())
 }
 
 fn compact_until(messages: &[Value], force: bool) -> Option<usize> {

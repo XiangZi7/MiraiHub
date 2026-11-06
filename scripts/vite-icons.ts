@@ -8,9 +8,12 @@ const require = createRequire(import.meta.url)
 const collection: IconifyJSON = JSON.parse(
   readFileSync(require.resolve('@iconify-json/lucide/icons.json'), 'utf8')
 )
+const fileCollection: IconifyJSON = JSON.parse(
+  readFileSync(require.resolve('@iconify-json/vscode-icons/icons.json'), 'utf8')
+)
 
 /** Collect literal names from templates and metadata, including alias parents. */
-export function collectIcons(root: string): IconifyJSON {
+export function collectIcons(root: string, source = collection): IconifyJSON {
   const names = new Set<string>()
   function scan(directory: string): void {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -18,7 +21,7 @@ export function collectIcons(root: string): IconifyJSON {
       if (entry.isDirectory()) scan(file)
       else if (/\.(vue|[cm]?[jt]sx?)$/.test(entry.name)) {
         for (const match of readFileSync(file, 'utf8').matchAll(
-          /lucide:([a-z0-9-]+)/g
+          new RegExp(`${source.prefix}:([a-z0-9-]+)`, 'g')
         ))
           names.add(match[1])
       }
@@ -29,37 +32,47 @@ export function collectIcons(root: string): IconifyJSON {
   const aliases: NonNullable<IconifyJSON['aliases']> = {}
   function include(name: string): void {
     if (icons[name] || aliases[name]) return
-    if (collection.icons[name]) icons[name] = collection.icons[name]
-    else if (collection.aliases?.[name]) {
-      aliases[name] = collection.aliases[name]
+    if (source.icons[name]) icons[name] = source.icons[name]
+    else if (source.aliases?.[name]) {
+      aliases[name] = source.aliases[name]
       include(aliases[name].parent)
-    } else throw new Error(`Unknown offline icon: lucide:${name}`)
+    } else throw new Error(`Unknown offline icon: ${source.prefix}:${name}`)
   }
   for (const name of [...names].sort()) include(name)
   return {
-    prefix: collection.prefix,
-    width: collection.width,
-    height: collection.height,
+    prefix: source.prefix,
+    width: source.width,
+    height: source.height,
     icons,
     aliases,
   }
 }
 
 export function offlineIcons(): Plugin {
-  const id = '\0virtual:mirai-icons'
+  const collections = new Map([
+    ['virtual:mirai-icons', collection],
+    ['virtual:mirai-file-icons', fileCollection],
+  ])
   let root: string
-  let source = ''
-  const generate = () => `export default ${JSON.stringify(collectIcons(root))}`
+  const sources = new Map<string, string>()
+  // 各图标集只打包源码实际使用的图标，桌面端离线使用无需网络请求。
+  const generate = (source: IconifyJSON) =>
+    `export default ${JSON.stringify(collectIcons(root, source))}`
   return {
     name: 'mirai-offline-icons',
     configResolved(config) {
       root = resolve(config.root, 'src')
     },
     resolveId(name) {
-      if (name === 'virtual:mirai-icons') return id
+      if (collections.has(name)) return `\0${name}`
     },
     load(name) {
-      if (name === id) return (source = generate())
+      const source = collections.get(name.slice(1))
+      if (source) {
+        const code = generate(source)
+        sources.set(name, code)
+        return code
+      }
     },
     handleHotUpdate(context) {
       if (
@@ -68,12 +81,17 @@ export function offlineIcons(): Plugin {
           .startsWith(root.replaceAll('\\', '/') + '/')
       )
         return
-      const next = generate()
-      if (next === source) return
-      source = next
-      const module = context.server.moduleGraph.getModuleById(id)
-      if (module) context.server.moduleGraph.invalidateModule(module)
-      context.server.ws.send({ type: 'full-reload' })
+      let changed = false
+      for (const [name, collection] of collections) {
+        const id = `\0${name}`
+        const next = generate(collection)
+        if (next === sources.get(id)) continue
+        sources.set(id, next)
+        const module = context.server.moduleGraph.getModuleById(id)
+        if (module) context.server.moduleGraph.invalidateModule(module)
+        changed = true
+      }
+      if (changed) context.server.ws.send({ type: 'full-reload' })
     },
   }
 }

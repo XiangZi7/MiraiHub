@@ -14,6 +14,7 @@ import { useEventListener, useResizeObserver } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
 import { useAppUpdaterStore } from '@/stores/app-updater'
 import { toast } from '@/composables/useToast'
 
@@ -222,11 +223,12 @@ useEventListener('keydown', event => {
     <section
       :id="promptId"
       ref="prompt"
-      class="update-prompt border-line-strong bg-panel shadow-pop fixed z-150 w-68 rounded-xl border p-3 font-sans"
+      class="update-prompt border-line-strong shadow-pop fixed isolate z-150 w-68 rounded-xl border p-3 font-sans"
       :style="promptStyle"
       role="dialog"
       :aria-label="t('应用更新')"
     >
+      <AppMenuSurface />
       <div class="flex items-center gap-2">
         <AppIcon
           name="lucide:circle-check"
@@ -269,7 +271,7 @@ useEventListener('keydown', event => {
   width: 9px;
   height: 9px;
   transform: translateX(-50%) rotate(45deg);
-  background: var(--color-panel);
+  background: color-mix(in oklch, var(--color-panel) 94%, transparent);
   border-top: 1px solid var(--color-line-strong);
   border-left: 1px solid var(--color-line-strong);
 }

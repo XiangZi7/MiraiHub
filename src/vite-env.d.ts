@@ -6,3 +6,7 @@ declare module 'virtual:mirai-icons' {
   const icons: import('@iconify/vue').IconifyJSON
   export default icons
 }
+declare module 'virtual:mirai-file-icons' {
+  const icons: import('@iconify/vue').IconifyJSON
+  export default icons
+}

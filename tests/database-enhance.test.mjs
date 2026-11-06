@@ -197,3 +197,64 @@ test('ER 布局让被引用的表位于左侧', () => {
   assert.ok(x('users') < x('orders'))
   assert.deepEqual(edges, [{ from: 'orders', to: 'users', label: 'user_id' }])
 })
+
+test('同名索引修改作为一项完整替换，新表带上普通和唯一索引', () => {
+  const index = (name, columns) => ({
+    name,
+    columns,
+    unique: true,
+    primary: false,
+    subPart: null,
+  })
+  const source = table('users', [column('email', 'text')], {
+    indexes: [index('lookup', ['email'])],
+  })
+  const target = table('users', [column('email', 'text')], {
+    indexes: [index('lookup', ['id'])],
+  })
+  const items = diffSchemas('mysql', [source], [target], '')
+  assert.equal(items.length, 1)
+  assert.equal(items[0].kind, 'modify-index')
+  assert.match(
+    items[0].sql,
+    /^DROP INDEX `lookup` ON `users`;\nCREATE UNIQUE INDEX/
+  )
+  assert.match(
+    diffSchemas('mysql', [source], [], '')[0].sql,
+    /CREATE UNIQUE INDEX `lookup`/
+  )
+})
+
+test('MySQL 字符串默认值正确转义，自增字段保留定义', () => {
+  const definition = table(
+    'items',
+    [
+      { ...column('label', 'varchar(64)'), defaultValue: "O'Reilly" },
+      { ...column('id', 'int', false), autoIncrement: true },
+    ],
+    { primaryKey: ['id'] }
+  )
+  const sql = diffSchemas('mysql', [definition], [], '')[0].sql
+  assert.match(sql, /DEFAULT 'O''Reilly'/)
+  assert.match(sql, /NOT NULL AUTO_INCREMENT/)
+})
+
+test('SQLite 不输出无效 ALTER COLUMN，PostgreSQL 区分 schema 并迁移默认值', () => {
+  const source = table('events', [
+    { ...column('created', 'timestamp'), defaultValue: 'CURRENT_TIMESTAMP' },
+  ])
+  const target = table('events', [column('created', 'timestamp')])
+  const sqlite = diffSchemas('sqlite', [source], [target], '')[0]
+  assert.ok(sqlite.unsupported)
+  assert.equal(sqlite.sql, '')
+  const pg = diffSchemas('postgresql', [source], [target], '')[0]
+  assert.match(
+    pg.sql,
+    /ALTER TABLE "main"\."events" ALTER COLUMN "created" SET DEFAULT CURRENT_TIMESTAMP/
+  )
+  assert.equal(
+    diffSchemas('postgresql', [source], [{ ...source, schema: 'archive' }], '')
+      .length,
+    2
+  )
+})

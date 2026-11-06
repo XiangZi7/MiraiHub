@@ -15,14 +15,16 @@ const MAX_RESPONSE_BYTES: usize = 1_048_576;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub enum Transport {
-    Stdio(StdioTransport),
+    Stdio(Box<StdioTransport>),
     Http(HttpTransport),
 }
 
 impl Transport {
     pub async fn connect(server: &McpServer) -> AppResult<Self> {
         match server.transport {
-            servers::Transport::Stdio => Ok(Self::Stdio(StdioTransport::spawn(server).await?)),
+            servers::Transport::Stdio => {
+                Ok(Self::Stdio(Box::new(StdioTransport::spawn(server).await?)))
+            }
             servers::Transport::Http => Ok(Self::Http(HttpTransport::new(server)?)),
         }
     }

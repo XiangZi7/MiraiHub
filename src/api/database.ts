@@ -332,13 +332,15 @@ export async function exportSql(
 ): Promise<DatabaseExportResult> {
   ensureTauri()
   return invoke<DatabaseExportResult>('db_export_sql', {
-    ...(taskId ? { taskId } : {}),
-    sessionId,
-    path,
-    includeData: options.content !== 'structure',
-    includeStructure: options.content !== 'data',
-    includeDatabase: options.content !== 'data' && options.includeDatabase,
-    dropExisting: options.content !== 'data' && options.dropExisting,
+    request: {
+      ...(taskId ? { taskId } : {}),
+      sessionId,
+      path,
+      includeData: options.content !== 'structure',
+      includeStructure: options.content !== 'data',
+      includeDatabase: options.content !== 'data' && options.includeDatabase,
+      dropExisting: options.content !== 'data' && options.dropExisting,
+    },
   })
 }
 

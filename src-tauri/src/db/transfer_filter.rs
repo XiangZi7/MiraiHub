@@ -355,7 +355,7 @@ pub(super) fn current_database_sql(statement: &str, kind: DatabaseKind) -> Strin
                     .checked_sub(1)
                     .and_then(|previous| tokens.get(previous))
                     .is_some_and(|token| token.is("OR"))
-                && !tokens.get(index + 1).is_some_and(|token| token.text == "("))
+                && tokens.get(index + 1).is_none_or(|token| token.text != "("))
             || (token.is("ON") && index_or_trigger)
             || (rename && token.is("TO"))
         {
@@ -544,7 +544,7 @@ fn create_columns(tokens: &[Token<'_>]) -> Option<(String, String, Vec<String>)>
         index += 1;
         (String::new(), identifier(first))
     };
-    if !tokens.get(index).is_some_and(|t| t.text == "(") {
+    if tokens.get(index).is_none_or(|t| t.text != "(") {
         return None;
     }
     let mut columns = Vec::new();
@@ -638,7 +638,7 @@ pub(super) fn preview_data(
                 i += 1;
                 if ts.get(i).is_some_and(|t| t.text == ",") {
                     i += 1;
-                } else if !ts.get(i).is_some_and(|t| t.text == ")") {
+                } else if ts.get(i).is_none_or(|t| t.text != ")") {
                     return Err(DatabaseError::InvalidInput(
                         "无法识别 INSERT 字段清单".into(),
                     ));

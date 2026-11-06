@@ -186,10 +186,7 @@ pub fn open_connection_window(
 
     // kind 只允许固定值：它会拼进 URL，不校验的话
     // 前端传来的任意字符串都能注入 query 参数
-    let kind = match kind {
-        Some(kind @ ("ssh" | "local" | "database")) => kind,
-        _ => "ssh",
-    };
+    let kind = kind.unwrap_or("ssh");
     let safe_connection_id = connection_id.filter(|id| {
         !id.is_empty()
             && id.chars().all(|character| {

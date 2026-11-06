@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, shallowRef, useTemplateRef } from 'vue'
+import { shallowRef } from 'vue'
+import DatabaseValueInput from '@/components/workspace/database/database-value-input.vue'
 
 /**
  * 数据表格里正在编辑的那一个单元格。
@@ -9,7 +10,7 @@ import { onMounted, shallowRef, useTemplateRef } from 'vue'
  * 只在 Enter / Tab / 失焦时把结果交回父组件；没改过就按取消处理，
  * 避免只是点开看看的 NULL 被提交成空字符串。
  */
-const props = defineProps<{ value: string | null }>()
+const props = defineProps<{ value: string | null; dataType?: string }>()
 const emit = defineEmits<{
   commit: [value: string]
   cancel: []
@@ -19,9 +20,9 @@ const emit = defineEmits<{
 
 const initial = props.value ?? ''
 const draft = shallowRef(initial)
-const input = useTemplateRef<HTMLInputElement>('input')
 let settled = false
 
+/** 输入结束后只提交实际变化，打开后未修改的 NULL 保持不变。 */
 function settle(kind: 'commit' | 'cancel'): void {
   if (settled) return
   settled = true
@@ -29,6 +30,7 @@ function settle(kind: 'commit' | 'cancel'): void {
   else emit('cancel')
 }
 
+/** 保留表格的回车提交、Esc 取消及 Tab 跨单元格编辑行为。 */
 function handleKeydown(event: KeyboardEvent): void {
   if (event.key === 'Enter') {
     event.preventDefault()
@@ -43,21 +45,13 @@ function handleKeydown(event: KeyboardEvent): void {
     emit('move', event.shiftKey ? -1 : 1)
   }
 }
-
-onMounted(() => {
-  const element = input.value
-  if (!element) return
-  element.focus()
-  const end = element.value.length
-  element.setSelectionRange(end, end)
-})
 </script>
 
 <template>
-  <input
-    ref="input"
+  <DatabaseValueInput
     v-model="draft"
-    type="text"
+    :data-type="dataType"
+    autofocus
     class="border-violet/40 bg-card text-txt ring-violet/45 placeholder:text-txt-4 h-7 w-full border px-2.5 font-mono ring-1 outline-none ring-inset placeholder:italic"
     :placeholder="value === null ? 'NULL' : ''"
     autocomplete="off"

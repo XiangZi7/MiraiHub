@@ -203,7 +203,7 @@ pub async fn ssh_tunnel_list(
         view.connections = c.active.load(Ordering::SeqCst);
         rows.push(view);
     }
-    rows.sort_by(|a, b| a.bind_port.cmp(&b.bind_port));
+    rows.sort_by_key(|a| a.bind_port);
     Ok(rows)
 }
 #[tauri::command]

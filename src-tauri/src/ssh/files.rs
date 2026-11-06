@@ -700,36 +700,51 @@ pub async fn download_file(
         control.checkpoint().await?;
         let sftp = session.open_transfer_sftp(permit).await?;
         control.checkpoint().await?;
-        let total = sftp
-            .metadata(&request.remote_path)
-            .await
-            .map_err(sftp_error)?
-            .size
-            .unwrap_or(0);
-        control.set_total(total);
         let final_path =
             local_download_path(&request.local_path, &request.remote_path, &request.task_id);
-        if final_path.exists() && !request.overwrite {
-            return Err(SshError::InvalidInput(format!(
-                "本地路径已存在：{}",
-                final_path.display()
-            )));
+        let result: SshResult<()> = async {
+            let plan = build_download_plan(&sftp, request, &final_path, &control).await?;
+            let total = plan
+                .iter()
+                .filter(|entry| !entry.directory)
+                .map(|entry| entry.size)
+                .sum();
+            control.set_total(total);
+            for entry in plan {
+                control.checkpoint().await?;
+                validate_local_download_target(
+                    &entry.local_path,
+                    request.overwrite,
+                    entry.directory,
+                )?;
+                if entry.directory {
+                    tokio::fs::create_dir_all(&entry.local_path).await?;
+                    continue;
+                }
+                if let Some(parent) = entry.local_path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                let temp_path = local_temp_path(&entry.local_path, &request.task_id);
+                let child = DownloadFileRequest {
+                    remote_path: entry.remote_path,
+                    ..request.clone()
+                };
+                download_inner(
+                    app,
+                    &sftp,
+                    &child,
+                    DownloadTarget {
+                        final_path: &entry.local_path,
+                        temp_path: &temp_path,
+                        total,
+                        file_size: entry.size,
+                    },
+                    &control,
+                )
+                .await?;
+            }
+            Ok(())
         }
-
-        if let Some(parent) = final_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
-        let temp_path = local_temp_path(&final_path, &request.task_id);
-        let result = download_inner(
-            app,
-            &sftp,
-            request,
-            &final_path,
-            &temp_path,
-            &control,
-            total,
-        )
         .await;
         let _ = sftp.close().await;
         result.map(|()| final_path.to_string_lossy().into_owned())
@@ -739,15 +754,120 @@ pub async fn download_file(
     result
 }
 
+struct DownloadEntry {
+    remote_path: String,
+    local_path: PathBuf,
+    size: u64,
+    directory: bool,
+}
+struct DownloadTarget<'a> {
+    final_path: &'a Path,
+    temp_path: &'a Path,
+    total: u64,
+    file_size: u64,
+}
+
+/// 写入前拒绝路径中的链接和类型冲突，保留同名文件的显式覆盖决策。
+fn validate_local_download_target(path: &Path, overwrite: bool, directory: bool) -> SshResult<()> {
+    if path
+        .file_name()
+        .is_some_and(|name| !super::workspace_files::valid_name(&name.to_string_lossy()))
+    {
+        return Err(SshError::InvalidInput("本地不支持该文件名".into()));
+    }
+    for ancestor in path.ancestors() {
+        match std::fs::symlink_metadata(ancestor) {
+            Ok(meta) => {
+                if meta.is_symlink()
+                    || (ancestor != path && !meta.is_dir())
+                    || (ancestor == path && meta.is_dir() != directory)
+                {
+                    return Err(SshError::InvalidInput(format!(
+                        "本地路径包含链接或类型冲突：{}",
+                        ancestor.display()
+                    )));
+                }
+                if ancestor == path && !overwrite {
+                    return Err(SshError::InvalidInput(format!(
+                        "本地路径已存在：{}",
+                        path.display()
+                    )));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+/// 先完整规划目录再下载，拒绝链接、越界名称和同名冲突，空目录也保留。
+async fn build_download_plan(
+    sftp: &SftpSession,
+    request: &DownloadFileRequest,
+    root: &Path,
+    control: &TransferControl,
+) -> SshResult<Vec<DownloadEntry>> {
+    let mut pending = vec![(request.remote_path.clone(), root.to_path_buf(), 0usize)];
+    let mut entries = Vec::new();
+    let mut names = HashSet::new();
+    while let Some((remote, local, depth)) = pending.pop() {
+        control.checkpoint().await?;
+        let meta = sftp.symlink_metadata(&remote).await.map_err(sftp_error)?;
+        if meta.is_symlink() || (!meta.is_dir() && !meta.is_regular()) {
+            return Err(SshError::InvalidInput("下载目录包含链接或特殊文件".into()));
+        }
+        if entries.len() >= 5000 || depth > 32 {
+            return Err(SshError::InvalidInput(
+                "下载目录过大：最多 5000 项、32 层".into(),
+            ));
+        }
+        if !names.insert(local.to_string_lossy().to_lowercase()) {
+            return Err(SshError::InvalidInput(
+                "远端文件名在本地存在大小写冲突".into(),
+            ));
+        }
+        validate_local_download_target(&local, request.overwrite, meta.is_dir())?;
+        if meta.is_dir() {
+            for child in sftp.read_dir(&remote).await.map_err(sftp_error)? {
+                let name = child.file_name();
+                if matches!(name.as_str(), "." | "..") {
+                    continue;
+                }
+                if !super::workspace_files::valid_name(&name) {
+                    return Err(SshError::InvalidInput(format!("本地不支持文件名：{name}")));
+                }
+                if entries.len() + pending.len() >= 5000 {
+                    return Err(SshError::InvalidInput("下载目录超过 5000 项".into()));
+                }
+                pending.push((join_path(&remote, &name), local.join(name), depth + 1));
+            }
+        }
+        entries.push(DownloadEntry {
+            remote_path: remote,
+            local_path: local,
+            size: meta.size.unwrap_or(0),
+            directory: meta.is_dir(),
+        });
+    }
+    Ok(entries)
+}
+
+/// 按规划下载单个文件，使用累计进度，使目录下载可暂停、取消和校验续传。
 async fn download_inner(
     app: &AppHandle,
     sftp: &SftpSession,
     request: &DownloadFileRequest,
-    final_path: &Path,
-    temp_path: &Path,
+    target: DownloadTarget<'_>,
     control: &TransferControl,
-    total: u64,
 ) -> SshResult<()> {
+    let DownloadTarget {
+        final_path,
+        temp_path,
+        total,
+        file_size,
+    } = target;
+    let base = control.progress().0;
     let partial = if request.resume {
         tokio::fs::symlink_metadata(temp_path).await.ok()
     } else {
@@ -760,7 +880,7 @@ async fn download_inner(
         return Err(SshError::InvalidInput("续传临时路径不是普通文件".into()));
     }
     let offset = partial.map(|meta| meta.len()).unwrap_or(0);
-    if offset > total {
+    if offset > file_size {
         return Err(SshError::InvalidInput("源文件已变化，不能续传".into()));
     }
     let mut source = sftp.open(&request.remote_path).await.map_err(sftp_error)?;
@@ -778,11 +898,11 @@ async fn download_inner(
     }
     let result: SshResult<()> = async {
         let mut buffer = vec![0_u8; transfer_buffer_size(request.buffer_size_kb)];
-        let mut transferred = offset;
-        control.set_transferred(offset);
+        let mut transferred = base + offset;
+        control.set_transferred(transferred);
         emit_transfer(
             app,
-            TransferEvent::progress(&request.task_id, offset, total),
+            TransferEvent::progress(&request.task_id, transferred, total),
         );
 
         loop {
@@ -802,6 +922,11 @@ async fn download_inner(
             }
         }
 
+        if transferred - base != file_size {
+            return Err(SshError::InvalidInput(
+                "下载期间源文件大小发生变化，请重试".into(),
+            ));
+        }
         target.flush().await?;
         target.sync_all().await?;
         control.checkpoint().await?;
@@ -1299,6 +1424,23 @@ mod tests {
 #[cfg(test)]
 mod resume_tests {
     use super::*;
+    #[test]
+    fn downloads_require_explicit_overwrite_and_matching_local_types() {
+        let root =
+            std::env::temp_dir().join(format!("miraihub-download-{}", rand::random::<u64>()));
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("existing.txt");
+        std::fs::write(&file, b"keep").unwrap();
+        assert!(validate_local_download_target(&file, false, false).is_err());
+        assert!(validate_local_download_target(&file, true, false).is_ok());
+        assert!(validate_local_download_target(&file, true, true).is_err());
+        assert!(validate_local_download_target(&file.join("child.txt"), true, false).is_err());
+        assert!(validate_local_download_target(&root.join("CON"), false, false).is_err());
+        assert!(validate_local_download_target(&root.join("new.txt"), false, false).is_ok());
+        assert_eq!(std::fs::read(&file).unwrap(), b"keep");
+        std::fs::remove_file(file).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
     #[test]
     fn directory_sync_preserves_modified_time_for_repeat_scans() {
         let path =

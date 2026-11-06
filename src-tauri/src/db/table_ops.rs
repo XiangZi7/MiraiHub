@@ -327,11 +327,13 @@ mod tests {
     fn mysql_options_build_single_alter() {
         let pool = DatabaseKind::Mysql;
         let target = sql::qualified_name("db", "users", pool);
-        let mut options = TableAlterOptions::default();
-        options.engine = Some("InnoDB".to_owned());
-        options.charset = Some("utf8mb4".to_owned());
-        options.comment = Some("用户表".to_owned());
-        options.auto_increment = Some(1000);
+        let options = TableAlterOptions {
+            engine: Some("InnoDB".to_owned()),
+            charset: Some("utf8mb4".to_owned()),
+            comment: Some("用户表".to_owned()),
+            auto_increment: Some(1000),
+            ..Default::default()
+        };
 
         let clauses = [
             format!(

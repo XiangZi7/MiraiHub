@@ -337,10 +337,10 @@ useEventListener(window, 'resize', () => {
             </button>
             <button
               type="button"
-              class="command-insert"
+              class="command-insert flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-2 text-left text-[11px] select-none"
               data-command-drag-handle
               :disabled="!connected"
-              :title="t('填入终端：{value0}', { value0: command.command })"
+              :title="`${terminalCommandLabel(command)}\n${command.command}`"
               @pointerdown="reorder.start($event, command.id)"
               @click="insert(command)"
             >
@@ -349,10 +349,11 @@ useEventListener(window, 'resize', () => {
                 class="text-accent text-[10px]"
                 >{{ command.folder }}</span
               >
-              <span class="min-w-0 truncate">{{
-                terminalCommandLabel(command)
-              }}</span>
-              <code class="text-txt-4 min-w-0 truncate text-[10px]">{{
+              <span
+                class="text-txt w-full min-w-0 wrap-anywhere whitespace-normal"
+                >{{ terminalCommandLabel(command) }}</span
+              >
+              <code class="text-txt-4 w-full min-w-0 truncate text-[10px]">{{
                 command.command
               }}</code>
             </button>
@@ -514,18 +515,6 @@ useEventListener(window, 'resize', () => {
   border-color: var(--color-accent);
   background: var(--color-panel);
   pointer-events: none;
-}
-.command-insert {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px;
-  font-size: 11px;
-  text-align: left;
-  user-select: none;
 }
 .command-insert:disabled {
   opacity: 0.5;

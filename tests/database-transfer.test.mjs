@@ -316,7 +316,7 @@ test('data-only export stays responsive and prevents duplicate file selection or
   start()
   await flush()
   assert.equal(calls('db_export_sql').length, 1)
-  assert.deepEqual(calls('db_export_sql')[0][1], {
+  assert.deepEqual(calls('db_export_sql')[0][1].request, {
     sessionId: 'transfer-session',
     taskId: calls('db_begin_export_file')[0][1].taskId,
     path: 'C:/data.sql',
@@ -344,7 +344,7 @@ test('structure-only export forwards the selected schema and replacement options
   await view.check(1)
   await view.click('浏览…')
   await view.click('开始导出')
-  assert.deepEqual(calls('db_export_sql')[0][1], {
+  assert.deepEqual(calls('db_export_sql')[0][1].request, {
     sessionId: 'transfer-session',
     taskId: calls('db_begin_export_file')[0][1].taskId,
     path: 'C:/export.sql',
@@ -462,12 +462,14 @@ test('the native API boundary suppresses schema and drop flags in data-only mode
     [
       'db_export_sql',
       {
-        sessionId: 'session',
-        path: 'data.sql',
-        includeData: true,
-        includeStructure: false,
-        includeDatabase: false,
-        dropExisting: false,
+        request: {
+          sessionId: 'session',
+          path: 'data.sql',
+          includeData: true,
+          includeStructure: false,
+          includeDatabase: false,
+          dropExisting: false,
+        },
       },
     ],
     [

@@ -188,10 +188,10 @@ pub async fn set_launch_at_startup(enabled: bool) -> AppResult<()> {
 pub async fn launch_at_startup_enabled() -> AppResult<bool> {
     #[cfg(windows)]
     {
-        return Ok(registry_command()
+        Ok(registry_command()
             .args(["QUERY", RUN_KEY, "/v", RUN_VALUE])
             .status()?
-            .success());
+            .success())
     }
 
     #[cfg(not(windows))]

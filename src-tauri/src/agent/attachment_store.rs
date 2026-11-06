@@ -358,6 +358,7 @@ pub(super) fn discard(app_data: &Path, id: &str) -> AppResult<()> {
 }
 
 /// Compatibility path for an already-small text input; still writes bounded blocks.
+#[cfg(test)]
 pub(super) fn store_text(app_data: &Path, name: &str, content: &str) -> AppResult<AttachmentRef> {
     if content.len() as u64 > MAX_FILE_BYTES {
         return Err(AppError::invalid_input("单个附件不能超过 1 GB"));
@@ -706,7 +707,7 @@ mod tests {
         let chunk = fs::read(chunk_path(&attachment_directory(&dir.0, &id).unwrap(), 0)).unwrap();
         assert!(!chunk.windows(6).any(|part| part == b"secret"));
         assert!(read(&dir.0, OWNER, &id, 0, 100).is_err());
-        bind(&dir.0, OWNER, &[id.clone()]).unwrap();
+        bind(&dir.0, OWNER, std::slice::from_ref(&id)).unwrap();
         assert_eq!(
             read(&dir.0, OWNER, &id, 0, 100).unwrap().content,
             "secret 第一块\n第二块"
@@ -721,7 +722,7 @@ mod tests {
         append(&dir.0, &id, 0, "a中文").unwrap();
         append(&dir.0, &id, 1, "😀suffix").unwrap();
         finish(&dir.0, &id).unwrap();
-        bind(&dir.0, OWNER, &[id.clone()]).unwrap();
+        bind(&dir.0, OWNER, std::slice::from_ref(&id)).unwrap();
         let page = read(&dir.0, OWNER, &id, 2, 4).unwrap();
         assert_eq!(
             (page.offset, page.content.as_str(), page.next_offset),
@@ -750,7 +751,7 @@ mod tests {
         append(&dir.0, &id, 0, "begin nee").unwrap();
         append(&dir.0, &id, 1, "dle banana needle").unwrap();
         finish(&dir.0, &id).unwrap();
-        bind(&dir.0, OWNER, &[id.clone()]).unwrap();
+        bind(&dir.0, OWNER, std::slice::from_ref(&id)).unwrap();
         let page = search(&dir.0, OWNER, &id, "needle", 0, 1).unwrap();
         assert_eq!(page.matches[0].offset, 6);
         let next = search(&dir.0, OWNER, &id, "needle", page.next_offset.unwrap(), 1).unwrap();
@@ -765,7 +766,7 @@ mod tests {
         let dir = Temporary::new();
         let content = format!("{}needle", "a".repeat(MAX_SEARCH_BYTES + 5));
         let file = store_text(&dir.0, "large.txt", &content).unwrap();
-        bind(&dir.0, OWNER, &[file.id.clone()]).unwrap();
+        bind(&dir.0, OWNER, std::slice::from_ref(&file.id)).unwrap();
         let page =
             search_with_scan_limit(&dir.0, OWNER, &file.id, "needle", 0, 20, MAX_SEARCH_BYTES)
                 .unwrap();
@@ -803,10 +804,10 @@ mod tests {
         let first = store_text(&dir.0, "first.txt", "first").unwrap();
         let second = store_text(&dir.0, "second.txt", "second").unwrap();
         let draft = store_text(&dir.0, "draft.txt", "draft").unwrap();
-        bind(&dir.0, OWNER, &[first.id.clone()]).unwrap();
+        bind(&dir.0, OWNER, std::slice::from_ref(&first.id)).unwrap();
         assert!(bind(&dir.0, OTHER, &[second.id.clone(), first.id.clone()]).is_err());
         assert_eq!(inspect(&dir.0, OWNER, &second.id).unwrap(), second);
-        bind(&dir.0, OTHER, &[second.id.clone()]).unwrap();
+        bind(&dir.0, OTHER, std::slice::from_ref(&second.id)).unwrap();
         assert!(inspect(&dir.0, OTHER, &first.id).is_err());
         assert!(read(&dir.0, OTHER, &first.id, 0, 100).is_err());
         assert!(search(&dir.0, OTHER, &first.id, "first", 0, 10).is_err());
@@ -849,7 +850,7 @@ mod tests {
         let dir = Temporary::new();
         let draft = store_text(&dir.0, "draft.txt", "draft").unwrap();
         let owned = store_text(&dir.0, "owned.txt", "owned").unwrap();
-        bind(&dir.0, OWNER, &[owned.id.clone()]).unwrap();
+        bind(&dir.0, OWNER, std::slice::from_ref(&owned.id)).unwrap();
         let broken = begin(&dir.0, "broken.txt").unwrap();
         let broken_dir = attachment_directory(&dir.0, &broken).unwrap();
         fs::write(broken_dir.join("manifest.bin"), b"invalid ciphertext").unwrap();

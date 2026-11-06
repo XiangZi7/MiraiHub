@@ -4,16 +4,18 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, toRef, useId, watch } from 'vue'
 import { useVirtualList } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import { FILE_KIND_META, extensionOf } from '@/constants/files'
+import { fileIcon } from '@/constants/files'
 import { formatBytes } from '@/utils/format'
 import { formatDateTime } from '@/utils/time'
 import type { SshRemoteFile } from '@/types/ssh'
 import { useRemoteFileSelection } from '@/components/workspace/useRemoteFileSelection'
+import { useFilePaneDrag } from '@/components/workspace/useFilePaneDrag'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   dragSessionId?: string
+  local?: boolean
   files: SshRemoteFile[]
   selected: string
   selection: string[]
@@ -38,6 +40,32 @@ const { box, selectedSet, select, pointerDown, pointerMove, stopDrag } =
     (paths, focus) => emit('select', paths, focus),
     rowHeight
   )
+const transferDrag = useFilePaneDrag({
+  source: () => (props.local ? 'local' : 'remote'),
+  sessionId: () => props.dragSessionId,
+  files: () => props.files,
+  selection: () => props.selection,
+  container: containerProps.ref,
+  select,
+})
+// 名称区域用于拖动文件，大小、日期和空白区域支持拖动框选。
+function handlePointerDown(event: PointerEvent): void {
+  if (!transferDrag.start(event)) pointerDown(event)
+}
+// 优先处理跨栏拖拽，未开始文件拖动时交给框选。
+function handlePointerMove(event: PointerEvent): void {
+  if (!transferDrag.move(event)) pointerMove(event)
+}
+// 完成传输手势并释放框选状态。
+function handlePointerUp(event: PointerEvent): void {
+  transferDrag.finish(event)
+  stopDrag()
+}
+// 取消手势时同时清理选择框和文件预览。
+function cancelGestures(): void {
+  transferDrag.cancel()
+  stopDrag()
+}
 const selectedIndex = computed(() =>
   props.files.findIndex(file => file.path === props.selected)
 )
@@ -50,19 +78,17 @@ const rows = computed(() =>
   list.value.map(({ data: file, index }) => ({
     file,
     index,
-    meta:
-      file.kind === 'directory'
-        ? FILE_KIND_META.folder
-        : file.kind === 'symlink'
-          ? { icon: 'lucide:link', tone: 'text-violet' }
-          : FILE_KIND_META[extensionOf(file.name)],
+    meta: fileIcon(file.name, file.kind),
     size: file.kind === 'directory' ? '–' : formatBytes(file.size),
     modified: file.modifiedAt ? formatDateTime(file.modifiedAt) : '—',
   }))
 )
 watch(
   () => props.files,
-  () => scrollTo(0),
+  () => {
+    scrollTo(0)
+    cancelGestures()
+  },
   { flush: 'post' }
 )
 // 键盘支持全选、取消选择和 Shift 连选，焦点移动后滚动到可见位置。
@@ -77,7 +103,7 @@ async function navigate(event: KeyboardEvent): Promise<void> {
     return
   }
   if (event.key === 'Escape') {
-    stopDrag()
+    cancelGestures()
     emit('select', [], '')
     return
   }
@@ -127,23 +153,17 @@ async function navigate(event: KeyboardEvent): Promise<void> {
     class="scroll-thin relative min-h-0 flex-1 outline-none select-none"
     role="listbox"
     aria-multiselectable="true"
-    :aria-label="t('远端文件')"
+    :aria-label="local ? t('本地文件') : t('远端文件')"
     :aria-activedescendant="activeDescendant"
     tabindex="0"
     @keydown="navigate"
-    @pointerdown="
-      event => {
-        if (
-          !dragSessionId ||
-          !(event.target as HTMLElement).closest('[draggable=true]')
-        )
-          pointerDown(event)
-      }
-    "
-    @pointermove="pointerMove"
-    @pointerup="stopDrag"
-    @pointercancel="stopDrag"
-    @lostpointercapture="stopDrag"
+    @pointerdown="handlePointerDown"
+    @pointermove="handlePointerMove"
+    @pointerup="handlePointerUp"
+    @pointercancel="cancelGestures"
+    @lostpointercapture="cancelGestures"
+    @click.capture="transferDrag.consumeClick"
+    @dragstart.prevent
   >
     <div v-bind="wrapperProps">
       <div
@@ -153,17 +173,6 @@ async function navigate(event: KeyboardEvent): Promise<void> {
         role="option"
         :aria-selected="selectedSet.has(row.file.path)"
         :data-file-index="row.index"
-        :draggable="Boolean(dragSessionId) && row.file.kind === 'file'"
-        @dragstart="
-          $event.dataTransfer?.setData(
-            'application/x-miraihub-remote',
-            JSON.stringify({
-              sessionId: dragSessionId,
-              path: row.file.path,
-              name: row.file.name,
-            })
-          )
-        "
         :aria-posinset="row.index + 1"
         :aria-setsize="files.length"
         class="remote-file-columns grid w-full cursor-default grid-cols-[1fr_80px_130px] items-center gap-3 px-3 text-left text-xs"
@@ -173,14 +182,21 @@ async function navigate(event: KeyboardEvent): Promise<void> {
             : 'hover:bg-hover'
         "
         :style="{ height: `${rowHeight}px` }"
-        :title="`${row.file.permissions}  ${row.file.owner}:${row.file.group}`"
+        :title="
+          local
+            ? row.file.path
+            : `${row.file.name}\n${row.file.permissions}  ${row.file.owner}:${row.file.group}`
+        "
         @dblclick="emit('open', row.file)"
         @contextmenu.prevent.stop="emit('contextmenu', $event, row.file)"
       >
-        <span class="flex min-w-0 items-center gap-2">
+        <span
+          data-file-drag-handle
+          class="flex min-w-0 items-center gap-2"
+        >
           <AppIcon
             :name="row.meta.icon"
-            :size="15"
+            :size="19"
             :class="row.meta.tone"
           />
           <span class="text-txt truncate">{{ row.file.name }}</span>
@@ -209,4 +225,23 @@ async function navigate(event: KeyboardEvent): Promise<void> {
       aria-hidden="true"
     />
   </div>
+  <Teleport to="body">
+    <div
+      v-if="transferDrag.preview.visible"
+      class="bg-panel border-line text-txt pointer-events-none fixed z-100 flex max-w-64 items-center gap-2 rounded-lg border px-3 py-2 text-xs shadow-xl"
+      :style="{
+        left: `${transferDrag.preview.x}px`,
+        top: `${transferDrag.preview.y}px`,
+      }"
+    >
+      <AppIcon
+        name="lucide:files"
+        :size="16"
+        class="text-accent"
+      /><span class="truncate">{{ transferDrag.preview.name }}</span
+      ><span class="bg-accent shrink-0 rounded-full px-1.5 text-white">{{
+        transferDrag.preview.count
+      }}</span>
+    </div>
+  </Teleport>
 </template>

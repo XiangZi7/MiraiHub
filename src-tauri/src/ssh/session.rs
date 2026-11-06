@@ -608,7 +608,7 @@ async fn authenticate_with_agent(
         Ok(mut agent) => try_agent_identities(handle, username, &mut agent).await,
         Err(err) => {
             log::debug!("连接 OpenSSH agent 失败（{err}），改试 Pageant");
-            let mut agent = AgentClient::connect_pageant().await;
+            let mut agent = AgentClient::connect_pageant().await?;
             try_agent_identities(handle, username, &mut agent).await
         }
     }

@@ -14,6 +14,112 @@ pub(super) struct Notice {
     reason: String,
 }
 
+fn delay(error: &AppError, attempt: usize) -> Duration {
+    error
+        .retry_after
+        .unwrap_or_else(|| Duration::from_secs((2u64 << attempt.saturating_sub(1).min(5)).min(60)))
+}
+
+pub(super) async fn completion(
+    run: &mut Run,
+    messages: &[Value],
+    cell: &Cell,
+    emit: &mut (dyn FnMut(Progress) + Send),
+) -> AppResult<Value> {
+    let mut attempt = 0;
+    loop {
+        run.check(cell)?;
+        run.metrics.begin_request();
+        let request_started = Instant::now();
+        let input_bytes = super::context::text_bytes(messages)?
+            .saturating_add(run.tools.definitions().to_string().len());
+        let usage = run.usage();
+        // Clear stale partial output and the retry countdown before each request,
+        // including providers that do not send progress until their first token.
+        emit(Progress {
+            usage: Some(usage.clone()),
+            run_id: run.id.clone(),
+            text: String::new(),
+            phase: "thinking".into(),
+            retry: None,
+            operation: None,
+        });
+        let mut partial_text = String::new();
+        let result = {
+            let mut last_update = Instant::now();
+            let mut last_phase = String::new();
+            let mut on_progress = |text: &str, phase: &str| {
+                partial_text = clip(text, 16000);
+                if phase != last_phase || last_update.elapsed() >= Duration::from_millis(50) {
+                    emit(Progress {
+                        usage: Some(usage.clone()),
+                        run_id: run.id.clone(),
+                        text: partial_text.clone(),
+                        phase: phase.into(),
+                        retry: None,
+                        operation: None,
+                    });
+                    last_update = Instant::now();
+                    last_phase = phase.into();
+                }
+            };
+            tokio::select! {
+                biased;
+                _ = cell.cancellation() => Err(AppError::invalid_input("任务已取消")),
+                result = protocol::streaming_completion(
+                    &run.config, messages, Some(run.tools.definitions()), &mut on_progress,
+                ) => result,
+            }
+        };
+        if let Ok(response) = &result {
+            run.metrics.record_priced(
+                response,
+                run.config.api_format,
+                request_started.elapsed().as_millis() as u64,
+                &run.config.pricing,
+            );
+            run.metrics.last_input_bytes = Some(input_bytes);
+            run.metrics.context_input_tokens = run.metrics.last_input_tokens;
+        }
+        match result {
+            Err(error)
+                if matches!(error.kind, ErrorKind::Network)
+                    && attempt < run.config.limits.max_retries =>
+            {
+                run.check(cell)?;
+                attempt += 1;
+                let wait = delay(&error, attempt);
+                emit(Progress {
+                    usage: Some(usage.clone()),
+                    run_id: run.id.clone(),
+                    text: String::new(),
+                    phase: "retrying".into(),
+                    operation: None,
+                    retry: Some(Notice {
+                        attempt,
+                        max: run.config.limits.max_retries,
+                        retry_at: now() + wait.as_millis() as i64,
+                        reason: error.message,
+                    }),
+                });
+                tokio::select! {
+                    biased;
+                    _ = cell.cancellation() => return Err(AppError::invalid_input("任务已取消")),
+                    _ = tokio::time::sleep(wait) => {},
+                }
+            }
+            result => {
+                if result.is_err() && !partial_text.is_empty() {
+                    // Keep only the final failed attempt for viewing, never as
+                    // complete model/tool history or executable tool arguments.
+                    run.entry("assistant", partial_text, None);
+                }
+                return result;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,111 +348,5 @@ mod tests {
         assert_eq!(run.entries[0].text, "partial answer");
         assert!(run.messages.is_empty());
         server.abort();
-    }
-}
-
-fn delay(error: &AppError, attempt: usize) -> Duration {
-    error
-        .retry_after
-        .unwrap_or_else(|| Duration::from_secs((2u64 << attempt.saturating_sub(1).min(5)).min(60)))
-}
-
-pub(super) async fn completion(
-    run: &mut Run,
-    messages: &[Value],
-    cell: &Cell,
-    emit: &mut (dyn FnMut(Progress) + Send),
-) -> AppResult<Value> {
-    let mut attempt = 0;
-    loop {
-        run.check(cell)?;
-        run.metrics.begin_request();
-        let request_started = Instant::now();
-        let input_bytes = super::context::text_bytes(messages)?
-            .saturating_add(run.tools.definitions().to_string().len());
-        let usage = run.usage();
-        // Clear stale partial output and the retry countdown before each request,
-        // including providers that do not send progress until their first token.
-        emit(Progress {
-            usage: Some(usage.clone()),
-            run_id: run.id.clone(),
-            text: String::new(),
-            phase: "thinking".into(),
-            retry: None,
-            operation: None,
-        });
-        let mut partial_text = String::new();
-        let result = {
-            let mut last_update = Instant::now();
-            let mut last_phase = String::new();
-            let mut on_progress = |text: &str, phase: &str| {
-                partial_text = clip(text, 16000);
-                if phase != last_phase || last_update.elapsed() >= Duration::from_millis(50) {
-                    emit(Progress {
-                        usage: Some(usage.clone()),
-                        run_id: run.id.clone(),
-                        text: partial_text.clone(),
-                        phase: phase.into(),
-                        retry: None,
-                        operation: None,
-                    });
-                    last_update = Instant::now();
-                    last_phase = phase.into();
-                }
-            };
-            tokio::select! {
-                biased;
-                _ = cell.cancellation() => Err(AppError::invalid_input("任务已取消")),
-                result = protocol::streaming_completion(
-                    &run.config, messages, Some(run.tools.definitions()), &mut on_progress,
-                ) => result,
-            }
-        };
-        if let Ok(response) = &result {
-            run.metrics.record_priced(
-                response,
-                run.config.api_format,
-                request_started.elapsed().as_millis() as u64,
-                &run.config.pricing,
-            );
-            run.metrics.last_input_bytes = Some(input_bytes);
-            run.metrics.context_input_tokens = run.metrics.last_input_tokens;
-        }
-        match result {
-            Err(error)
-                if matches!(error.kind, ErrorKind::Network)
-                    && attempt < run.config.limits.max_retries =>
-            {
-                run.check(cell)?;
-                attempt += 1;
-                let wait = delay(&error, attempt);
-                emit(Progress {
-                    usage: Some(usage.clone()),
-                    run_id: run.id.clone(),
-                    text: String::new(),
-                    phase: "retrying".into(),
-                    operation: None,
-                    retry: Some(Notice {
-                        attempt,
-                        max: run.config.limits.max_retries,
-                        retry_at: now() + wait.as_millis() as i64,
-                        reason: error.message,
-                    }),
-                });
-                tokio::select! {
-                    biased;
-                    _ = cell.cancellation() => return Err(AppError::invalid_input("任务已取消")),
-                    _ = tokio::time::sleep(wait) => {},
-                }
-            }
-            result => {
-                if result.is_err() && !partial_text.is_empty() {
-                    // Keep only the final failed attempt for viewing, never as
-                    // complete model/tool history or executable tool arguments.
-                    run.entry("assistant", partial_text, None);
-                }
-                return result;
-            }
-        }
     }
 }

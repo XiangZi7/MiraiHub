@@ -4,7 +4,7 @@ import { useConnectionsStore } from '@/stores/connections'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { connectionLocation } from '@/router'
 import type { NavId } from '@/types'
-import { isDatabaseConnection, type SavedConnection } from '@/types/connection'
+import type { SavedConnection } from '@/types/connection'
 
 export function useWorkspaceNavigation() {
   const route = useRoute()
@@ -12,12 +12,11 @@ export function useWorkspaceNavigation() {
   const connections = useConnectionsStore()
   const workspace = useWorkspaceStore()
   const activeNav = computed(() => route.meta.nav ?? 'servers')
-  const hasOpenSectionTabs = computed(() =>
-    workspace.tabs.some(tab =>
-      activeNav.value === 'databases'
-        ? isDatabaseConnection(tab.connection)
-        : activeNav.value === 'servers' && !isDatabaseConnection(tab.connection)
-    )
+  // 服务器与数据库共用标签栏，切换侧栏分类时保留所有已打开内容。
+  const hasOpenSectionTabs = computed(
+    () =>
+      ['servers', 'databases'].includes(activeNav.value) &&
+      workspace.tabs.length > 0
   )
   async function selectNav(nav: NavId): Promise<void> {
     await router.push({ name: nav })

@@ -116,6 +116,7 @@ const cells = computed<CellView[]>(() =>
       <DatabaseCellEditor
         v-if="editingColumn === columnIndex"
         :value="cell.value"
+        :data-type="columns[columnIndex]?.dataType"
         @commit="emit('commit', columnIndex, $event)"
         @cancel="emit('cancel')"
         @move="emit('move', columnIndex, $event)"

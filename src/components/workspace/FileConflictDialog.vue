@@ -12,6 +12,7 @@ const props = defineProps<{
   open: boolean
   fileName: string
   remaining: number
+  local?: boolean
 }>()
 
 const always = defineModel<boolean>('always', { required: true })
@@ -55,7 +56,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               id="file-conflict-title"
               class="text-txt text-[13px] font-semibold"
             >
-              {{ t('远端已有同名文件或文件夹') }}
+              {{
+                local
+                  ? t('本地已有同名文件或文件夹')
+                  : t('远端已有同名文件或文件夹')
+              }}
             </h2>
             <p class="text-txt-3 mt-1 text-[11px] leading-4 break-all">
               {{ t('files.conflict', { name: fileName }) }}

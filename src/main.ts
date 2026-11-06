@@ -1,6 +1,7 @@
 import { createApp, nextTick, watchEffect } from 'vue'
 import { addCollection, type IconifyJSON } from '@iconify/vue'
 import lucideIcons from 'virtual:mirai-icons'
+import fileIcons from 'virtual:mirai-file-icons'
 import App from './App.vue'
 
 // 离线字体：打包进产物，断网也能正常渲染。
@@ -32,6 +33,7 @@ import { useAppUpdaterStore } from '@/stores/app-updater'
 
 // 构建时自动收集实际使用的图标，保留离线能力而不加载整套图标集。
 addCollection(lucideIcons as IconifyJSON)
+addCollection(fileIcons as IconifyJSON)
 // 自绘补充集：实心文件/文件夹 + Windows 窗口控制符号
 addCollection(MIRAI_ICONS)
 // Iconify logos 原版彩色数据库图标，按需收录并保持离线可用。

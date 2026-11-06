@@ -143,4 +143,23 @@ export const en: Record<string, string> = {
   说明: 'Description',
   '按所选权限审批工具；会话授权只匹配相同操作。':
     'Tools follow the selected permission mode; conversation grants match identical operations only.',
+  桌面: 'Desktop',
+  上传选中文件: 'Upload selected files',
+  '已选择 {count} 项': '{count} items selected',
+  本地已有同名文件或文件夹:
+    'A local file or folder with this name already exists',
+  结构对比已关闭: 'Schema comparison has been closed',
+  '表数量超过 120，无法生成完整的结构迁移':
+    'More than 120 tables; a complete migration cannot be generated',
+  '无法读取部分表结构，已停止对比：{tables}':
+    'Cannot read some table definitions; comparison stopped: {tables}',
+  'SQLite 修改字段需要重建表，请手动迁移':
+    'SQLite column changes require rebuilding the table; migrate manually',
+  自增方式变化需要手动迁移: 'Identity changes require manual migration',
+  特殊索引需要手动迁移: 'Special indexes require manual migration',
+  '外键、主键或特殊表属性变化需要手动迁移':
+    'Foreign key, primary key or table option changes require manual migration',
+  修改索引: 'Modify index',
+  修改约束: 'Modify constraint',
+  复制失败: 'Copy failed',
 }

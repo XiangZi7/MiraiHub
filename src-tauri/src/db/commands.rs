@@ -416,20 +416,24 @@ pub async fn db_cancel_query(
     Ok(manager.cancel(&session_id).await?)
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlExportRequest {
+    task_id: Option<String>,
+    session_id: String,
+    path: String,
+    #[serde(flatten)]
+    options: transfer::SqlExportOptions,
+}
+/// 使用完整的导出请求绑定文件、会话和选项，保持前后端选项含义一致。
 #[tauri::command]
 pub async fn db_export_sql(
     app: tauri::AppHandle,
     transfers: State<'_, crate::ssh::TransferManager>,
-    task_id: Option<String>,
     manager: State<'_, DatabaseManager>,
-    session_id: String,
-    path: String,
-    include_data: bool,
-    drop_existing: bool,
-    include_structure: Option<bool>,
-    include_database: Option<bool>,
+    request: SqlExportRequest,
 ) -> AppResult<DatabaseExportResult> {
-    let progress = if let Some(task_id) = task_id.as_deref() {
+    let progress = if let Some(task_id) = request.task_id.as_deref() {
         Some(transfer::ExportProgress {
             app: &app,
             task_id,
@@ -441,12 +445,9 @@ pub async fn db_export_sql(
     };
     Ok(transfer::export_sql(
         &manager,
-        &session_id,
-        &path,
-        include_data,
-        drop_existing,
-        include_structure.unwrap_or(true),
-        include_database.unwrap_or(false),
+        &request.session_id,
+        &request.path,
+        request.options,
         progress.as_ref(),
     )
     .await?)

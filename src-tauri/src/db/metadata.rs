@@ -725,14 +725,16 @@ async fn postgresql_routine_detail(
     })
 }
 
+/// 索引列按序号排列，保留 MySQL 前缀长度。
+type IndexParts = BTreeMap<(String, bool, bool), Vec<(i64, String, Option<i64>)>>;
+
 async fn list_indexes(
     pool: &DatabasePool,
     schema: &str,
     name: &str,
 ) -> DatabaseResult<Vec<DatabaseIndex>> {
     // (索引名, 唯一, 主键) -> 按序号排列的 (列名, 前缀长度)
-    let mut grouped: BTreeMap<(String, bool, bool), Vec<(i64, String, Option<i64>)>> =
-        BTreeMap::new();
+    let mut grouped: IndexParts = BTreeMap::new();
 
     if let DatabasePool::Sqlite(pool) = pool {
         return sqlite_meta::indexes(pool, name).await;
@@ -824,14 +826,16 @@ async fn list_indexes(
         .collect())
 }
 
+/// 外键列的序号、源列、引用目标和更新删除规则。
+type ForeignKeyParts = BTreeMap<String, Vec<(i64, String, String, String, String, String, String)>>;
+
 async fn list_foreign_keys(
     pool: &DatabasePool,
     schema: &str,
     name: &str,
 ) -> DatabaseResult<Vec<DatabaseForeignKey>> {
     // 约束名 -> (序号, 本列, 目标 schema, 目标表, 目标列, 更新规则, 删除规则)
-    let mut grouped: BTreeMap<String, Vec<(i64, String, String, String, String, String, String)>> =
-        BTreeMap::new();
+    let mut grouped: ForeignKeyParts = BTreeMap::new();
 
     if let DatabasePool::Sqlite(pool) = pool {
         return sqlite_meta::foreign_keys(pool, name).await;

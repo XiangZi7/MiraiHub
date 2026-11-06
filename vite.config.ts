@@ -81,9 +81,9 @@ export default defineConfig(async () => ({
          *
          * 所有窗口（工作区 / 设置 / 连接配置 / 远端编辑器）共用 index.html + main.ts，
          * 靠 hash 路由分流，公共依赖分出来后每个子窗口只解析自己用得到的那几个 chunk。
-         * Vite 8 的打包内核是 Rolldown，这里用 advancedChunks 而不是 manualChunks。
+         * Vite 8 的打包内核是 Rolldown，这里用 codeSplitting 配置共享分包。
          */
-        advancedChunks: {
+        codeSplitting: {
           groups: [
             // ExcelJS 的浏览器编码器只在用户导出 Excel 时加载。
             {

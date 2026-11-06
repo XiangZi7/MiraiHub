@@ -318,8 +318,8 @@ mod tests {
         )
         .is_ok());
         // Per-file cap is enforced via the exported constant.
-        assert!(MAX_FILE_BYTES == 1_000_000_000);
-        assert!(MAX_TOTAL_BYTES == 1_000_000_000);
+        const { assert!(MAX_FILE_BYTES == 1_000_000_000) };
+        const { assert!(MAX_TOTAL_BYTES == 1_000_000_000) };
     }
 
     #[test]

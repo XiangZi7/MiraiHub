@@ -105,3 +105,83 @@ export function extensionOf(name: string): FileKindKey {
 
   return EXTENSION_MAP[lower.slice(dot + 1)] ?? 'plain'
 }
+
+// 两端文件列表共用离线彩色图标；同类扩展名共享对应格式的图案。
+const FILE_ICONS: ReadonlyArray<readonly [string, string]> = [
+  ['doc docx docm dot dotx odt rtf', 'vscode-icons:file-type-word'],
+  ['xls xlsx xlsm xlsb csv tsv ods', 'vscode-icons:file-type-excel'],
+  ['ppt pptx pps ppsx odp', 'vscode-icons:file-type-powerpoint'],
+  ['pdf', 'vscode-icons:file-type-pdf2'],
+  [
+    'png jpg jpeg gif webp avif bmp ico tif tiff heic psd',
+    'vscode-icons:file-type-image',
+  ],
+  ['svg', 'vscode-icons:file-type-svg'],
+  ['mp3 wav flac aac ogg m4a opus wma midi', 'vscode-icons:file-type-audio'],
+  ['mp4 mkv mov avi webm m4v wmv flv', 'vscode-icons:file-type-video'],
+  ['zip rar 7z tar gz bz2 xz tgz zst cab iso', 'vscode-icons:file-type-zip'],
+  ['js mjs cjs', 'vscode-icons:file-type-js-official'],
+  ['jsx', 'vscode-icons:file-type-reactjs'],
+  ['ts mts cts', 'vscode-icons:file-type-typescript-official'],
+  ['tsx', 'vscode-icons:file-type-reactts'],
+  ['vue', 'vscode-icons:file-type-vue'],
+  ['json jsonc json5 jsonl', 'vscode-icons:file-type-json'],
+  ['md markdown mdx', 'vscode-icons:file-type-markdown'],
+  ['html htm', 'vscode-icons:file-type-html'],
+  ['css scss sass less', 'vscode-icons:file-type-css'],
+  ['py pyw pyc ipynb', 'vscode-icons:file-type-python'],
+  ['rs', 'vscode-icons:file-type-rust'],
+  ['go', 'vscode-icons:file-type-go'],
+  ['java jar class kt kts', 'vscode-icons:file-type-java'],
+  ['c h', 'vscode-icons:file-type-c'],
+  ['cpp cxx cc hpp hxx', 'vscode-icons:file-type-cpp'],
+  ['cs', 'vscode-icons:file-type-csharp'],
+  ['php', 'vscode-icons:file-type-php'],
+  ['rb', 'vscode-icons:file-type-ruby'],
+  ['sh bash zsh fish bat cmd', 'vscode-icons:file-type-shell'],
+  ['ps1 psm1 psd1', 'vscode-icons:file-type-powershell'],
+  ['sql', 'vscode-icons:file-type-sql'],
+  ['db sqlite sqlite3 db3', 'vscode-icons:file-type-sqlite'],
+  ['yaml yml', 'vscode-icons:file-type-yaml'],
+  ['toml', 'vscode-icons:file-type-toml'],
+  ['ini conf config cfg env properties xml', 'vscode-icons:file-type-config'],
+  ['log', 'vscode-icons:file-type-log'],
+  ['txt text', 'vscode-icons:file-type-text'],
+  ['ttf otf woff woff2 eot', 'vscode-icons:file-type-font'],
+  ['exe dll bin msi dmg deb rpm apk appimage', 'vscode-icons:file-type-binary'],
+]
+const iconsByExtension = new Map(
+  FILE_ICONS.flatMap(([extensions, icon]) =>
+    extensions.split(' ').map(extension => [extension, icon] as const)
+  )
+)
+
+/** 按完整文件名、扩展名和目录类型选择对应图标，未知格式保留通用文件图标。 */
+export function fileIcon(
+  name: string,
+  kind = 'file'
+): { icon: string; tone: string } {
+  if (kind === 'directory')
+    return { icon: 'vscode-icons:default-folder', tone: '' }
+  if (kind === 'symlink' || /\.(lnk|url)$/i.test(name))
+    return { icon: 'lucide:file-symlink', tone: 'text-violet' }
+  const lower = name.toLowerCase()
+  if (lower === 'dockerfile' || lower.startsWith('docker-compose.'))
+    return { icon: 'vscode-icons:file-type-docker', tone: '' }
+  if (
+    lower === '.gitignore' ||
+    lower === '.gitattributes' ||
+    lower === '.gitmodules'
+  )
+    return { icon: 'vscode-icons:file-type-git', tone: '' }
+  if (lower === '.env' || lower.startsWith('.env.'))
+    return { icon: 'vscode-icons:file-type-config', tone: '' }
+  if (lower.endsWith('.d.ts'))
+    return { icon: 'vscode-icons:file-type-typescriptdef', tone: '' }
+  return {
+    icon:
+      iconsByExtension.get(lower.split('.').at(-1) ?? '') ??
+      'vscode-icons:default-file',
+    tone: '',
+  }
+}

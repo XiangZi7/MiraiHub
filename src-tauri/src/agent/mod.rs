@@ -1004,8 +1004,6 @@ pub async fn ai_test_config(
 #[tauri::command]
 pub async fn ai_start(
     window: WebviewWindow,
-    app: AppHandle,
-    state: State<'_, AgentManager>,
     target: Target,
     prompt: String,
     profile_id: String,
@@ -1014,6 +1012,8 @@ pub async fn ai_start(
     approval_mode: Option<policy::ApprovalMode>,
 ) -> AppResult<Snapshot> {
     guard(&window, false)?;
+    let app = window.app_handle().clone();
+    let state = app.state::<AgentManager>();
     // Serialize insertion with settings changes so a disabled config cannot race a new run.
     let _config_lock = state.config_lock.lock().await;
     let settings = config::read(&app)?;
@@ -1166,7 +1166,6 @@ pub async fn ai_start(
 #[tauri::command]
 pub async fn ai_send(
     window: WebviewWindow,
-    app: AppHandle,
     state: State<'_, AgentManager>,
     run_id: String,
     prompt: String,
@@ -1175,6 +1174,7 @@ pub async fn ai_send(
     guidance: Option<bool>,
 ) -> AppResult<Snapshot> {
     guard(&window, false)?;
+    let app = window.app_handle().clone();
     let cell = state.get(&run_id).await?;
     let mut run = cell.run.lock().await;
     run.check(&cell)?;
@@ -1440,7 +1440,6 @@ fn model_context_error(error: AppError) -> AppError {
 #[tauri::command]
 pub async fn ai_respond(
     window: WebviewWindow,
-    app: AppHandle,
     state: State<'_, AgentManager>,
     run_id: String,
     approval_id: String,
@@ -1449,6 +1448,7 @@ pub async fn ai_respond(
     on_progress: tauri::ipc::Channel<Progress>,
 ) -> AppResult<Snapshot> {
     guard(&window, false)?;
+    let app = window.app_handle().clone();
     let cell = state.get(&run_id).await?;
     let mut run = cell.run.lock().await;
     run.check(&cell)?;

@@ -1,169 +1,323 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, toRefs } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, toRefs } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
-import {
-  listLocalDirectory,
-  type LocalListing,
-  type LocalFileEntry,
-} from '@/api/workspace-files'
+import { listLocalDirectory, type LocalListing } from '@/api/workspace-files'
 import { useFileTransfers } from '@/composables/useFileTransfers'
 import { toast } from '@/composables/useToast'
-import AppIcon from '@/components/ui/AppIcon.vue'
+import { useSettings } from '@/composables/useSettings'
 import IconButton from '@/components/ui/IconButton.vue'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppSkeleton from '@/components/ui/AppSkeleton.vue'
+import RemoteFileList from '@/components/workspace/RemoteFileList.vue'
+import FileBrowserControls from '@/components/workspace/file-browser-controls.vue'
+import FileConflictDialog from '@/components/workspace/FileConflictDialog.vue'
 import DirectorySyncDialog from '@/components/workspace/directory-sync-dialog.vue'
+import type { FilePaneDrop } from '@/components/workspace/useFilePaneDrag'
+import type { SshRemoteFile } from '@/types/ssh'
 const props = defineProps<{ sessionId: string; remotePath: string }>()
 const emit = defineEmits<{ upload: [paths: string[]]; refreshed: [] }>()
 const { t } = useI18n()
 const transfers = useFileTransfers()
-// 响应式状态
+const { settings } = useSettings()
 const state = reactive({
-  // 当前浏览目录
   listing: null as LocalListing | null,
-  // 可编辑的绝对路径
   path: '',
-  // 加载时阻止重复操作
   loading: false,
-  // 是否打开同步预览
   syncing: false,
+  filter: '',
+  selected: '',
+  selection: [] as string[],
+  history: [] as string[],
+  historyIndex: -1,
+  conflictOpen: false,
+  conflictName: '',
+  conflictRemaining: 0,
+  conflictAlways: false,
 })
 const { listing, path, loading, syncing } = toRefs(state)
 let generation = 0
-/** 浏览本地目录并丢弃过期响应。 */
-async function load(path = ''): Promise<void> {
+let disposed = false
+let pendingDownloads = Promise.resolve()
+let conflictResolver:
+  ((action: 'overwrite' | 'skip' | 'cancel') => void) | undefined
+const entries = computed<SshRemoteFile[]>(() =>
+  (state.listing?.entries ?? []).map(entry => ({
+    ...entry,
+    kind: entry.directory ? 'directory' : 'file',
+    permissions: '',
+    owner: '',
+    group: '',
+    linkTarget: null,
+  }))
+)
+const visibleEntries = computed(() =>
+  entries.value.filter(
+    file =>
+      (settings.showHiddenFiles || !file.name.startsWith('.')) &&
+      file.name
+        .toLocaleLowerCase()
+        .includes(state.filter.trim().toLocaleLowerCase())
+  )
+)
+/** 浏览本地目录并丢弃过期响应，默认使用系统桌面。 */
+async function load(path = '', history = true): Promise<void> {
   const token = ++generation
   state.loading = true
   try {
     const result = await listLocalDirectory(path)
-    if (token === generation) {
-      state.listing = result
-      state.path = result.path
+    if (disposed || token !== generation) return
+    state.listing = result
+    state.path = result.path
+    state.filter = ''
+    selectFiles([], '')
+    if (history && state.history[state.historyIndex] !== result.path) {
+      state.history.splice(state.historyIndex + 1)
+      state.history.push(result.path)
+      state.historyIndex = state.history.length - 1
     }
   } catch (error) {
-    if (token === generation)
+    if (!disposed && token === generation)
       toast.error({ title: t('读取本地目录失败'), description: String(error) })
   } finally {
     if (token === generation) state.loading = false
   }
 }
-/** 通过原生选择器切换目录，支持跨盘符浏览。 */
+/** 本地目录前进后退不重复写入历史。 */
+async function navigateHistory(delta: number): Promise<void> {
+  const next = state.historyIndex + delta
+  if (!state.history[next] || state.loading) return
+  await load(state.history[next], false)
+  if (state.path === state.history[next]) state.historyIndex = next
+}
+/** 通过原生选择器跨盘符选择目录。 */
 async function chooseDirectory(): Promise<void> {
   try {
     const result = await open({ directory: true, multiple: false })
-    if (typeof result === 'string') await load(result)
+    if (!disposed && typeof result === 'string') await load(result)
   } catch (error) {
     toast.error(String(error))
   }
 }
-/** 面板间拖拽只传路径，文件内容由原生传输处理。 */
-function drag(event: DragEvent, entry: LocalFileEntry): void {
-  event.dataTransfer?.setData(
-    'application/x-miraihub-local',
-    JSON.stringify([entry.path])
+/** 两栏共用同一套 Ctrl、Shift、键盘和框选逻辑。 */
+function selectFiles(paths: string[], focus: string): void {
+  state.selection = paths
+  state.selected = focus
+}
+/** 双击目录进入，双击文件使用现有上传及冲突处理流程。 */
+function openFile(file: SshRemoteFile): void {
+  if (file.kind === 'directory') void load(file.path)
+  else emit('upload', [file.path])
+}
+/** 完成同名冲突决策，卸载面板时也会取消等待。 */
+function settleConflict(action: 'overwrite' | 'skip' | 'cancel'): void {
+  const resolve = conflictResolver
+  conflictResolver = undefined
+  state.conflictOpen = false
+  resolve?.(action)
+}
+/** 下载按批次排队，使用拖放时的目录快照，不随浏览目录变化。 */
+async function downloadBatch(detail: FilePaneDrop): Promise<void> {
+  const directory = detail.directory
+  const snapshot = await listLocalDirectory(directory)
+  const names = new Set(
+    snapshot.entries.map(entry => entry.name.toLocaleLowerCase())
   )
-}
-/** 仅接受当前会话的远端文件拖拽，在选定本地目录中下载。 */
-async function drop(event: DragEvent): Promise<void> {
-  const raw = event.dataTransfer?.getData('application/x-miraihub-remote')
-  if (!raw || !state.listing) return
-  try {
-    const item = JSON.parse(raw)
+  let policy: 'overwrite' | 'skip' | undefined
+  for (const [index, file] of detail.files.entries()) {
+    if (disposed) break
     if (
-      item.sessionId !== props.sessionId ||
-      typeof item.path !== 'string' ||
-      typeof item.name !== 'string' ||
-      /[\\/:]/u.test(item.name) ||
-      item.name === '.' ||
-      item.name === '..'
+      !file.name ||
+      /[\\/:<>"|?*\u0000-\u001f]/u.test(file.name) ||
+      file.name === '.' ||
+      file.name === '..'
     )
-      return
+      continue
+    let name = file.name
+    let overwrite = false
+    if (names.has(name.toLocaleLowerCase())) {
+      if (settings.overwriteBehavior === 'rename') {
+        const dot = file.kind === 'directory' ? -1 : name.lastIndexOf('.')
+        const base = dot > 0 ? name.slice(0, dot) : name
+        const ext = dot > 0 ? name.slice(dot) : ''
+        let count = 1
+        while (names.has(name.toLocaleLowerCase()))
+          name = `${base} (${count++})${ext}`
+      } else {
+        let action: 'overwrite' | 'skip' | 'cancel' =
+          settings.overwriteBehavior === 'overwrite'
+            ? 'overwrite'
+            : (policy ?? 'cancel')
+        if (settings.overwriteBehavior !== 'overwrite' && !policy) {
+          state.conflictName = file.name
+          state.conflictRemaining = detail.files.length - index - 1
+          state.conflictAlways = false
+          state.conflictOpen = true
+          action = await new Promise(resolve => {
+            conflictResolver = resolve
+          })
+          if (state.conflictAlways && action !== 'cancel') policy = action
+        }
+        if (action === 'cancel' || disposed) break
+        if (action === 'skip') continue
+        overwrite = true
+      }
+    }
+    names.add(name.toLocaleLowerCase())
     await transfers.download({
-      sessionId: props.sessionId,
-      remotePath: item.path,
-      localPath: `${state.listing.path}/${item.name}`,
+      sessionId: detail.sessionId,
+      remotePath: file.path,
+      localPath: `${directory}/${name}`,
+      overwrite,
     })
-    await load(state.listing.path)
-  } catch (error) {
-    toast.error(String(error))
   }
+  if (!disposed && state.listing?.path === directory)
+    await load(directory, false)
 }
-/** 同步完成后刷新本地和远端列表。 */
+/** 只接收同会话另一侧的文件，批次异常交给公共通知。 */
+function receiveDrop(event: Event): void {
+  const detail = (event as CustomEvent<FilePaneDrop>).detail
+  if (
+    detail.source !== 'remote' ||
+    detail.sessionId !== props.sessionId ||
+    detail.directory !== state.listing?.path
+  )
+    return
+  pendingDownloads = pendingDownloads
+    .then(() => (disposed ? undefined : downloadBatch(detail)))
+    .catch(error => {
+      if (!disposed) toast.error(String(error))
+    })
+}
+/** 同步完成后刷新双端列表。 */
 function syncCompleted(): void {
-  void load(state.path)
+  void load(state.path, false)
   emit('refreshed')
 }
 onMounted(() => void load())
 onBeforeUnmount(() => {
+  disposed = true
   generation += 1
+  settleConflict('cancel')
 })
 </script>
 <template>
   <section
-    class="border-line flex min-h-0 min-w-0 flex-1 flex-col border-r"
+    class="file-pane border-line flex min-h-0 min-w-0 flex-1 flex-col border-r"
+    data-file-drop-target="local"
+    :data-file-session-id="sessionId"
+    :data-file-directory="listing?.path"
+    @mirai-file-drop="receiveDrop"
     @dragover.prevent.stop
-    @drop.prevent.stop="drop"
+    @drop.prevent.stop
   >
     <header
-      class="border-line-soft flex h-9 shrink-0 items-center gap-1 border-b px-2 text-xs"
+      class="scroll-none border-line-soft flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2"
     >
-      <span class="text-txt-2 mr-auto">{{ t('本地文件') }}</span
-      ><IconButton
-        icon="lucide:folder-open"
+      <IconButton
+        icon="lucide:house"
         :size="14"
-        :title="t('选择本地目录')"
-        @click="chooseDirectory"
-      /><IconButton
+        :title="t('桌面')"
+        :disabled="loading"
+        @click="load('')"
+      />
+      <IconButton
+        icon="lucide:arrow-left"
+        :size="14"
+        :title="t('后退')"
+        :disabled="loading || state.historyIndex <= 0"
+        @click="navigateHistory(-1)"
+      />
+      <IconButton
+        icon="lucide:arrow-right"
+        :size="14"
+        :title="t('前进')"
+        :disabled="loading || state.historyIndex >= state.history.length - 1"
+        @click="navigateHistory(1)"
+      />
+      <IconButton
         icon="lucide:arrow-up"
         :size="14"
         :title="t('上一级')"
         :disabled="loading || !listing?.parent"
         @click="load(listing?.parent || '')"
-      /><IconButton
-        icon="lucide:refresh-cw"
+      />
+      <span class="text-txt-3 min-w-0 flex-1 truncate px-1 text-[11px]">{{
+        t('本地文件')
+      }}</span>
+      <IconButton
+        icon="lucide:folder-open"
         :size="14"
-        :title="t('刷新')"
-        :disabled="loading"
-        @click="load(path)"
-      /><IconButton
+        :title="t('选择本地目录')"
+        @click="chooseDirectory"
+      />
+      <IconButton
+        icon="lucide:upload"
+        :size="14"
+        :title="t('上传选中文件')"
+        :disabled="!state.selection.length || !sessionId"
+        @click="emit('upload', state.selection.slice())"
+      />
+      <IconButton
         icon="lucide:folder-sync"
         :size="14"
         :title="t('目录同步')"
         :disabled="!listing || !sessionId || !remotePath"
         @click="syncing = true"
       />
+      <IconButton
+        icon="lucide:rotate-cw"
+        :size="14"
+        :title="t('刷新')"
+        :disabled="loading"
+        @click="load(path, false)"
+      />
     </header>
-    <input
-      v-model="path"
-      class="field m-2"
-      :aria-label="t('本地目录路径')"
-      :disabled="loading"
-      @keydown.enter="load(path)"
+    <FileBrowserControls
+      v-model:filter="state.filter"
+      :path="path"
+      :entries="entries"
+      :connected="Boolean(listing)"
+      :loading="loading"
+      local
+      @navigate="load"
     />
-    <p class="text-txt-3 px-3 pb-2 text-[10px]">
-      {{ t('双击文件上传，拖到另一栏传输') }}
-    </p>
-    <div class="scroll-thin min-h-0 flex-1 overflow-auto p-1">
-      <button
-        v-for="entry in listing?.entries ?? []"
-        :key="entry.path"
-        type="button"
-        draggable="true"
-        class="text-txt-2 hover:bg-hover flex w-full items-center gap-2 rounded px-2 py-2 text-left text-xs"
-        :title="entry.path"
-        @dragstart="drag($event, entry)"
-        @keydown.enter.prevent="
-          entry.directory ? load(entry.path) : emit('upload', [entry.path])
-        "
-        @dblclick="
-          entry.directory ? load(entry.path) : emit('upload', [entry.path])
-        "
-      >
-        <AppIcon
-          :name="entry.directory ? 'lucide:folder' : 'lucide:file'"
-          :size="14"
-        /><span class="truncate">{{ entry.name }}</span>
-      </button>
+    <RemoteFileList
+      :files="visibleEntries"
+      :drag-session-id="sessionId || undefined"
+      :selected="state.selected"
+      :selection="state.selection"
+      local
+      @select="selectFiles"
+      @open="openFile"
+    >
+      <AppSkeleton
+        v-if="loading"
+        :rows="8"
+      />
+      <AppEmptyState
+        v-else-if="!visibleEntries.length"
+        compact
+        icon="lucide:folder-open"
+        :title="state.filter ? t('没有匹配的文件') : t('这个目录是空的')"
+      />
+    </RemoteFileList>
+    <div
+      v-if="state.selection.length"
+      class="border-line-soft text-txt-3 shrink-0 border-t px-3 py-1 text-[11px]"
+    >
+      {{ t('已选择 {count} 项', { count: state.selection.length }) }}
     </div>
+    <FileConflictDialog
+      v-model:always="state.conflictAlways"
+      :open="state.conflictOpen"
+      :file-name="state.conflictName"
+      :remaining="state.conflictRemaining"
+      local
+      @overwrite="settleConflict('overwrite')"
+      @skip="settleConflict('skip')"
+      @cancel="settleConflict('cancel')"
+    />
     <Teleport to="body"
       ><DirectorySyncDialog
         v-if="syncing && listing"

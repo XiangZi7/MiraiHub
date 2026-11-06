@@ -191,7 +191,7 @@ async function fixture(t, connections) {
   return { workspace, layout, navigation, root, find }
 }
 
-test('只有 SSH 会话时切换数据库，整页显示空状态，返回服务器不重建会话和分屏', async t => {
+test('切换服务器与数据库分类始终保留已打开标签、会话和分屏', async t => {
   const f = await fixture(t, [connection('ssh-a'), connection('ssh-b')])
   f.layout.moveTab('ssh-a', f.layout.tree.value.id, 'right')
   await flush()
@@ -201,12 +201,10 @@ test('只有 SSH 会话时切换数据库，整页显示空状态，返回服务
   assert.ok(shown(split))
   route.meta.nav = 'databases'
   await flush()
-  assert.equal(shown(split), false)
-  assert.equal(f.layout.isVisible('ssh-a'), false)
+  assert.equal(shown(split), true)
+  assert.equal(f.layout.isVisible('ssh-a'), true)
   const empty = f.find('data-empty-kind')
-  assert.equal(empty.length, 1)
-  assert.equal(empty[0].props['data-empty-kind'], 'databases')
-  assert.ok(shown(empty[0]))
+  assert.equal(empty.length, 0)
   assert.deepEqual(
     f.workspace.tabs.map(tab => tab.id),
     ['ssh-a', 'ssh-b']
@@ -220,11 +218,11 @@ test('只有 SSH 会话时切换数据库，整页显示空状态，返回服务
   assert.deepEqual(unmounts, [])
 })
 
-test('第一个数据库打开后恢复工作区，关闭最后一个数据库后回到整页空状态', async t => {
+test('数据库与 SSH 标签同时常驻，全部关闭才显示整页空状态', async t => {
   const f = await fixture(t, [connection('ssh')])
   route.meta.nav = 'databases'
   await flush()
-  assert.equal(f.navigation.hasOpenSectionTabs.value, false)
+  assert.equal(f.navigation.hasOpenSectionTabs.value, true)
   f.workspace.open(connection('cache', 'redis'))
   await flush()
   assert.equal(f.navigation.hasOpenSectionTabs.value, true)
@@ -232,21 +230,25 @@ test('第一个数据库打开后恢复工作区，关闭最后一个数据库�
   assert.ok(shown(f.find('data-split-layout')[0]))
   f.workspace.close('cache')
   await flush()
+  assert.equal(f.navigation.hasOpenSectionTabs.value, true)
+  assert.ok(shown(f.find('data-split-layout')[0]))
+  f.workspace.close('ssh')
+  await flush()
   assert.equal(f.navigation.hasOpenSectionTabs.value, false)
   assert.ok(shown(f.find('data-empty-kind')[0]))
   assert.equal(shown(f.find('data-split-layout')[0]), false)
 })
 
-test('本地终端归入服务器，MySQL、PostgreSQL 和 Redis 都归入数据库', async t => {
+test('本地终端和各数据库类型均在服务器与数据库分类保持常驻', async t => {
   const f = await fixture(t, [])
   for (const kind of ['local', 'mysql', 'postgresql', 'redis']) {
     f.workspace.open(connection(kind, kind))
     route.meta.nav = 'databases'
     await flush()
-    assert.equal(f.navigation.hasOpenSectionTabs.value, kind !== 'local')
+    assert.equal(f.navigation.hasOpenSectionTabs.value, true)
     route.meta.nav = 'servers'
     await flush()
-    assert.equal(f.navigation.hasOpenSectionTabs.value, kind === 'local')
+    assert.equal(f.navigation.hasOpenSectionTabs.value, true)
     f.workspace.close(kind)
   }
   route.meta.nav = 'ssh-keys'

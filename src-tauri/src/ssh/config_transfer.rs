@@ -716,7 +716,7 @@ pub async fn ssh_config_backup_write(
         backup::valid_payload(&payload)?;
         payload["scope"] = Value::String("ssh".into());
         if include_credentials {
-            if password.as_bytes().len() < 10 {
+            if password.len() < 10 {
                 return Err(invalid("包含密码或私钥时，备份密码至少需要 10 字节"));
             }
             embed_private_keys(&mut payload)?;

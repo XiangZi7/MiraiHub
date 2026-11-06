@@ -38,7 +38,8 @@ import FileConflictDialog from './FileConflictDialog.vue'
 import RemoteFileCreateDialog from './RemoteFileCreateDialog.vue'
 import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
 import RemoteFileList from './RemoteFileList.vue'
-import RemotePathInput from './RemotePathInput.vue'
+import FileBrowserControls from '@/components/workspace/file-browser-controls.vue'
+import type { FilePaneDrop } from '@/components/workspace/useFilePaneDrag'
 import RemoteFileTransferDialog from './RemoteFileTransferDialog.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import LocalFilePane from '@/components/workspace/local-file-pane.vue'
@@ -703,6 +704,17 @@ async function confirmDelete(): Promise<void> {
   await deleteFiles(files)
 }
 
+// 内部拖放只接受同连接当前目录，继续复用上传批次及冲突处理。
+function receivePaneDrop(event: Event): void {
+  const detail = (event as CustomEvent<FilePaneDrop>).detail
+  if (
+    detail.source === 'local' &&
+    detail.sessionId === props.sessionId &&
+    detail.directory === path.value
+  )
+    void uploadPaths(detail.files.map(file => file.path))
+}
+
 function handleBrowserDrop(event: DragEvent): void {
   const internal = event.dataTransfer?.getData('application/x-miraihub-local')
   if (internal) {
@@ -754,7 +766,11 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       />
       <div
         ref="dropZone"
-        class="flex min-h-0 min-w-0 flex-1 flex-col"
+        data-file-drop-target="remote"
+        :data-file-session-id="sessionId"
+        :data-file-directory="connected ? path : ''"
+        @mirai-file-drop="receivePaneDrop"
+        class="file-pane flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div
           class="scroll-none border-line-soft flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2"
@@ -848,47 +864,14 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
           />
         </div>
 
-        <div class="border-line-soft flex shrink-0 border-b px-2 py-1.5">
-          <RemotePathInput
-            :path="path"
-            :entries="pathEntries"
-            :connected="connected"
-            :loading="loading"
-            @navigate="load"
-          />
-        </div>
-
-        <div
-          class="border-line-soft flex shrink-0 items-center gap-2 border-b px-3 py-1.5"
-        >
-          <AppIcon
-            name="lucide:search"
-            :size="13"
-            class="text-txt-3"
-          />
-          <input
-            v-model="filterText"
-            :aria-label="t('筛选当前目录文件')"
-            :placeholder="t('筛选当前目录文件…')"
-            class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none"
-            @keydown.esc.stop="filterText = ''"
-          />
-          <IconButton
-            v-if="filterText"
-            icon="lucide:x"
-            :size="12"
-            :title="t('清除文件筛选')"
-            @click="filterText = ''"
-          />
-        </div>
-
-        <div
-          class="remote-file-columns border-line-soft text-txt-3 grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b px-3 py-1.5 text-[11px] font-medium"
-        >
-          <span> {{ t('Name') }} </span>
-          <span class="text-right"> {{ t('Size') }} </span>
-          <span class="remote-file-modified"> {{ t('Modified') }} </span>
-        </div>
+        <FileBrowserControls
+          v-model:filter="filterText"
+          :path="path"
+          :entries="pathEntries"
+          :connected="connected"
+          :loading="loading"
+          @navigate="load"
+        />
 
         <RemoteFileList
           :files="visibleEntries"

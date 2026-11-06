@@ -849,3 +849,23 @@ html.reduce-motion::view-transition-new(root) {
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
+
+/* 双栏各自按可用宽度收缩列，两端始终使用同一组布局。 */
+.file-pane {
+  container-type: inline-size;
+  container-name: file-pane;
+}
+[data-file-drag-over='true'] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+  background: color-mix(in oklch, var(--color-accent) 7%, transparent);
+}
+@container file-pane (max-width: 360px) {
+  .remote-file-columns {
+    grid-template-columns: minmax(0, 1fr) 60px;
+    gap: 8px;
+  }
+  .remote-file-modified {
+    display: none;
+  }
+}
