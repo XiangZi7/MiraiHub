@@ -53,6 +53,7 @@ export const AGENT_PROVIDER_PRESETS = [
   apiFormat: AgentApiFormat
   baseUrl: string
 }[]
+/** 按服务预设创建草稿，未填写单价时不显示费用估算。 */
 export function newAgentProfile(presetId = 'openai'): AgentProfileDraft {
   const preset =
     AGENT_PROVIDER_PRESETS.find(item => item.value === presetId) ??

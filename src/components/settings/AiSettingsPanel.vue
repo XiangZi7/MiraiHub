@@ -125,14 +125,20 @@ function confirmDelete(): void {
           </h3>
           <ul>
             <li>{{ t('服务器状态探针、数据库结构读取可自动执行。') }}</li>
-            <li>{{ t('任意自定义 Shell、SQL 均需审批；无“全部允许”。') }}</li>
+            <li>{{ t('按所选权限审批工具；会话授权只匹配相同操作。') }}</li>
             <li>{{ t('审批锁定目标和原文，5 分钟过期，只执行一次。') }}</li>
             <li>{{ t('切换连接、关闭面板或停止任务会撤销待审批操作。') }}</li>
             <li>{{ t('聊天记录在本机加密保存，可从聊天记录菜单管理。') }}</li>
           </ul>
-          <AppButton @click="managingPrompts = true">{{ t('管理提示词模板') }}</AppButton>
-    <Teleport to="body"><AgentPromptsDialog v-if="managingPrompts" @close="managingPrompts = false" /></Teleport>
-    <McpServersPanel />
+          <AppButton @click="managingPrompts = true">{{
+            t('管理提示词模板')
+          }}</AppButton>
+          <Teleport to="body"
+            ><AgentPromptsDialog
+              v-if="managingPrompts"
+              @close="managingPrompts = false"
+          /></Teleport>
+          <McpServersPanel />
           <p>
             {{
               t(

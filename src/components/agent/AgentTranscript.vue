@@ -19,7 +19,10 @@ const props = defineProps<{
   progress: AgentProgress | null
   canApplySql?: boolean
 }>()
-const emit = defineEmits<{ applySql: [sql: string]; retryOperation: [id: string] }>()
+const emit = defineEmits<{
+  applySql: [sql: string]
+  retryOperation: [id: string]
+}>()
 const { t } = useI18n()
 const turns = computed(() =>
   buildAgentTranscript(

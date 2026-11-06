@@ -161,8 +161,7 @@ export function useDatabaseSession(
       setStatus('connected', session.sessionId)
       // MySQL 先只读取库名，用户选择后才读取对应库的对象。
       // PostgreSQL 需要先读取当前库的 schema，供侧栏选择。
-      if (target.kind !== 'mysql')
-        state.selectedDatabase = session.database
+      if (target.kind !== 'mysql') state.selectedDatabase = session.database
       await Promise.all([refreshDatabases(), refreshObjects()])
     } catch (error) {
       if (request !== generation) return

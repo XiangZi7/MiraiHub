@@ -605,9 +605,13 @@ export function useAiAgent(
     const token = ++generation
     state.busy = true
     state.error = ''
-    try { accept(await api.retryOperation(state.run.id, operationId), token) }
-    catch (error) { if (token === generation) state.error = api.errorMessage(error) }
-    finally { if (token === generation) state.busy = false }
+    try {
+      accept(await api.retryOperation(state.run.id, operationId), token)
+    } catch (error) {
+      if (token === generation) state.error = api.errorMessage(error)
+    } finally {
+      if (token === generation) state.busy = false
+    }
   }
   watch(
     targetKey,

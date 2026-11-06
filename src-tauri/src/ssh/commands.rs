@@ -27,7 +27,11 @@ pub async fn ssh_connect(
     config: SshConfig,
     request_id: Option<String>,
 ) -> AppResult<String> {
-    Ok(if let Some(request_id) = request_id { manager.connect_report(config, app, request_id).await? } else { manager.connect(config).await? })
+    Ok(if let Some(request_id) = request_id {
+        manager.connect_report(config, app, request_id).await?
+    } else {
+        manager.connect(config).await?
+    })
 }
 
 /// 断开会话。

@@ -62,10 +62,25 @@ const state = reactive({
   // 浮层适配窗口后的最大高度
   maxHeight: 500,
 })
-const { open, managing, editing, current, error, search, snippet, batchCommand } = toRefs(state)
+const {
+  open,
+  managing,
+  editing,
+  current,
+  error,
+  search,
+  snippet,
+  batchCommand,
+} = toRefs(state)
 const filteredCommands = computed(() => {
   const words = state.search.toLowerCase().trim().split(/\s+/u).filter(Boolean)
-  return commands.value.filter(item => words.every(word => `${item.name} ${item.command} ${item.folder ?? ""} ${item.tags?.join(" ") ?? ""} ${item.description ?? ""}`.toLowerCase().includes(word)))
+  return commands.value.filter(item =>
+    words.every(word =>
+      `${item.name} ${item.command} ${item.folder ?? ''} ${item.tags?.join(' ') ?? ''} ${item.description ?? ''}`
+        .toLowerCase()
+        .includes(word)
+    )
+  )
 })
 const style = computed(() => ({
   left: `${state.left}px`,
@@ -131,7 +146,11 @@ function edit(command: TerminalCommand | null): void {
   state.error = ''
 }
 /** 保存片段名称、正文和分类，错误通过公共通知展示。 */
-function save(name: string, command: string, metadata: Pick<TerminalCommand, 'folder' | 'tags' | 'description'>): void {
+function save(
+  name: string,
+  command: string,
+  metadata: Pick<TerminalCommand, 'folder' | 'tags' | 'description'>
+): void {
   try {
     store.save(name, command, state.current?.id, metadata)
     state.editing = false
@@ -141,6 +160,7 @@ function save(name: string, command: string, metadata: Pick<TerminalCommand, 'fo
     toast.error(String(error))
   }
 }
+/** 执行片段管理操作，失败统一发送公共通知。 */
 function update(action: () => void): void {
   try {
     action()
@@ -155,6 +175,22 @@ function insert(command: TerminalCommand): void {
   close(false)
   if (snippetVariables(command.command).length) state.snippet = command
   else emit('insert', command.command)
+}
+/** 接收已填写的片段，关闭变量表单后回填终端。 */
+function insertRendered(command: string): void {
+  state.snippet = null
+  emit('insert', command)
+}
+/** 把填写后的片段送到批量执行预览。 */
+function batchRendered(command: string): void {
+  state.snippet = null
+  state.batchCommand = command
+}
+/** 变量片段先填写，普通片段直接打开多主机执行预览。 */
+function batch(command: TerminalCommand): void {
+  close(false)
+  if (snippetVariables(command.command).length) state.snippet = command
+  else state.batchCommand = command.command
 }
 function escape(): void {
   if (state.editing) {
@@ -190,8 +226,18 @@ useEventListener(window, 'resize', () => {
     />
   </button>
   <Teleport to="body">
-    <TerminalSnippetDialog v-if="snippet" :command="snippet.command" @close="snippet = null" @insert="snippet = null; emit('insert', $event)" @batch="snippet = null; batchCommand = $event" />
-    <BatchOperationDialog v-if="batchCommand" :initial-command="batchCommand" @close="batchCommand = ''" />
+    <TerminalSnippetDialog
+      v-if="snippet"
+      :command="snippet.command"
+      @close="snippet = null"
+      @insert="insertRendered"
+      @batch="batchRendered"
+    />
+    <BatchOperationDialog
+      v-if="batchCommand"
+      :initial-command="batchCommand"
+      @close="batchCommand = ''"
+    />
     <section
       v-if="open"
       ref="menu"
@@ -229,7 +275,13 @@ useEventListener(window, 'resize', () => {
           @click="close()"
         />
       </header>
-      <input v-if="!editing" v-model="search" class="field mx-3 my-2" :placeholder="t('搜索命令、分组或标签')" :aria-label="t('搜索命令、分组或标签')" />
+      <input
+        v-if="!editing"
+        v-model="search"
+        class="field mx-3 my-2"
+        :placeholder="t('搜索命令、分组或标签')"
+        :aria-label="t('搜索命令、分组或标签')"
+      />
       <div
         ref="commandList"
         class="scroll-thin min-h-0 overflow-y-auto"
@@ -292,7 +344,11 @@ useEventListener(window, 'resize', () => {
               @pointerdown="reorder.start($event, command.id)"
               @click="insert(command)"
             >
-              <span v-if="command.folder" class="text-accent text-[10px]">{{ command.folder }}</span>
+              <span
+                v-if="command.folder"
+                class="text-accent text-[10px]"
+                >{{ command.folder }}</span
+              >
               <span class="min-w-0 truncate">{{
                 terminalCommandLabel(command)
               }}</span>
@@ -300,7 +356,12 @@ useEventListener(window, 'resize', () => {
                 command.command
               }}</code>
             </button>
-            <IconButton icon="lucide:send" :size="12" :title="t('发送到多台主机')" @click="close(false); snippetVariables(command.command).length ? state.snippet = command : state.batchCommand = command.command" />
+            <IconButton
+              icon="lucide:send"
+              :size="12"
+              :title="t('发送到多台主机')"
+              @click="batch(command)"
+            />
             <div
               v-if="managing"
               class="flex shrink-0 items-center"

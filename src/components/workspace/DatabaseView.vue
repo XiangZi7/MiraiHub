@@ -562,11 +562,7 @@ const completionSessionId = computed(() =>
     : ''
 )
 const { columns: completionColumns, tableColumns: sqlTableColumns } =
-  useDatabaseCompletions(
-  completionSessionId,
-  databaseName,
-  objects
-)
+  useDatabaseCompletions(completionSessionId, databaseName, objects)
 const sqlSuggestions = computed(() => {
   const values: string[] = [...completionColumns.value]
   for (const object of objects.value) {
@@ -1389,7 +1385,8 @@ async function runQuery(
     if (historyId && props.connection) {
       updateQueryHistory(historyId, {
         durationMs: execution?.elapsedMs,
-        ok: !queryError.value && !execution?.statements.some(item => item.error),
+        ok:
+          !queryError.value && !execution?.statements.some(item => item.error),
         rowCount: execution?.statements.reduce(
           (sum, item) =>
             sum + (item.columns.length ? item.rows.length : item.rowsAffected),
@@ -1419,7 +1416,10 @@ async function explainQuery(sql: string, tabId: string): Promise<void> {
   state.queryPlans[tabId] = { plan: null, loading: true }
   try {
     const json = await database.explain(sessionId.value, sql)
-    state.queryPlans[tabId] = { plan: parseExplainPlan(kind, json), loading: false }
+    state.queryPlans[tabId] = {
+      plan: parseExplainPlan(kind, json),
+      loading: false,
+    }
   } catch (error) {
     delete state.queryPlans[tabId]
     toast.error({

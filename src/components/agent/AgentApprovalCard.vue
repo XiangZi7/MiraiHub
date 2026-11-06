@@ -22,7 +22,11 @@ const emit = defineEmits<{
   applySql: [sql: string]
 }>()
 // 每一条新审批都必须重新核对，不继承上一条的确认状态。
-const state = reactive({ reviewed: false, criticalReviewed: false, time: Date.now() })
+const state = reactive({
+  reviewed: false,
+  criticalReviewed: false,
+  time: Date.now(),
+})
 const { reviewed, criticalReviewed } = toRefs(state)
 watch(
   () => props.approval.id,
@@ -38,8 +42,21 @@ useIntervalFn(() => {
 const seconds = computed(() =>
   Math.max(0, Math.ceil((props.approval.expiresAt - state.time) / 1000))
 )
-const riskLabel = computed(() => ({ low: '低风险', medium: '中风险', high: '高风险', critical: '极高风险' })[props.approval.risk ?? 'high'])
-const riskTone = computed(() => ({ low: 'text-success', medium: 'text-info', high: 'text-warning', critical: 'text-danger' })[props.approval.risk ?? 'high'])
+const riskLabel = computed(
+  () =>
+    ({ low: '低风险', medium: '中风险', high: '高风险', critical: '极高风险' })[
+      props.approval.risk ?? 'high'
+    ]
+)
+const riskTone = computed(
+  () =>
+    ({
+      low: 'text-success',
+      medium: 'text-info',
+      high: 'text-warning',
+      critical: 'text-danger',
+    })[props.approval.risk ?? 'high']
+)
 const expired = computed(() => seconds.value === 0)
 </script>
 
@@ -48,8 +65,13 @@ const expired = computed(() => seconds.value === 0)
     class="approval"
     :aria-label="t('操作审批')"
   >
-    <div class="flex items-center gap-2 font-medium" :class="riskTone">
-      <span class="rounded border border-current px-1.5 text-[10px]">{{ t(riskLabel) }}</span>
+    <div
+      class="flex items-center gap-2 font-medium"
+      :class="riskTone"
+    >
+      <span class="rounded border border-current px-1.5 text-[10px]">{{
+        t(riskLabel)
+      }}</span>
       <AppIcon
         name="lucide:shield-alert"
         :size="16"
@@ -109,7 +131,17 @@ const expired = computed(() => seconds.value === 0)
       {{ approval.reason }}
     </p>
     <p class="text-txt-3 mt-3 text-[11px] leading-relaxed">
-      <span v-if="approval.preview" class="text-warning mb-2 block">{{ approval.preview.estimatedRows == null ? t('优化器无法估算影响范围，请核对完整 SQL') : t('优化器预估处理 {count} 行（实际影响行数以执行结果为准）', {count: approval.preview.estimatedRows}) }}</span>
+      <span
+        v-if="approval.preview"
+        class="text-warning mb-2 block"
+        >{{
+          approval.preview.estimatedRows == null
+            ? t('优化器无法估算影响范围，请核对完整 SQL')
+            : t('优化器预估处理 {count} 行（实际影响行数以执行结果为准）', {
+                count: approval.preview.estimatedRows,
+              })
+        }}</span
+      >
       {{
         t(
           '仅批准这一次操作；结果会发给已配置的模型。操作可能立即生效，停止任务不会自动回滚。'
@@ -126,7 +158,15 @@ const expired = computed(() => seconds.value === 0)
       />
       {{ t('我已核对目标、完整命令及其影响') }}
     </label>
-    <label v-if="approval.risk === 'critical'" class="text-danger my-3 flex items-start gap-2 text-[11px]"><input v-model="criticalReviewed" type="checkbox" :disabled="busy || expired" />{{ t('我理解此操作可能造成不可恢复的数据丢失或服务中断') }}</label>
+    <label
+      v-if="approval.risk === 'critical'"
+      class="text-danger my-3 flex items-start gap-2 text-[11px]"
+      ><input
+        v-model="criticalReviewed"
+        type="checkbox"
+        :disabled="busy || expired"
+      />{{ t('我理解此操作可能造成不可恢复的数据丢失或服务中断') }}</label
+    >
     <div class="flex flex-wrap gap-2">
       <AppButton
         size="sm"
@@ -137,12 +177,23 @@ const expired = computed(() => seconds.value === 0)
       ><AppButton
         size="sm"
         variant="danger"
-        :disabled="busy || expired || !reviewed || (approval.risk === 'critical' && !criticalReviewed)"
+        :disabled="
+          busy ||
+          expired ||
+          !reviewed ||
+          (approval.risk === 'critical' && !criticalReviewed)
+        "
         @click="emit('decide', true)"
       >
         {{ t('批准本次执行') }}
       </AppButton>
-      <AppButton v-if="approval.canRemember && approval.risk !== 'critical'" size="sm" :disabled="busy || expired || !reviewed" @click="emit('decide', true, true)">{{ t('本会话允许相同操作') }}</AppButton>
+      <AppButton
+        v-if="approval.canRemember && approval.risk !== 'critical'"
+        size="sm"
+        :disabled="busy || expired || !reviewed"
+        @click="emit('decide', true, true)"
+        >{{ t('本会话允许相同操作') }}</AppButton
+      >
     </div>
   </section>
 </template>

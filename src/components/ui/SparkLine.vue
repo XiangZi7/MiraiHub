@@ -15,7 +15,16 @@ const hoverValue = computed(() => props.data[hoverIndex.value])
 /** 悬停时定位最接近的采样点，数值取自真实历史数据。 */
 function hover(event: PointerEvent): void {
   const rect = (event.currentTarget as SVGElement).getBoundingClientRect()
-  hoverIndex.value = Math.max(0, Math.min(props.data.length - 1, Math.round((event.clientX - rect.left) / Math.max(1, rect.width) * (props.data.length - 1))))
+  hoverIndex.value = Math.max(
+    0,
+    Math.min(
+      props.data.length - 1,
+      Math.round(
+        ((event.clientX - rect.left) / Math.max(1, rect.width)) *
+          (props.data.length - 1)
+      )
+    )
+  )
 }
 const gradientId = useId()
 const geometry = computed(() => sparklineGeometry(props.data))
@@ -32,7 +41,16 @@ const geometry = computed(() => sparklineGeometry(props.data))
     @pointermove="hover"
     @pointerleave="hoverIndex = -1"
   >
-    <text v-if="hoverValue != null" x="150" y="24" text-anchor="middle" fill="currentColor" font-size="22">{{ hoverValue.toFixed(1) }}</text>
+    <text
+      v-if="hoverValue != null"
+      x="150"
+      y="24"
+      text-anchor="middle"
+      fill="currentColor"
+      font-size="22"
+    >
+      {{ hoverValue.toFixed(1) }}
+    </text>
     <defs>
       <linearGradient
         :id="gradientId"

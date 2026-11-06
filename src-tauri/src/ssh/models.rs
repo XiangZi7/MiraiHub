@@ -191,6 +191,8 @@ pub struct UploadFileRequest {
     pub overwrite: bool,
     #[serde(default)]
     pub resume: bool,
+    #[serde(default)]
+    pub preserve_mtime: bool,
     #[serde(default = "default_transfer_buffer_size_kb")]
     pub buffer_size_kb: usize,
     #[serde(default = "default_upload_concurrency")]
@@ -211,6 +213,8 @@ pub struct DownloadFileRequest {
     pub overwrite: bool,
     #[serde(default)]
     pub resume: bool,
+    #[serde(default)]
+    pub preserve_mtime: bool,
     #[serde(default = "default_transfer_buffer_size_kb")]
     pub buffer_size_kb: usize,
 }

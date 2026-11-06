@@ -523,7 +523,7 @@ watch(
             aria-live="polite"
           >
             <AgentTranscript
-                @retry-operation="retryOperation"
+              @retry-operation="retryOperation"
               :key="run.conversationId"
               :entries="run.entries"
               :busy="busy"

@@ -90,16 +90,33 @@ impl SshSession {
     }
 
     /// 将每一跳的连接状态推送给发起请求的终端，事件不包含认证信息。
-    pub async fn connect_report(id: String, config: SshConfig, progress: Option<(AppHandle, String)>) -> SshResult<Self> {
+    pub async fn connect_report(
+        id: String,
+        config: SshConfig,
+        progress: Option<(AppHandle, String)>,
+    ) -> SshResult<Self> {
         validate_config(&config)?;
-        if config.jump_hosts.len() > 5 || config.jump_hosts.iter().any(|hop| !hop.jump_hosts.is_empty()) || (!config.jump_hosts.is_empty() && config.proxy.is_some()) {
-            return Err(SshError::InvalidInput("跳板链最多 5 跳且不能嵌套；目标代理与跳板不能同时使用".into()));
+        if config.jump_hosts.len() > 5
+            || config
+                .jump_hosts
+                .iter()
+                .any(|hop| !hop.jump_hosts.is_empty())
+            || (!config.jump_hosts.is_empty() && config.proxy.is_some())
+        {
+            return Err(SshError::InvalidInput(
+                "跳板链最多 5 跳且不能嵌套；目标代理与跳板不能同时使用".into(),
+            ));
         }
         let mut endpoints = std::collections::HashSet::new();
         for (index, hop) in config.jump_hosts.iter().enumerate() {
             validate_config(hop)?;
-            if !endpoints.insert((hop.host.to_lowercase(), hop.port)) || (hop.host.eq_ignore_ascii_case(&config.host) && hop.port == config.port) || (index > 0 && hop.proxy.is_some()) {
-                return Err(SshError::InvalidInput("跳板链存在重复目标或中间跳配置了代理".into()));
+            if !endpoints.insert((hop.host.to_lowercase(), hop.port))
+                || (hop.host.eq_ignore_ascii_case(&config.host) && hop.port == config.port)
+                || (index > 0 && hop.proxy.is_some())
+            {
+                return Err(SshError::InvalidInput(
+                    "跳板链存在重复目标或中间跳配置了代理".into(),
+                ));
             }
         }
         let mut jump_handles = Vec::new();
@@ -111,16 +128,32 @@ impl SshSession {
         for (index, hop) in config.jump_hosts.iter().enumerate() {
             report(index, hop.endpoint(), "connecting");
             match connect_handle(hop, jump_handles.last()).await {
-                Ok(handle) => { jump_handles.push(handle); report(index, hop.endpoint(), "connected"); }
-                Err(error) => { report(index, hop.endpoint(), "failed"); return Err(error); }
+                Ok(handle) => {
+                    jump_handles.push(handle);
+                    report(index, hop.endpoint(), "connected");
+                }
+                Err(error) => {
+                    report(index, hop.endpoint(), "failed");
+                    return Err(error);
+                }
             }
         }
         report(config.jump_hosts.len(), config.endpoint(), "connecting");
         let handle = match connect_handle(&config, jump_handles.last()).await {
-            Ok(handle) => { report(config.jump_hosts.len(), config.endpoint(), "connected"); handle }
-            Err(error) => { report(config.jump_hosts.len(), config.endpoint(), "failed"); return Err(error); }
+            Ok(handle) => {
+                report(config.jump_hosts.len(), config.endpoint(), "connected");
+                handle
+            }
+            Err(error) => {
+                report(config.jump_hosts.len(), config.endpoint(), "failed");
+                return Err(error);
+            }
         };
-        log::info!("SSH 已连接：{}（{} 跳）", config.endpoint(), jump_handles.len());
+        log::info!(
+            "SSH 已连接：{}（{} 跳）",
+            config.endpoint(),
+            jump_handles.len()
+        );
 
         Ok(Self {
             id,
@@ -418,7 +451,9 @@ impl SshSession {
             .await?;
 
         for hop in self.jump_handles.lock().await.iter().rev() {
-            let _ = hop.disconnect(Disconnect::ByApplication, "用户主动断开", "").await;
+            let _ = hop
+                .disconnect(Disconnect::ByApplication, "用户主动断开", "")
+                .await;
         }
         log::info!("SSH 已断开：{}", self.config.endpoint());
         Ok(())
@@ -426,25 +461,48 @@ impl SshSession {
 }
 
 /// 每跳均独立校验主机密钥和认证，后续 TCP 流由上一跳 direct-tcpip 承载。
-async fn connect_handle(config: &SshConfig, previous: Option<&Handle<ClientHandler>>) -> SshResult<Handle<ClientHandler>> {
+async fn connect_handle(
+    config: &SshConfig,
+    previous: Option<&Handle<ClientHandler>>,
+) -> SshResult<Handle<ClientHandler>> {
     let connect = async {
-        let handler = ClientHandler { host: config.host.clone(), port: config.port, verify_host_key: config.verify_host_key };
+        let handler = ClientHandler {
+            host: config.host.clone(),
+            port: config.port,
+            verify_host_key: config.verify_host_key,
+        };
         let ssh_config = Arc::new(client::Config {
-            inactivity_timeout: (config.keepalive_secs > 0).then(|| Duration::from_secs(config.keepalive_secs.saturating_mul(4))),
-            keepalive_interval: (config.keepalive_secs > 0).then(|| Duration::from_secs(config.keepalive_secs)),
+            inactivity_timeout: (config.keepalive_secs > 0)
+                .then(|| Duration::from_secs(config.keepalive_secs.saturating_mul(4))),
+            keepalive_interval: (config.keepalive_secs > 0)
+                .then(|| Duration::from_secs(config.keepalive_secs)),
             ..Default::default()
         });
         let mut handle = if let Some(previous) = previous {
-            let channel = previous.channel_open_direct_tcpip(&config.host, config.port as u32, "127.0.0.1", 0).await?;
+            let channel = previous
+                .channel_open_direct_tcpip(&config.host, config.port as u32, "127.0.0.1", 0)
+                .await?;
             client::connect_stream(ssh_config, channel.into_stream(), handler).await
         } else {
             let stream = proxy::connect(&config.host, config.port, config.proxy.as_ref()).await?;
             client::connect_stream(ssh_config, stream, handler).await
-        }.map_err(|source| SshError::Connect { endpoint: config.endpoint(), source })?;
+        }
+        .map_err(|source| SshError::Connect {
+            endpoint: config.endpoint(),
+            source,
+        })?;
         authenticate(&mut handle, config).await?;
         Ok(handle)
     };
-    tokio::time::timeout(Duration::from_secs(config.timeout_secs.clamp(1, 300)), connect).await.map_err(|_| SshError::Timeout { endpoint: config.endpoint(), secs: config.timeout_secs })?
+    tokio::time::timeout(
+        Duration::from_secs(config.timeout_secs.clamp(1, 300)),
+        connect,
+    )
+    .await
+    .map_err(|_| SshError::Timeout {
+        endpoint: config.endpoint(),
+        secs: config.timeout_secs,
+    })?
 }
 
 /// 后台读循环：把远端输出源源不断推给前端，直到 channel 关闭。
@@ -826,5 +884,115 @@ mod tests {
             password: "hunter2".into(),
         };
         assert_eq!(auth.label(), "password");
+    }
+    #[derive(Default)]
+    struct JumpTestServer;
+    impl russh::server::Handler for JumpTestServer {
+        type Error = russh::Error;
+        async fn auth_password(
+            &mut self,
+            _: &str,
+            password: &str,
+        ) -> Result<russh::server::Auth, Self::Error> {
+            Ok(if password == "test" {
+                russh::server::Auth::Accept
+            } else {
+                russh::server::Auth::reject()
+            })
+        }
+        async fn channel_open_direct_tcpip(
+            &mut self,
+            channel: russh::Channel<russh::server::Msg>,
+            host: &str,
+            port: u32,
+            _: &str,
+            _: u32,
+            _: &mut russh::server::Session,
+        ) -> Result<bool, Self::Error> {
+            let Ok(mut stream) = tokio::net::TcpStream::connect((host, port as u16)).await else {
+                return Ok(false);
+            };
+            tokio::spawn(async move {
+                let _ =
+                    tokio::io::copy_bidirectional(&mut channel.into_stream(), &mut stream).await;
+            });
+            Ok(true)
+        }
+        async fn channel_open_session(
+            &mut self,
+            _: russh::Channel<russh::server::Msg>,
+            _: &mut russh::server::Session,
+        ) -> Result<bool, Self::Error> {
+            Ok(true)
+        }
+        async fn exec_request(
+            &mut self,
+            channel: russh::ChannelId,
+            _: &[u8],
+            session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+            session.channel_success(channel)?;
+            session.data(
+                channel,
+                russh::CryptoVec::from_slice(b"routed through two hops"),
+            )?;
+            session.exit_status_request(channel, 0)?;
+            session.eof(channel)?;
+            session.close(channel)?;
+            Ok(())
+        }
+    }
+    /// 只在本机启动临时 SSH 服务，验证真实 direct-tcpip 链路而不依赖外部服务器。
+    async fn jump_test_server() -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let config = Arc::new(russh::server::Config {
+            keys: vec![russh::keys::PrivateKey::random(
+                &mut rand::rngs::OsRng,
+                russh::keys::Algorithm::Ed25519,
+            )
+            .unwrap()],
+            ..Default::default()
+        });
+        let task = tokio::spawn(async move {
+            let mut sessions = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let Ok((stream, _)) = accepted else { break };
+                        let config = config.clone();
+                        sessions.spawn(async move { if let Ok(session) = russh::server::run_stream(config, stream, JumpTestServer).await { let _ = session.await; } });
+                    }
+                    Some(_) = sessions.join_next(), if !sessions.is_empty() => {}
+                }
+            }
+        });
+        (port, task)
+    }
+    #[tokio::test]
+    async fn two_jump_hosts_carry_commands_to_the_final_server() {
+        let (first, first_task) = jump_test_server().await;
+        let (second, second_task) = jump_test_server().await;
+        let (target, target_task) = jump_test_server().await;
+        let config = |port| SshConfig {
+            auth: AuthMethod::Password {
+                password: "test".into(),
+            },
+            verify_host_key: false,
+            timeout_secs: 3,
+            ..config_with("127.0.0.1", "test", port)
+        };
+        let mut target_config = config(target);
+        target_config.jump_hosts = vec![config(first), config(second)];
+        let result = SshSession::connect("jump-test".into(), target_config).await;
+        let session = result.unwrap();
+        assert_eq!(session.jump_handles.lock().await.len(), 2);
+        let output = session.exec_agent("test").await.unwrap();
+        assert_eq!(output.stdout, "routed through two hops");
+        assert_eq!(output.exit_code, Some(0));
+        session.disconnect().await.unwrap();
+        for task in [first_task, second_task, target_task] {
+            task.abort();
+        }
     }
 }

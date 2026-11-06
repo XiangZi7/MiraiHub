@@ -99,21 +99,46 @@ impl Metrics {
             .map(|output| output as f64 * 1000.0 / elapsed_ms as f64);
     }
     /// 按每次请求当时的模型单价累加，切换模型不会重算历史用量。
-    pub fn record_priced(&mut self, response: &Value, format: ApiFormat, elapsed_ms: u64, pricing: &super::config::Pricing) {
+    pub fn record_priced(
+        &mut self,
+        response: &Value,
+        format: ApiFormat,
+        elapsed_ms: u64,
+        pricing: &super::config::Pricing,
+    ) {
         self.record(response, format, elapsed_ms);
         let usage = &response["usage"];
         let input = if format == ApiFormat::Anthropic {
-            usage["input_tokens"].as_u64().map(|value| value.saturating_add(usage["cache_read_input_tokens"].as_u64().unwrap_or(0)))
-        } else { usage["prompt_tokens"].as_u64().or_else(|| usage["input_tokens"].as_u64()) };
-        let output = usage["completion_tokens"].as_u64().or_else(|| usage["output_tokens"].as_u64());
-        let cached = usage["prompt_cache_hit_tokens"].as_u64().or_else(|| usage["prompt_tokens_details"]["cached_tokens"].as_u64()).or_else(|| usage["input_tokens_details"]["cached_tokens"].as_u64()).or_else(|| usage["cache_read_input_tokens"].as_u64());
-        if usage["cache_creation_input_tokens"].as_u64().unwrap_or(0) > 0 { return; }
-        if let (Some(input), Some(output), Some(input_price), Some(output_price)) = (input, output, pricing.input, pricing.output) {
+            usage["input_tokens"].as_u64().map(|value| {
+                value.saturating_add(usage["cache_read_input_tokens"].as_u64().unwrap_or(0))
+            })
+        } else {
+            usage["prompt_tokens"]
+                .as_u64()
+                .or_else(|| usage["input_tokens"].as_u64())
+        };
+        let output = usage["completion_tokens"]
+            .as_u64()
+            .or_else(|| usage["output_tokens"].as_u64());
+        let cached = usage["prompt_cache_hit_tokens"]
+            .as_u64()
+            .or_else(|| usage["prompt_tokens_details"]["cached_tokens"].as_u64())
+            .or_else(|| usage["input_tokens_details"]["cached_tokens"].as_u64())
+            .or_else(|| usage["cache_read_input_tokens"].as_u64());
+        if usage["cache_creation_input_tokens"].as_u64().unwrap_or(0) > 0 {
+            return;
+        }
+        if let (Some(input), Some(output), Some(input_price), Some(output_price)) =
+            (input, output, pricing.input, pricing.output)
+        {
             let cached = cached.or_else(|| (pricing.cached == Some(input_price)).then_some(0));
             if let Some(cached) = cached {
                 let cached = cached.min(input);
                 if cached == 0 || pricing.cached.is_some() {
-                    self.cost += ((input - cached) as f64 * input_price + cached as f64 * pricing.cached.unwrap_or(0.0) + output as f64 * output_price) / 1000000.0;
+                    self.cost += ((input - cached) as f64 * input_price
+                        + cached as f64 * pricing.cached.unwrap_or(0.0)
+                        + output as f64 * output_price)
+                        / 1000000.0;
                     self.priced_reports = self.priced_reports.saturating_add(1);
                 }
             }
@@ -129,7 +154,10 @@ impl Metrics {
             input_tokens: (self.split_reports > 0).then_some(self.input_tokens),
             output_tokens: (self.split_reports > 0).then_some(self.output_tokens),
             cached_tokens: (self.cache_reports > 0).then_some(self.cached_tokens),
-            estimated_cost: (self.priced_reports > 0 && self.priced_reports == self.requests && self.token_reports == self.requests).then_some(self.cost),
+            estimated_cost: (self.priced_reports > 0
+                && self.priced_reports == self.requests
+                && self.token_reports == self.requests)
+                .then_some(self.cost),
             estimated_turn_cost: None,
             rounds: entries.iter().filter(|entry| entry.role == "user").count(),
             steps: self.requests,
@@ -191,5 +219,44 @@ mod tests {
             100,
         );
         assert_eq!(metrics.token_reports, 1);
+    }
+}
+
+#[cfg(test)]
+mod pricing_tests {
+    use super::*;
+    #[test]
+    fn costs_use_each_request_price_and_missing_cache_usage_stays_unknown() {
+        let mut metrics = Metrics::default();
+        let response = serde_json::json!({"usage":{"prompt_tokens":1000,"completion_tokens":100,"prompt_tokens_details":{"cached_tokens":200}}});
+        let price = super::super::config::Pricing {
+            input: Some(2.0),
+            output: Some(10.0),
+            cached: Some(0.5),
+        };
+        metrics.begin_request();
+        metrics.record_priced(&response, ApiFormat::Openai, 100, &price);
+        assert!(
+            (metrics.snapshot(&[], 0, 1000).estimated_cost.unwrap() - 0.0027).abs() < 0.0000001
+        );
+        metrics.begin_request();
+        metrics.record_priced(
+            &response,
+            ApiFormat::Openai,
+            100,
+            &super::super::config::Pricing {
+                output: Some(20.0),
+                ..price.clone()
+            },
+        );
+        assert!((metrics.cost - 0.0064).abs() < 0.0000001);
+        metrics.begin_request();
+        metrics.record_priced(
+            &serde_json::json!({"usage":{"prompt_tokens":1000,"completion_tokens":100}}),
+            ApiFormat::Openai,
+            100,
+            &price,
+        );
+        assert!(metrics.snapshot(&[], 0, 1000).estimated_cost.is_none());
     }
 }

@@ -707,7 +707,13 @@ function handleBrowserDrop(event: DragEvent): void {
   const internal = event.dataTransfer?.getData('application/x-miraihub-local')
   if (internal) {
     browserDragging.value = false
-    try { const paths: unknown = JSON.parse(internal); if (Array.isArray(paths) && paths.every(path => typeof path === 'string')) void uploadPaths(paths) } catch (error) { toast.error(String(error)) }
+    try {
+      const paths: unknown = JSON.parse(internal)
+      if (Array.isArray(paths) && paths.every(path => typeof path === 'string'))
+        void uploadPaths(paths)
+    } catch (error) {
+      toast.error(String(error))
+    }
     return
   }
 
@@ -722,183 +728,202 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
 
 <template>
   <div
-    ref="dropZone"
     class="relative flex min-h-0 flex-1 flex-col"
     @dragenter.prevent="browserDragging = true"
     @dragover.prevent
     @dragleave.prevent="browserDragging = false"
     @drop.prevent="handleBrowserDrop"
   >
-    <div class="border-line-soft flex shrink-0 justify-end border-b px-2"><IconButton icon="lucide:columns-2" :size="14" :title="t('本地与远端双栏')" :class="dualPane && 'text-accent'" @click="dualPane = !dualPane" /></div>
+    <div class="border-line-soft flex shrink-0 justify-end border-b px-2">
+      <IconButton
+        icon="lucide:columns-2"
+        :size="14"
+        :title="t('本地与远端双栏')"
+        :class="dualPane && 'text-accent'"
+        @click="dualPane = !dualPane"
+      />
+    </div>
     <div class="flex min-h-0 flex-1">
-    <LocalFilePane v-if="dualPane" :key="sessionId" :session-id="sessionId" :remote-path="path" @upload="uploadPaths" @refreshed="refresh" />
-    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div
-      class="scroll-none border-line-soft flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2"
-    >
-      <IconButton
-        icon="lucide:house"
-        :size="14"
-        :title="t('主目录')"
-        :disabled="!connected"
-        @click="load('')"
+      <LocalFilePane
+        v-if="dualPane"
+        :key="sessionId"
+        :session-id="sessionId"
+        :remote-path="path"
+        @upload="uploadPaths"
+        @refreshed="refresh"
       />
-      <IconButton
-        icon="lucide:arrow-left"
-        :size="14"
-        :title="t('后退')"
-        :disabled="!canGoBack"
-        @click="goBack"
-      />
-      <IconButton
-        icon="lucide:arrow-right"
-        :size="14"
-        :title="t('前进')"
-        :disabled="!canGoForward"
-        @click="goForward"
-      />
-      <IconButton
-        icon="lucide:arrow-up"
-        :size="14"
-        :title="t('上一级')"
-        :disabled="!connected || path === '/'"
-        @click="goUp"
-      />
+      <div
+        ref="dropZone"
+        class="flex min-h-0 min-w-0 flex-1 flex-col"
+      >
+        <div
+          class="scroll-none border-line-soft flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2"
+        >
+          <IconButton
+            icon="lucide:house"
+            :size="14"
+            :title="t('主目录')"
+            :disabled="!connected"
+            @click="load('')"
+          />
+          <IconButton
+            icon="lucide:arrow-left"
+            :size="14"
+            :title="t('后退')"
+            :disabled="!canGoBack"
+            @click="goBack"
+          />
+          <IconButton
+            icon="lucide:arrow-right"
+            :size="14"
+            :title="t('前进')"
+            :disabled="!canGoForward"
+            @click="goForward"
+          />
+          <IconButton
+            icon="lucide:arrow-up"
+            :size="14"
+            :title="t('上一级')"
+            :disabled="!connected || path === '/'"
+            @click="goUp"
+          />
 
-      <div class="flex-1" />
+          <div class="flex-1" />
 
-      <IconButton
-        :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'"
-        :size="14"
-        :title="t('复制路径')"
-        :disabled="!path"
-        @click="copyPath"
-      />
-      <IconButton
-        icon="lucide:plus"
-        :size="14"
-        :title="t('新建文件或文件夹')"
-        :disabled="!connected || !path"
-        aria-haspopup="menu"
-        :aria-expanded="state.createMenuOpen"
-        @click="openCreateMenu"
-      />
-      <IconButton
-        icon="lucide:upload"
-        :size="14"
-        :title="t('上传文件')"
-        :disabled="!connected"
-        @click="pickUploadFiles"
-      />
-      <IconButton
-        icon="lucide:folder-up"
-        :size="14"
-        :title="t('上传文件夹')"
-        :disabled="!connected"
-        @click="pickUploadFolder"
-      />
-      <IconButton
-        icon="lucide:download"
-        :size="14"
-        :title="t('下载选中文件')"
-        :disabled="
-          !selectedFiles.length ||
-          selectedFiles.some(file => file.kind === 'directory') ||
-          state.processing
-        "
-        @click="downloadFiles(selectedFiles)"
-      />
-      <IconButton
-        :icon="settings.showHiddenFiles ? 'lucide:eye' : 'lucide:eye-off'"
-        :size="14"
-        :title="settings.showHiddenFiles ? t('隐藏点文件') : t('显示隐藏文件')"
-        @click="toggleHidden"
-      />
-      <IconButton
-        icon="lucide:rotate-cw"
-        :size="14"
-        :title="t('刷新')"
-        :disabled="!connected"
-        @click="refresh"
-      />
+          <IconButton
+            :icon="pathClip.copied.value ? 'lucide:check' : 'lucide:copy'"
+            :size="14"
+            :title="t('复制路径')"
+            :disabled="!path"
+            @click="copyPath"
+          />
+          <IconButton
+            icon="lucide:plus"
+            :size="14"
+            :title="t('新建文件或文件夹')"
+            :disabled="!connected || !path"
+            aria-haspopup="menu"
+            :aria-expanded="state.createMenuOpen"
+            @click="openCreateMenu"
+          />
+          <IconButton
+            icon="lucide:upload"
+            :size="14"
+            :title="t('上传文件')"
+            :disabled="!connected"
+            @click="pickUploadFiles"
+          />
+          <IconButton
+            icon="lucide:folder-up"
+            :size="14"
+            :title="t('上传文件夹')"
+            :disabled="!connected"
+            @click="pickUploadFolder"
+          />
+          <IconButton
+            icon="lucide:download"
+            :size="14"
+            :title="t('下载选中文件')"
+            :disabled="
+              !selectedFiles.length ||
+              selectedFiles.some(file => file.kind === 'directory') ||
+              state.processing
+            "
+            @click="downloadFiles(selectedFiles)"
+          />
+          <IconButton
+            :icon="settings.showHiddenFiles ? 'lucide:eye' : 'lucide:eye-off'"
+            :size="14"
+            :title="
+              settings.showHiddenFiles ? t('隐藏点文件') : t('显示隐藏文件')
+            "
+            @click="toggleHidden"
+          />
+          <IconButton
+            icon="lucide:rotate-cw"
+            :size="14"
+            :title="t('刷新')"
+            :disabled="!connected"
+            @click="refresh"
+          />
+        </div>
+
+        <div class="border-line-soft flex shrink-0 border-b px-2 py-1.5">
+          <RemotePathInput
+            :path="path"
+            :entries="pathEntries"
+            :connected="connected"
+            :loading="loading"
+            @navigate="load"
+          />
+        </div>
+
+        <div
+          class="border-line-soft flex shrink-0 items-center gap-2 border-b px-3 py-1.5"
+        >
+          <AppIcon
+            name="lucide:search"
+            :size="13"
+            class="text-txt-3"
+          />
+          <input
+            v-model="filterText"
+            :aria-label="t('筛选当前目录文件')"
+            :placeholder="t('筛选当前目录文件…')"
+            class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none"
+            @keydown.esc.stop="filterText = ''"
+          />
+          <IconButton
+            v-if="filterText"
+            icon="lucide:x"
+            :size="12"
+            :title="t('清除文件筛选')"
+            @click="filterText = ''"
+          />
+        </div>
+
+        <div
+          class="remote-file-columns border-line-soft text-txt-3 grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b px-3 py-1.5 text-[11px] font-medium"
+        >
+          <span> {{ t('Name') }} </span>
+          <span class="text-right"> {{ t('Size') }} </span>
+          <span class="remote-file-modified"> {{ t('Modified') }} </span>
+        </div>
+
+        <RemoteFileList
+          :files="visibleEntries"
+          :drag-session-id="dualPane ? sessionId : undefined"
+          :selected="selected"
+          :selection="selection"
+          @select="selectFiles"
+          @open="openRemote"
+          @contextmenu="openMenu"
+        >
+          <AppSkeleton
+            v-if="loading"
+            :rows="8"
+          />
+          <AppEmptyState
+            v-else-if="!connected"
+            compact
+            icon="lucide:plug-zap"
+            :title="t('连上服务器后可以浏览远端文件')"
+          />
+          <AppEmptyState
+            v-else-if="!visibleEntries.length && !error"
+            compact
+            :icon="filterText.trim() ? 'lucide:search-x' : 'lucide:folder-open'"
+            :title="
+              filterText.trim()
+                ? t('没有匹配的文件')
+                : entries.length
+                  ? t('隐藏文件已在设置中隐藏')
+                  : t('这个目录是空的')
+            "
+          />
+        </RemoteFileList>
+      </div>
     </div>
-
-    <div class="border-line-soft flex shrink-0 border-b px-2 py-1.5">
-      <RemotePathInput
-        :path="path"
-        :entries="pathEntries"
-        :connected="connected"
-        :loading="loading"
-        @navigate="load"
-      />
-    </div>
-
-    <div
-      class="border-line-soft flex shrink-0 items-center gap-2 border-b px-3 py-1.5"
-    >
-      <AppIcon
-        name="lucide:search"
-        :size="13"
-        class="text-txt-3"
-      />
-      <input
-        v-model="filterText"
-        :aria-label="t('筛选当前目录文件')"
-        :placeholder="t('筛选当前目录文件…')"
-        class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none"
-        @keydown.esc.stop="filterText = ''"
-      />
-      <IconButton
-        v-if="filterText"
-        icon="lucide:x"
-        :size="12"
-        :title="t('清除文件筛选')"
-        @click="filterText = ''"
-      />
-    </div>
-
-    <div
-      class="remote-file-columns border-line-soft text-txt-3 grid shrink-0 grid-cols-[1fr_80px_130px] gap-3 border-b px-3 py-1.5 text-[11px] font-medium"
-    >
-      <span> {{ t('Name') }} </span>
-      <span class="text-right"> {{ t('Size') }} </span>
-      <span class="remote-file-modified"> {{ t('Modified') }} </span>
-    </div>
-
-    <RemoteFileList
-      :files="visibleEntries"
-      :drag-session-id="dualPane ? sessionId : undefined"
-      :selected="selected"
-      :selection="selection"
-      @select="selectFiles"
-      @open="openRemote"
-      @contextmenu="openMenu"
-    >
-      <AppSkeleton
-        v-if="loading"
-        :rows="8"
-      />
-      <AppEmptyState
-        v-else-if="!connected"
-        compact
-        icon="lucide:plug-zap"
-        :title="t('连上服务器后可以浏览远端文件')"
-      />
-      <AppEmptyState
-        v-else-if="!visibleEntries.length && !error"
-        compact
-        :icon="filterText.trim() ? 'lucide:search-x' : 'lucide:folder-open'"
-        :title="
-          filterText.trim()
-            ? t('没有匹配的文件')
-            : entries.length
-              ? t('隐藏文件已在设置中隐藏')
-              : t('这个目录是空的')
-        "
-      />
-    </RemoteFileList>
-
-    </div></div>
     <footer
       class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px]"
     >

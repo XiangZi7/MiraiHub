@@ -30,7 +30,7 @@ const sessionsUrl = dataModule(`
     }
     onBeforeUnmount(disconnect)
     return {
-      term: shallowRef(), status, sessionId, error: shallowRef(''), inputLine: shallowRef(''),
+      term: shallowRef(), route: shallowRef([]), status, sessionId, error: shallowRef(''), inputLine: shallowRef(''),
       mount() { session.mounts++ }, connect, disconnect, resize() {}, sendInput() {},
       setInputInterceptor() {}, setSubmitHandler() {},
     }

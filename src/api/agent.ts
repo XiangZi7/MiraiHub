@@ -120,6 +120,7 @@ export async function step(
     channel.onmessage = () => {}
   }
 }
+/** 提交一次审批；记住授权仅适用于本会话相同参数的操作。 */
 export async function respond(
   runId: string,
   approvalId: string,
@@ -128,7 +129,12 @@ export async function respond(
   remember = false
 ): Promise<AgentRun> {
   if (!IS_TAURI)
-    return call<AgentRun>('ai_respond', { runId, approvalId, approve, remember })
+    return call<AgentRun>('ai_respond', {
+      runId,
+      approvalId,
+      approve,
+      remember,
+    })
   const channel = new Channel<AgentProgress>()
   channel.onmessage = onProgress
   try {
@@ -140,12 +146,12 @@ export async function respond(
       onProgress: channel,
     })
   } finally {
-    channel.onmessage = () => {},
-  remember = false
+    ;((channel.onmessage = () => {}), (remember = false))
   }
 }
 /** 重建单个失败步骤并获取新的审批，不自动执行写操作。 */
-export const retryOperation = (runId: string, operationId: string) => call<AgentRun>('ai_retry_operation', { runId, operationId })
+export const retryOperation = (runId: string, operationId: string) =>
+  call<AgentRun>('ai_retry_operation', { runId, operationId })
 export const cancel = (runId: string) => call<void>('ai_cancel', { runId })
 export const forget = (runId: string) => call<void>('ai_forget', { runId })
 export function errorMessage(error: unknown): string {

@@ -58,6 +58,7 @@ interface UploadOptions {
   localPath: string
   remotePath: string
   overwrite?: boolean
+  preserveMtime?: boolean
 }
 
 interface DownloadOptions {
@@ -66,6 +67,7 @@ interface DownloadOptions {
   remotePath: string
   localPath?: string
   overwrite?: boolean
+  preserveMtime?: boolean
 }
 
 const HISTORY_STORAGE_KEY = 'miraihub:file-transfer-history'
@@ -90,6 +92,7 @@ function loadTransferHistory(): FileTransferTask[] {
           SETTLED_STATUSES.includes(task.status)
       )
       .slice(0, 100)
+      .map(task => ({ ...task, resumable: false }))
   } catch {
     return []
   }
@@ -238,12 +241,19 @@ export const useTransfersStore = defineStore('transfers', () => {
         continue
       }
 
-      if (!task.kind) { retryJobs.set(task.id, job); task.resumable = true }
+      if (!task.kind) {
+        retryJobs.set(task.id, job)
+        task.resumable = false
+      }
       runningJobs += 1
       if (task.kind) runningDatabaseJobs += 1
       task.status = 'running'
       void job.run().finally(() => {
-        if (task.status !== 'error') { retryJobs.delete(task.id); task.resumable = false }
+        if (task.status === 'error' && !task.kind) task.resumable = true
+        else {
+          retryJobs.delete(task.id)
+          task.resumable = false
+        }
         runningJobs -= 1
         if (task.kind) runningDatabaseJobs -= 1
         pumpQueue()
@@ -307,6 +317,7 @@ export const useTransfersStore = defineStore('transfers', () => {
               remotePath: options.remotePath,
               overwrite: options.overwrite ?? false,
               resume: true,
+              preserveMtime: options.preserveMtime ?? false,
               bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
               concurrency: Math.min(
                 32,
@@ -361,6 +372,7 @@ export const useTransfersStore = defineStore('transfers', () => {
               localPath: options.localPath ?? '',
               overwrite: options.overwrite ?? false,
               resume: true,
+              preserveMtime: options.preserveMtime ?? false,
               bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
             })
             if (findTask(task.id)?.status === 'cancelled') {
@@ -406,10 +418,12 @@ export const useTransfersStore = defineStore('transfers', () => {
   async function resume(taskId: string): Promise<void> {
     const task = findTask(taskId)
     if (!task) return
-    if (task.status === 'error') {
+    if (task.status === 'error' && task.resumable) {
       const job = retryJobs.get(taskId)
       if (!job) return
-      task.status = 'queued'; task.error = ''; task.completedAt = 0
+      task.status = 'queued'
+      task.error = ''
+      task.completedAt = 0
       pendingJobs.push(job)
       pumpQueue()
       return

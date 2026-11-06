@@ -47,10 +47,22 @@ impl SessionManager {
     }
 
     /// 连接期间推送跳板链进度，成功后才登记为可用会话。
-    pub async fn connect_report(&self, config: SshConfig, app: tauri::AppHandle, request_id: String) -> SshResult<String> {
+    pub async fn connect_report(
+        &self,
+        config: SshConfig,
+        app: tauri::AppHandle,
+        request_id: String,
+    ) -> SshResult<String> {
         let id = new_session_id();
-        let session = SshSession::connect_report(id.clone(), config, Some((app, request_id))).await?;
-        self.sessions.write().await.insert(id.clone(), SessionEntry { session: Arc::new(session), connected_at: now_millis() });
+        let session =
+            SshSession::connect_report(id.clone(), config, Some((app, request_id))).await?;
+        self.sessions.write().await.insert(
+            id.clone(),
+            SessionEntry {
+                session: Arc::new(session),
+                connected_at: now_millis(),
+            },
+        );
         Ok(id)
     }
 

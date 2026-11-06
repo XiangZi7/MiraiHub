@@ -21,6 +21,7 @@ function validCommand(value: unknown): value is TerminalCommand {
   )
 }
 
+/** 读取并规范化片段元数据，旧版数据保持可用且不自动覆盖存储。 */
 export function list(): TerminalCommand[] {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (raw === null) return DEFAULT_TERMINAL_COMMANDS.map(item => ({ ...item }))
@@ -36,10 +37,23 @@ export function list(): TerminalCommand[] {
       return true
     })
     .map(({ id, name, command, folder, tags, description }) => ({
-      id, name, command,
-      ...(typeof folder === 'string' && folder ? { folder: folder.slice(0, 80) } : {}),
-      ...(Array.isArray(tags) ? { tags: tags.filter(tag => typeof tag === 'string').slice(0, 20).map(tag => tag.slice(0, 40)) } : {}),
-      ...(typeof description === 'string' && description ? { description: description.slice(0, 500) } : {}),
+      id,
+      name,
+      command,
+      ...(typeof folder === 'string' && folder
+        ? { folder: folder.slice(0, 80) }
+        : {}),
+      ...(Array.isArray(tags)
+        ? {
+            tags: tags
+              .filter(tag => typeof tag === 'string')
+              .slice(0, 20)
+              .map(tag => tag.slice(0, 40)),
+          }
+        : {}),
+      ...(typeof description === 'string' && description
+        ? { description: description.slice(0, 500) }
+        : {}),
     }))
 }
 function write(items: TerminalCommand[]): void {
@@ -47,7 +61,12 @@ function write(items: TerminalCommand[]): void {
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT))
 }
 /** 保存片段及可选分组、标签，兼容旧版仅包含名称和命令的数据。 */
-export function save(name: string, command: string, id?: string, metadata: Pick<TerminalCommand, 'folder' | 'tags' | 'description'> = {}): void {
+export function save(
+  name: string,
+  command: string,
+  id?: string,
+  metadata: Pick<TerminalCommand, 'folder' | 'tags' | 'description'> = {}
+): void {
   const item = {
     id: id ?? `command-${crypto.randomUUID()}`,
     name: name.trim(),

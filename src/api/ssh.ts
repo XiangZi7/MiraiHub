@@ -70,24 +70,42 @@ function ensureTauri(): void {
  * 建立 SSH 连接，返回会话 id。
  * 后续所有针对该会话的操作都靠这个 id 寻址。
  */
-export async function connect(config: SshConfig, onProgress?: (progress: SshRouteProgress) => void): Promise<string> {
+export async function connect(
+  config: SshConfig,
+  onProgress?: (progress: SshRouteProgress) => void
+): Promise<string> {
   ensureTauri()
   const { jumpHostIds, ...target } = config
   if (jumpHostIds?.length) {
-    if (jumpHostIds.length > 5 || new Set(jumpHostIds).size !== jumpHostIds.length || config.proxy) throw new Error(i18n.global.t('跳板链最多 5 跳，不能重复或同时配置目标代理'))
+    if (
+      jumpHostIds.length > 5 ||
+      new Set(jumpHostIds).size !== jumpHostIds.length ||
+      config.proxy
+    )
+      throw new Error(
+        i18n.global.t('跳板链最多 5 跳，不能重复或同时配置目标代理')
+      )
     target.jumpHosts = []
     for (const id of jumpHostIds) {
       const connection = await getConnection(id)
-      if (!connection || !isSshConnection(connection)) throw new Error(i18n.global.t('跳板连接不存在，请重新选择'))
+      if (!connection || !isSshConnection(connection))
+        throw new Error(i18n.global.t('跳板连接不存在，请重新选择'))
       const hop = toSshConfig(connection)
       delete hop.jumpHostIds
       target.jumpHosts.push(hop)
     }
   }
   const requestId = crypto.randomUUID()
-  const stop = onProgress ? await listen<SshRouteProgress>('ssh://connect-progress', event => { if (event.payload.requestId === requestId) onProgress(event.payload) }) : undefined
-  try { return await invoke<string>('ssh_connect', { config: target, requestId }) }
-  finally { stop?.() }
+  const stop = onProgress
+    ? await listen<SshRouteProgress>('ssh://connect-progress', event => {
+        if (event.payload.requestId === requestId) onProgress(event.payload)
+      })
+    : undefined
+  try {
+    return await invoke<string>('ssh_connect', { config: target, requestId })
+  } finally {
+    stop?.()
+  }
 }
 
 /** 断开并清理会话。对已不存在的会话调用是安全的 */
@@ -237,6 +255,7 @@ export async function uploadFile(options: {
   remotePath: string
   overwrite: boolean
   resume?: boolean
+  preserveMtime?: boolean
   bufferSizeKb: number
   concurrency?: number
 }): Promise<string> {
@@ -251,6 +270,7 @@ export async function downloadFile(options: {
   localPath: string
   overwrite: boolean
   resume?: boolean
+  preserveMtime?: boolean
   bufferSizeKb: number
 }): Promise<string> {
   ensureTauri()

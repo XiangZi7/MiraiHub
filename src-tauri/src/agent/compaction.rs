@@ -345,7 +345,7 @@ pub(super) async fn if_needed(
                     response,
                     config.api_format,
                     started.elapsed().as_millis() as u64,
-                &config.pricing,
+                    &config.pricing,
                 );
             }
             response

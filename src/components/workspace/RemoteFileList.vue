@@ -131,7 +131,15 @@ async function navigate(event: KeyboardEvent): Promise<void> {
     :aria-activedescendant="activeDescendant"
     tabindex="0"
     @keydown="navigate"
-    @pointerdown="event => { if (!dragSessionId || !(event.target as HTMLElement).closest('[draggable=true]')) pointerDown(event) }"
+    @pointerdown="
+      event => {
+        if (
+          !dragSessionId ||
+          !(event.target as HTMLElement).closest('[draggable=true]')
+        )
+          pointerDown(event)
+      }
+    "
     @pointermove="pointerMove"
     @pointerup="stopDrag"
     @pointercancel="stopDrag"
@@ -146,7 +154,16 @@ async function navigate(event: KeyboardEvent): Promise<void> {
         :aria-selected="selectedSet.has(row.file.path)"
         :data-file-index="row.index"
         :draggable="Boolean(dragSessionId) && row.file.kind === 'file'"
-        @dragstart="$event.dataTransfer?.setData('application/x-miraihub-remote', JSON.stringify({sessionId: dragSessionId, path: row.file.path, name: row.file.name}))"
+        @dragstart="
+          $event.dataTransfer?.setData(
+            'application/x-miraihub-remote',
+            JSON.stringify({
+              sessionId: dragSessionId,
+              path: row.file.path,
+              name: row.file.name,
+            })
+          )
+        "
         :aria-posinset="row.index + 1"
         :aria-setsize="files.length"
         class="remote-file-columns grid w-full cursor-default grid-cols-[1fr_80px_130px] items-center gap-3 px-3 text-left text-xs"

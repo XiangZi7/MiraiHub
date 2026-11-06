@@ -216,7 +216,10 @@ const exportPhase = computed(() => {
         />
       </button>
       <button
-        v-else-if="task.status === 'paused' || (task.status === 'error' && task.resumable)"
+        v-else-if="
+          task.status === 'paused' ||
+          (task.status === 'error' && task.resumable)
+        "
         type="button"
         class="transfer-action"
         :title="task.status === 'error' ? t('校验并续传') : t('继续')"
@@ -375,7 +378,11 @@ const exportPhase = computed(() => {
 }
 
 .transfer-progress-active {
-  background: linear-gradient(90deg, var(--color-blue), color-mix(in oklch, var(--color-blue) 70%, white));
+  background: linear-gradient(
+    90deg,
+    var(--color-blue),
+    color-mix(in oklch, var(--color-blue) 70%, white)
+  );
 }
 
 .transfer-progress-complete {

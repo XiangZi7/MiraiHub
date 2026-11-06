@@ -245,8 +245,8 @@ test('切库时清除旧字段，迟到的补全元数据不会覆盖新库', as
     session = ref('one'),
     schema = ref('old'),
     catalog = ref([])
-  const columns = scope.run(() =>
-    useDatabaseCompletions(session, schema, catalog).columns
+  const columns = scope.run(
+    () => useDatabaseCompletions(session, schema, catalog).columns
   )
   schema.value = 'new'
   await nextTick()

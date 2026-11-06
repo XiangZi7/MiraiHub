@@ -10,9 +10,9 @@ use futures_util::{stream, StreamExt, TryStreamExt};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use serde::{Deserialize, Serialize};
+use std::io::SeekFrom;
 use tauri::AppHandle;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use std::io::SeekFrom;
 use tokio::sync::Semaphore;
 
 use super::error::{SshError, SshResult};
@@ -553,13 +553,25 @@ async fn upload_inner(
     // 续传只使用同一任务的临时文件，逐字节验证已传前缀后才从断点继续。
     let temp_path = remote_temp_path(&request.remote_path, &request.task_id);
     let mut source = tokio::fs::File::open(&request.local_path).await?;
-    let partial = if request.resume { sftp.symlink_metadata(&temp_path).await.ok() } else { None };
-    if partial.as_ref().is_some_and(|meta| !meta.is_regular()) { return Err(SshError::InvalidInput("续传临时路径不是普通文件".into())); }
+    let partial = if request.resume {
+        sftp.symlink_metadata(&temp_path).await.ok()
+    } else {
+        None
+    };
+    if partial.as_ref().is_some_and(|meta| !meta.is_regular()) {
+        return Err(SshError::InvalidInput("续传临时路径不是普通文件".into()));
+    }
     let offset = partial.and_then(|meta| meta.size).unwrap_or(0);
-    if offset > source.metadata().await?.len() { return Err(SshError::InvalidInput("源文件已变化，不能续传".into())); }
+    if offset > source.metadata().await?.len() {
+        return Err(SshError::InvalidInput("源文件已变化，不能续传".into()));
+    }
     let mut target = if offset > 0 {
-        sftp.open_with_flags(&temp_path, OpenFlags::READ | OpenFlags::WRITE).await.map_err(sftp_error)?
-    } else { sftp.create(&temp_path).await.map_err(sftp_error)? };
+        sftp.open_with_flags(&temp_path, OpenFlags::READ | OpenFlags::WRITE)
+            .await
+            .map_err(sftp_error)?
+    } else {
+        sftp.create(&temp_path).await.map_err(sftp_error)?
+    };
     if offset > 0 {
         verify_prefix(&mut source, &mut target, offset, control).await?;
         source.seek(SeekFrom::Start(offset)).await?;
@@ -589,6 +601,23 @@ async fn upload_inner(
         // 大量小文件时每个文件都多等一次磁盘同步。shutdown 会等所有写入确认后再关闭句柄。
         target.shutdown().await?;
         control.checkpoint().await?;
+        if request.preserve_mtime {
+            if let Some(modified) = source
+                .metadata()
+                .await?
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .and_then(|duration| u32::try_from(duration.as_secs()).ok())
+            {
+                let mut attrs = FileAttributes::empty();
+                attrs.atime = Some(modified);
+                attrs.mtime = Some(modified);
+                sftp.set_metadata(&temp_path, attrs)
+                    .await
+                    .map_err(sftp_error)?;
+            }
+        }
 
         if destination_exists {
             replace_existing_file(sftp, request, &temp_path).await?;
@@ -719,12 +748,29 @@ async fn download_inner(
     control: &TransferControl,
     total: u64,
 ) -> SshResult<()> {
-    let partial = if request.resume { tokio::fs::symlink_metadata(temp_path).await.ok() } else { None };
-    if partial.as_ref().is_some_and(|meta| !meta.is_file() || meta.is_symlink()) { return Err(SshError::InvalidInput("续传临时路径不是普通文件".into())); }
+    let partial = if request.resume {
+        tokio::fs::symlink_metadata(temp_path).await.ok()
+    } else {
+        None
+    };
+    if partial
+        .as_ref()
+        .is_some_and(|meta| !meta.is_file() || meta.is_symlink())
+    {
+        return Err(SshError::InvalidInput("续传临时路径不是普通文件".into()));
+    }
     let offset = partial.map(|meta| meta.len()).unwrap_or(0);
-    if offset > total { return Err(SshError::InvalidInput("源文件已变化，不能续传".into())); }
+    if offset > total {
+        return Err(SshError::InvalidInput("源文件已变化，不能续传".into()));
+    }
     let mut source = sftp.open(&request.remote_path).await.map_err(sftp_error)?;
-    let mut target = tokio::fs::OpenOptions::new().create(true).truncate(offset == 0).read(true).write(true).open(temp_path).await?;
+    let mut target = tokio::fs::OpenOptions::new()
+        .create(true)
+        .truncate(offset == 0)
+        .read(true)
+        .write(true)
+        .open(temp_path)
+        .await?;
     if offset > 0 {
         verify_prefix(&mut source, &mut target, offset, control).await?;
         source.seek(SeekFrom::Start(offset)).await?;
@@ -734,7 +780,10 @@ async fn download_inner(
         let mut buffer = vec![0_u8; transfer_buffer_size(request.buffer_size_kb)];
         let mut transferred = offset;
         control.set_transferred(offset);
-        emit_transfer(app, TransferEvent::progress(&request.task_id, offset, total));
+        emit_transfer(
+            app,
+            TransferEvent::progress(&request.task_id, offset, total),
+        );
 
         loop {
             control.checkpoint().await?;
@@ -756,6 +805,16 @@ async fn download_inner(
         target.flush().await?;
         target.sync_all().await?;
         control.checkpoint().await?;
+        if request.preserve_mtime {
+            if let Some(modified) = sftp
+                .metadata(&request.remote_path)
+                .await
+                .map_err(sftp_error)?
+                .mtime
+            {
+                preserve_local_mtime(temp_path, modified)?;
+            }
+        }
 
         if final_path.exists() {
             if !request.overwrite {
@@ -788,8 +847,20 @@ async fn download_inner(
     result
 }
 
+/// 同步文件保留源端修改时间，下一次扫描不会把刚传完的相同文件再次列为差异。
+fn preserve_local_mtime(path: &Path, seconds: u32) -> SshResult<()> {
+    let file = std::fs::OpenOptions::new().write(true).open(path)?;
+    file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds as u64))?;
+    Ok(())
+}
+
 /// 校验已有内容确实来自当前源文件，源已变化时保留断点并拒绝混合写入。
-async fn verify_prefix<A: AsyncRead + Unpin, B: AsyncRead + Unpin>(source: &mut A, target: &mut B, mut remaining: u64, control: &TransferControl) -> SshResult<()> {
+async fn verify_prefix<A: AsyncRead + Unpin, B: AsyncRead + Unpin>(
+    source: &mut A,
+    target: &mut B,
+    mut remaining: u64,
+    control: &TransferControl,
+) -> SshResult<()> {
     let mut left = vec![0u8; 65536];
     let mut right = vec![0u8; 65536];
     while remaining > 0 {
@@ -797,7 +868,11 @@ async fn verify_prefix<A: AsyncRead + Unpin, B: AsyncRead + Unpin>(source: &mut 
         let count = remaining.min(left.len() as u64) as usize;
         source.read_exact(&mut left[..count]).await?;
         target.read_exact(&mut right[..count]).await?;
-        if left[..count] != right[..count] { return Err(SshError::InvalidInput("源文件内容已变化，不能续传；请重新创建传输任务".into())); }
+        if left[..count] != right[..count] {
+            return Err(SshError::InvalidInput(
+                "源文件内容已变化，不能续传；请重新创建传输任务".into(),
+            ));
+        }
         remaining -= count as u64;
     }
     Ok(())
@@ -1218,5 +1293,49 @@ mod tests {
         assert!(validate_copy_destination("/", "/backup").is_err());
         assert!(validate_copy_destination("/data/app", "/data/application/app").is_ok());
         assert!(validate_copy_destination("/data/app", "/backup/app").is_ok());
+    }
+}
+
+#[cfg(test)]
+mod resume_tests {
+    use super::*;
+    #[test]
+    fn directory_sync_preserves_modified_time_for_repeat_scans() {
+        let path =
+            std::env::temp_dir().join(format!("miraihub-sync-time-{}.tmp", rand::random::<u64>()));
+        std::fs::write(&path, b"sync").unwrap();
+        preserve_local_mtime(&path, 1_700_000_000).unwrap();
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(
+            modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            1_700_000_000
+        );
+    }
+    #[tokio::test]
+    async fn resume_verifies_every_byte_and_honors_cancellation() {
+        let manager = TransferManager::default();
+        let control = manager.begin("prefix", 7).await.unwrap();
+        let mut source = std::io::Cursor::new(b"abcdefg".to_vec());
+        let mut partial = std::io::Cursor::new(b"abc".to_vec());
+        verify_prefix(&mut source, &mut partial, 3, &control)
+            .await
+            .unwrap();
+        assert_eq!(source.position(), 3);
+        let mut changed = std::io::Cursor::new(b"abX".to_vec());
+        source.set_position(0);
+        assert!(verify_prefix(&mut source, &mut changed, 3, &control)
+            .await
+            .is_err());
+        manager.cancel("prefix").await.unwrap();
+        source.set_position(0);
+        partial.set_position(0);
+        assert!(matches!(
+            verify_prefix(&mut source, &mut partial, 3, &control).await,
+            Err(SshError::TransferCancelled)
+        ));
     }
 }

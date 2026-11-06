@@ -212,7 +212,21 @@ async function runAction(id: string): Promise<void> {
       />
     </header>
 
-    <label class="text-txt-3 mb-3 flex items-center justify-end gap-2 text-xs">{{ t('趋势时间范围') }}<select v-model.number="historyMinutes" class="field w-24"><option v-for="minutes in [5, 15, 30]" :key="minutes" :value="minutes">{{ minutes }} {{ t('分钟') }}</option></select></label>
+    <label class="text-txt-3 mb-3 flex items-center justify-end gap-2 text-xs"
+      >{{ t('趋势时间范围')
+      }}<select
+        v-model.number="historyMinutes"
+        class="field w-24"
+      >
+        <option
+          v-for="minutes in [5, 15, 30]"
+          :key="minutes"
+          :value="minutes"
+        >
+          {{ minutes }} {{ t('分钟') }}
+        </option>
+      </select></label
+    >
     <!-- 资源指标 -->
     <div
       v-if="ready"

@@ -25,10 +25,23 @@ import type { SshSystemStats } from '@/types/ssh'
 const POLL_INTERVAL = 5000
 
 /** 折线图保留的采样点数。44 个点约 3.5 分钟，够看出趋势又不至于挤成一团 */
-interface SessionHistory { stats: SshSystemStats | null; history: { cpu: number[]; memory: number[]; disk: number[]; network: number[] }; times: number[] }
+interface SessionHistory {
+  stats: SshSystemStats | null
+  history: {
+    cpu: number[]
+    memory: number[]
+    disk: number[]
+    network: number[]
+  }
+  times: number[]
+}
 const sessions = new Map<string, SessionHistory>()
 
-export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>, historyMinutes?: Ref<number>) {
+export function useSystemStats(
+  sessionId: Ref<string>,
+  enabled?: Ref<boolean>,
+  historyMinutes?: Ref<number>
+) {
   // 响应式状态
   const state = reactive({
     // 最近一次采集结果，未采集时为 null
@@ -65,9 +78,13 @@ export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>, h
   /** 把新采样推进历史，超长丢最早的 */
   function pushHistory(snapshot: SshSystemStats): void {
     times.push(Date.now())
-    const cutoff = Date.now() - Math.min(30, Math.max(1, historyMinutes?.value ?? 5)) * 60000
+    const cutoff =
+      Date.now() - Math.min(30, Math.max(1, historyMinutes?.value ?? 5)) * 60000
     let expired = 0
-    while (times.length && (times[0]! < cutoff || times.length > 1800)) { times.shift(); expired++ }
+    while (times.length && (times[0]! < cutoff || times.length > 1800)) {
+      times.shift()
+      expired++
+    }
     const push = (list: number[], value: number): void => {
       list.push(Number.isFinite(value) ? value : 0)
       list.splice(0, expired)
@@ -80,8 +97,13 @@ export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>, h
     push(state.history.disk, percentOf(disk.usedKb, disk.totalKb))
     // 网络没有"百分比"可言，直接放绝对速率，SparkLine 会按自身的最值归一化
     push(state.history.network, network.rxBytesPerSec + network.txBytesPerSec)
-    sessions.delete(sessionId.value)
-    sessions.set(sessionId.value, { stats: snapshot, history: state.history, times })
+    const cacheKey = `${sessionId.value}:${historyMinutes?.value ?? 5}`
+    sessions.delete(cacheKey)
+    sessions.set(cacheKey, {
+      stats: snapshot,
+      history: state.history,
+      times,
+    })
     while (sessions.size > 20) sessions.delete(sessions.keys().next().value!)
   }
 
@@ -158,11 +180,18 @@ export function useSystemStats(sessionId: Ref<string>, enabled?: Ref<boolean>, h
       inflightGeneration = -1
       state.loading = false
       if (!previous || id !== previous[0]) {
-        const cached = sessions.get(id)
+        const cached = sessions.get(`${id}:${historyMinutes?.value ?? 5}`)
         state.stats = cached?.stats ?? null
         state.error = ''
-        state.history = cached?.history ?? { cpu: [], memory: [], disk: [], network: [] }
-        times = cached?.times ?? []
+        state.history = cached
+          ? {
+              cpu: [...cached.history.cpu],
+              memory: [...cached.history.memory],
+              disk: [...cached.history.disk],
+              network: [...cached.history.network],
+            }
+          : { cpu: [], memory: [], disk: [], network: [] }
+        times = cached ? [...cached.times] : []
       }
       if (!id || !enabled) return
       await refresh()

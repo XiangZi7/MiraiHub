@@ -14,7 +14,11 @@ pub struct Pricing {
 impl Pricing {
     /// 只接受用户填写的非负单价，不内置可能过期的供应商报价。
     fn validate(&self) -> AppResult<()> {
-        if [self.input, self.output, self.cached].into_iter().flatten().any(|value| !value.is_finite() || !(0.0..=1000000.0).contains(&value)) {
+        if [self.input, self.output, self.cached]
+            .into_iter()
+            .flatten()
+            .any(|value| !value.is_finite() || !(0.0..=1000000.0).contains(&value))
+        {
             return Err(AppError::invalid_input("Token 单价必须是有效的非负数"));
         }
         Ok(())

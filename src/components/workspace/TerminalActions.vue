@@ -20,7 +20,12 @@ import { findTerminalMatches } from '@/utils/terminal-search'
 import type { SshSessionStatus } from '@/types/ssh'
 import TerminalCommandMenu from '@/components/workspace/TerminalCommandMenu.vue'
 import TerminalReplayDialog from '@/components/workspace/terminal-replay-dialog.vue'
-import { startRecording, stopRecording, parseCast, type TerminalCast } from '@/utils/terminal-recording'
+import {
+  startRecording,
+  stopRecording,
+  parseCast,
+  type TerminalCast,
+} from '@/utils/terminal-recording'
 
 const { t } = useI18n()
 
@@ -68,8 +73,17 @@ const state = reactive({
   // xterm 选区由事件同步，菜单打开时和工具栏按钮都能及时更新。
   hasSelection: false,
 })
-const { recording, cast, searchOpen, query, matchIndex, matchCount, menuOpen, menuX, menuY } =
-  toRefs(state)
+const {
+  recording,
+  cast,
+  searchOpen,
+  query,
+  matchIndex,
+  matchCount,
+  menuOpen,
+  menuX,
+  menuY,
+} = toRefs(state)
 const items = computed(() => {
   return [
     {
@@ -294,14 +308,20 @@ async function importCast(event: Event): Promise<void> {
       if (file.size > 32 * 1024 * 1024) throw new Error(t('录制文件过大'))
       state.cast = parseCast(await file.text())
     }
-  } catch (error) { toast.error({title: t('读取录制失败'), description: String(error)}) }
-  finally { input.value = '' }
+  } catch (error) {
+    toast.error({ title: t('读取录制失败'), description: String(error) })
+  } finally {
+    input.value = ''
+  }
 }
 // 切换终端时结束上一实例的录制，防止录到新的会话。
-watch(() => props.terminal, (_next, previous) => {
-  if (previous && state.recording) state.cast = stopRecording(previous)
-  state.recording = false
-})
+watch(
+  () => props.terminal,
+  (_next, previous) => {
+    if (previous && state.recording) state.cast = stopRecording(previous)
+    state.recording = false
+  }
+)
 function insertCommand(command: string): void {
   if (props.status !== 'connected' || !props.terminal) return
   props.terminal.paste(command)
@@ -338,10 +358,35 @@ function insertCommand(command: string): void {
       @click="emit('close')"
     />
     <slot />
-    <IconButton v-if="!local" :icon="recording ? 'lucide:square' : 'lucide:circle-dot'" :size="14" :class="recording && 'text-danger'" :title="recording ? t('停止录制') : t('开始录制')" :disabled="!terminal" @click="toggleRecording" />
-    <IconButton v-if="!local" icon="lucide:film" :size="14" :title="t('导入录制回放')" @click="castInput?.click()" />
-    <input ref="castInput" type="file" accept=".cast" hidden @change="importCast" />
-    <Teleport to="body"><TerminalReplayDialog v-if="cast" :cast="cast" @close="cast = null" /></Teleport>
+    <IconButton
+      v-if="!local"
+      :icon="recording ? 'lucide:square' : 'lucide:circle-dot'"
+      :size="14"
+      :class="recording && 'text-danger'"
+      :title="recording ? t('停止录制') : t('开始录制')"
+      :disabled="!terminal"
+      @click="toggleRecording"
+    />
+    <IconButton
+      v-if="!local"
+      icon="lucide:film"
+      :size="14"
+      :title="t('导入录制回放')"
+      @click="castInput?.click()"
+    />
+    <input
+      ref="castInput"
+      type="file"
+      accept=".cast"
+      hidden
+      @change="importCast"
+    />
+    <Teleport to="body"
+      ><TerminalReplayDialog
+        v-if="cast"
+        :cast="cast"
+        @close="cast = null"
+    /></Teleport>
     <IconButton
       icon="lucide:copy"
       class="terminal-secondary-action"

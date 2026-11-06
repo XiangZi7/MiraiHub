@@ -15,7 +15,10 @@ const props = defineProps<{
   busy: boolean
   canApplySql?: boolean
 }>()
-const emit = defineEmits<{ applySql: [sql: string]; retryOperation: [id: string] }>()
+const emit = defineEmits<{
+  applySql: [sql: string]
+  retryOperation: [id: string]
+}>()
 const { t } = useI18n()
 const state = reactive({ open: props.busy })
 watch(
@@ -78,14 +81,28 @@ const preparing = computed(
         class="border-agent-line relative min-w-0 border-l-2 py-0.5 pl-3.5"
       >
         <template v-if="entry.operation">
-          <span class="border-panel absolute top-3 -left-1.5 size-2.5 rounded-full border-2" :class="entry.operation.status === 'failed' ? 'bg-danger' : 'bg-success'" aria-hidden="true" />
+          <span
+            class="border-panel absolute top-3 -left-1.5 size-2.5 rounded-full border-2"
+            :class="
+              entry.operation.status === 'failed' ? 'bg-danger' : 'bg-success'
+            "
+            aria-hidden="true"
+          />
           <AgentExecutionCard
             :operation="entry.operation"
             :output="entry.detail"
             :can-apply-sql="canApplySql"
             @apply-sql="emit('applySql', $event)"
           />
-          <button v-if="entry.operation.status === 'failed'" type="button" :disabled="busy" class="text-accent hover:bg-hover mt-1 rounded px-2 py-1 text-xs disabled:opacity-40" @click="emit('retryOperation', entry.operation.id)">{{ t('重试此步骤') }}</button>
+          <button
+            v-if="entry.operation.status === 'failed'"
+            type="button"
+            :disabled="busy"
+            class="text-accent hover:bg-hover mt-1 rounded px-2 py-1 text-xs disabled:opacity-40"
+            @click="emit('retryOperation', entry.operation.id)"
+          >
+            {{ t('重试此步骤') }}
+          </button>
           <AgentQueryResult
             v-for="(result, resultIndex) in entry.operation.results ?? []"
             :key="resultIndex"

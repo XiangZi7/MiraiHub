@@ -60,6 +60,7 @@ const snapshot = {
   disk: { usedKb: 1, totalKb: 4 },
   network: { rxBytesPerSec: 1, txBytesPerSec: 2 },
 }
+let fixtureId = 0
 function fixture() {
   calls.length = 0
   visibility.value = 'visible'
@@ -90,7 +91,7 @@ function fixture() {
       child.parent?.children[child.parent.children.indexOf(child) + 1] ?? null,
   })
   const enabled = ref(true)
-  const session = ref('a'),
+  const session = ref(`session-${++fixtureId}`),
     shown = ref(true)
   let result
   const Stats = {

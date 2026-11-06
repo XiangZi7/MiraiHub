@@ -4,7 +4,11 @@ export interface AgentTarget {
   database: string
 }
 export type AgentApprovalMode = 'ask' | 'auto' | 'full'
-export interface AgentPricing { input: number | null; output: number | null; cached: number | null }
+export interface AgentPricing {
+  input: number | null
+  output: number | null
+  cached: number | null
+}
 export interface AgentConfig {
   pricing?: AgentPricing
   id: string

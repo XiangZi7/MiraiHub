@@ -227,4 +227,10 @@ export interface ShellSuggestion {
   description: string
 }
 
-export interface SshRouteProgress { requestId: string; hop: number; total: number; endpoint: string; status: 'connecting' | 'connected' | 'failed' }
+export interface SshRouteProgress {
+  requestId: string
+  hop: number
+  total: number
+  endpoint: string
+  status: 'connecting' | 'connected' | 'failed'
+}

@@ -14,6 +14,7 @@ import { IS_TAURI } from '@/utils/window'
 import { useI18n } from 'vue-i18n'
 import { agentProviderIcon } from '@/utils/agent-provider-icon'
 
+/** 将服务配置复制为独立草稿，补齐旧配置缺失的容量和计费字段。 */
 function editProfile(profile: AgentConfig): AgentProfileDraft {
   return {
     ...profile,
@@ -119,7 +120,7 @@ export function useAgentSettings() {
             model: current.model,
             apiKey: current.apiKey,
             limits: { ...current.limits },
-            pricing: current.pricing,
+            pricing: current.pricing ? { ...current.pricing } : undefined,
           },
         },
         current.clearKey
