@@ -35,7 +35,7 @@ impl Binder {
     fn push(&mut self, value: Option<String>) -> String {
         self.values.push(value);
         match self.kind {
-            DatabaseKind::Mysql => "?".to_owned(),
+            DatabaseKind::Mysql | DatabaseKind::Sqlite => "?".to_owned(),
             DatabaseKind::Postgresql => format!("${}", self.values.len()),
         }
     }
@@ -76,6 +76,27 @@ pub async fn mutate(
             .collect(),
         elapsed_ms: elapsed_millis(started),
     })
+}
+
+/// 提交前预览将要执行的语句（占位符已代入字面值），不触碰数据。
+pub async fn preview(pool: &DatabasePool, request: &MutationRequest) -> DatabaseResult<Vec<String>> {
+    let schema = request.schema.trim();
+    let table = request.table.trim();
+    if table.is_empty() {
+        return Err(DatabaseError::InvalidInput("表名不能为空".to_owned()));
+    }
+    let kind = pool.kind();
+    let casts = metadata::column_cast_types(pool, schema, table)
+        .await
+        .unwrap_or_default();
+    request
+        .mutations
+        .iter()
+        .map(|mutation| {
+            prepare(schema, table, mutation, kind, &casts)
+                .map(|prepared| display_sql(&prepared.statement, &prepared.values, kind))
+        })
+        .collect()
 }
 
 /// 网格编辑与 Excel 导入共用事务执行；取消发生在提交前时，连接释放会回滚全部行。
@@ -126,6 +147,40 @@ pub(super) async fn execute_prepared(
             transaction.commit().await.map_err(DatabaseError::Query)?;
         }
         DatabasePool::Postgresql(pool) => {
+            let mut transaction = pool.begin().await.map_err(DatabaseError::Query)?;
+            for (index, mutation) in prepared.iter().enumerate() {
+                if let Some((control, _, _)) = progress {
+                    control
+                        .checkpoint()
+                        .await
+                        .map_err(|_| DatabaseError::Cancelled)?;
+                }
+                let mut query = sqlx::query(&mutation.statement);
+                for value in &mutation.values {
+                    query = query.bind(value.clone());
+                }
+                rows_affected += query
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(DatabaseError::Query)?
+                    .rows_affected();
+                if let Some((_, app, task_id)) = progress {
+                    if index % 100 == 0 || index + 1 == prepared.len() {
+                        let mut event = crate::ssh::events::TransferEvent::progress(task_id, 0, 0);
+                        event.processed_rows = Some((index + 1) as u64);
+                        crate::ssh::events::emit_transfer(app, event);
+                    }
+                }
+            }
+            if let Some((control, _, _)) = progress {
+                control
+                    .checkpoint()
+                    .await
+                    .map_err(|_| DatabaseError::Cancelled)?;
+            }
+            transaction.commit().await.map_err(DatabaseError::Query)?;
+        }
+        DatabasePool::Sqlite(pool) => {
             let mut transaction = pool.begin().await.map_err(DatabaseError::Query)?;
             for (index, mutation) in prepared.iter().enumerate() {
                 if let Some((control, _, _)) = progress {

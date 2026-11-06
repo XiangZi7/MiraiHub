@@ -13,6 +13,8 @@ import {
 import type { DatabaseExecution, DatabaseKind } from '@/types/database'
 import { exportDataText } from '@/utils/database-export'
 import DatabaseExportMenu from './DatabaseExportMenu.vue'
+import ExplainPlanView from './ExplainPlanView.vue'
+import type { PlanNode } from '@/utils/explain-plan'
 import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
 
@@ -24,9 +26,33 @@ const props = defineProps<{
   error: string
   databaseKind?: DatabaseKind
   databaseName?: string
+  /** 最近一次分析的执行计划；有值时显示 Plan 页签 */
+  plan?: PlanNode | null
+  planLoading?: boolean
 }>()
 
-const activeTab = shallowRef<'results' | 'messages'>('results')
+const emit = defineEmits<{
+  /** 把报错连同失败语句交给 AI 修复 */
+  fixError: [content: string]
+}>()
+
+const activeTab = shallowRef<'results' | 'messages' | 'plan'>('results')
+
+// 新的计划到达时自动切过去，重新执行查询时切回结果
+watch(
+  () => [props.plan, props.planLoading] as const,
+  ([plan, planLoading]) => {
+    if (plan || planLoading) activeTab.value = 'plan'
+  }
+)
+
+/** 把当前错误与对应语句拼成上下文，交给 Agent 面板修复。 */
+function fixWithAgent(): void {
+  const message = props.error || result.value?.error
+  if (!message) return
+  const statement = result.value?.statement ?? ''
+  emit('fixError', `${statement}\n\n-- Error:\n${message}`.trim())
+}
 const activeStatement = shallowRef(0)
 const page = shallowRef(0)
 const pageSize = 200
@@ -70,6 +96,7 @@ watch(
       execution?.statements.findIndex(statement => Boolean(statement.error)) ??
       -1
     activeStatement.value = failed >= 0 ? failed : 0
+    if (execution) activeTab.value = 'results'
   }
 )
 
@@ -124,9 +151,12 @@ async function copyResult(): Promise<void> {
       <div class="flex-1" />
       <AppButton
         v-for="tab in [
-          { id: 'results', label: 'Results' },
-          { id: 'messages', label: 'Messages' },
-        ] as const"
+          { id: 'results' as const, label: 'Results' },
+          { id: 'messages' as const, label: 'Messages' },
+          ...(plan || planLoading
+            ? [{ id: 'plan' as const, label: 'Plan' }]
+            : []),
+        ]"
         :key="tab.id"
         variant="bare"
         :class="
@@ -144,7 +174,33 @@ async function copyResult(): Promise<void> {
     </div>
 
     <div
-      v-if="activeTab === 'messages'"
+      v-if="activeTab === 'plan'"
+      class="scroll-thin min-h-0 flex-1 overflow-auto p-2"
+    >
+      <div
+        v-if="planLoading"
+        class="text-txt-3 grid h-full place-items-center text-xs"
+      >
+        <span class="flex items-center gap-2">
+          <AppIcon
+            name="lucide:loader-circle"
+            :size="14"
+            class="animate-spin"
+          />
+          {{ t('正在分析执行计划…') }}
+        </span>
+      </div>
+      <Transition
+        v-else-if="plan"
+        name="fade"
+        appear
+      >
+        <ExplainPlanView :plan="plan" />
+      </Transition>
+    </div>
+
+    <div
+      v-else-if="activeTab === 'messages'"
       class="scroll-thin min-h-0 flex-1 overflow-auto p-3 font-mono text-[11px] leading-5"
     >
       <p
@@ -206,9 +262,21 @@ async function copyResult(): Promise<void> {
       </div>
       <div
         v-else-if="error || result?.error"
-        class="text-danger p-3 text-xs leading-5"
+        class="flex flex-col items-start gap-2 p-3"
       >
-        {{ error || result?.error }}
+        <p class="text-danger text-xs leading-5 whitespace-pre-wrap">
+          {{ error || result?.error }}
+        </p>
+        <AppButton
+          size="sm"
+          @click="fixWithAgent"
+        >
+          <AppIcon
+            name="lucide:sparkles"
+            :size="12"
+          />
+          {{ t('让 AI 修复') }}
+        </AppButton>
       </div>
       <div
         v-else-if="!result"

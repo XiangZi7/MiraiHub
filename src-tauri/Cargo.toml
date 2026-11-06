@@ -59,12 +59,13 @@ log = "0.4"
 tauri-plugin-dialog = "2"
 portable-pty = "0.8.1"
 
-# 数据库工作台：同时支持 MySQL / PostgreSQL，连接池与查询都留在 Rust 侧，
+# 数据库工作台：同时支持 MySQL / PostgreSQL / SQLite，连接池与查询都留在 Rust 侧，
 # 凭据和原始连接句柄不会跨 IPC 暴露给 WebView。
 sqlx = { version = "0.8.6", default-features = false, features = [
     "runtime-tokio-rustls",
     "mysql",
     "postgres",
+    "sqlite",
     "chrono",
     "json",
     "uuid",

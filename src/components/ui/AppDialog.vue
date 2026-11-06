@@ -37,54 +37,64 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 <template>
   <!-- 点遮罩关闭，但只认落在遮罩自身上的点击：
        从对话框内部拖选文字到外面松手不该关掉它 -->
-  <div
-    class="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-6"
-    @click.self="emit('close')"
+  <Transition
+    name="fade"
+    appear
   >
-    <section
-      :class="[
-        'overlay-surface relative flex max-h-full min-h-0 w-full min-w-0 flex-col overflow-hidden',
-        wide ? 'max-w-[620px]' : 'max-w-100',
-      ]"
-      role="dialog"
-      aria-modal="true"
-      :aria-labelledby="titleId"
+    <div
+      class="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-6"
+      @click.self="emit('close')"
     >
-      <header
-        class="border-line-soft flex shrink-0 items-start gap-2 border-b px-4 py-3"
+      <Transition
+        name="fade-scale"
+        appear
       >
-        <div class="min-w-0 flex-1">
-          <h2
-            :id="titleId"
-            class="text-txt text-[13px] font-medium"
+        <section
+          :class="[
+            'overlay-surface relative flex max-h-full min-h-0 w-full min-w-0 flex-col overflow-hidden',
+            wide ? 'max-w-[620px]' : 'max-w-100',
+          ]"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="titleId"
+        >
+          <header
+            class="border-line-soft flex shrink-0 items-start gap-2 border-b px-4 py-3"
           >
-            {{ title }}
-          </h2>
-          <p
-            v-if="description"
-            class="text-txt-3 mt-1 text-[11px]"
+            <div class="min-w-0 flex-1">
+              <h2
+                :id="titleId"
+                class="text-txt text-[13px] font-medium"
+              >
+                {{ title }}
+              </h2>
+              <p
+                v-if="description"
+                class="text-txt-3 mt-1 text-[11px]"
+              >
+                {{ description }}
+              </p>
+            </div>
+            <IconButton
+              icon="lucide:x"
+              :size="15"
+              :title="t('关闭')"
+              @click="emit('close')"
+            />
+          </header>
+
+          <div class="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-3.5">
+            <slot />
+          </div>
+
+          <footer
+            v-if="$slots.footer"
+            class="border-line-soft flex shrink-0 items-center gap-2 border-t px-4 py-3"
           >
-            {{ description }}
-          </p>
-        </div>
-        <IconButton
-          icon="lucide:x"
-          :size="15"
-          :title="t('关闭')"
-          @click="emit('close')"
-        />
-      </header>
-
-      <div class="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-3.5">
-        <slot />
-      </div>
-
-      <footer
-        v-if="$slots.footer"
-        class="border-line-soft flex shrink-0 items-center gap-2 border-t px-4 py-3"
-      >
-        <slot name="footer" />
-      </footer>
-    </section>
-  </div>
+            <slot name="footer" />
+          </footer>
+        </section>
+      </Transition>
+    </div>
+  </Transition>
 </template>

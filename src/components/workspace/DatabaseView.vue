@@ -18,10 +18,12 @@ import {
   useStorage,
 } from '@vueuse/core'
 import * as database from '@/api/database'
+import { parseExplainPlan, type PlanNode } from '@/utils/explain-plan'
 import {
   addQueryHistory,
   clearQueryHistory,
   listQueryHistory,
+  updateQueryHistory,
 } from '@/api/database-history'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
@@ -67,6 +69,8 @@ import DatabaseRoutineView from '@/components/workspace/database/DatabaseRoutine
 import DatabaseTableDesigner from '@/components/workspace/database/DatabaseTableDesigner.vue'
 import DatabaseTableOverview from './database/DatabaseTableOverview.vue'
 import DatabaseTableView from '@/components/workspace/database/DatabaseTableView.vue'
+import ErDiagramView from './database/ErDiagramView.vue'
+import DatabaseSchemaDiffDialog from './database/DatabaseSchemaDiffDialog.vue'
 import DatabaseTransferDialog, {
   type DatabaseTransferMode,
 } from './database/DatabaseTransferDialog.vue'
@@ -169,7 +173,10 @@ function toggleAgent(): void {
 function toggleAgentSplit(): void {
   agentState.agentSplit = !agentState.agentSplit
 }
-function askAgent(content: string, intent: 'explain' | 'optimize'): void {
+function askAgent(
+  content: string,
+  intent: 'explain' | 'optimize' | 'fix'
+): void {
   if (!agentTarget.value.sessionId) return
   agentState.contextRequest = {
     id: crypto.randomUUID(),
@@ -315,6 +322,11 @@ const state = reactive({
     string,
     { execution: DatabaseExecution | null; error: string }
   >,
+  // 各查询标签最近一次的执行计划与分析状态
+  queryPlans: {} as Record<string, { plan: PlanNode | null; loading: boolean }>,
+  // ER 图与结构对比浮层
+  erOpen: false,
+  schemaDiffOpen: false,
 })
 const { transferMode, preparingTransfer, browserEpoch } = toRefs(state)
 
@@ -549,7 +561,8 @@ const completionSessionId = computed(() =>
     ? sessionId.value
     : ''
 )
-const completionColumns = useDatabaseCompletions(
+const { columns: completionColumns, tableColumns: sqlTableColumns } =
+  useDatabaseCompletions(
   completionSessionId,
   databaseName,
   objects
@@ -569,11 +582,23 @@ const historyItems = computed<ContextMenuItem[]>(() => {
     .map((entry, index): ContextMenuItem => ({
       id: `history:${entry.id}`,
       label: entry.sql.replace(/\s+/gu, ' ').trim().slice(0, 72),
-      icon: 'lucide:history',
-      shortcut: new Date(entry.executedAt).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      icon:
+        entry.ok === false
+          ? 'lucide:circle-x'
+          : entry.ok
+            ? 'lucide:circle-check'
+            : 'lucide:history',
+      danger: entry.ok === false,
+      shortcut: [
+        entry.durationMs !== undefined ? `${entry.durationMs}ms` : '',
+        entry.rowCount !== undefined ? `${entry.rowCount}r` : '',
+        new Date(entry.executedAt).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      ]
+        .filter(Boolean)
+        .join(' · '),
       groupLabel: index === 0 ? t('最近执行') : undefined,
     }))
   if (!items.length)
@@ -1335,12 +1360,13 @@ async function runQuery(
       (tab.database && session.value?.database !== tab.database)
     )
       return
+    let historyId = ''
     if (props.connection) {
-      addQueryHistory({
+      historyId = addQueryHistory({
         connectionId: props.connection.id,
         database: databaseName.value,
         sql,
-      })
+      }).id
       historyEntries.value = listQueryHistory(props.connection.id)
     }
     state.queryResults[tabId] = { execution: null, error: '' }
@@ -1349,6 +1375,19 @@ async function runQuery(
       sql,
       [500, 1000, 5000, 10000, 50000].includes(maxRows) ? maxRows : 500
     )
+    const execution = queryExecution.value
+    if (historyId && props.connection) {
+      updateQueryHistory(historyId, {
+        durationMs: execution?.elapsedMs,
+        ok: !queryError.value && !execution?.statements.some(item => item.error),
+        rowCount: execution?.statements.reduce(
+          (sum, item) =>
+            sum + (item.columns.length ? item.rows.length : item.rowsAffected),
+          0
+        ),
+      })
+      historyEntries.value = listQueryHistory(props.connection.id)
+    }
     if (
       sessionId.value === originalSessionId &&
       queryState.tabs.some(tab => tab.id === tabId)
@@ -1360,6 +1399,23 @@ async function runQuery(
   } finally {
     state.preparingQuery = false
     state.runningQueryId = ''
+  }
+}
+
+/** 分析当前标签里某条语句的执行计划，结果挂在该标签下的 Plan 页签。 */
+async function explainQuery(sql: string, tabId: string): Promise<void> {
+  if (!connected.value || !sessionId.value) return
+  const kind = databaseKind.value
+  state.queryPlans[tabId] = { plan: null, loading: true }
+  try {
+    const json = await database.explain(sessionId.value, sql)
+    state.queryPlans[tabId] = { plan: parseExplainPlan(kind, json), loading: false }
+  } catch (error) {
+    delete state.queryPlans[tabId]
+    toast.error({
+      title: t('执行计划分析失败'),
+      description: database.errorMessage(error),
+    })
   }
 }
 
@@ -1538,6 +1594,22 @@ watch(
             aria-haspopup="menu"
             :aria-expanded="historyMenu.open"
             @click="showHistory"
+          />
+          <IconButton
+            icon="lucide:network"
+            :size="13"
+            class="shrink-0"
+            :title="t('ER 图')"
+            :disabled="!connected"
+            @click="state.erOpen = true"
+          />
+          <IconButton
+            icon="lucide:git-compare-arrows"
+            :size="13"
+            class="shrink-0"
+            :title="t('结构对比')"
+            :disabled="!connected"
+            @click="state.schemaDiffOpen = true"
           />
           <IconButton
             :icon="tab.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'"
@@ -1779,6 +1851,10 @@ watch(
                   (queryLoading || state.preparingQuery)
                 "
                 :suggestions="sqlSuggestions"
+                :table-columns="sqlTableColumns"
+                :plan="state.queryPlans[tab.id]?.plan ?? null"
+                :plan-loading="state.queryPlans[tab.id]?.loading ?? false"
+                @explain="sql => explainQuery(sql, tab.id)"
                 @update:model-value="
                   value => {
                     if (tab.savedQueryId)
@@ -1887,6 +1963,34 @@ watch(
       :loading="nameDialog.loading"
       @close="nameDialog.open = false"
       @submit="submitNameAction"
+    />
+    <ErDiagramView
+      v-if="state.erOpen && sessionId"
+      :session-id="sessionId"
+      :database-name="databaseName"
+      @close="state.erOpen = false"
+      @open="
+        table => {
+          state.erOpen = false
+          const object = objects.find(
+            item => item.schema === table.schema && item.name === table.name
+          )
+          if (object) openObject(object)
+        }
+      "
+    />
+    <DatabaseSchemaDiffDialog
+      v-if="state.schemaDiffOpen && sessionId"
+      :session-id="sessionId"
+      :database-kind="databaseKind"
+      :database-name="databaseName"
+      @close="state.schemaDiffOpen = false"
+      @open-sql="
+        (sql, target) => {
+          state.schemaDiffOpen = false
+          addQueryTab(sql, target)
+        }
+      "
     />
     <DatabaseTransferDialog
       :open="transferMode !== null"

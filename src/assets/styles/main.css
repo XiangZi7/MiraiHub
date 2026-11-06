@@ -788,3 +788,64 @@ html.reduce-motion::view-transition-old(root),
 html.reduce-motion::view-transition-new(root) {
   animation: none !important;
 }
+
+/* ==========================================================================
+   通用过渡预设 —— <Transition name="fade|fade-scale|slide-up|slide-x">
+   统一时长与曲线，减少动态偏好由上面的全局 reduced-motion 规则兜底。
+   ========================================================================== */
+.fade-enter-active,
+.fade-leave-active,
+.fade-scale-enter-active,
+.fade-scale-leave-active,
+.slide-up-enter-active,
+.slide-up-leave-active,
+.slide-x-enter-active,
+.slide-x-leave-active {
+  transition:
+    opacity 180ms ease,
+    transform var(--motion-panel);
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.fade-scale-enter-from,
+.fade-scale-leave-to {
+  opacity: 0;
+  transform: scale(0.97);
+}
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.slide-x-enter-from,
+.slide-x-leave-to {
+  opacity: 0;
+  transform: translateX(8px);
+}
+.list-move {
+  transition: transform var(--motion-panel);
+}
+
+/* 骨架屏扫光动画 */
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* 骨架屏底色 —— 跟随主题的柔和扫光 */
+@utility skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-card) 25%,
+    var(--color-hover) 50%,
+    var(--color-card) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}

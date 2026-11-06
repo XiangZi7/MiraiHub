@@ -84,7 +84,7 @@ function connection(value: unknown): SavedConnection {
     s = object(v.settings)
   const kind = choice(
     v.kind,
-    ['ssh', 'mysql', 'postgresql', 'redis', 'local'],
+    ['ssh', 'mysql', 'postgresql', 'sqlite', 'redis', 'local'],
     i18n.global.t('连接类型')
   )
   const common = {

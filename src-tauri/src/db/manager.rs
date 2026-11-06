@@ -13,7 +13,8 @@ use std::time::Duration;
 use sqlx::mysql::{MySqlConnectOptions, MySqlPool, MySqlPoolOptions, MySqlSslMode};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgSslMode};
-use sqlx::{MySql, Postgres, Row};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::{MySql, Postgres, Row, Sqlite};
 use tokio::sync::{Notify, RwLock};
 
 use super::error::{DatabaseError, DatabaseResult};
@@ -23,6 +24,7 @@ use super::models::{DatabaseConfig, DatabaseKind, DatabaseSession, DatabaseSslMo
 pub(crate) enum DatabasePool {
     Mysql(MySqlPool),
     Postgresql(PgPool),
+    Sqlite(SqlitePool),
 }
 
 /// 从池里取出的独占连接。查询固定跑在它上面，这样拿到的
@@ -30,6 +32,7 @@ pub(crate) enum DatabasePool {
 pub(crate) enum DatabaseConnection {
     Mysql(PoolConnection<MySql>),
     Postgresql(PoolConnection<Postgres>),
+    Sqlite(PoolConnection<Sqlite>),
 }
 
 impl DatabasePool {
@@ -37,6 +40,7 @@ impl DatabasePool {
         match self {
             Self::Mysql(_) => DatabaseKind::Mysql,
             Self::Postgresql(_) => DatabaseKind::Postgresql,
+            Self::Sqlite(_) => DatabaseKind::Sqlite,
         }
     }
 
@@ -49,6 +53,7 @@ impl DatabasePool {
             match config.kind {
                 DatabaseKind::Mysql => connect_mysql(config).await.map(Self::Mysql),
                 DatabaseKind::Postgresql => connect_postgresql(config).await.map(Self::Postgresql),
+                DatabaseKind::Sqlite => connect_sqlite(config).await.map(Self::Sqlite),
             }
         };
 
@@ -73,6 +78,11 @@ impl DatabasePool {
                 .await
                 .map(DatabaseConnection::Postgresql)
                 .map_err(DatabaseError::Query),
+            Self::Sqlite(pool) => pool
+                .acquire()
+                .await
+                .map(DatabaseConnection::Sqlite)
+                .map_err(DatabaseError::Query),
         }
     }
 
@@ -80,6 +90,7 @@ impl DatabasePool {
         match self {
             Self::Mysql(pool) => pool.close().await,
             Self::Postgresql(pool) => pool.close().await,
+            Self::Sqlite(pool) => pool.close().await,
         }
     }
 
@@ -96,6 +107,8 @@ impl DatabasePool {
                 .execute(pool)
                 .await
                 .map(|_| ()),
+            // SQLite 是进程内库，没有服务端可中断；本地取消信号会让等待中的 future 返回。
+            Self::Sqlite(_) => Ok(()),
         }
         .map_err(DatabaseError::Query)?;
 
@@ -115,6 +128,7 @@ impl DatabaseConnection {
                 .fetch_one(&mut **conn)
                 .await
                 .and_then(|row| row.try_get::<i32, _>(0).map(i64::from)),
+            Self::Sqlite(_) => Ok(0),
         }
         .map_err(DatabaseError::Query)
     }
@@ -218,6 +232,19 @@ async fn connect_postgresql(config: &DatabaseConfig) -> Result<PgPool, sqlx::Err
         .await
 }
 
+/// 打开本地 SQLite 文件；文件不存在时创建，开启外键约束。
+async fn connect_sqlite(config: &DatabaseConfig) -> Result<SqlitePool, sqlx::Error> {
+    let options = SqliteConnectOptions::new()
+        .filename(config.host.trim())
+        .create_if_missing(true)
+        .foreign_keys(true);
+    SqlitePoolOptions::new()
+        .max_connections(config.max_connections.clamp(2, 8))
+        .acquire_timeout(Duration::from_secs(config.timeout_secs.max(1)))
+        .connect_with(options)
+        .await
+}
+
 fn mysql_ssl_mode(mode: DatabaseSslMode) -> MySqlSslMode {
     match mode {
         DatabaseSslMode::Disable => MySqlSslMode::Disabled,
@@ -239,6 +266,12 @@ fn postgresql_ssl_mode(mode: DatabaseSslMode) -> PgSslMode {
 }
 
 fn validate_config(config: &DatabaseConfig) -> DatabaseResult<()> {
+    if config.kind == DatabaseKind::Sqlite {
+        if config.host.trim().is_empty() {
+            return Err(DatabaseError::InvalidInput("请选择 SQLite 数据库文件".to_owned()));
+        }
+        return Ok(());
+    }
     if config.host.trim().is_empty() {
         return Err(DatabaseError::InvalidInput("主机不能为空".to_owned()));
     }
@@ -259,11 +292,13 @@ async fn read_server_version(pool: &DatabasePool) -> String {
     let query = match pool {
         DatabasePool::Mysql(_) => "SELECT VERSION()",
         DatabasePool::Postgresql(_) => "SHOW server_version",
+        DatabasePool::Sqlite(_) => "SELECT sqlite_version()",
     };
 
     let value: Result<String, sqlx::Error> = match pool {
         DatabasePool::Mysql(pool) => sqlx::query_scalar(query).fetch_one(pool).await,
         DatabasePool::Postgresql(pool) => sqlx::query_scalar(query).fetch_one(pool).await,
+        DatabasePool::Sqlite(pool) => sqlx::query_scalar(query).fetch_one(pool).await,
     };
 
     value.unwrap_or_default()
@@ -271,6 +306,9 @@ async fn read_server_version(pool: &DatabasePool) -> String {
 
 /// 会话默认库。PostgreSQL 必须连到某个库，配置为空时读回服务端选定的那个。
 async fn read_current_database(pool: &DatabasePool, configured: &str) -> String {
+    if matches!(pool, DatabasePool::Sqlite(_)) {
+        return "main".to_owned();
+    }
     if !configured.trim().is_empty() {
         return configured.trim().to_owned();
     }
@@ -285,6 +323,7 @@ async fn read_current_database(pool: &DatabasePool, configured: &str) -> String 
             .fetch_one(pool)
             .await
             .map(Some),
+        DatabasePool::Sqlite(_) => Ok(Some("main".to_owned())),
     };
 
     value.ok().flatten().unwrap_or_default()

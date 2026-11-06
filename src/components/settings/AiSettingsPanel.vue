@@ -241,8 +241,8 @@ function confirmDelete(): void {
   font-size: 8px;
   padding: 2px 4px;
   border-radius: 3px;
-  background: #6f93da22;
-  color: #a1baff;
+  background: color-mix(in oklch, var(--color-blue) 14%, transparent);
+  color: var(--color-blue);
 }
 .ai-field-help {
   font-size: 10px;

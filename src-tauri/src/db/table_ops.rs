@@ -60,6 +60,8 @@ pub async fn read_table_options(
     match pool {
         DatabasePool::Mysql(pool) => mysql_table_options(pool, schema, name).await,
         DatabasePool::Postgresql(pool) => postgresql_table_options(pool, schema, name).await,
+        // SQLite 没有引擎、字符集等表级选项
+        DatabasePool::Sqlite(_) => Ok(None),
     }
 }
 
@@ -122,7 +124,7 @@ pub async fn alter_table_options(
         if let Some(next_value) = options.auto_increment {
             let column = match pool {
                 DatabasePool::Postgresql(pg) => pg_identity_column(pg, schema, name).await?,
-                DatabasePool::Mysql(_) => None,
+                DatabasePool::Mysql(_) | DatabasePool::Sqlite(_) => None,
             };
             match column {
                 Some(column) => statements.push(format!(
@@ -265,6 +267,7 @@ async fn execute(pool: &DatabasePool, statement: &str) -> DatabaseResult<()> {
     match pool {
         DatabasePool::Mysql(pool) => sqlx::query(statement).execute(pool).await.map(|_| ()),
         DatabasePool::Postgresql(pool) => sqlx::query(statement).execute(pool).await.map(|_| ()),
+        DatabasePool::Sqlite(pool) => sqlx::query(statement).execute(pool).await.map(|_| ()),
     }
     .map_err(DatabaseError::Query)
 }

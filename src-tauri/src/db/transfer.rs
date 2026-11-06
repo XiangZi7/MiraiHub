@@ -159,6 +159,7 @@ pub async fn export_sql(
                 match kind {
                     DatabaseKind::Mysql => "MySQL",
                     DatabaseKind::Postgresql => "PostgreSQL",
+                    DatabaseKind::Sqlite => "SQLite",
                 }
             ),
         )
@@ -555,6 +556,7 @@ fn sql_value(value: Option<&str>, data_type: Option<&str>, kind: DatabaseKind) -
             data_type.contains("BINARY") || data_type.contains("BLOB") || data_type == "BIT"
         }
         DatabaseKind::Postgresql => data_type == "BYTEA",
+        DatabaseKind::Sqlite => data_type.contains("BLOB"),
     };
     if binary {
         if let Some(encoded) = value.strip_prefix("base64:") {
@@ -563,13 +565,15 @@ fn sql_value(value: Option<&str>, data_type: Option<&str>, kind: DatabaseKind) -
                 DatabaseKind::Postgresql => {
                     format!("decode({}, 'base64')", sql::quote_literal(encoded))
                 }
+                // SQLite 没有 base64 解码函数，原样以文本写出
+                DatabaseKind::Sqlite => sql::quote_literal(value),
             };
         }
     }
 
     match kind {
         DatabaseKind::Mysql => mysql_literal(value),
-        DatabaseKind::Postgresql => sql::quote_literal(value),
+        DatabaseKind::Postgresql | DatabaseKind::Sqlite => sql::quote_literal(value),
     }
 }
 
@@ -594,13 +598,17 @@ async fn write_schema_setup(
         .filter(|schema| !schema.trim().is_empty())
         .collect::<BTreeSet<_>>();
 
+    // SQLite 文件本身就是库，不需要建库语句
+    if kind == DatabaseKind::Sqlite {
+        return Ok(());
+    }
     for schema in schemas {
         let statement = match kind {
             DatabaseKind::Mysql => format!(
                 "CREATE DATABASE IF NOT EXISTS {}",
                 sql::quote_identifier(schema, kind)
             ),
-            DatabaseKind::Postgresql => format!(
+            DatabaseKind::Postgresql | DatabaseKind::Sqlite => format!(
                 "CREATE SCHEMA IF NOT EXISTS {}",
                 sql::quote_identifier(schema, kind)
             ),

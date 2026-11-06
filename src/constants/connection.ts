@@ -9,6 +9,7 @@ export const DATABASE_CONNECTION_ICONS: Record<
   mysql: { name: 'logos:mysql-icon', label: 'MySQL' },
   redis: { name: 'logos:redis', label: 'Redis' },
   postgresql: { name: 'logos:postgresql', label: 'PostgreSQL' },
+  sqlite: { name: 'logos:sqlite', label: 'SQLite' },
 }
 
 export interface ConnectionTagColorOption {

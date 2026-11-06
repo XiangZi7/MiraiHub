@@ -236,7 +236,9 @@ pub fn leading_keyword(statement: &str) -> String {
 pub fn quote_identifier(identifier: &str, kind: DatabaseKind) -> String {
     match kind {
         DatabaseKind::Mysql => format!("`{}`", identifier.replace('`', "``")),
-        DatabaseKind::Postgresql => format!("\"{}\"", identifier.replace('"', "\"\"")),
+        DatabaseKind::Postgresql | DatabaseKind::Sqlite => {
+            format!("\"{}\"", identifier.replace('"', "\"\""))
+        }
     }
 }
 

@@ -83,6 +83,7 @@ export const useConnectionsStore = defineStore('connections', () => {
       item =>
         item.kind === 'mysql' ||
         item.kind === 'postgresql' ||
+        item.kind === 'sqlite' ||
         item.kind === 'redis'
     )
   )

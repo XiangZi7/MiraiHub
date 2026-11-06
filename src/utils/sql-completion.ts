@@ -1,4 +1,4 @@
-import { MySQL, PostgreSQL } from '@codemirror/lang-sql'
+import { MySQL, PostgreSQL, SQLite } from '@codemirror/lang-sql'
 import type { DatabaseKind } from '@/types/database'
 
 export interface SqlToken {
@@ -44,7 +44,7 @@ const phrases = [
   'PRIMARY KEY',
   'FOREIGN KEY',
 ]
-const dialects = { mysql: MySQL, postgresql: PostgreSQL }
+const dialects = { mysql: MySQL, postgresql: PostgreSQL, sqlite: SQLite }
 const vocabularies = new Map<DatabaseKind, SqlSuggestion[]>()
 
 function vocabulary(kind: DatabaseKind): SqlSuggestion[] {
@@ -163,12 +163,38 @@ export function filterSqlSuggestions(
     .slice(0, 60)
 }
 
-/** 字段可用于任意子句；空白行仅响应手动补全，避免回车或缩进时自动弹窗。 */
+/**
+ * 在语句词法单元中把别名解析成表名：支持 `FROM orders o`、`JOIN orders AS o`
+ * 以及直接用表名限定（`orders.`）。找不到时返回 null。
+ */
+export function resolveSqlQualifier(
+  words: readonly { text: string; name: string }[],
+  qualifier: string
+): string | null {
+  const unquote = (text: string) => text.replace(/^[`"]|[`"]$/gu, '')
+  const target = unquote(qualifier).toLowerCase()
+  for (const [index, token] of words.entries()) {
+    if (unquote(token.text).toLowerCase() !== target) continue
+    // 后面紧跟点号说明这里本身是限定符引用，不是定义位置
+    if (words[index + 1]?.text === '.') continue
+    const previous = words[index - 1]
+    const table =
+      previous?.text.toUpperCase() === 'AS' ? words[index - 2] : previous
+    // 别名前紧跟的标识符就是表名；否则它本身就是表名
+    if (table && /Identifier$/u.test(table.name)) return unquote(table.text)
+    return unquote(token.text)
+  }
+  return target
+}
+
+/** 字段可用于任意子句；空白行仅响应手动补全，避免回车或缩进时自动弹窗。
+ *  columnsByTable 提供“表名 → 字段”映射时，`别名.` 之后只补该表的字段。 */
 export function completeSql(
   document: SqlDocument,
   cursor: number,
   suggestions: readonly string[],
-  explicit = false
+  explicit = false,
+  columnsByTable?: Readonly<Record<string, readonly string[]>>
 ) {
   const range = completionRange(document, cursor)
   if (!range) return null
@@ -191,6 +217,7 @@ export function completeSql(
           !sql.slice(node.from, node.to).trimEnd().endsWith(';')
       )
   const localNames: string[] = []
+  let qualifiedColumns: readonly string[] | null = null
   if (statement) {
     const words = lexemes.filter(
       token =>
@@ -217,6 +244,24 @@ export function completeSql(
       }
     }
   }
+  // `别名.` / `表名.` 之后只补对应表的字段
+  const beforeDot = sql.slice(0, range.from).match(/([\p{L}_][\p{L}\p{N}_$]*|`[^`]+`|"[^"]+")\.$/u)
+  if (beforeDot && columnsByTable && statement) {
+    const words = lexemes.filter(
+      token =>
+        token.from >= statement.from &&
+        token.to <= statement.to &&
+        !/Comment$/u.test(token.name) &&
+        token.from !== range.from
+    )
+    const table = resolveSqlQualifier(words, beforeDot[1]!)
+    if (table) {
+      const key = Object.keys(columnsByTable).find(
+        name => name.toLowerCase() === table.toLowerCase()
+      )
+      if (key) qualifiedColumns = columnsByTable[key]!
+    }
+  }
   // GROUP/ORDER/PARTITION 后优先 BY；同一行的空格、点号后也可以自动触发。
   const preceding = lexemes
     .filter(token => token.to <= range.from && !/Comment$/u.test(token.name))
@@ -232,7 +277,9 @@ export function completeSql(
     text: label,
     kind: 'object',
   })
-  const candidates: SqlSuggestion[] = [
+  const candidates: SqlSuggestion[] = qualifiedColumns
+    ? qualifiedColumns.map(object)
+    : [
     ...preferred.map(label => ({
       label,
       text: label,
@@ -241,7 +288,7 @@ export function completeSql(
     ...localNames.map(object),
     ...suggestions.map(object),
     ...(!range.quote && preceding !== '.' ? vocabulary(document.kind) : []),
-  ]
+      ]
   const labels = filterSqlSuggestions(
     candidates.map(item => item.label),
     range.prefix

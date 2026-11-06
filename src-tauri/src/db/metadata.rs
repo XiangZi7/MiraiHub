@@ -17,6 +17,7 @@ use super::models::{
     DatabaseRoutineDetail, DatabaseRoutineParameter, DatabaseTableDetail,
 };
 use super::sql;
+use super::sqlite_meta;
 
 const MYSQL_SYSTEM_SCHEMAS: &str = "'information_schema', 'mysql', 'performance_schema', 'sys'";
 
@@ -32,6 +33,37 @@ pub async fn completion_columns(pool: &DatabasePool, schema: &str) -> DatabaseRe
             sqlx::query_scalar("SELECT DISTINCT column_name::text FROM information_schema.columns WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY column_name::text")
                 .fetch_all(pool).await.map_err(DatabaseError::Query)
         }
+        DatabasePool::Sqlite(pool) => {
+            let mut names: Vec<String> = sqlite_meta::table_columns(pool)
+                .await?
+                .into_iter()
+                .map(|(_, column)| column)
+                .collect();
+            names.sort();
+            names.dedup();
+            Ok(names)
+        }
+    }
+}
+
+/// 补全用的“表名 → 字段”映射，别名限定（`o.`）时只提示对应表的字段。
+pub async fn completion_table_columns(
+    pool: &DatabasePool,
+    schema: &str,
+) -> DatabaseResult<Vec<(String, String)>> {
+    match pool {
+        DatabasePool::Mysql(pool) => {
+            let rows = sqlx::query("SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION")
+                .bind(schema).fetch_all(pool).await.map_err(DatabaseError::Query)?;
+            rows.iter()
+                .map(|row| Ok((mysql_metadata_text(row, "TABLE_NAME")?, mysql_metadata_text(row, "COLUMN_NAME")?)))
+                .collect()
+        }
+        DatabasePool::Postgresql(pool) => {
+            sqlx::query_as("SELECT table_name::text, column_name::text FROM information_schema.columns WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_name, ordinal_position")
+                .fetch_all(pool).await.map_err(DatabaseError::Query)
+        }
+        DatabasePool::Sqlite(pool) => sqlite_meta::table_columns(pool).await,
     }
 }
 
@@ -99,6 +131,7 @@ pub async fn list_databases(pool: &DatabasePool) -> DatabaseResult<Vec<String>> 
         .fetch_all(pool)
         .await
         .map_err(DatabaseError::Query),
+        DatabasePool::Sqlite(_) => Ok(vec![sqlite_meta::SQLITE_SCHEMA.to_owned()]),
     }
 }
 
@@ -107,6 +140,7 @@ pub async fn list_objects(pool: &DatabasePool) -> DatabaseResult<Vec<DatabaseObj
     match pool {
         DatabasePool::Mysql(pool) => list_mysql_objects(pool).await,
         DatabasePool::Postgresql(pool) => list_postgresql_objects(pool).await,
+        DatabasePool::Sqlite(pool) => sqlite_meta::list_objects(pool).await,
     }
 }
 
@@ -296,6 +330,7 @@ pub async fn describe_object(
     match pool {
         DatabasePool::Mysql(pool) => describe_mysql_object(pool, schema, name).await,
         DatabasePool::Postgresql(pool) => describe_postgresql_object(pool, schema, name).await,
+        DatabasePool::Sqlite(pool) => sqlite_meta::describe(pool, name).await,
     }
 }
 
@@ -493,6 +528,9 @@ pub async fn routine_detail(
         DatabasePool::Postgresql(pool) => {
             postgresql_routine_detail(pool, schema, name, kind, identity).await
         }
+        DatabasePool::Sqlite(_) => Err(DatabaseError::InvalidInput(
+            "SQLite 不支持存储过程与函数".to_owned(),
+        )),
     }
 }
 
@@ -696,6 +734,9 @@ async fn list_indexes(
     let mut grouped: BTreeMap<(String, bool, bool), Vec<(i64, String, Option<i64>)>> =
         BTreeMap::new();
 
+    if let DatabasePool::Sqlite(pool) = pool {
+        return sqlite_meta::indexes(pool, name).await;
+    }
     match pool {
         DatabasePool::Mysql(pool) => {
             let rows = sqlx::query(
@@ -729,6 +770,7 @@ async fn list_indexes(
                     .push((sequence, column.unwrap_or_default(), sub_part));
             }
         }
+        DatabasePool::Sqlite(_) => unreachable!("SQLite 已在上方单独处理"),
         DatabasePool::Postgresql(pool) => {
             let rows = sqlx::query(
                 r#"
@@ -791,6 +833,9 @@ async fn list_foreign_keys(
     let mut grouped: BTreeMap<String, Vec<(i64, String, String, String, String, String, String)>> =
         BTreeMap::new();
 
+    if let DatabasePool::Sqlite(pool) = pool {
+        return sqlite_meta::foreign_keys(pool, name).await;
+    }
     match pool {
         DatabasePool::Mysql(pool) => {
             let rows = sqlx::query(
@@ -840,6 +885,7 @@ async fn list_foreign_keys(
                 ));
             }
         }
+        DatabasePool::Sqlite(_) => unreachable!("SQLite 已在上方单独处理"),
         DatabasePool::Postgresql(pool) => {
             let rows = sqlx::query(
                 r#"
@@ -959,6 +1005,8 @@ async fn row_estimate(
         .fetch_optional(pool)
         .await
         .map(Option::flatten),
+        // SQLite 没有统计行数，估算留空，需要时由用户显式 COUNT
+        DatabasePool::Sqlite(_) => Ok(None),
     }
     .map_err(DatabaseError::Query)
 }
@@ -976,6 +1024,7 @@ pub async fn count_rows(pool: &DatabasePool, schema: &str, name: &str) -> Databa
     match pool {
         DatabasePool::Mysql(pool) => sqlx::query_scalar(&statement).fetch_one(pool).await,
         DatabasePool::Postgresql(pool) => sqlx::query_scalar(&statement).fetch_one(pool).await,
+        DatabasePool::Sqlite(pool) => sqlx::query_scalar(&statement).fetch_one(pool).await,
     }
     .map_err(DatabaseError::Query)
 }
@@ -1030,6 +1079,7 @@ async fn build_ddl(
     match pool {
         DatabasePool::Mysql(pool) => mysql_ddl(pool, schema, name, kind).await,
         DatabasePool::Postgresql(pool) => postgresql_ddl(pool, schema, name, kind, columns).await,
+        DatabasePool::Sqlite(pool) => sqlite_meta::ddl(pool, name).await,
     }
 }
 

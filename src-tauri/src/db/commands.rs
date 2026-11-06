@@ -176,6 +176,17 @@ pub async fn db_completion_columns(
     Ok(metadata::completion_columns(&pool, &schema).await?)
 }
 
+/// 前端 SQL 补全读取“表 → 字段”映射，用于别名限定补全。
+#[tauri::command]
+pub async fn db_completion_table_columns(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    schema: String,
+) -> AppResult<Vec<(String, String)>> {
+    let pool = manager.pool(&session_id).await?;
+    Ok(metadata::completion_table_columns(&pool, &schema).await?)
+}
+
 #[tauri::command]
 pub async fn db_table_option_choices(
     manager: State<'_, DatabaseManager>,
@@ -374,6 +385,27 @@ pub async fn db_execute(
         timeout_secs.unwrap_or(300),
     )
     .await?)
+}
+
+/// 预览表格编辑将要提交的 SQL，确认弹窗展示用。
+#[tauri::command]
+pub async fn db_preview_mutations(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    request: MutationRequest,
+) -> AppResult<Vec<String>> {
+    let pool = manager.pool(&session_id).await?;
+    Ok(mutation::preview(&pool, &request).await?)
+}
+
+/// 读取单条语句的 JSON 执行计划（不实际执行语句）。
+#[tauri::command]
+pub async fn db_explain(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    sql: String,
+) -> AppResult<String> {
+    Ok(query::explain(&manager, &session_id, &sql, 60).await?)
 }
 
 #[tauri::command]

@@ -152,6 +152,18 @@ export async function completionColumns(
   return invoke<string[]>('db_completion_columns', { sessionId, schema })
 }
 
+/** 读取“表名 → 字段”对，供 SQL 编辑器按别名限定补全字段。 */
+export async function completionTableColumns(
+  sessionId: string,
+  schema: string
+): Promise<[string, string][]> {
+  ensureTauri()
+  return invoke<[string, string][]>('db_completion_table_columns', {
+    sessionId,
+    schema,
+  })
+}
+
 export async function tableOptionChoices(sessionId: string): Promise<{
   engines: string[]
   collations: [string, string][]
@@ -278,6 +290,15 @@ export async function mutateRows(
   return invoke<MutationResult>('db_mutate_rows', { sessionId, request })
 }
 
+/** 预览表格改动将要执行的 SQL（只渲染，不提交）。 */
+export async function previewMutations(
+  sessionId: string,
+  request: MutationRequest
+): Promise<string[]> {
+  ensureTauri()
+  return invoke<string[]>('db_preview_mutations', { sessionId, request })
+}
+
 export async function execute(
   sessionId: string,
   sql: string,
@@ -290,6 +311,12 @@ export async function execute(
     maxRows,
     timeoutSecs: settingNumber('sqlExecutionTimeout', 300),
   })
+}
+
+/** 读取单条语句的 JSON 执行计划（只估算，不执行语句）。 */
+export async function explain(sessionId: string, sql: string): Promise<string> {
+  ensureTauri()
+  return invoke<string>('db_explain', { sessionId, sql })
 }
 
 export async function cancelQuery(sessionId: string): Promise<boolean> {

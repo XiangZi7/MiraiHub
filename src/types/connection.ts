@@ -156,6 +156,7 @@ export function isDatabaseConnection(
   return (
     connection.kind === 'mysql' ||
     connection.kind === 'postgresql' ||
+    connection.kind === 'sqlite' ||
     connection.kind === 'redis'
   )
 }
@@ -166,7 +167,11 @@ export function isSqlConnection(
   kind: DatabaseKind
   settings: DatabaseConnectionSettings
 } {
-  return connection.kind === 'mysql' || connection.kind === 'postgresql'
+  return (
+    connection.kind === 'mysql' ||
+    connection.kind === 'postgresql' ||
+    connection.kind === 'sqlite'
+  )
 }
 
 export function isLocalConnection(
@@ -241,12 +246,17 @@ export function toDatabaseConnectionConfig(
 export function endpointOf(connection: SavedConnection): string {
   if (isLocalConnection(connection))
     return connection.settings.workingDirectory || '本机'
+  // SQLite 的 host 就是文件路径
+  if (connection.kind === 'sqlite') return connection.host
 
   return `${connection.username ? `${connection.username}@` : ''}${connection.host}:${connection.port}`
 }
 
 export function groupKindOf(kind: ConnectionKind): ConnectionGroupKind {
-  return kind === 'mysql' || kind === 'postgresql' || kind === 'redis'
+  return kind === 'mysql' ||
+    kind === 'postgresql' ||
+    kind === 'sqlite' ||
+    kind === 'redis'
     ? 'database'
     : 'ssh'
 }

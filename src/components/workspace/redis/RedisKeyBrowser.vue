@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -81,20 +83,22 @@ const { t } = useI18n()
           <span class="truncate">DB {{ database }}</span>
         </div>
       </template>
-      <p
-        v-if="!keys.length"
-        class="text-txt-4 px-3 py-5 text-center text-[11px] leading-relaxed"
-      >
-        {{
+      <AppSkeleton
+        v-if="!keys.length && connected && busy"
+        :rows="6"
+      />
+      <AppEmptyState
+        v-else-if="!keys.length"
+        compact
+        :icon="connected ? 'lucide:key-square' : 'lucide:plug-zap'"
+        :title="
           !connected
             ? t('请先连接数据库。')
-            : busy
-              ? t('正在扫描…')
-              : hasMore
-                ? t('本批无匹配键，可继续扫描')
-                : t('没有匹配的 Redis 键')
-        }}
-      </p>
+            : hasMore
+              ? t('本批无匹配键，可继续扫描')
+              : t('没有匹配的 Redis 键')
+        "
+      />
     </RedisKeyList>
     <footer
       class="border-line-soft text-txt-4 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-1 border-t px-2 py-1 text-[10px]"

@@ -14,6 +14,7 @@ use futures_util::TryStreamExt;
 use rust_decimal::Decimal;
 use sqlx::mysql::MySqlRow;
 use sqlx::postgres::PgRow;
+use sqlx::sqlite::SqliteRow;
 use sqlx::{Column, Either, Executor, Row, TypeInfo, ValueRef};
 use uuid::Uuid;
 
@@ -201,6 +202,7 @@ async fn run_statement(
         DatabaseConnection::Postgresql(conn) => {
             run_postgresql(conn, statement, max_rows, running).await
         }
+        DatabaseConnection::Sqlite(conn) => run_sqlite(conn, statement, max_rows, running).await,
     }
 }
 
@@ -208,7 +210,7 @@ async fn run_statement(
 fn returns_rows(statement: &str) -> bool {
     matches!(
         sql::leading_keyword(statement).as_str(),
-        "SELECT" | "WITH" | "SHOW" | "EXPLAIN" | "DESC" | "DESCRIBE" | "TABLE" | "VALUES"
+        "SELECT" | "WITH" | "SHOW" | "EXPLAIN" | "DESC" | "DESCRIBE" | "TABLE" | "VALUES" | "PRAGMA"
     )
 }
 
@@ -308,6 +310,15 @@ async fn run_postgresql(
         postgresql_columns,
         decode_postgresql_row
     )
+}
+
+async fn run_sqlite(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
+    statement: &str,
+    max_rows: usize,
+    running: &RunningQuery,
+) -> DatabaseResult<StatementOutcome> {
+    run_dialect!(conn, statement, max_rows, running, sqlite_columns, decode_sqlite_row)
 }
 
 pub(crate) fn elapsed_millis(started: Instant) -> u64 {
@@ -465,6 +476,34 @@ fn decode_postgresql_value(row: &PgRow, index: usize, type_name: &str) -> Option
         .or_else(|| Some(format!("<{type_name}>")))
 }
 
+pub(super) fn sqlite_columns(row: &SqliteRow) -> Vec<DatabaseQueryColumn> {
+    row.columns()
+        .iter()
+        .map(|column| DatabaseQueryColumn {
+            name: column.name().to_owned(),
+            data_type: column.type_info().name().to_owned(),
+        })
+        .collect()
+}
+
+/// SQLite 是动态类型：按存储类别依次尝试整数、浮点、文本、字节。
+pub(super) fn decode_sqlite_row(row: &SqliteRow) -> Vec<Option<String>> {
+    (0..row.columns().len())
+        .map(|index| {
+            if is_null(row.try_get_raw(index).ok()) {
+                return None;
+            }
+            row.try_get::<i64, _>(index)
+                .map(|value| value.to_string())
+                .or_else(|_| row.try_get::<f64, _>(index).map(|value| value.to_string()))
+                .or_else(|_| row.try_get::<String, _>(index))
+                .ok()
+                .or_else(|| row.try_get::<Vec<u8>, _>(index).ok().map(format_binary))
+                .or_else(|| Some("<?>".to_owned()))
+        })
+        .collect()
+}
+
 fn is_null<'r, V: ValueRef<'r>>(value: Option<V>) -> bool {
     value.map(|value| value.is_null()).unwrap_or(false)
 }
@@ -568,5 +607,90 @@ mod tests {
         assert!(returns_rows("SHOW TABLES"));
         assert!(!returns_rows("INSERT INTO t VALUES (1)"));
         assert!(!returns_rows("CREATE TABLE t (id int)"));
+    }
+}
+
+/// 把单条查询包装成该方言输出 JSON 执行计划的 EXPLAIN 语句。
+///
+/// 只接受一条语句：多条语句拼进 EXPLAIN 会让第二条在无保护的情况下真正执行。
+pub fn explain_statement(kind: super::models::DatabaseKind, sql_text: &str) -> DatabaseResult<String> {
+    let statements = sql::split_statements(sql_text, kind);
+    let [statement] = statements.as_slice() else {
+        return Err(DatabaseError::InvalidInput("执行计划一次只能分析一条语句".into()));
+    };
+    let body = statement.text.trim().trim_end_matches(';').trim();
+    if body.is_empty() {
+        return Err(DatabaseError::InvalidInput("没有可分析的语句".into()));
+    }
+    Ok(match kind {
+        super::models::DatabaseKind::Mysql => format!("EXPLAIN FORMAT=JSON {body}"),
+        // 不带 ANALYZE：只估算不执行，写语句也不会落地。
+        super::models::DatabaseKind::Postgresql => format!("EXPLAIN (FORMAT JSON, VERBOSE) {body}"),
+        super::models::DatabaseKind::Sqlite => format!("EXPLAIN QUERY PLAN {body}"),
+    })
+}
+
+/// 读取单条语句的执行计划，返回方言原生的 JSON 文本。前端与 Agent 工具共用。
+pub async fn explain(
+    manager: &DatabaseManager,
+    session_id: &str,
+    sql_text: &str,
+    timeout_secs: u64,
+) -> DatabaseResult<String> {
+    let kind = manager.pool(session_id).await?.kind();
+    let wrapped = explain_statement(kind, sql_text)?;
+    let max_rows = if kind == super::models::DatabaseKind::Sqlite { 500 } else { 10 };
+    let execution = execute(manager, session_id, &wrapped, max_rows, timeout_secs).await?;
+    let statement = execution
+        .statements
+        .into_iter()
+        .next()
+        .ok_or_else(|| DatabaseError::InvalidInput("没有返回执行计划".into()))?;
+    if let Some(error) = statement.error {
+        return Err(DatabaseError::InvalidInput(error));
+    }
+    // SQLite 的 QUERY PLAN 是 (id, parent, notused, detail) 行集，转成 JSON 数组交给前端组树
+    if kind == super::models::DatabaseKind::Sqlite {
+        let nodes: Vec<serde_json::Value> = statement
+            .rows
+            .iter()
+            .map(|row| {
+                let cell = |i: usize| row.get(i).cloned().flatten().unwrap_or_default();
+                serde_json::json!({
+                    "id": cell(0).parse::<i64>().unwrap_or_default(),
+                    "parent": cell(1).parse::<i64>().unwrap_or_default(),
+                    "detail": cell(3),
+                })
+            })
+            .collect();
+        return Ok(serde_json::Value::Array(nodes).to_string());
+    }
+    statement
+        .rows
+        .into_iter()
+        .next()
+        .and_then(|row| row.into_iter().next().flatten())
+        .ok_or_else(|| DatabaseError::InvalidInput("没有返回执行计划".into()))
+}
+
+#[cfg(test)]
+mod explain_tests {
+    use super::*;
+    use crate::db::models::DatabaseKind;
+
+    #[test]
+    fn wraps_single_statement_per_dialect() {
+        assert_eq!(
+            explain_statement(DatabaseKind::Mysql, "SELECT 1;").unwrap(),
+            "EXPLAIN FORMAT=JSON SELECT 1"
+        );
+        assert!(explain_statement(DatabaseKind::Postgresql, "select 1")
+            .unwrap()
+            .starts_with("EXPLAIN (FORMAT JSON"));
+    }
+
+    #[test]
+    fn rejects_multiple_statements() {
+        assert!(explain_statement(DatabaseKind::Mysql, "SELECT 1; DELETE FROM t").is_err());
     }
 }

@@ -54,3 +54,6 @@ src-tauri/resources/
 *.sw?
 
 
+
+# 本地终端检查产物
+terminal-check.local/

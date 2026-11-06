@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 
 import { onMounted, shallowRef, useTemplateRef } from 'vue'
@@ -201,18 +203,16 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           </span>
         </button>
 
-        <p
+        <AppSkeleton
           v-if="loading"
-          class="text-txt-4 py-8 text-center text-xs"
-        >
-          {{ t('正在扫描 ~/.ssh …') }}
-        </p>
-        <p
+          :rows="5"
+        />
+        <AppEmptyState
           v-else-if="!visibleKeys.length"
-          class="text-txt-4 py-8 text-center text-xs"
-        >
-          {{ keyword ? t('没有匹配的密钥') : t('~/.ssh 下没有找到密钥') }}
-        </p>
+          compact
+          :icon="keyword ? 'lucide:search-x' : 'lucide:key-round'"
+          :title="keyword ? t('没有匹配的密钥') : t('~/.ssh 下没有找到密钥')"
+        />
       </div>
     </nav>
 

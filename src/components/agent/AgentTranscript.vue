@@ -30,7 +30,9 @@ const turns = computed(() =>
 </script>
 
 <template>
-  <div
+  <TransitionGroup
+    tag="div"
+    name="slide-up"
     data-agent-transcript
     class="flex min-w-0 flex-col gap-6"
     :aria-label="t('agent.transcript')"
@@ -123,5 +125,5 @@ const turns = computed(() =>
         </div>
       </article>
     </section>
-  </div>
+  </TransitionGroup>
 </template>

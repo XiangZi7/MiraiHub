@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 
 import { computed, onMounted, reactive, shallowRef, watch } from 'vue'
@@ -89,6 +90,11 @@ const edits = reactive(new Map<string, string | null>())
 const deletedRows = reactive(new Set<number>())
 const insertedRows = reactive<Array<Record<string, string | null>>>([])
 const confirmOpen = shallowRef(false)
+// 确认弹窗里展示的待执行 SQL；预览失败时为空，不阻塞提交
+const previewStatements = shallowRef<string[]>([])
+const previewText = computed(() =>
+  previewStatements.value.map(statement => `${statement};`).join('\n')
+)
 
 let loadRevision = 0
 let pageRevision = 0
@@ -643,8 +649,24 @@ function buildMutations(): RowMutation[] {
   return mutations
 }
 
+/** 打开提交确认，并异步渲染将要执行的 SQL 供用户核对。 */
 function requestSave(): void {
-  if (pendingMutationCount.value) confirmOpen.value = true
+  if (!pendingMutationCount.value) return
+  previewStatements.value = []
+  confirmOpen.value = true
+  const mutations = buildMutations()
+  database
+    .previewMutations(props.sessionId, {
+      schema: props.object.schema,
+      table: props.object.name,
+      mutations,
+    })
+    .then(statements => {
+      if (confirmOpen.value) previewStatements.value = statements
+    })
+    .catch(() => {
+      // 预览只是辅助信息，失败时仍可直接提交
+    })
 }
 
 async function commitChanges(): Promise<void> {
@@ -782,19 +804,13 @@ watch(
       <slot name="toolbar" />
     </header>
 
-    <div
+    <AppSkeleton
       v-if="state.loading && !state.detail"
-      class="text-txt-3 grid min-h-0 flex-1 place-items-center text-xs"
-    >
-      <span class="flex items-center gap-2"
-        ><AppIcon
-          name="lucide:loader-circle"
-          :size="14"
-          class="animate-spin"
-        />
-        {{ t('读取表结构…') }}
-      </span>
-    </div>
+      variant="table"
+      class="min-h-0 flex-1"
+      :rows="10"
+      :aria-label="t('读取表结构…')"
+    />
     <div
       v-else-if="state.error && !state.detail"
       class="text-txt-4 grid min-h-0 flex-1 place-items-center text-center text-xs"
@@ -1402,7 +1418,13 @@ watch(
       :danger="deleteCount > 0"
       @close="confirmOpen = false"
       @confirm="commitChanges"
-    />
+    >
+      <pre
+        v-if="previewStatements.length"
+        class="scroll-thin bg-terminal border-line-soft text-txt-2 mt-2.5 max-h-48 overflow-auto rounded-md border p-2 font-mono text-[10.5px] leading-4 whitespace-pre-wrap select-text"
+        >{{ previewText }}</pre
+      >
+    </AppConfirmDialog>
     <AppContextMenu
       :open="rowMenu.open"
       :x="rowMenu.x"

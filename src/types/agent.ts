@@ -98,7 +98,8 @@ export interface AgentContextRequest {
   target: AgentTarget
   source: 'terminal' | 'sql' | 'schema' | 'file'
   name?: string
-  intent: 'explain' | 'optimize'
+  /** explain 解释 · optimize 优化 · fix 修复报错 · query 按表结构生成查询 */
+  intent: 'explain' | 'optimize' | 'fix' | 'query'
   content: string
 }
 export interface AgentAttachment {

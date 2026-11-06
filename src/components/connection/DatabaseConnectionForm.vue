@@ -63,6 +63,7 @@ const databaseKinds: Array<{
 }> = [
   { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
   { id: 'postgresql', label: 'PostgreSQL', icon: 'lucide:cylinder' },
+  { id: 'sqlite', label: 'SQLite', icon: 'lucide:file-box' },
   { id: 'redis', label: 'Redis', icon: 'lucide:layers' },
 ]
 const sslModeOptions = [
@@ -75,14 +76,24 @@ const sslModeOptions = [
 const certificateExtensions = ['pem', 'crt', 'cer'] as const
 const privateKeyExtensions = ['pem', 'key'] as const
 const portForKind = (value: DatabaseConnectionKind): string =>
-  value === 'redis' ? '6379' : value === 'mysql' ? '3306' : '5432'
+  value === 'redis'
+    ? '6379'
+    : value === 'mysql'
+      ? '3306'
+      : value === 'sqlite'
+        ? '0'
+        : '5432'
+// SQLite 是本地文件：主机字段存文件路径，端口 / 账号 / SSL 都不需要
+const isSqlite = computed(() => kind.value === 'sqlite')
 const defaultPort = computed(() => portForKind(kind.value))
 const databaseLabel = computed(() =>
   kind.value === 'redis'
     ? 'Redis'
     : kind.value === 'mysql'
       ? 'MySQL'
-      : 'PostgreSQL'
+      : kind.value === 'sqlite'
+        ? 'SQLite'
+        : 'PostgreSQL'
 )
 const availableSslModes = computed(() =>
   kind.value === 'redis'
@@ -111,7 +122,9 @@ const isReady = computed<boolean>(
   () =>
     form.name.trim().length > 0 &&
     form.host.trim().length > 0 &&
-    (kind.value === 'redis' || form.username.trim().length > 0)
+    (kind.value === 'redis' ||
+      kind.value === 'sqlite' ||
+      form.username.trim().length > 0)
 )
 
 onMounted(loadConnection)
@@ -168,6 +181,10 @@ function selectKind(nextKind: DatabaseConnectionKind): void {
 
   if (!form.port.trim() || form.port === previousDefaultPort)
     form.port = portForKind(nextKind)
+  if (nextKind === 'sqlite') {
+    form.sslMode = 'disable'
+    activeSection.value = 'general'
+  }
 }
 
 function selectedFileName(path: string): string {
@@ -190,12 +207,16 @@ function validate(): boolean {
   if (!isReady.value) {
     activeSection.value = 'general'
     toast.warning(
-      kind.value === 'redis'
-        ? t('请填写连接名称和主机')
-        : t('请填写连接名称、主机和用户名')
+      kind.value === 'sqlite'
+        ? t('请填写连接名称并选择数据库文件')
+        : kind.value === 'redis'
+          ? t('请填写连接名称和主机')
+          : t('请填写连接名称、主机和用户名')
     )
     return false
   }
+
+  if (isSqlite.value) return true
 
   const port = Number(form.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -326,10 +347,12 @@ async function saveConnection(): Promise<void> {
       :aria-label="`${databaseLabel} connection settings`"
     >
       <AppButton
-        v-for="section in [
-          { id: 'general', label: t('General') },
-          { id: 'ssl', label: 'SSL' },
-        ] as const"
+        v-for="section in isSqlite
+          ? ([{ id: 'general', label: t('General') }] as const)
+          : ([
+              { id: 'general', label: t('General') },
+              { id: 'ssl', label: 'SSL' },
+            ] as const)"
         :key="section.id"
         variant="bare"
         role="tab"
@@ -391,7 +414,23 @@ async function saveConnection(): Promise<void> {
           />
         </div>
 
-        <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
+        <ConnectionFilePathField
+          v-if="isSqlite"
+          v-model="form.host"
+          :label="t('数据库文件')"
+          :placeholder="
+            t('选择或输入 .db / .sqlite 文件路径（不存在时自动创建）')
+          "
+          :dialog-title="t('选择 SQLite 数据库文件')"
+          filter-name="SQLite"
+          :extensions="['db', 'sqlite', 'sqlite3', 'db3']"
+          @error="handleSslFileError"
+        />
+
+        <div
+          v-if="!isSqlite"
+          class="grid grid-cols-[minmax(0,1fr)_112px] gap-3"
+        >
           <AppTextField
             v-model="form.host"
             :label="t('Host')"
@@ -409,6 +448,7 @@ async function saveConnection(): Promise<void> {
         </div>
 
         <AppTextField
+          v-if="!isSqlite"
           v-model="form.database"
           :label="
             kind === 'redis'
@@ -420,6 +460,7 @@ async function saveConnection(): Promise<void> {
         />
 
         <AppTextField
+          v-if="!isSqlite"
           v-model="form.username"
           :label="kind === 'redis' ? t('ACL 用户名（可选）') : t('Username')"
           :placeholder="
@@ -433,7 +474,10 @@ async function saveConnection(): Promise<void> {
           :required="kind !== 'redis'"
         />
 
-        <div class="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+        <div
+          v-if="!isSqlite"
+          class="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3"
+        >
           <AppTextField
             v-model="form.password"
             :label="t('Password')"

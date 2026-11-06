@@ -186,7 +186,13 @@ export function useAgentDraft(
     })
     if (!state.prompt.trim())
       state.prompt = i18n.global.t(
-        request.source === 'file'
+        request.intent === 'fix'
+          ? request.source === 'terminal'
+            ? '请分析附加的终端报错，找出原因并给出修复步骤。'
+            : '请分析附加 SQL 的报错原因，并给出修正后的 SQL。'
+          : request.intent === 'query'
+            ? '请根据附加表结构写出常用查询示例（含条件、排序与分页）。'
+            : request.source === 'file'
           ? '请解释附加配置；需要修改时请先展示差异。'
           : request.source === 'schema'
             ? '请分析附加表结构，并给出索引与字段设计建议。'

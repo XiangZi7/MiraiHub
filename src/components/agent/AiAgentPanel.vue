@@ -533,15 +533,18 @@ watch(
               @apply-sql="emit('applySql', $event, { ...target })"
             />
 
-            <AgentApprovalCard
-              v-if="run.id && run.approval"
-              :approval="run.approval"
-              :target="run.target"
-              :busy="busy"
-              :can-apply-sql="target.kind === 'database'"
-              @apply-sql="emit('applySql', $event, { ...target })"
-              @decide="decide"
-            />
+            <Transition name="slide-up">
+              <AgentApprovalCard
+                v-if="run.id && run.approval"
+                :key="run.approval.id"
+                :approval="run.approval"
+                :target="run.target"
+                :busy="busy"
+                :can-apply-sql="target.kind === 'database'"
+                @apply-sql="emit('applySql', $event, { ...target })"
+                @decide="decide"
+              />
+            </Transition>
             <AgentRetryStatus
               v-if="busy && progress?.phase === 'retrying' && progress.retry"
               :retry="progress.retry"
@@ -569,7 +572,7 @@ watch(
       <button
         v-if="!following && run"
         type="button"
-        class="border-line-strong bg-raised text-txt-2 hover:bg-hover hover:text-txt focus-visible:outline-accent absolute right-5 bottom-3.5 grid size-8 cursor-pointer place-items-center rounded-full border shadow-[0_3px_12px_#0003] focus-visible:outline-2 focus-visible:outline-offset-3"
+        class="border-line-strong bg-raised text-txt-2 hover:bg-hover hover:text-txt focus-visible:outline-accent shadow-pop absolute right-5 bottom-3.5 grid size-8 cursor-pointer place-items-center rounded-full border focus-visible:outline-2 focus-visible:outline-offset-3"
         :title="t('agent.scrollToBottom')"
         :aria-label="t('agent.scrollToBottom')"
         @click="scrollToBottom(true)"

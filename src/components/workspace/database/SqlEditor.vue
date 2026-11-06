@@ -25,6 +25,7 @@ import {
   type SqlSuggestion,
 } from '@/utils/sql-completion'
 import { cn } from '@/utils/cn'
+import { formatSql, statementAtCursor } from '@/utils/sql-format'
 
 const { t } = useI18n()
 
@@ -33,11 +34,14 @@ const props = withDefaults(
     databaseKind?: DatabaseKind
     disabled?: boolean
     suggestions?: readonly string[]
+    /** 表名 → 字段映射，`别名.` 后按表补全字段 */
+    tableColumns?: Readonly<Record<string, readonly string[]>>
   }>(),
   {
     databaseKind: 'mysql',
     disabled: false,
     suggestions: () => [],
+    tableColumns: () => ({}),
   }
 )
 
@@ -45,6 +49,8 @@ const emit = defineEmits<{
   run: [sql: string]
   save: []
   askAgent: [content: string, intent: 'explain' | 'optimize']
+  /** 请求分析某条语句的执行计划 */
+  explain: [sql: string]
 }>()
 
 const sql = defineModel<string>({ required: true })
@@ -103,9 +109,30 @@ const contextItems = computed<ContextMenuItem[]>(() => [
     disabled: props.disabled || !state.contextMenu.selected.trim(),
   },
   {
+    id: 'run-current',
+    label: t('运行当前语句'),
+    icon: 'lucide:text-cursor-input',
+    shortcut: 'Ctrl+Shift+Enter',
+    disabled: props.disabled || !sql.value.trim(),
+  },
+  {
     id: 'run-all',
     label: t('运行全部 SQL'),
     icon: 'lucide:list-start',
+    disabled: props.disabled || !sql.value.trim(),
+  },
+  {
+    id: 'explain',
+    label: t('查看执行计划'),
+    icon: 'lucide:network',
+    shortcut: 'Ctrl+E',
+    disabled: props.disabled || !sql.value.trim(),
+  },
+  {
+    id: 'format',
+    label: t('格式化 SQL'),
+    icon: 'lucide:align-left',
+    shortcut: 'Shift+Alt+F',
     disabled: props.disabled || !sql.value.trim(),
   },
   {
@@ -180,6 +207,19 @@ async function handleContextAction(id: string): Promise<void> {
         selection.selected,
         id === 'ai-optimize' ? 'optimize' : 'explain'
       )
+    return
+  }
+  if (id === 'run-current' || id === 'explain') {
+    if (props.disabled) return
+    const statement =
+      selection.selected.trim() || statementAtCursor(sql.value, selection.start)
+    if (!statement) return
+    if (id === 'explain') emit('explain', statement)
+    else emit('run', statement)
+    return
+  }
+  if (id === 'format') {
+    formatEditor()
     return
   }
   if (id === 'run-selection' || id === 'run-all') {
@@ -271,6 +311,34 @@ function runnableSql(): string {
   return selected || sql.value.trim()
 }
 
+/** 选区优先，否则取光标所在语句；供“运行当前语句”和“执行计划”使用。 */
+function currentStatement(): string {
+  const editor = editorRef.value
+  if (!editor) return ''
+  const selected = sql.value
+    .slice(editor.selectionStart, editor.selectionEnd)
+    .trim()
+  return selected || statementAtCursor(sql.value, editor.selectionStart)
+}
+
+/** 格式化整段 SQL；有选区时只格式化选区。走 setRangeText 以保留撤销栈。 */
+function formatEditor(): void {
+  const editor = editorRef.value
+  if (!editor || props.disabled) return
+  const hasSelection = editor.selectionStart !== editor.selectionEnd
+  const start = hasSelection ? editor.selectionStart : 0
+  const end = hasSelection ? editor.selectionEnd : sql.value.length
+  try {
+    const formatted = formatSql(sql.value.slice(start, end), props.databaseKind)
+    editor.focus()
+    editor.setSelectionRange(start, end)
+    document.execCommand('insertText', false, formatted)
+    sql.value = editor.value
+  } catch {
+    toast.warning(t('这段 SQL 无法格式化，请检查语法'))
+  }
+}
+
 /** 输入或手动请求时更新补全；选区、禁用状态和空白行由规则统一过滤。 */
 function updateAutocomplete(forced = false): void {
   const editor = editorRef.value
@@ -288,7 +356,8 @@ function updateAutocomplete(forced = false): void {
     parsedSql.value,
     cursor,
     props.suggestions,
-    forced
+    forced,
+    props.tableColumns
   )
   if (!completion) {
     autocompleteOpen.value = false
@@ -327,6 +396,31 @@ function handleKeydown(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault()
     emit('save')
+    return
+  }
+
+  if (event.shiftKey && event.altKey && event.key.toLowerCase() === 'f') {
+    event.preventDefault()
+    formatEditor()
+    return
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'e') {
+    event.preventDefault()
+    const statement = currentStatement()
+    if (statement && !props.disabled) emit('explain', statement)
+    return
+  }
+
+  if (
+    (event.ctrlKey || event.metaKey) &&
+    event.shiftKey &&
+    event.key === 'Enter'
+  ) {
+    event.preventDefault()
+    autocompleteOpen.value = false
+    const statement = currentStatement()
+    if (statement && !props.disabled) emit('run', statement)
     return
   }
 

@@ -78,6 +78,18 @@ export function addQueryHistory(
   return entry
 }
 
+/** 查询结束后回填耗时、成功与行数；关闭历史记录或条目已被清理时静默忽略。 */
+export function updateQueryHistory(
+  id: string,
+  patch: Pick<DatabaseHistoryEntry, 'durationMs' | 'ok' | 'rowCount'>
+): void {
+  const entries = readAll()
+  const entry = entries.find(item => item.id === id)
+  if (!entry) return
+  Object.assign(entry, patch)
+  writeAll(entries)
+}
+
 export function clearQueryHistory(connectionId?: string): void {
   if (!connectionId) {
     localStorage.removeItem(STORAGE_KEY)

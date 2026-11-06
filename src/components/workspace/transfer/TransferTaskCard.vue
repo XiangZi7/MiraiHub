@@ -375,7 +375,7 @@ const exportPhase = computed(() => {
 }
 
 .transfer-progress-active {
-  background: linear-gradient(90deg, #3985ff, #4f9dff);
+  background: linear-gradient(90deg, var(--color-blue), color-mix(in oklch, var(--color-blue) 70%, white));
 }
 
 .transfer-progress-complete {

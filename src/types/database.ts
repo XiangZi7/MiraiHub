@@ -2,7 +2,7 @@
 
 import type { ConnectionTagColor } from './connection'
 
-export type DatabaseKind = 'mysql' | 'postgresql'
+export type DatabaseKind = 'mysql' | 'postgresql' | 'sqlite'
 /** 工作台连接协议；SQL 方言仍限定为 DatabaseKind。 */
 export type DatabaseConnectionKind = DatabaseKind | 'redis'
 export type DatabaseSslMode =
@@ -252,6 +252,12 @@ export interface DatabaseHistoryEntry {
   database: string
   sql: string
   executedAt: number
+  /** 执行耗时（毫秒），旧记录没有 */
+  durationMs?: number
+  /** 是否全部语句成功 */
+  ok?: boolean
+  /** 返回行数或影响行数之和 */
+  rowCount?: number
 }
 
 /** 表格列的“标签化显示”：把某些单元格值渲染成带颜色的标签，只影响显示，不改数据。 */

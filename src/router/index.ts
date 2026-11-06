@@ -63,6 +63,7 @@ export function createAppRouter(
       to.name === 'databases'
         ? connection.kind === 'mysql' ||
           connection.kind === 'postgresql' ||
+          connection.kind === 'sqlite' ||
           connection.kind === 'redis'
         : connection.kind === 'ssh' || connection.kind === 'local'
     const id =
@@ -107,6 +108,7 @@ export function connectionLocation(connection: { id: string; kind: string }) {
     name:
       connection.kind === 'mysql' ||
       connection.kind === 'postgresql' ||
+      connection.kind === 'sqlite' ||
       connection.kind === 'redis'
         ? 'databases'
         : 'servers',

@@ -35,7 +35,7 @@ impl Binder {
     fn push(&mut self, value: Option<String>) -> String {
         self.values.push(value);
         match self.kind {
-            DatabaseKind::Mysql => "?".to_owned(),
+            DatabaseKind::Mysql | DatabaseKind::Sqlite => "?".to_owned(),
             DatabaseKind::Postgresql => format!("${}", self.values.len()),
         }
     }
@@ -103,6 +103,17 @@ pub async fn fetch_rows(
                     .collect::<Vec<_>>(),
             )
         }
+        DatabasePool::Sqlite(pool) => {
+            let mut query = sqlx::query(&statement);
+            for value in &binder.values {
+                query = query.bind(value.clone());
+            }
+            let rows = query.fetch_all(pool).await.map_err(DatabaseError::Query)?;
+            (
+                rows.first().map(query::sqlite_columns).unwrap_or_default(),
+                rows.iter().map(query::decode_sqlite_row).collect::<Vec<_>>(),
+            )
+        }
     };
 
     let has_more = rows.len() > limit as usize;
@@ -147,6 +158,8 @@ fn build_where(
                     // 大小写不敏感，PostgreSQL 需要显式 ILIKE。
                     DatabaseKind::Mysql => format!("CAST({quoted} AS CHAR) LIKE {placeholder}"),
                     DatabaseKind::Postgresql => format!("{quoted}::text ILIKE {placeholder}"),
+                    // SQLite 的 LIKE 对 ASCII 默认不区分大小写
+                    DatabaseKind::Sqlite => format!("CAST({quoted} AS TEXT) LIKE {placeholder} ESCAPE '\\'"),
                 }
             }
             _ => {
@@ -247,7 +260,7 @@ pub(super) fn display_sql(
             None => "NULL".to_owned(),
         };
         match kind {
-            DatabaseKind::Mysql => {
+            DatabaseKind::Mysql | DatabaseKind::Sqlite => {
                 rendered = rendered.replacen('?', &literal, 1);
             }
             // 倒序替换，避免 $1 先把 $10 的前缀吃掉。

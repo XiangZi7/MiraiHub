@@ -4,6 +4,7 @@ import type { DatabaseExecution, DatabaseKind } from '@/types/database'
 import SqlEditor from './SqlEditor.vue'
 import DatabaseQueryResizeHandle from './DatabaseQueryResizeHandle.vue'
 import DatabaseQueryResults from './DatabaseQueryResults.vue'
+import type { PlanNode } from '@/utils/explain-plan'
 
 const props = defineProps<{
   databaseKind: DatabaseKind
@@ -12,13 +13,17 @@ const props = defineProps<{
   loading: boolean
   error: string
   suggestions: string[]
+  tableColumns?: Record<string, string[]>
+  plan?: PlanNode | null
+  planLoading?: boolean
 }>()
 const sql = defineModel<string>({ required: true })
 const ratio = defineModel<number>('ratio', { required: true })
 const emit = defineEmits<{
   run: [sql?: string]
   save: []
-  askAgent: [content: string, intent: 'explain' | 'optimize']
+  askAgent: [content: string, intent: 'explain' | 'optimize' | 'fix']
+  explain: [sql: string]
 }>()
 const editor = useTemplateRef<InstanceType<typeof SqlEditor>>('editor')
 const style = computed(() => {
@@ -42,6 +47,8 @@ defineExpose({ runnableSql: () => editor.value?.runnableSql() ?? sql.value })
       :database-kind="props.databaseKind"
       :disabled="loading"
       :suggestions="suggestions"
+      :table-columns="tableColumns"
+      @explain="emit('explain', $event)"
       @run="emit('run', $event)"
       @save="emit('save')"
       @ask-agent="(content, intent) => emit('askAgent', content, intent)"
@@ -53,6 +60,9 @@ defineExpose({ runnableSql: () => editor.value?.runnableSql() ?? sql.value })
       :error="error"
       :database-kind="databaseKind"
       :database-name="databaseName"
+      :plan="plan"
+      :plan-loading="planLoading"
+      @fix-error="emit('askAgent', $event, 'fix')"
     />
   </div>
 </template>

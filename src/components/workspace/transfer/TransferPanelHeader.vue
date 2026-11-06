@@ -146,7 +146,7 @@ const emit = defineEmits<{
 
 .transfer-overview-bar {
   height: 100%;
-  background: linear-gradient(90deg, #4387ff, #5ca6ff);
+  background: linear-gradient(90deg, var(--color-blue), color-mix(in oklch, var(--color-blue) 70%, white));
   transition: width 180ms ease;
 }
 

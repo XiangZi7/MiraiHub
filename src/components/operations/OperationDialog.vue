@@ -103,7 +103,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   z-index: 100;
   display: grid;
   place-items: center;
-  background: #0008;
+  background: rgb(0 0 0 / 0.53);
   backdrop-filter: blur(5px);
   padding: var(--operation-inset);
 }

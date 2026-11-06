@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub enum DatabaseKind {
     Mysql,
     Postgresql,
+    /// 本地文件库：`host` 存文件路径，活动库固定为 `main`。
+    Sqlite,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
@@ -55,6 +57,9 @@ fn default_max_connections() -> u32 {
 
 impl DatabaseConfig {
     pub fn endpoint(&self) -> String {
+        if self.kind == DatabaseKind::Sqlite {
+            return self.host.clone();
+        }
         format!("{}@{}:{}", self.username, self.host, self.port)
     }
 }

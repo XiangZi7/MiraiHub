@@ -7,7 +7,18 @@ use super::manager::DatabasePool;
 use super::models::{DatabaseKind, DatabaseObjectKind};
 use super::sql;
 
+/// SQLite 一个文件就是一个库，库级 DDL 没有意义。
+fn reject_sqlite_database_op(pool: &DatabasePool) -> DatabaseResult<()> {
+    if pool.kind() == DatabaseKind::Sqlite {
+        return Err(DatabaseError::InvalidInput(
+            "SQLite 一个文件即一个数据库，请新建连接指向其他文件。".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn create_database(pool: &DatabasePool, name: &str) -> DatabaseResult<()> {
+    reject_sqlite_database_op(pool)?;
     let name = valid_name(name, "数据库名")?;
     let statement = format!(
         "CREATE DATABASE {}",
@@ -23,6 +34,7 @@ pub async fn rename_database(
 ) -> DatabaseResult<()> {
     let old_name = valid_name(old_name, "原数据库名")?;
     let new_name = valid_name(new_name, "新数据库名")?;
+    reject_sqlite_database_op(pool)?;
 
     if pool.kind() == DatabaseKind::Mysql {
         return Err(DatabaseError::InvalidInput(
@@ -40,6 +52,7 @@ pub async fn rename_database(
 }
 
 pub async fn drop_database(pool: &DatabasePool, name: &str) -> DatabaseResult<()> {
+    reject_sqlite_database_op(pool)?;
     let name = valid_name(name, "数据库名")?;
     let statement = format!("DROP DATABASE {}", sql::quote_identifier(name, pool.kind()));
     execute(pool, &statement).await
@@ -79,6 +92,14 @@ pub async fn rename_object(
             "ALTER FUNCTION {target}({}) RENAME TO {new_identifier}",
             valid_identity(identity)?
         ),
+        (DatabaseKind::Sqlite, DatabaseObjectKind::Table) => {
+            format!("ALTER TABLE {target} RENAME TO {new_identifier}")
+        }
+        (DatabaseKind::Sqlite, _) => {
+            return Err(DatabaseError::InvalidInput(
+                "SQLite 不支持重命名视图；请删除后按新名称重建。".to_owned(),
+            ))
+        }
         (DatabaseKind::Mysql, DatabaseObjectKind::Procedure | DatabaseObjectKind::Function) => {
             return Err(DatabaseError::InvalidInput(
                 "MySQL 不支持直接重命名存储过程或函数；请打开 DDL，修改名称后重新创建。".to_owned(),
@@ -126,6 +147,7 @@ async fn execute(pool: &DatabasePool, statement: &str) -> DatabaseResult<()> {
     match pool {
         DatabasePool::Mysql(pool) => sqlx::query(statement).execute(pool).await.map(|_| ()),
         DatabasePool::Postgresql(pool) => sqlx::query(statement).execute(pool).await.map(|_| ()),
+        DatabasePool::Sqlite(pool) => sqlx::query(statement).execute(pool).await.map(|_| ()),
     }
     .map_err(DatabaseError::Query)
 }

@@ -130,6 +130,9 @@ pub async fn catalog(
                 .bind(&object.schema).bind(&object.name).fetch_all(pool).await.map_err(DatabaseError::Query)?,
             DatabasePool::Postgresql(pool) => sqlx::query_scalar("SELECT a.attname::text FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2 AND a.attgenerated <> '' AND NOT a.attisdropped")
                 .bind(&object.schema).bind(&object.name).fetch_all(pool).await.map_err(DatabaseError::Query)?,
+            // hidden = 2/3 表示生成列
+            DatabasePool::Sqlite(pool) => sqlx::query_scalar("SELECT name FROM pragma_table_xinfo(?) WHERE hidden IN (2, 3)")
+                .bind(&object.name).fetch_all(pool).await.map_err(DatabaseError::Query)?,
         };
         columns.retain(|column| !generated.contains(&column.name));
         targets.push(ImportTarget {

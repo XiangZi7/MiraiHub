@@ -19,6 +19,8 @@ import { openPath } from '@tauri-apps/plugin-opener'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
+import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import * as ssh from '@/api/ssh'
 import { readFileContext } from '@/api/agent'
@@ -858,30 +860,28 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       @open="openRemote"
       @contextmenu="openMenu"
     >
-      <p
+      <AppSkeleton
         v-if="loading"
-        class="text-txt-4 py-8 text-center text-xs"
-      >
-        {{ t('正在读取目录…') }}
-      </p>
-      <p
+        :rows="8"
+      />
+      <AppEmptyState
         v-else-if="!connected"
-        class="text-txt-4 py-8 text-center text-xs"
-      >
-        {{ t('连上服务器后可以浏览远端文件') }}
-      </p>
-      <p
+        compact
+        icon="lucide:plug-zap"
+        :title="t('连上服务器后可以浏览远端文件')"
+      />
+      <AppEmptyState
         v-else-if="!visibleEntries.length && !error"
-        class="text-txt-4 py-8 text-center text-xs"
-      >
-        {{
+        compact
+        :icon="filterText.trim() ? 'lucide:search-x' : 'lucide:folder-open'"
+        :title="
           filterText.trim()
             ? t('没有匹配的文件')
             : entries.length
               ? t('隐藏文件已在设置中隐藏')
               : t('这个目录是空的')
-        }}
-      </p>
+        "
+      />
     </RemoteFileList>
 
     <footer

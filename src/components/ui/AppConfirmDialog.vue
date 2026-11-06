@@ -98,6 +98,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             <p class="text-txt-3 mt-1 text-[11px] leading-4">
               {{ description }}
             </p>
+            <slot />
           </div>
           <footer class="col-span-2 mt-2 flex justify-end gap-2">
             <AppButton
