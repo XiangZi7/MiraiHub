@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, toRefs } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  toRefs,
+  watch,
+} from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
 import { listLocalDirectory, type LocalListing } from '@/api/workspace-files'
@@ -60,6 +67,13 @@ const visibleEntries = computed(() =>
         .includes(state.filter.trim().toLocaleLowerCase())
   )
 )
+// 筛选或隐藏文件开关变化后撤销不可见项，避免上传用户已经看不到的旧选择。
+watch(visibleEntries, files => {
+  const visible = new Set(files.map(file => file.path))
+  state.selection = state.selection.filter(path => visible.has(path))
+  if (!visible.has(state.selected))
+    state.selected = state.selection.at(-1) ?? ''
+})
 /** 浏览本地目录并丢弃过期响应，默认使用系统桌面。 */
 async function load(path = '', history = true): Promise<void> {
   const token = ++generation

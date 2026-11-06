@@ -178,10 +178,11 @@ export function fileIcon(
     return { icon: 'vscode-icons:file-type-config', tone: '' }
   if (lower.endsWith('.d.ts'))
     return { icon: 'vscode-icons:file-type-typescriptdef', tone: '' }
+  const icon =
+    iconsByExtension.get(lower.split('.').at(-1) ?? '') ??
+    'vscode-icons:default-file'
   return {
-    icon:
-      iconsByExtension.get(lower.split('.').at(-1) ?? '') ??
-      'vscode-icons:default-file',
-    tone: '',
+    icon,
+    tone: icon === 'vscode-icons:file-type-audio' ? '[&_path]:fill-pink' : '',
   }
 }
