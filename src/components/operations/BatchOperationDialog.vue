@@ -8,6 +8,7 @@ import * as api from '@/api/operations'
 import type { SshSessionInfo } from '@/types/ssh'
 import OperationDialog from './OperationDialog.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import { copyText } from '@/utils/clipboard'
 
@@ -46,6 +47,13 @@ async function refresh(): Promise<void> {
   }
 }
 onMounted(refresh)
+/** 与原生复选框数组 v-model 一致：勾选追加到末尾，取消时移除。 */
+function setSelected(id: string, checked: boolean): void {
+  if (checked === state.selected.includes(id)) return
+  state.selected = checked
+    ? [...state.selected, id]
+    : state.selected.filter(item => item !== id)
+}
 async function poll(): Promise<void> {
   if (
     !state.plan ||
@@ -183,21 +191,18 @@ async function copyResults(): Promise<void> {
           >
             {{ t('请先打开并连接 SSH 服务器。') }}
           </p>
-          <label
+          <AppCheckbox
             v-for="s in sessions"
             :key="s.id"
-            ><input
-              v-model="selected"
-              type="checkbox"
-              :value="s.id"
-              :disabled="
-                busy || (!selected.includes(s.id) && selected.length >= 20)
-              "
-            /><span
-              >{{ s.username }}@{{ s.host
-              }}<small> {{ t('端口') }} {{ s.port }}</small></span
-            ></label
-          >
+            :model-value="selected.includes(s.id)"
+            :label="`${s.username}@${s.host}`"
+            :description="`${t('端口')} ${s.port}`"
+            :disabled="
+              busy || (!selected.includes(s.id) && selected.length >= 20)
+            "
+            class="border-line-soft w-full border-b px-3 py-2.5 wrap-anywhere [&_span]:whitespace-normal"
+            @update:model-value="setSelected(s.id, $event)"
+          />
         </div>
         <label class="command-input">
           {{ t('要执行的完整命令') }}
@@ -252,15 +257,12 @@ async function copyResults(): Promise<void> {
             )
           }}
         </p>
-        <label
+        <AppCheckbox
           v-if="plan.status === 'pending'"
-          class="mt-3 flex items-center gap-2 text-[11px]"
-          ><input
-            v-model="reviewed"
-            type="checkbox"
-          />
-          {{ t('我已核对下方全部目标和完整命令') }}
-        </label>
+          v-model="reviewed"
+          :label="t('我已核对下方全部目标和完整命令')"
+          class="mt-3 w-full [&_span]:whitespace-normal"
+        />
         <div class="mt-3 flex flex-wrap gap-2">
           <AppButton
             v-if="plan.status === 'pending'"
@@ -365,24 +367,6 @@ async function copyResults(): Promise<void> {
   border: 1px solid var(--color-line);
   border-radius: 8px;
   overflow: auto;
-}
-.server-picker > label {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--color-line-soft);
-  overflow-wrap: anywhere;
-  font-size: 11px;
-}
-.server-picker input {
-  margin-top: 3px;
-  accent-color: var(--color-accent);
-}
-.server-picker small {
-  display: block;
-  margin-top: 3px;
-  color: var(--color-txt-4);
 }
 .command-input {
   display: flex;
