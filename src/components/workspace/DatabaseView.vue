@@ -2083,6 +2083,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               </DatabaseTableDesigner>
             </template>
           </DatabaseTabWorkspace>
+          <DatabaseStatusBar
+            :connection-name="connection.name"
+            :session="session ?? null"
+            :connected="connected && active !== false"
+            :database="activeQuery?.database || browsedDatabase"
+            :running-queries="runningQueryCount"
+            :selection="statusSelection"
+          />
         </div>
       </div>
       <AppSidePane
