@@ -65,7 +65,6 @@
     <div id="app"></div>
     <script type="module">
       import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
-      import { emit } from '@tauri-apps/api/event'
       import { createApp, h, reactive } from 'vue'
       import { createPinia } from 'pinia'
       import { i18n } from '/src/i18n/index.ts'
@@ -363,15 +362,14 @@
           }
           if (command === 'ssh_connect') return 'fixture'
           if (command === 'ssh_open_shell') {
+            // 后端经 Channel 推原始字节；模拟环境直接调用通道回调。
             setTimeout(
               () =>
-                emit('ssh://output/fixture', {
-                  sessionId: 'fixture',
-                  data: btoa(
+                args.onOutput.onmessage(
+                  new TextEncoder().encode(
                     'demo@server:~$ systemctl status nginx\r\nnginx.service - Web server\r\nActive: inactive (dead)\r\nError: service unavailable\r\ndemo@server:~$ '
-                  ),
-                  isStderr: false,
-                }),
+                  ).buffer
+                ),
               80
             )
             return

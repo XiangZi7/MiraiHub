@@ -60,7 +60,11 @@ export function useLocalTerminal() {
       unlisteners.push(stopStatus)
 
       // 输出通道只属于这一次创建，create 返回前的提示符也直接写入；
-      // 断开或重连后 operation 变了，迟到的输出直接丢弃。
+      // 断开、重连或启动失败清理后停止接收，迟到的输出直接丢弃。
+      let receiving = true
+      unlisteners.push(() => {
+        receiving = false
+      })
       const id = await localTerminal.create(
         {
           shell: settings.shell,
@@ -69,7 +73,7 @@ export function useLocalTerminal() {
           rows: terminal.rows,
         },
         data => {
-          if (!disposed && operation === currentOperation) terminal.write(data)
+          if (receiving) terminal.write(data)
         }
       )
 

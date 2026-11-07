@@ -138,7 +138,7 @@ export async function openShell(
 /**
  * 终端输出通道。
  *
- * 后端把原始字节经 Tauri Channel 只推给这一个终端：不经 base64 和 JSON，
+ * 后端把原始字节经 Tauri Channel 只推给这一个终端：不经 base64，
  * 也不用按会话 id 过滤。通道自带序号，回调按发送顺序执行；
  * xterm.js 自己处理跨块截断的 UTF-8 字符。
  */

@@ -513,7 +513,8 @@ async fn connect_handle(
 /// 后台读循环：把远端输出源源不断推给前端，直到 channel 关闭。
 ///
 /// 输出走 Tauri Channel 发原始字节：只送到打开这个 shell 的窗口和这一个终端，
-/// 省掉 base64 编码、JSON 序列化和前端解码；通道自带序号，乱序到达也会按顺序交付。
+/// 不再做 base64 编解码，1 KB 以上的块经 IPC 原样取回、不经 JSON；
+/// 通道自带序号，乱序到达也会按顺序交付。
 /// stderr 与 stdout 在终端里显示方式相同，一并写入。
 async fn pump_output(
     app: AppHandle,
