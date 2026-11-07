@@ -10,13 +10,16 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
-import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { useEventListener } from '@vueuse/core'
 import type { Terminal } from '@xterm/xterm'
+import { SearchAddon, type ISearchOptions } from '@xterm/addon-search'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import { toast } from '@/composables/useToast'
+import { useSettings } from '@/composables/useSettings'
+import { terminalSearchDecorations } from '@/constants/terminal'
 import { copyText } from '@/utils/clipboard'
-import { findTerminalMatches } from '@/utils/terminal-search'
+import { matchesShortcut } from '@/utils/shortcut'
 import type { SshSessionStatus } from '@/types/ssh'
 import TerminalCommandMenu from '@/components/workspace/TerminalCommandMenu.vue'
 import TerminalReplayDialog from '@/components/workspace/terminal-replay-dialog.vue'
@@ -28,6 +31,7 @@ import {
 } from '@/utils/terminal-recording'
 
 const { t } = useI18n()
+const { settings } = useSettings()
 
 const props = defineProps<{
   terminal?: Terminal
@@ -38,6 +42,8 @@ const props = defineProps<{
   closable?: boolean
   local?: boolean
   available: boolean
+  /** 是否提供 AI 相关操作（分析选区、自然语言生成命令） */
+  ai?: boolean
 }>()
 const emit = defineEmits<{
   split: []
@@ -46,6 +52,8 @@ const emit = defineEmits<{
   close: []
   reconnect: []
   disconnect: []
+  askAgent: [content: string]
+  inlineAi: []
 }>()
 const castInput = useTemplateRef<HTMLInputElement>('castInput')
 const input = useTemplateRef<HTMLInputElement>('input')
@@ -60,6 +68,12 @@ const state = reactive({
   cast: null as TerminalCast | null,
   // 搜索文本
   query: '',
+  // 搜索选项
+  caseSensitive: false,
+  regex: false,
+  wholeWord: false,
+  // 正则写错时标红输入框，而不是静默无结果
+  invalidQuery: false,
   // 当前匹配索引
   matchIndex: -1,
   // 匹配总数
@@ -85,13 +99,32 @@ const {
   menuY,
 } = toRefs(state)
 const items = computed(() => {
+  const aiItems = props.ai
+    ? [
+        {
+          id: 'ask-agent',
+          label: t('让 AI 分析选区'),
+          icon: 'lucide:sparkles',
+          disabled: !state.hasSelection || props.status !== 'connected',
+        },
+        {
+          id: 'inline-ai',
+          label: t('用自然语言生成命令'),
+          icon: 'lucide:wand-sparkles',
+          shortcut: 'Ctrl+I',
+          disabled: props.status !== 'connected',
+        },
+      ]
+    : []
   return [
+    ...aiItems,
     {
       id: 'copy',
       label: t('复制选中内容'),
       icon: 'lucide:copy',
       shortcut: 'Ctrl+Shift+C',
       disabled: !state.hasSelection,
+      separatorBefore: props.ai,
     },
     {
       id: 'paste',
@@ -162,45 +195,63 @@ function closeMenu(): void {
   if (document.activeElement?.closest('[role="menu"]')) props.terminal?.focus()
 }
 
+// 官方搜索插件：全部匹配高亮、增量查找，输出变化时自行刷新装饰，不必每次全量扫描缓冲区。
+const searchAddon = shallowRef<SearchAddon>()
+
 async function openSearch(): Promise<void> {
   state.searchOpen = !state.searchOpen
   if (state.searchOpen) {
     await nextTick()
     input.value?.focus()
     input.value?.select()
-    search(0)
+    search(1, true)
   } else closeSearch()
 }
 function closeSearch(): void {
   state.searchOpen = false
+  searchAddon.value?.clearDecorations()
   props.terminal?.clearSelection()
   props.terminal?.focus()
 }
-function search(direction = 1, reset = false): void {
-  const terminal = props.terminal
-  if (!terminal) return
-  const matches = findTerminalMatches(terminal.buffer.active, state.query)
-  state.matchCount = matches.length
-  state.matchIndex = matches.length
-    ? reset
-      ? 0
-      : (state.matchIndex + direction + matches.length) % matches.length
-    : -1
-  const match = matches[state.matchIndex]
-  if (match) {
-    terminal.select(match.column, match.row, match.length)
-    terminal.scrollToLine(match.row)
-  } else terminal.clearSelection()
+function searchOptions(incremental: boolean): ISearchOptions {
+  return {
+    caseSensitive: state.caseSensitive,
+    regex: state.regex,
+    wholeWord: state.wholeWord,
+    incremental,
+    decorations: terminalSearchDecorations(),
+  }
 }
-const refreshSearch = useDebounceFn(
-  () => {
-    if (state.searchOpen && state.query) search(0)
-  },
-  120,
-  { maxWait: 500 }
-)
+function search(direction: 1 | -1 = 1, incremental = false): void {
+  const addon = searchAddon.value
+  if (!addon) return
+  if (!state.query) {
+    addon.clearDecorations()
+    props.terminal?.clearSelection()
+    state.matchCount = 0
+    state.matchIndex = -1
+    state.invalidQuery = false
+    return
+  }
+  try {
+    if (direction === 1) addon.findNext(state.query, searchOptions(incremental))
+    else addon.findPrevious(state.query, searchOptions(false))
+    state.invalidQuery = false
+  } catch {
+    // 正则还没输完整时插件会抛错。
+    state.invalidQuery = true
+    state.matchCount = 0
+    state.matchIndex = -1
+  }
+}
+function toggleSearchOption(
+  key: 'caseSensitive' | 'regex' | 'wholeWord'
+): void {
+  state[key] = !state[key]
+  input.value?.focus()
+}
 watch(
-  () => state.query,
+  () => [state.query, state.caseSensitive, state.regex, state.wholeWord],
   () => search(1, true)
 )
 watch(
@@ -209,8 +260,23 @@ watch(
     state.menuOpen = false
     state.hasSelection = terminal?.hasSelection() ?? false
     if (!terminal) return
+    const addon = new SearchAddon({ highlightLimit: 2000 })
+    terminal.loadAddon(addon)
+    searchAddon.value = addon
+    const resultListener = addon.onDidChangeResults(
+      ({ resultIndex, resultCount }) => {
+        state.matchCount = resultCount
+        state.matchIndex = resultIndex
+      }
+    )
     // 有选区时 Ctrl+C 复制；无选区时保留发送中断信号的终端行为。
     terminal.attachCustomKeyEventHandler(event => {
+      // 命令面板、全局搜索属于应用级快捷键：交还给窗口，不发给远端。
+      if (
+        matchesShortcut(event, settings.shortcutPalette) ||
+        matchesShortcut(event, settings.shortcutSearch)
+      )
+        return false
       const key = event.key.toLowerCase()
       const modifier = (event.ctrlKey || event.metaKey) && !event.altKey
       const copy =
@@ -237,31 +303,31 @@ watch(
         }
         return false
       }
-      if (
-        event.type === 'keydown' &&
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === 'f'
-      ) {
+      if (modifier && !event.shiftKey && key === 'f') {
         event.preventDefault()
-        if (!state.searchOpen) void openSearch()
-        else input.value?.focus()
+        if (event.type === 'keydown') {
+          if (!state.searchOpen) void openSearch()
+          else input.value?.focus()
+        }
+        return false
+      }
+      // Ctrl+I 在终端里等同 Tab，只在 AI 可用时接管。
+      if (props.ai && modifier && !event.shiftKey && key === 'i') {
+        event.preventDefault()
+        if (event.type === 'keydown' && props.status === 'connected')
+          emit('inlineAi')
         return false
       }
       return true
-    })
-    const listener = terminal.onWriteParsed(() => {
-      void refreshSearch()
-    })
-    const resizeListener = terminal.onResize(() => {
-      void refreshSearch()
     })
     const selectionListener = terminal.onSelectionChange(() => {
       state.hasSelection = terminal.hasSelection()
     })
     onCleanup(() => {
-      listener.dispose()
-      resizeListener.dispose()
+      resultListener.dispose()
       selectionListener.dispose()
+      addon.dispose()
+      if (searchAddon.value === addon) searchAddon.value = undefined
       terminal.attachCustomKeyEventHandler(() => true)
     })
   },
@@ -287,6 +353,14 @@ async function runAction(id: string): Promise<void> {
       terminal.clear()
       search(1, true)
     } else if (id === 'disconnect') emit('disconnect')
+    else if (id === 'ask-agent') {
+      const text = terminal.getSelection()
+      if (text.trim() && props.status === 'connected') emit('askAgent', text)
+      return
+    } else if (id === 'inline-ai') {
+      emit('inlineAi')
+      return
+    }
     terminal.focus()
   } catch (error) {
     toast.error({ title: t('终端操作失败'), description: String(error) })
@@ -322,6 +396,11 @@ watch(
     state.recording = false
   }
 )
+const searchToggles = computed(() => [
+  { key: 'caseSensitive' as const, label: 'Aa', title: t('区分大小写') },
+  { key: 'wholeWord' as const, label: 'ab', title: t('全词匹配') },
+  { key: 'regex' as const, label: '.*', title: t('使用正则表达式') },
+])
 function insertCommand(command: string): void {
   if (props.status !== 'connected' || !props.terminal) return
   props.terminal.paste(command)
@@ -421,7 +500,7 @@ function insertCommand(command: string): void {
     />
     <div
       v-if="searchOpen"
-      class="border-line absolute top-full right-0 z-30 mt-2 flex w-72 items-center gap-1 rounded-lg border bg-[var(--color-canvas)] p-2 shadow-lg"
+      class="border-line panel-fade-in absolute top-full right-0 z-30 mt-2 flex w-84 items-center gap-1 rounded-lg border bg-[var(--color-canvas)] p-2 shadow-lg"
       role="search"
       @keydown.esc.stop="closeSearch"
     >
@@ -429,14 +508,29 @@ function insertCommand(command: string): void {
         ref="input"
         v-model="query"
         :aria-label="t('搜索终端内容')"
+        :aria-invalid="state.invalidQuery"
         :placeholder="t('搜索终端内容…')"
-        class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none"
+        class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none aria-[invalid=true]:text-danger"
         @keydown.enter.prevent="search($event.shiftKey ? -1 : 1)"
       />
+      <button
+        v-for="option in searchToggles"
+        :key="option.key"
+        type="button"
+        class="text-txt-3 hover:bg-hover hover:text-txt grid h-5 min-w-5 shrink-0 place-items-center rounded px-1 font-mono text-[10px] transition-colors aria-pressed:bg-accent/15 aria-pressed:text-accent"
+        :title="option.title"
+        :aria-label="option.title"
+        :aria-pressed="state[option.key]"
+        @click="toggleSearchOption(option.key)"
+      >
+        {{ option.label }}
+      </button>
       <span
-        class="text-txt-3 shrink-0 text-[10px]"
+        class="text-txt-3 min-w-9 shrink-0 text-right text-[10px] tabular-nums"
         aria-live="polite"
-        >{{ matchCount ? matchIndex + 1 : 0 }}/{{ matchCount }}</span
+        >{{ matchIndex >= 0 ? matchIndex + 1 : matchCount ? '?' : 0 }}/{{
+          matchCount
+        }}</span
       >
       <IconButton
         icon="lucide:chevron-up"

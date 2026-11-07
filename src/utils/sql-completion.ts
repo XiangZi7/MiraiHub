@@ -282,6 +282,54 @@ export function resolveSqlQualifier(
   return target
 }
 
+const TABLE_KEYWORDS = new Set(['FROM', 'JOIN', 'UPDATE', 'INTO', 'TABLE'])
+
+/**
+ * 推断语句引用的表：`FROM a, b`、`JOIN c`、`UPDATE d`、`INSERT INTO e`。
+ * `schema.table` 取最后一段；返回去重后的表名（保持出现顺序）。
+ */
+export function sqlStatementTables(
+  words: readonly { text: string; name: string }[]
+): string[] {
+  const unquote = (text: string) =>
+    text.replace(/^[`"]|[`"]$/gu, '').replace(/``|""/gu, m => m[0]!)
+  const tables: string[] = []
+  let expectTable = false
+  let inFrom = false
+  for (let index = 0; index < words.length; index++) {
+    const token = words[index]!
+    const upper = token.text.toUpperCase()
+    if (TABLE_KEYWORDS.has(upper)) {
+      expectTable = true
+      inFrom = upper === 'FROM'
+      continue
+    }
+    if (expectTable && /Identifier$/u.test(token.name)) {
+      let name = token.text
+      while (
+        words[index + 1]?.text === '.' &&
+        words[index + 2] &&
+        /Identifier$/u.test(words[index + 2]!.name)
+      ) {
+        index += 2
+        name = words[index]!.text
+      }
+      tables.push(unquote(name))
+      expectTable = false
+      continue
+    }
+    expectTable = false
+    if (inFrom && token.text === ',') expectTable = true
+    else if (
+      inFrom &&
+      /^(Keyword)$/u.test(token.name) &&
+      upper !== 'AS'
+    )
+      inFrom = false
+  }
+  return [...new Set(tables)]
+}
+
 /** 字段可用于任意子句；空白行仅响应手动补全，避免回车或缩进时自动弹窗。
  *  columnsByTable 提供“表名 → 字段”映射时，`别名.` 之后只补该表的字段。 */
 export function completeSql(
@@ -313,6 +361,8 @@ export function completeSql(
       )
   const localNames: string[] = []
   let qualifiedColumns: readonly string[] | null = null
+  // 语句里 FROM/JOIN 引用的表，其字段在无限定补全时优先排在前面
+  let inferredColumns: string[] = []
   if (statement) {
     const words = lexemes.filter(
       token =>
@@ -336,6 +386,15 @@ export function completeSql(
                 .replaceAll(quote + quote, quote)
             : token.text
         )
+      }
+    }
+    if (columnsByTable) {
+      const keys = Object.keys(columnsByTable)
+      for (const table of sqlStatementTables(words)) {
+        const key = keys.find(
+          name => name.toLowerCase() === table.toLowerCase()
+        )
+        if (key) inferredColumns = inferredColumns.concat(columnsByTable[key]!)
       }
     }
   }
@@ -375,6 +434,10 @@ export function completeSql(
         preferred.map(label =>
           candidate({ label, text: label, kind: 'keyword' })
         ),
+        // 紧跟 FROM/JOIN 等位置要的是表名，不把字段排到前面
+        TABLE_KEYWORDS.has(preceding ?? '')
+          ? []
+          : inferredColumns.map(objectCandidate),
         localNames.map(objectCandidate),
         objects(suggestions),
         !range.quote && preceding !== '.' ? vocabulary(document.kind) : [],

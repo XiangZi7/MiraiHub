@@ -190,6 +190,17 @@ pub struct DatabaseIndex {
     pub parts: Vec<DatabaseIndexPart>,
 }
 
+/// 引用某张表的外键（反向外键）：`schema.table(columns)` → 目标表 `(referenced_columns)`。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseReferencingKey {
+    pub name: String,
+    pub schema: String,
+    pub table: String,
+    pub columns: Vec<String>,
+    pub referenced_columns: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseForeignKey {
@@ -391,6 +402,14 @@ pub enum RowFilterOperator {
     StartsWith,
     GreaterThan,
     LessThan,
+    GreaterOrEqual,
+    LessOrEqual,
+    NotContains,
+    /// 值为逗号分隔的列表。
+    In,
+    NotIn,
+    /// 区间两端分别取 `value` 与 `value2`，闭区间。
+    Between,
     IsNull,
     NotNull,
 }
@@ -402,6 +421,9 @@ pub struct RowFilter {
     pub operator: RowFilterOperator,
     #[serde(default)]
     pub value: String,
+    /// BETWEEN 的上界，其余运算符忽略。
+    #[serde(default)]
+    pub value2: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -417,6 +439,12 @@ pub struct RowPageRequest {
     pub sort: Option<RowSort>,
     #[serde(default)]
     pub filters: Vec<RowFilter>,
+    /// 条件之间用 OR 连接；默认 AND。
+    #[serde(default)]
+    pub match_any: bool,
+    /// 高级模式下用户手写的 WHERE 条件（不含 WHERE 关键字），与结构化条件以 AND 组合。
+    #[serde(default)]
+    pub where_sql: Option<String>,
 }
 
 fn default_page_size() -> u32 {

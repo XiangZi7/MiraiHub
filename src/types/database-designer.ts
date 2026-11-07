@@ -55,12 +55,55 @@ export interface TableDesignerIndex {
 export interface TableDesignerForeignKey {
   id: string
   name: string
-  column: string
+  /** 本地字段，与 referencedColumns 按位置一一对应（多列外键）。 */
+  columns: string[]
   referencedSchema: string
   referencedTable: string
-  referencedColumn: string
+  referencedColumns: string[]
   onDelete: ReferentialAction
   onUpdate: ReferentialAction
+}
+
+export interface TableDesignerCheck {
+  id: string
+  name: string
+  /** 不带外层 CHECK ( ) 的布尔表达式。 */
+  expression: string
+}
+
+export type TriggerTiming = 'BEFORE' | 'AFTER'
+export type TriggerEvent = 'INSERT' | 'UPDATE' | 'DELETE' | 'TRUNCATE'
+
+export interface TableDesignerTrigger {
+  id: string
+  name: string
+  timing: TriggerTiming
+  /** MySQL 只能一个事件；PostgreSQL 可组合。 */
+  events: TriggerEvent[]
+  level: 'ROW' | 'STATEMENT'
+  /** MySQL：触发语句（多条时自动包 BEGIN…END）；PostgreSQL：plpgsql 函数体。 */
+  body: string
+  /** PostgreSQL 现有触发函数的限定名；为空时按表名和触发器名生成。 */
+  functionName?: string
+}
+
+export type TablePartitionMethod = '' | 'RANGE' | 'LIST' | 'HASH' | 'KEY'
+
+export interface TableDesignerPartitionItem {
+  id: string
+  name: string
+  /** RANGE 的 LESS THAN 值 / LIST 的 IN 值列表，不含括号。 */
+  value: string
+}
+
+/** MySQL 建表时的分区定义；现有表的分区只读展示。 */
+export interface TableDesignerPartition {
+  method: TablePartitionMethod
+  /** 分区表达式或列（KEY 为逗号分隔的列名）。 */
+  expression: string
+  /** HASH / KEY 的分区数。 */
+  count: string
+  items: TableDesignerPartitionItem[]
 }
 
 export interface TableDesignerDraft {
@@ -76,6 +119,9 @@ export interface TableDesignerDraft {
   columns: TableDesignerColumn[]
   indexes: TableDesignerIndex[]
   foreignKeys: TableDesignerForeignKey[]
+  checks?: TableDesignerCheck[]
+  triggers?: TableDesignerTrigger[]
+  partition?: TableDesignerPartition | null
 }
 
 export interface TableDesignerValidation {
@@ -84,6 +130,18 @@ export interface TableDesignerValidation {
   /** 按字段 / 索引的编辑器 ID 归类，用于行内提示。 */
   columnErrors: Record<string, string[]>
   indexErrors: Record<string, string[]>
+  foreignKeyErrors: Record<string, string[]>
+  checkErrors: Record<string, string[]>
+  triggerErrors: Record<string, string[]>
+}
+
+/** 保存前展示的变更摘要条目。 */
+export interface TableDesignerChange {
+  action: 'add' | 'modify' | 'remove' | 'rename'
+  /** i18n 键：字段 / 索引 / 外键 / 检查约束 / 触发器 / 表 */
+  target: string
+  name: string
+  detail?: string
 }
 
 export interface TableDesignerOptions {

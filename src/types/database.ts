@@ -145,6 +145,40 @@ export interface DatabaseTableDetail {
   rowEstimate: number | null
   ddl: string
   options: DatabaseTableOptions | null
+  /** CHECK 约束；旧版本后端或不支持时缺省。 */
+  checks?: DatabaseCheckConstraint[]
+  triggers?: DatabaseTrigger[]
+  partition?: DatabasePartitionInfo | null
+}
+
+export interface DatabaseCheckConstraint {
+  name: string
+  expression: string
+}
+
+export interface DatabaseTrigger {
+  name: string
+  timing: string
+  events: string[]
+  body: string
+  /** PostgreSQL 触发函数的限定名。 */
+  function: string
+  level: string
+}
+
+export interface DatabasePartitionInfo {
+  method: string
+  expression: string
+  partitions: { name: string; description: string; rows: number | null }[]
+}
+
+export interface DatabaseDdlExecution {
+  transactional: boolean
+  executed: number
+  failedIndex: number | null
+  failedStatement: string | null
+  error: string | null
+  rolledBack: boolean
 }
 
 export interface DatabaseRoutineParameter {
@@ -200,6 +234,12 @@ export type RowFilterOperator =
   | 'startsWith'
   | 'greaterThan'
   | 'lessThan'
+  | 'greaterOrEqual'
+  | 'lessOrEqual'
+  | 'notContains'
+  | 'in'
+  | 'notIn'
+  | 'between'
   | 'isNull'
   | 'notNull'
 
@@ -212,6 +252,8 @@ export interface RowFilter {
   column: string
   operator: RowFilterOperator
   value: string
+  /** BETWEEN 的上界。 */
+  value2?: string
 }
 
 export interface RowPageRequest {
@@ -221,6 +263,19 @@ export interface RowPageRequest {
   limit?: number
   sort?: RowSort
   filters?: RowFilter[]
+  /** 条件之间用 OR 连接。 */
+  matchAny?: boolean
+  /** 高级模式手写的 WHERE 条件（不含关键字）。 */
+  whereSql?: string
+}
+
+/** 引用某张表的外键（反向外键）。 */
+export interface DatabaseReferencingKey {
+  name: string
+  schema: string
+  table: string
+  columns: string[]
+  referencedColumns: string[]
 }
 
 export interface DatabaseRowPage {

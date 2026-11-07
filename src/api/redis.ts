@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { i18n } from '@/i18n'
 import { IS_TAURI } from '@/utils/window'
 import type {
@@ -11,6 +11,10 @@ import type {
   RedisCollectionPage,
   RedisCollectionOp,
   RedisPatternPreview,
+  RedisInfoSection,
+  RedisSlowlog,
+  RedisBigKeyProgress,
+  RedisPubSubEvent,
 } from '@/types/redis'
 import { resolveTunnel } from './database'
 export { errorMessage, isAppError } from './ssh'
@@ -82,3 +86,36 @@ export const previewPattern = (sessionId: string, pattern: string) =>
   call<RedisPatternPreview>('redis_preview_pattern', { sessionId, pattern })
 export const deletePattern = (sessionId: string, pattern: string) =>
   call<number>('redis_delete_pattern', { sessionId, pattern })
+export const serverInfo = (sessionId: string) =>
+  call<RedisInfoSection[]>('redis_server_info', { sessionId })
+export const slowlog = (sessionId: string, count: number) =>
+  call<RedisSlowlog>('redis_slowlog', { sessionId, count })
+export const slowlogReset = (sessionId: string) =>
+  call<void>('redis_slowlog_reset', { sessionId })
+/** 后台扫描大 key，返回任务 ID；用 stopJob 取消，最终进度 done=true。 */
+export const bigKeyScan = (
+  sessionId: string,
+  pattern: string,
+  onProgress: (progress: RedisBigKeyProgress) => void
+) =>
+  call<number>('redis_big_key_scan', {
+    sessionId,
+    pattern,
+    onProgress: new Channel<RedisBigKeyProgress>(onProgress),
+  })
+/** 独立连接订阅频道/模式，返回任务 ID；用 stopJob 退订。 */
+export const pubsubSubscribe = (
+  sessionId: string,
+  channels: string[],
+  patterns: string[],
+  onEvent: (event: RedisPubSubEvent) => void
+) =>
+  call<number>('redis_pubsub_subscribe', {
+    sessionId,
+    channels,
+    patterns,
+    onEvent: new Channel<RedisPubSubEvent>(onEvent),
+  })
+export const publish = (sessionId: string, channel: string, message: string) =>
+  call<number>('redis_publish', { sessionId, channel, message })
+export const stopJob = (jobId: number) => call<void>('redis_stop_job', { jobId })

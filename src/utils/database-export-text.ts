@@ -1,4 +1,4 @@
-import type { DatabaseKind } from '@/types/database'
+import type { DatabaseKind, DatabaseTableDetail } from '@/types/database'
 import type {
   DatabaseDataExportFormat,
   DatabaseExportData,
@@ -56,6 +56,164 @@ export function exportSqlLiteral(
   // SQLite 不支持 E'' 语法，也不处理反斜线转义
   if (kind === 'sqlite') return `'${value.replaceAll("'", "''")}'`
   return `E'${value.replaceAll('\\', '\\\\').replaceAll("'", "''")}'`
+}
+
+export type DataDictionaryFormat = 'markdown' | 'html'
+
+/** AI 补全的描述，按表名索引；只填充没有备注的位置。 */
+export type DataDictionaryDescriptions = Record<
+  string,
+  { table: string; columns: Record<string, string> }
+>
+
+/** 文案由调用方传入：本文件也被导出 Worker 引用，不能依赖 i18n。 */
+export interface DataDictionaryLabels {
+  title: string
+  tableCount: string
+  contents: string
+  columns: string
+  indexes: string
+  foreignKeys: string
+  name: string
+  type: string
+  nullable: string
+  primaryKey: string
+  defaultValue: string
+  comment: string
+  aiNote: string
+  unique: string
+  yes: string
+  no: string
+  indexColumns: string
+  references: string
+}
+
+/** 生成多表数据字典；AI 推断的描述带标记，不与库里的真实备注混淆。 */
+export function dataDictionaryText(
+  format: DataDictionaryFormat,
+  databaseName: string,
+  tables: DatabaseTableDetail[],
+  descriptions: DataDictionaryDescriptions,
+  labels: DataDictionaryLabels
+): string {
+  const tableNote = (table: DatabaseTableDetail): string => {
+    const generated = descriptions[table.name]?.table
+    return (
+      table.options?.comment ||
+      (generated ? `${generated} ${labels.aiNote}` : '')
+    )
+  }
+  const columnRow = (
+    table: DatabaseTableDetail,
+    column: DatabaseTableDetail['columns'][number]
+  ): string[] => {
+    const generated = descriptions[table.name]?.columns[column.name]
+    return [
+      column.name,
+      column.dataType,
+      column.nullable ? labels.yes : labels.no,
+      column.primaryKey ? labels.yes : '',
+      column.defaultValue ?? '',
+      column.comment || (generated ? `${generated} ${labels.aiNote}` : ''),
+    ]
+  }
+  const columnHead = [
+    labels.name,
+    labels.type,
+    labels.nullable,
+    labels.primaryKey,
+    labels.defaultValue,
+    labels.comment,
+  ]
+  const indexHead = [labels.name, labels.indexColumns, labels.unique]
+  const indexRow = (
+    index: DatabaseTableDetail['indexes'][number]
+  ): string[] => [
+    index.name,
+    index.columns.join(', '),
+    index.unique ? labels.yes : '',
+  ]
+  const keyHead = [labels.name, labels.columns, labels.references]
+  const keyRow = (
+    key: DatabaseTableDetail['foreignKeys'][number]
+  ): string[] => [
+    key.name,
+    key.columns.join(', '),
+    `${key.referencedTable} (${key.referencedColumns.join(', ')})`,
+  ]
+
+  if (format === 'html') {
+    const grid = (head: string[], rows: string[][]): string =>
+      `<table><thead><tr>${head.map(cell => `<th>${html(cell)}</th>`).join('')}</tr></thead><tbody>${rows
+        .map(
+          row =>
+            `<tr>${row.map(cell => `<td>${html(cell)}</td>`).join('')}</tr>`
+        )
+        .join('')}</tbody></table>`
+    const sections = tables.map((table, position) => {
+      const note = tableNote(table)
+      return [
+        `<h2 id="t${position}">${html(table.name)}</h2>`,
+        note ? `<p>${html(note)}</p>` : '',
+        grid(
+          columnHead,
+          table.columns.map(column => columnRow(table, column))
+        ),
+        table.indexes.length
+          ? `<h3>${html(labels.indexes)}</h3>${grid(indexHead, table.indexes.map(indexRow))}`
+          : '',
+        table.foreignKeys.length
+          ? `<h3>${html(labels.foreignKeys)}</h3>${grid(keyHead, table.foreignKeys.map(keyRow))}`
+          : '',
+      ].join('')
+    })
+    const contents = tables
+      .map(
+        (table, position) =>
+          `<li><a href="#t${position}">${html(table.name)}</a></li>`
+      )
+      .join('')
+    return `<!doctype html><html><meta charset="utf-8"><title>${html(databaseName)} · ${html(labels.title)}</title><style>body{font:14px system-ui;max-width:1100px;margin:40px auto;color:#222}table{border-collapse:collapse;width:100%;margin:8px 0 20px}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;white-space:pre-wrap}th{background:#f4f4f5}h2{margin-top:36px}</style><h1>${html(databaseName)} · ${html(labels.title)}</h1><p>${html(labels.tableCount)}</p><h2>${html(labels.contents)}</h2><ul>${contents}</ul>${sections.join('')}</html>`
+  }
+
+  const cell = (value: string): string =>
+    value
+      .replaceAll('\\', '\\\\')
+      .replaceAll('|', '\\|')
+      .replace(/\r?\n/gu, '<br>')
+  const grid = (head: string[], rows: string[][]): string =>
+    [
+      `| ${head.map(cell).join(' | ')} |`,
+      `| ${head.map(() => '---').join(' | ')} |`,
+      ...rows.map(row => `| ${row.map(cell).join(' | ')} |`),
+    ].join('\n')
+  const sections = tables.flatMap(table => {
+    const note = tableNote(table)
+    return [
+      `## ${table.name}`,
+      ...(note ? [note] : []),
+      grid(
+        columnHead,
+        table.columns.map(column => columnRow(table, column))
+      ),
+      ...(table.indexes.length
+        ? [`### ${labels.indexes}`, grid(indexHead, table.indexes.map(indexRow))]
+        : []),
+      ...(table.foreignKeys.length
+        ? [
+            `### ${labels.foreignKeys}`,
+            grid(keyHead, table.foreignKeys.map(keyRow)),
+          ]
+        : []),
+    ]
+  })
+  return [
+    `# ${databaseName} · ${labels.title}`,
+    labels.tableCount,
+    `## ${labels.contents}`,
+    tables.map(table => `- ${table.name}`).join('\n'),
+    ...sections,
+  ].join('\n\n')
 }
 
 /** 将一批已提交数据编码成指定文本格式，保留空值、长整数及重名字段。 */

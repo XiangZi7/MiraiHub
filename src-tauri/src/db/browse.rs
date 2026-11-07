@@ -64,7 +64,31 @@ pub async fn fetch_rows(
     };
 
     let mut binder = Binder::new(kind);
-    let where_clause = build_where(&request.filters, kind, &casts, &mut binder)?;
+    let mut where_clause = build_where(
+        &request.filters,
+        request.match_any,
+        kind,
+        &casts,
+        &mut binder,
+    )?;
+    // 高级模式的手写条件原样拼入（加括号隔离优先级），只拦截会截断语句的分号。
+    if let Some(raw) = request
+        .where_sql
+        .as_deref()
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+    {
+        if raw.contains(';') {
+            return Err(DatabaseError::InvalidInput(
+                "WHERE 条件不能包含分号".to_owned(),
+            ));
+        }
+        where_clause = if where_clause.is_empty() {
+            format!(" WHERE ({raw})")
+        } else {
+            format!(" WHERE ({}) AND ({raw})", &where_clause[" WHERE ".len()..])
+        };
+    }
     let order_clause = build_order(request.sort.as_ref(), kind)?;
 
     // 多查一行用来判断还有没有下一页。
@@ -134,6 +158,7 @@ pub async fn fetch_rows(
 
 fn build_where(
     filters: &[RowFilter],
+    match_any: bool,
     kind: DatabaseKind,
     casts: &BTreeMap<String, String>,
     binder: &mut Binder,
@@ -148,23 +173,61 @@ fn build_where(
         let condition = match filter.operator {
             RowFilterOperator::IsNull => format!("{quoted} IS NULL"),
             RowFilterOperator::NotNull => format!("{quoted} IS NOT NULL"),
-            RowFilterOperator::Contains | RowFilterOperator::StartsWith => {
-                let pattern = if filter.operator == RowFilterOperator::Contains {
-                    format!("%{}%", escape_like(&filter.value))
-                } else {
+            RowFilterOperator::Contains
+            | RowFilterOperator::StartsWith
+            | RowFilterOperator::NotContains => {
+                let pattern = if filter.operator == RowFilterOperator::StartsWith {
                     format!("{}%", escape_like(&filter.value))
+                } else {
+                    format!("%{}%", escape_like(&filter.value))
                 };
                 let placeholder = binder.push(Some(pattern));
+                let not = if filter.operator == RowFilterOperator::NotContains {
+                    "NOT "
+                } else {
+                    ""
+                };
                 match kind {
-                    // 文本化后比较，数值列也能用同一个筛选框；MySQL 默认排序规则already
+                    // 文本化后比较，数值列也能用同一个筛选框；MySQL 默认排序规则已经
                     // 大小写不敏感，PostgreSQL 需要显式 ILIKE。
-                    DatabaseKind::Mysql => format!("CAST({quoted} AS CHAR) LIKE {placeholder}"),
-                    DatabaseKind::Postgresql => format!("{quoted}::text ILIKE {placeholder}"),
+                    DatabaseKind::Mysql => {
+                        format!("CAST({quoted} AS CHAR) {not}LIKE {placeholder}")
+                    }
+                    DatabaseKind::Postgresql => format!("{quoted}::text {not}ILIKE {placeholder}"),
                     // SQLite 的 LIKE 对 ASCII 默认不区分大小写
                     DatabaseKind::Sqlite => {
-                        format!("CAST({quoted} AS TEXT) LIKE {placeholder} ESCAPE '\\'")
+                        format!("CAST({quoted} AS TEXT) {not}LIKE {placeholder} ESCAPE '\\'")
                     }
                 }
+            }
+            RowFilterOperator::In | RowFilterOperator::NotIn => {
+                let items = split_list(&filter.value);
+                if items.is_empty() {
+                    return Err(DatabaseError::InvalidInput(format!(
+                        "列 {column} 的 IN 列表不能为空"
+                    )));
+                }
+                let placeholders = items
+                    .into_iter()
+                    .map(|item| {
+                        let placeholder = binder.push(Some(item));
+                        cast_placeholder(&placeholder, column, kind, casts)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let not = if filter.operator == RowFilterOperator::NotIn {
+                    "NOT "
+                } else {
+                    ""
+                };
+                format!("{quoted} {not}IN ({placeholders})")
+            }
+            RowFilterOperator::Between => {
+                let low = binder.push(Some(filter.value.clone()));
+                let low = cast_placeholder(&low, column, kind, casts);
+                let high = binder.push(Some(filter.value2.clone()));
+                let high = cast_placeholder(&high, column, kind, casts);
+                format!("{quoted} BETWEEN {low} AND {high}")
             }
             _ => {
                 let operator = match filter.operator {
@@ -172,6 +235,8 @@ fn build_where(
                     RowFilterOperator::NotEquals => "<>",
                     RowFilterOperator::GreaterThan => ">",
                     RowFilterOperator::LessThan => "<",
+                    RowFilterOperator::GreaterOrEqual => ">=",
+                    RowFilterOperator::LessOrEqual => "<=",
                     _ => unreachable!("上面已经处理"),
                 };
                 let placeholder = binder.push(Some(filter.value.clone()));
@@ -189,7 +254,26 @@ fn build_where(
         return Ok(String::new());
     }
 
+    if match_any && conditions.len() > 1 {
+        let joined = conditions
+            .iter()
+            .map(|condition| format!("({condition})"))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        return Ok(format!(" WHERE {joined}"));
+    }
+
     Ok(format!(" WHERE {}", conditions.join(" AND ")))
+}
+
+/// IN 列表：有换行按行切，否则按逗号切；去掉首尾空白与空项。
+fn split_list(value: &str) -> Vec<String> {
+    let separator = if value.contains('\n') { '\n' } else { ',' };
+    value
+        .split(separator)
+        .map(|item| item.trim().to_owned())
+        .filter(|item| !item.is_empty())
+        .collect()
 }
 
 fn build_order(sort: Option<&RowSort>, kind: DatabaseKind) -> DatabaseResult<String> {
@@ -305,10 +389,17 @@ mod tests {
             column: "deleted_at".to_owned(),
             operator: RowFilterOperator::IsNull,
             value: String::new(),
+            value2: String::new(),
         }];
 
-        let clause =
-            build_where(&filters, DatabaseKind::Mysql, &BTreeMap::new(), &mut binder).unwrap();
+        let clause = build_where(
+            &filters,
+            false,
+            DatabaseKind::Mysql,
+            &BTreeMap::new(),
+            &mut binder,
+        )
+        .unwrap();
         assert_eq!(clause, " WHERE `deleted_at` IS NULL");
         assert!(binder.values.is_empty());
     }
@@ -322,9 +413,17 @@ mod tests {
             column: "id".to_owned(),
             operator: RowFilterOperator::Equals,
             value: "7".to_owned(),
+            value2: String::new(),
         }];
 
-        let clause = build_where(&filters, DatabaseKind::Postgresql, &casts, &mut binder).unwrap();
+        let clause = build_where(
+            &filters,
+            false,
+            DatabaseKind::Postgresql,
+            &casts,
+            &mut binder,
+        )
+        .unwrap();
         assert_eq!(clause, " WHERE \"id\" = $1::integer");
         assert_eq!(binder.values, vec![Some("7".to_owned())]);
     }

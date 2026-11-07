@@ -71,6 +71,8 @@ const emit = defineEmits<{
   removeObject: [object: DatabaseObject]
   designObject: [object: DatabaseObject]
   truncateObject: [object: DatabaseObject]
+  testData: [object: DatabaseObject]
+  documentObject: [object: DatabaseObject]
   createSavedQuery: [database: string]
   openSavedQuery: [query: SavedDatabaseQuery]
   renameSavedQuery: [query: SavedDatabaseQuery]
@@ -988,6 +990,8 @@ function handleContextAction(id: string): void {
       @remove="emit('removeObject', $event)"
       @design="emit('designObject', $event)"
       @truncate="emit('truncateObject', $event)"
+      @test-data="emit('testData', $event)"
+      @document="emit('documentObject', $event)"
       @refresh="emit('refresh')"
     />
     <AppContextMenu

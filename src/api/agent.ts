@@ -52,6 +52,18 @@ export const explainPlan = (
   plan: string,
   language: string
 ) => call<string>('ai_explain_plan', { target, sql, plan, language })
+/** 只发送表结构，返回测试数据生成规则的 JSON 文本。 */
+export const testDataRules = (
+  target: AgentTarget,
+  schema: string,
+  language: string
+) => call<string>('ai_test_data_rules', { target, schema, language })
+/** 为数据字典补全描述；tables 是否含样本值由调用方按用户授权决定。 */
+export const describeTables = (
+  target: AgentTarget,
+  tables: string,
+  language: string
+) => call<string>('ai_describe_tables', { target, tables, language })
 export const listMcpServers = () => call<McpServer[]>('ai_list_mcp_servers')
 export const saveMcpServer = (input: McpServerInput) =>
   call<McpServer[]>('ai_save_mcp_server', { input })

@@ -14,7 +14,8 @@ use super::error::{DatabaseError, DatabaseResult};
 use super::manager::DatabasePool;
 use super::models::{
     DatabaseColumn, DatabaseForeignKey, DatabaseIndex, DatabaseIndexPart, DatabaseObject,
-    DatabaseObjectKind, DatabaseRoutineDetail, DatabaseRoutineParameter, DatabaseTableDetail,
+    DatabaseObjectKind, DatabaseReferencingKey, DatabaseRoutineDetail, DatabaseRoutineParameter,
+    DatabaseTableDetail,
 };
 use super::sql;
 use super::sqlite_meta;
@@ -1097,6 +1098,142 @@ async fn list_foreign_keys(
                     .collect(),
                 update_rule,
                 delete_rule,
+            }
+        })
+        .collect())
+}
+
+/// 反向外键：列出其它表里指向 `schema.name` 的外键，供数据网格“查看引用此行的记录”。
+pub async fn list_referencing_keys(
+    pool: &DatabasePool,
+    schema: &str,
+    name: &str,
+) -> DatabaseResult<Vec<DatabaseReferencingKey>> {
+    ensure_target(schema, name)?;
+    // (源 schema, 源表, 约束名) -> [(序号, 源列, 目标列)]
+    let mut grouped: BTreeMap<(String, String, String), Vec<(i64, String, String)>> =
+        BTreeMap::new();
+
+    match pool {
+        DatabasePool::Mysql(pool) => {
+            let rows = sqlx::query(
+                r#"
+                SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, COLUMN_NAME,
+                       REFERENCED_COLUMN_NAME,
+                       CAST(ORDINAL_POSITION AS SIGNED) AS ORDINAL_POSITION
+                FROM information_schema.key_column_usage
+                WHERE REFERENCED_TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME = ?
+                ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION
+                "#,
+            )
+            .bind(schema)
+            .bind(name)
+            .fetch_all(pool)
+            .await
+            .map_err(DatabaseError::Query)?;
+
+            for row in rows {
+                let key = (
+                    mysql_metadata_text(&row, "TABLE_SCHEMA")?,
+                    mysql_metadata_text(&row, "TABLE_NAME")?,
+                    mysql_metadata_text(&row, "CONSTRAINT_NAME")?,
+                );
+                grouped.entry(key).or_default().push((
+                    row.try_get::<i64, _>("ORDINAL_POSITION").unwrap_or(0),
+                    mysql_metadata_text(&row, "COLUMN_NAME")?,
+                    mysql_optional_metadata_text(&row, "REFERENCED_COLUMN_NAME")?
+                        .unwrap_or_default(),
+                ));
+            }
+        }
+        DatabasePool::Postgresql(pool) => {
+            let rows = sqlx::query(
+                r#"
+                SELECT n.nspname AS table_schema,
+                       c.relname AS table_name,
+                       con.conname AS constraint_name,
+                       k.ord::bigint AS seq,
+                       a.attname AS column_name,
+                       fa.attname AS referenced_column
+                FROM pg_constraint con
+                JOIN pg_class c ON c.oid = con.conrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN pg_class fc ON fc.oid = con.confrelid
+                JOIN pg_namespace fn ON fn.oid = fc.relnamespace
+                JOIN LATERAL unnest(con.conkey, con.confkey)
+                     WITH ORDINALITY AS k(att, fatt, ord) ON true
+                JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.att
+                JOIN pg_attribute fa ON fa.attrelid = con.confrelid AND fa.attnum = k.fatt
+                WHERE con.contype = 'f' AND fn.nspname = $1 AND fc.relname = $2
+                ORDER BY n.nspname, c.relname, con.conname, k.ord
+                "#,
+            )
+            .bind(schema)
+            .bind(name)
+            .fetch_all(pool)
+            .await
+            .map_err(DatabaseError::Query)?;
+
+            for row in rows {
+                let key = (
+                    row.try_get("table_schema").unwrap_or_default(),
+                    row.try_get("table_name").unwrap_or_default(),
+                    row.try_get("constraint_name").unwrap_or_default(),
+                );
+                grouped.entry(key).or_default().push((
+                    row.try_get::<i64, _>("seq").unwrap_or(0),
+                    row.try_get("column_name").unwrap_or_default(),
+                    row.try_get("referenced_column").unwrap_or_default(),
+                ));
+            }
+        }
+        DatabasePool::Sqlite(pool) => {
+            // pragma 表值函数可以 JOIN，一条语句扫完所有表的外键。
+            let rows = sqlx::query(
+                r#"
+                SELECT m.name AS table_name, f.id AS id, f.seq AS seq,
+                       f."from" AS column_name, f."to" AS referenced_column
+                FROM sqlite_master m
+                JOIN pragma_foreign_key_list(m.name) f
+                WHERE m.type = 'table' AND f."table" = ? COLLATE NOCASE
+                ORDER BY m.name, f.id, f.seq
+                "#,
+            )
+            .bind(name)
+            .fetch_all(pool)
+            .await
+            .map_err(DatabaseError::Query)?;
+
+            for row in rows {
+                let table: String = row.try_get("table_name").unwrap_or_default();
+                let id: i64 = row.try_get("id").unwrap_or(0);
+                let key = (
+                    sqlite_meta::SQLITE_SCHEMA.to_owned(),
+                    table.clone(),
+                    format!("fk_{table}_{id}"),
+                );
+                grouped.entry(key).or_default().push((
+                    row.try_get::<i64, _>("seq").unwrap_or(0),
+                    row.try_get("column_name").unwrap_or_default(),
+                    // 省略目标列时 SQLite 默认引用主键，这里留空交给前端按主键补齐。
+                    row.try_get::<Option<String>, _>("referenced_column")
+                        .unwrap_or(None)
+                        .unwrap_or_default(),
+                ));
+            }
+        }
+    }
+
+    Ok(grouped
+        .into_iter()
+        .map(|((schema, table, name), mut parts)| {
+            parts.sort_by_key(|(sequence, ..)| *sequence);
+            DatabaseReferencingKey {
+                name,
+                schema,
+                table,
+                columns: parts.iter().map(|(_, column, _)| column.clone()).collect(),
+                referenced_columns: parts.into_iter().map(|(_, _, column)| column).collect(),
             }
         })
         .collect())

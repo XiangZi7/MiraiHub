@@ -72,3 +72,44 @@ export interface RedisPatternPreview {
   /** 未扫描完时 count 为下限。 */
   complete: boolean
 }
+export interface RedisInfoSection {
+  name: string
+  /** [字段, 值]，保持服务器返回顺序。 */
+  entries: [string, string][]
+}
+export interface RedisSlowlogEntry {
+  id: number
+  /** Unix 秒。 */
+  timestamp: number
+  durationUs: number
+  args: string[]
+  client: string
+  clientName: string
+}
+export interface RedisSlowlog {
+  total: number
+  entries: RedisSlowlogEntry[]
+}
+export interface RedisBigKey {
+  key: RedisKey
+  keyType: string
+  bytes: number
+  length: number
+}
+export interface RedisBigKeyProgress {
+  scanned: number
+  total: number
+  done: boolean
+  cancelled: boolean
+  error: string | null
+  keys: RedisBigKey[]
+}
+export interface RedisPubSubMessage {
+  channel: string
+  pattern: string | null
+  payload: RedisBytes
+  receivedAt: number
+}
+export type RedisPubSubEvent =
+  | { kind: 'messages'; items: RedisPubSubMessage[] }
+  | { kind: 'closed'; error: string | null }

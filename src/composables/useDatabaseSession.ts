@@ -21,6 +21,13 @@ import type {
   DatabaseSession,
 } from '@/types/database'
 import type { SshSessionStatus } from '@/types/ssh'
+import { invalidateCompletionCache } from '@/composables/useDatabaseCompletions'
+
+/** 会改变对象结构的语句；执行成功后补全元数据缓存需要失效。 */
+const DDL_PATTERN =
+  /^\s*(?:--[^
+]*
+\s*|\/\*[\s\S]*?\*\/\s*)*(?:CREATE|ALTER|DROP|RENAME|TRUNCATE|COMMENT)/iu
 
 interface UseDatabaseSessionOptions {
   onStatus?: (status: SshSessionStatus, sessionId: string) => void
@@ -185,8 +192,11 @@ export function useDatabaseSession(
     await release(sessionId)
   }
 
-  /** 刷新当前库结构，只替换该库的对象与字段缓存；空库也记为已加载，并忽略过期响应。 */
-  async function refreshObjects(): Promise<void> {
+  /** 刷新当前库结构，只替换该库的对象与字段缓存；空库也记为已加载，并忽略过期响应。
+   *  默认同时使 SQL 补全元数据失效；DML 后的顺带刷新传 keepCompletions 保留缓存。 */
+  async function refreshObjects(
+    options: { keepCompletions?: boolean } = {}
+  ): Promise<void> {
     const sessionId = state.sessionId
     const selectedDatabase = state.selectedDatabase
     if (
@@ -195,6 +205,8 @@ export function useDatabaseSession(
       selectedDatabase !== state.session?.database
     )
       return
+    if (!options.keepCompletions)
+      invalidateCompletionCache(sessionId, selectedDatabase)
     const request = ++objectsRequest
 
     state.objectsLoading = true
@@ -333,7 +345,11 @@ export function useDatabaseSession(
     }
   }
 
-  async function executeSql(sql: string, maxRows = 500): Promise<void> {
+  async function executeSql(
+    sql: string,
+    maxRows = 500,
+    params?: (string | null)[]
+  ): Promise<void> {
     const sessionId = state.sessionId
     if (!sessionId || state.queryLoading) return
 
@@ -341,7 +357,7 @@ export function useDatabaseSession(
     state.queryError = ''
     state.queryExecution = null
     try {
-      const result = await database.execute(sessionId, sql, maxRows)
+      const result = await database.execute(sessionId, sql, maxRows, params)
       if (state.sessionId !== sessionId) return
 
       // 结果集只整体替换、从不原地修改；跳过深层代理，大结果集不必逐行建响应式。
@@ -352,7 +368,11 @@ export function useDatabaseSession(
           statement => !statement.error && !statement.columns.length
         )
       )
-        void refreshObjects()
+        void refreshObjects({
+          keepCompletions: !result.statements.some(
+            statement => !statement.error && DDL_PATTERN.test(statement.statement)
+          ),
+        })
     } catch (error) {
       if (state.sessionId === sessionId)
         state.queryError = database.errorMessage(error)

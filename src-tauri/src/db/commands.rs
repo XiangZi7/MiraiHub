@@ -10,9 +10,9 @@ use super::manager::DatabaseManager;
 use super::metadata;
 use super::models::{
     DatabaseColumn, DatabaseConfig, DatabaseExecution, DatabaseExportResult, DatabaseImportOptions,
-    DatabaseImportResult, DatabaseObject, DatabaseObjectKind, DatabaseRoutineDetail,
-    DatabaseRowPage, DatabaseSession, DatabaseTableDetail, DatabaseTableOptions, MutationRequest,
-    MutationResult, RowPageRequest, TableAlterOptions,
+    DatabaseImportResult, DatabaseObject, DatabaseObjectKind, DatabaseReferencingKey,
+    DatabaseRoutineDetail, DatabaseRowPage, DatabaseSession, DatabaseTableDetail,
+    DatabaseTableOptions, MutationRequest, MutationResult, RowPageRequest, TableAlterOptions,
 };
 use super::mutation;
 use super::object_ops;
@@ -414,6 +414,17 @@ pub async fn db_truncate_table(
 }
 
 #[tauri::command]
+pub async fn db_referencing_keys(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    schema: String,
+    name: String,
+) -> AppResult<Vec<DatabaseReferencingKey>> {
+    let pool = manager.meta_pool(&session_id).await?;
+    Ok(metadata::list_referencing_keys(&pool, &schema, &name).await?)
+}
+
+#[tauri::command]
 pub async fn db_count_rows(
     manager: State<'_, DatabaseManager>,
     session_id: String,
@@ -481,8 +492,14 @@ pub async fn db_execute_ddl(
     confirm: Option<String>,
 ) -> AppResult<super::models::DatabaseDdlExecution> {
     manager
-        .guard_sql(&session_id, &statements.join(";
-"), confirm.as_deref())
+        .guard_sql(
+            &session_id,
+            &statements.join(
+                ";
+",
+            ),
+            confirm.as_deref(),
+        )
         .await?;
     Ok(super::ddl_exec::execute_ddl(&manager, &session_id, &statements).await?)
 }
@@ -569,4 +586,119 @@ pub async fn db_import_sql(
         )
         .await?;
     Ok(transfer::import_sql(&manager, &session_id, &path, &options.unwrap_or_default()).await?)
+}
+
+// ---------- 运维：会话监控、用户权限、原生备份 ----------
+
+#[tauri::command]
+pub async fn db_list_server_sessions(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+) -> AppResult<super::monitor::SessionSnapshot> {
+    let pool = manager.meta_pool(&session_id).await?;
+    Ok(super::monitor::list_sessions(&pool).await?)
+}
+
+#[tauri::command]
+pub async fn db_kill_server_session(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    target: i64,
+    mode: super::monitor::KillMode,
+    confirm: Option<String>,
+) -> AppResult<bool> {
+    let dangerous = matches!(mode, super::monitor::KillMode::Connection)
+        .then(|| format!("终止会话 {target}"));
+    manager
+        .guard_action(&session_id, dangerous, confirm.as_deref())
+        .await?;
+    let pool = manager.meta_pool(&session_id).await?;
+    Ok(super::monitor::kill_session(&pool, target, mode).await?)
+}
+
+#[tauri::command]
+pub async fn db_list_accounts(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+) -> AppResult<super::users::AccountList> {
+    let pool = manager.meta_pool(&session_id).await?;
+    Ok(super::users::list_accounts(&pool).await?)
+}
+
+#[tauri::command]
+pub async fn db_list_grants(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    name: String,
+    host: Option<String>,
+) -> AppResult<Vec<super::users::GrantEntry>> {
+    let pool = manager.meta_pool(&session_id).await?;
+    Ok(super::users::list_grants(&pool, &name, host.as_deref().unwrap_or("%")).await?)
+}
+
+/// 预览账号操作生成的 SQL，密码以星号代替。
+#[tauri::command]
+pub async fn db_preview_user_action(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    action: super::users::UserAction,
+) -> AppResult<Vec<String>> {
+    let kind = manager.pool(&session_id).await?.kind();
+    Ok(super::users::build_statements(kind, &action, true)?)
+}
+
+#[tauri::command]
+pub async fn db_apply_user_action(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    action: super::users::UserAction,
+    confirm: Option<String>,
+) -> AppResult<()> {
+    manager
+        .guard_action(&session_id, action.dangerous(), confirm.as_deref())
+        .await?;
+    let pool = manager.pool(&session_id).await?;
+    let statements = super::users::build_statements(pool.kind(), &action, false)?;
+    Ok(super::users::apply(&pool, &statements).await?)
+}
+
+#[tauri::command]
+pub async fn db_detect_backup_tools(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    tool_dir: Option<String>,
+) -> AppResult<super::backup::BackupTools> {
+    let kind = manager.pool(&session_id).await?.kind();
+    Ok(super::backup::detect_tools(kind, tool_dir.as_deref()).await)
+}
+
+#[tauri::command]
+pub async fn db_backup(
+    app: tauri::AppHandle,
+    manager: State<'_, DatabaseManager>,
+    request: super::backup::BackupRequest,
+) -> AppResult<super::backup::BackupResult> {
+    Ok(super::backup::backup(&manager, &app, &request).await?)
+}
+
+#[tauri::command]
+pub async fn db_restore_backup(
+    app: tauri::AppHandle,
+    manager: State<'_, DatabaseManager>,
+    request: super::backup::RestoreRequest,
+    confirm: Option<String>,
+) -> AppResult<super::backup::BackupResult> {
+    manager
+        .guard_action(
+            &request.session_id,
+            Some("恢复备份".to_owned()),
+            confirm.as_deref(),
+        )
+        .await?;
+    Ok(super::backup::restore(&manager, &app, &request).await?)
+}
+
+#[tauri::command]
+pub async fn db_cancel_backup(task_id: String) -> AppResult<bool> {
+    Ok(super::backup::cancel(&task_id))
 }

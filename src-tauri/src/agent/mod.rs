@@ -5,6 +5,7 @@ mod budget;
 mod compaction;
 mod config;
 mod context;
+pub mod data_assist;
 mod execution;
 mod files;
 pub mod history;

@@ -224,3 +224,14 @@ async fn string_inspection_preserves_value_ttl_and_original_key_bytes() {
     manager.disconnect(&session.session_id).await;
     task.await.unwrap();
 }
+
+#[test]
+fn parses_info_sections() {
+    let sections = super::monitor::parse_info(
+        "# Server\r\nredis_version:7.2.4\r\n\r\n# Keyspace\r\ndb0:keys=3,expires=1,avg_ttl=0\r\n",
+    );
+    assert_eq!(sections.len(), 2);
+    assert_eq!(sections[0].name, "Server");
+    assert_eq!(sections[0].entries[0], ["redis_version".to_owned(), "7.2.4".to_owned()]);
+    assert_eq!(sections[1].entries[0][1], "keys=3,expires=1,avg_ttl=0");
+}

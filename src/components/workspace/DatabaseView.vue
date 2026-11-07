@@ -41,6 +41,8 @@ import {
 } from '@/composables/useDatabaseSession'
 import { useDatabaseTabActions } from '@/composables/useDatabaseTabActions'
 import { useDatabaseCompletions } from '@/composables/useDatabaseCompletions'
+import { useSqlParamsPrompt } from '@/composables/useSqlParamsPrompt'
+import DatabaseQueryParamsDialog from './database/DatabaseQueryParamsDialog.vue'
 import { useDatabaseSidebarWidth } from '@/composables/useDatabaseSidebarWidth'
 import { activeAfterTabClose } from '@/utils/tab-actions'
 import { useSavedDatabaseQueries } from '@/composables/useSavedDatabaseQueries'
@@ -77,7 +79,10 @@ import DatabaseTableDesigner from '@/components/workspace/database/DatabaseTable
 import DatabaseTableOverview from './database/DatabaseTableOverview.vue'
 import DatabaseTableView from '@/components/workspace/database/DatabaseTableView.vue'
 import ErDiagramView from './database/ErDiagramView.vue'
+import { registerDatabaseCommandSource } from '@/composables/useDatabaseCommandSource'
 import DatabaseSchemaDiffDialog from './database/DatabaseSchemaDiffDialog.vue'
+import DatabaseDocDialog from './database/DatabaseDocDialog.vue'
+import DatabaseTestDataDialog from './database/DatabaseTestDataDialog.vue'
 import DatabaseGuardDialog from './database/DatabaseGuardDialog.vue'
 import DatabaseTransferDialog, {
   type DatabaseTransferMode,
@@ -348,6 +353,10 @@ const state = reactive({
   // ER 图与结构对比浮层
   erOpen: false,
   schemaDiffOpen: false,
+  // 右键触发的测试数据与数据字典弹窗
+  testDataObject: null as DatabaseObject | null,
+  docOpen: false,
+  docObject: null as DatabaseObject | null,
 })
 const { transferMode, preparingTransfer, browserEpoch } = toRefs(state)
 
@@ -1309,6 +1318,11 @@ function requestDeleteObject(object: DatabaseObject): void {
   deleteDialog.open = true
 }
 
+function openDatabaseDoc(object: DatabaseObject | null): void {
+  state.docObject = object
+  state.docOpen = true
+}
+
 function requestTruncateTable(object: DatabaseObject): void {
   deleteDialog.database = ''
   deleteDialog.object = null
@@ -1399,6 +1413,8 @@ async function confirmDelete(): Promise<void> {
 }
 
 // 查询工具栏按所在屏的标签运行 SQL，分离内容通过显式 tabId 定位，避免焦点切屏后跑错草稿。
+const sqlParamsPrompt = useSqlParamsPrompt()
+
 async function runQuery(
   sqlOverride?: string,
   tabId = activeTab.value?.id ?? queryState.activeId
@@ -1413,6 +1429,13 @@ async function runQuery(
     tab.sql
   ).trim()
   if (!connected.value || !sql || queryLoading.value) return
+  // 含 :name / ? / $1 占位符时先填参数；取消即不执行。
+  const bound = await sqlParamsPrompt.prepare(
+    sql,
+    databaseKind.value,
+    props.connection?.id ?? ''
+  )
+  if (!bound || !connected.value || queryLoading.value) return
   const originalSessionId = sessionId.value
   state.preparingQuery = true
   state.runningQueryId = tabId
@@ -1437,8 +1460,9 @@ async function runQuery(
     const previous = state.queryResults[tabId]
     const maxRows = Number(queryRowLimit.value)
     await executeSql(
-      sql,
-      [500, 1000, 5000, 10000, 50000].includes(maxRows) ? maxRows : 500
+      bound.sql,
+      [500, 1000, 5000, 10000, 50000].includes(maxRows) ? maxRows : 500,
+      bound.params
     )
     const execution = queryExecution.value
     if (historyId && props.connection) {
@@ -1662,6 +1686,107 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     objectTree.value?.focusFilter()
   }
 })
+
+// 命令面板（UX-2）：激活且已连接时把对象、已保存查询与常用动作交给面板
+registerDatabaseCommandSource(
+  () => props.active !== false && !!props.connection && connected.value,
+  () => {
+    const ready = (): boolean => connected.value && !!sessionId.value
+    const currentDatabase = (): string => session.value?.database ?? ''
+    return {
+      connectionId: props.connection!.id,
+      connectionName: props.connection!.name,
+      objects,
+      savedQueries,
+      openObject: object => openObject(object),
+      designObject: openTableDesignerForObject,
+      openSavedQuery: query => void openSavedQuery(query),
+      actions: [
+        {
+          id: 'new-query',
+          label: '新建查询',
+          icon: 'lucide:file-plus',
+          enabled: ready,
+          run: () => void newQueryForSchema(),
+        },
+        {
+          id: 'open-table',
+          label: '打开表…',
+          icon: 'lucide:table',
+          run: 'pick-object',
+        },
+        {
+          id: 'design-table',
+          label: '设计表…',
+          icon: 'lucide:pencil-ruler',
+          run: 'pick-design',
+        },
+        {
+          id: 'new-table',
+          label: '新建表',
+          icon: 'lucide:table-properties',
+          enabled: ready,
+          run: () =>
+            openTableDesigner(state.overviewSchema || currentDatabase()),
+        },
+        {
+          id: 'er-diagram',
+          label: 'ER 图',
+          icon: 'lucide:network',
+          enabled: ready,
+          run: () => (state.erOpen = true),
+        },
+        {
+          id: 'export-database',
+          label: '导出数据库',
+          icon: 'lucide:download',
+          enabled: () => ready() && !!currentDatabase(),
+          run: () => void openDatabaseTransfer(currentDatabase(), 'export'),
+        },
+        {
+          id: 'import-database',
+          label: '导入数据库',
+          icon: 'lucide:upload',
+          enabled: () => ready() && !!currentDatabase(),
+          run: () => void openDatabaseTransfer(currentDatabase(), 'import'),
+        },
+        {
+          id: 'schema-diff',
+          label: '结构对比',
+          icon: 'lucide:git-compare-arrows',
+          enabled: ready,
+          run: () => (state.schemaDiffOpen = true),
+        },
+        {
+          id: 'data-dictionary',
+          label: '数据字典',
+          icon: 'lucide:book-text',
+          enabled: ready,
+          run: () => openDatabaseDoc(null),
+        },
+        {
+          id: 'toggle-results',
+          label: '显示/隐藏结果面板',
+          icon: 'lucide:panel-bottom',
+          run: () => (resultsHidden.value = !resultsHidden.value),
+        },
+        {
+          id: 'refresh-tree',
+          label: '刷新对象树',
+          icon: 'lucide:refresh-cw',
+          enabled: ready,
+          run: () => void refreshAll(),
+        },
+        {
+          id: 'disconnect',
+          label: '断开连接',
+          icon: 'lucide:unplug',
+          run: () => void disconnect(),
+        },
+      ],
+    }
+  }
+)
 </script>
 
 <template>
@@ -1768,6 +1893,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             :title="t('结构对比')"
             :disabled="!connected"
             @click="state.schemaDiffOpen = true"
+          />
+          <IconButton
+            icon="lucide:book-text"
+            :size="13"
+            class="shrink-0"
+            :title="t('数据字典')"
+            :disabled="!connected"
+            @click="openDatabaseDoc(null)"
           />
           <IconButton
             :icon="tab.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'"
@@ -1915,6 +2048,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           @remove-object="requestDeleteObject"
           @design-object="openTableDesignerForObject"
           @truncate-object="requestTruncateTable"
+          @test-data="state.testDataObject = $event"
+          @document-object="openDatabaseDoc"
         />
         <AppResizeHandle
           v-show="!agentOpen || agentSplit"
@@ -1986,6 +2121,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
                 @remove-object="requestDeleteObject"
                 @design-object="openTableDesignerForObject"
                 @truncate-object="requestTruncateTable"
+                @test-data="state.testDataObject = $event"
+                @document-object="openDatabaseDoc"
                 @refresh="refreshAll"
               />
             </template>
@@ -2168,6 +2305,26 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         }
       "
     />
+    <DatabaseTestDataDialog
+      v-if="state.testDataObject && sessionId"
+      :session-id="sessionId"
+      :database-kind="databaseKind"
+      :database-name="databaseName"
+      :connection-name="connection?.name"
+      :object="state.testDataObject"
+      :read-only="session?.readOnly"
+      :target="agentTarget"
+      @close="state.testDataObject = null"
+      @finished="refreshAll"
+    />
+    <DatabaseDocDialog
+      v-if="state.docOpen && sessionId"
+      :session-id="sessionId"
+      :database-name="databaseName"
+      :initial="state.docObject"
+      :target="agentTarget"
+      @close="state.docOpen = false"
+    />
     <DatabaseTransferDialog
       :open="transferMode !== null"
       :mode="transferMode ?? 'export'"
@@ -2195,6 +2352,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
       @close="deleteDialog.open = false"
       @confirm="confirmDelete"
     />
+    <DatabaseQueryParamsDialog />
   </div>
 </template>
 

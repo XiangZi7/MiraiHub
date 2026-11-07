@@ -26,6 +26,8 @@ const emit = defineEmits<{
   remove: [object: DatabaseObject]
   design: [object: DatabaseObject]
   truncate: [object: DatabaseObject]
+  testData: [object: DatabaseObject]
+  document: [object: DatabaseObject]
   refresh: []
 }>()
 
@@ -73,6 +75,18 @@ const items = computed<ContextMenuItem[]>(() => {
       label: t('让 AI 分析表结构'),
       icon: 'lucide:sparkles',
       disabled: !relation,
+    },
+    {
+      id: 'test-data',
+      label: t('生成测试数据…'),
+      icon: 'lucide:wand-sparkles',
+      disabled: object.kind !== 'table',
+    },
+    {
+      id: 'document-object',
+      label: t('生成数据字典…'),
+      icon: 'lucide:book-text',
+      disabled: object.kind !== 'table',
     },
     {
       id: 'truncate-object',
@@ -125,6 +139,10 @@ function select(id: string): void {
     emit('open', object, 'columns')
   } else if (id === 'truncate-object' && object.kind === 'table')
     emit('truncate', object)
+  else if (id === 'test-data' && object.kind === 'table')
+    emit('testData', object)
+  else if (id === 'document-object' && object.kind === 'table')
+    emit('document', object)
   else if (id === 'copy-object') emit('copy', object)
   else if (id === 'rename-object') emit('rename', object)
   else if (id === 'remove-object') emit('remove', object)

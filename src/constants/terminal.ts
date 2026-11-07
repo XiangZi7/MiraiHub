@@ -99,3 +99,25 @@ export function currentTerminalTheme(): ITheme {
       : undefined,
   }
 }
+
+/** 搜索高亮装饰。xterm 要求背景色为不透明的 #RRGGBB。 */
+export function terminalSearchDecorations() {
+  const light = document.documentElement.dataset.skinScheme === 'light'
+  return light
+    ? {
+        matchBackground: '#fff0bf',
+        matchBorder: '#d9a520',
+        matchOverviewRuler: '#d9a520',
+        activeMatchBackground: '#ffd54d',
+        activeMatchBorder: '#8a6514',
+        activeMatchColorOverviewRuler: '#8a6514',
+      }
+    : {
+        matchBackground: '#4a3b12',
+        matchBorder: '#8a6d2a',
+        matchOverviewRuler: '#ffcb6b',
+        activeMatchBackground: '#8a6514',
+        activeMatchBorder: '#ffcb6b',
+        activeMatchColorOverviewRuler: '#ffcb6b',
+      }
+}

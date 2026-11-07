@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type {
   DatabaseColumn,
   DatabaseConfig,
+  DatabaseDdlExecution,
   DatabaseExecution,
   DatabaseExportOptions,
   DatabaseExportResult,
@@ -13,6 +14,7 @@ import type {
   DatabaseObject,
   DatabaseObjectKind,
   DatabaseRoutineDetail,
+  DatabaseReferencingKey,
   DatabaseRowPage,
   DatabaseSession,
   DatabaseTableDetail,
@@ -323,6 +325,19 @@ export async function countRows(
   return invoke<number>('db_count_rows', { sessionId, schema, name })
 }
 
+export async function referencingKeys(
+  sessionId: string,
+  schema: string,
+  name: string
+): Promise<DatabaseReferencingKey[]> {
+  ensureTauri()
+  return invoke<DatabaseReferencingKey[]>('db_referencing_keys', {
+    sessionId,
+    schema,
+    name,
+  })
+}
+
 export async function fetchRows(
   sessionId: string,
   request: RowPageRequest
@@ -351,7 +366,9 @@ export async function previewMutations(
 export async function execute(
   sessionId: string,
   sql: string,
-  maxRows = 500
+  maxRows = 500,
+  /** 绑定参数；SQL 中的占位符须已转换成方言原生写法（`?` / `$n`），仅支持单条语句 */
+  params?: (string | null)[]
 ): Promise<DatabaseExecution> {
   ensureTauri()
   return guardedInvoke<DatabaseExecution>('db_execute', {
@@ -359,6 +376,19 @@ export async function execute(
     sql,
     maxRows,
     timeoutSecs: settingNumber('sqlExecutionTimeout', 300),
+    ...(params?.length ? { params } : {}),
+  })
+}
+
+/** 表设计器保存：逐条执行 DDL，PostgreSQL / SQLite 在事务里整批回滚。 */
+export async function executeDdl(
+  sessionId: string,
+  statements: string[]
+): Promise<DatabaseDdlExecution> {
+  ensureTauri()
+  return guardedInvoke<DatabaseDdlExecution>('db_execute_ddl', {
+    sessionId,
+    statements,
   })
 }
 

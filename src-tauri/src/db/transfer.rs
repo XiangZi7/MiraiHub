@@ -468,6 +468,8 @@ async fn export_table_rows(
                     descending: false,
                 }),
                 filters: Vec::new(),
+                match_any: false,
+                where_sql: None,
             },
         )
         .await?;
