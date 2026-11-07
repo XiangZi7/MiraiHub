@@ -27,6 +27,8 @@ pub enum ErrorKind {
     Internal,
     /// 危险操作需要用户二次确认（如生产库 DROP），带确认凭据重试即可
     ConfirmRequired,
+    /// 目标在操作期间被他人修改（如远端编辑器保存时文件已变），需要用户决定覆盖或重新加载
+    Conflict,
 }
 
 /// 跨 IPC 边界的错误载荷。

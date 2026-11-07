@@ -62,6 +62,7 @@ fn system_prompt(mode: &str, dialect: &str, language: &str) -> AppResult<String>
         "optimize" => "Review the SQL for performance and correctness. In concise Markdown list the concrete problems and fixes, then give the optimized SQL in one ```sql code block (index DDL in a separate block if useful). Keep it under 350 words.",
         "inline" => "You are an inline SQL autocomplete engine. Given the text BEFORE the cursor and AFTER the cursor, reply with only the characters to insert at the cursor: no code fences, no explanation, at most 3 lines. Reply with nothing if no useful completion exists.",
         "ask" => "You answer questions about a query result. You get the columns, a row sample and per-column statistics; the sample may not be the whole result, say so when it matters. Answer in concise Markdown. If a chart would help, end with one ```chart code block containing JSON {\"type\":\"bar\"|\"line\",\"x\":\"<column>\",\"y\":[\"<numeric column>\", ...],\"title\":\"...\"} using only existing column names.",
+        "design" => "You are a database table design assistant. CURRENT SQL holds the current table draft as JSON (it may be empty). Follow the instruction exactly and reply with only one ```json code block in the format the instruction requires, no other text.",
         _ => return Err(AppError::invalid_input("不支持的 AI 模式")),
     };
     Ok(format!(

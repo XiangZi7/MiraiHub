@@ -6,6 +6,7 @@ import { en as redisEdit } from './redisEdit'
 import { en as enhance } from './enhance'
 import { en as queryFeedback } from './query-feedback'
 import { en as dataAssist } from './data-assist'
+import { en as sqlAi } from './sql-ai'
 import { en as tableDesigner } from './table-designer'
 import { en as sshSecurity } from './ssh-security'
 import { en as sshTunnels } from './ssh-tunnels'
@@ -147,6 +148,7 @@ export default {
   ...enhance,
   ...queryFeedback,
   ...dataAssist,
+  ...sqlAi,
   ...tableDesigner,
   ...sshSecurity,
   ...sshTunnels,

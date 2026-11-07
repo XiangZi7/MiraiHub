@@ -113,6 +113,8 @@ export type AppErrorKind =
   | 'io'
   | 'internal'
   | 'confirmRequired'
+  /** 远端文件在编辑期间已被修改 */
+  | 'conflict'
 
 /** 跨 IPC 边界的错误载荷 */
 export interface AppError {

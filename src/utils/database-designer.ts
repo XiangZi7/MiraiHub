@@ -7,5 +7,13 @@ export function tableDesignerSnapshot(draft: TableDesignerDraft): string {
     columns: draft.columns.map(({ id: _id, ...column }) => column),
     indexes: draft.indexes.map(({ id: _id, ...index }) => index),
     foreignKeys: draft.foreignKeys.map(({ id: _id, ...key }) => key),
+    checks: draft.checks?.map(({ id: _id, ...check }) => check),
+    triggers: draft.triggers?.map(({ id: _id, ...trigger }) => trigger),
+    partition: draft.partition
+      ? {
+          ...draft.partition,
+          items: draft.partition.items.map(({ id: _id, ...item }) => item),
+        }
+      : null,
   })
 }

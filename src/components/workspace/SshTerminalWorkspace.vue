@@ -168,12 +168,17 @@ watch(
 )
 // 接收监控栏、批量执行结果等跨层入口投递的上下文：会话匹配或未指定会话时由活动工作区接收
 onAgentContextRequest(ask => {
-  if (!state.sessionId) return false
-  if (ask.sessionId ? ask.sessionId !== state.sessionId : !props.active)
-    return false
+  const session = ask.sessionId
+    ? [state.sessionId, ...paneSessions.values()].find(
+        id => id === ask.sessionId
+      )
+    : props.active
+      ? state.sessionId || paneSessions.values().next().value
+      : undefined
+  if (!session) return false
   state.contextRequest = {
     id: crypto.randomUUID(),
-    target: { kind: 'ssh', sessionId: state.sessionId, database: '' },
+    target: { kind: 'ssh', sessionId: session, database: '' },
     source: 'terminal',
     intent: ask.intent,
     name: ask.name,

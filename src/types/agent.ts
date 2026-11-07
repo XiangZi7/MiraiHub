@@ -264,3 +264,26 @@ export interface ShellCommandSuggestion {
   explanation: string
   risk: 'low' | 'medium' | 'high'
 }
+
+/** SQL 编辑器一次性 AI 请求的模式。 */
+export type SqlAssistMode =
+  | 'generate'
+  | 'fix'
+  | 'explain'
+  | 'optimize'
+  | 'inline'
+  | 'ask'
+  | 'design'
+
+export interface SqlAssistInput {
+  mode: SqlAssistMode
+  instruction?: string
+  sql?: string
+  extra?: string
+  language: string
+}
+
+export interface SqlAssistResult {
+  text: string
+  usage: Record<string, unknown> | null
+}

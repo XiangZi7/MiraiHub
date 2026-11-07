@@ -110,6 +110,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ssh::commands::ssh_rename_path,
         ssh::commands::ssh_copy_path,
         ssh::commands::ssh_delete_path,
+        ssh::commands::ssh_delete_tree,
+        ssh::commands::ssh_chmod_path,
         ssh::commands::ssh_upload_file,
         ssh::commands::ssh_download_file,
         ssh::commands::ssh_pause_transfer,
@@ -119,6 +121,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ssh::commands::ssh_list_keys,
         ssh::commands::ssh_generate_key,
         ssh::commands::ssh_delete_key,
+        ssh::key_deploy::ssh_deploy_public_key,
+        ssh::openssh_config::ssh_config_preview,
         // ---------- 数据库 ----------
         db::commands::db_test_connection,
         db::commands::db_connect,

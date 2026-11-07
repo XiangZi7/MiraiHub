@@ -260,6 +260,26 @@ export async function deletePath(
   await invoke('ssh_delete_path', { sessionId, path, isDirectory })
 }
 
+// 递归删除远端目录（先文件后目录），返回删除的项目数；遇错即停并带上失败路径。
+export async function deleteTree(
+  sessionId: string,
+  path: string
+): Promise<number> {
+  ensureTauri()
+  return invoke<number>('ssh_delete_tree', { sessionId, path })
+}
+
+// 通过 SFTP setstat 修改权限位，目录可选递归应用到子项，返回修改的项目数。
+export async function chmodPath(
+  sessionId: string,
+  path: string,
+  mode: number,
+  recursive: boolean
+): Promise<number> {
+  ensureTauri()
+  return invoke<number>('ssh_chmod_path', { sessionId, path, mode, recursive })
+}
+
 // 文件菜单复制到远端目录，后端独占创建目标并保留目录及软链结构。
 export async function copyPath(
   sessionId: string,

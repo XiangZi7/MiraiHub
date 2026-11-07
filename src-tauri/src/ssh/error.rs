@@ -75,6 +75,10 @@ pub enum SshError {
 
     #[error("传输已取消")]
     TransferCancelled,
+
+    /// 用户拒绝了主机密钥、取消了二次验证，或确认超时。
+    #[error("{0}")]
+    UserDeclined(String),
 }
 
 impl From<SshError> for AppError {
@@ -83,9 +87,10 @@ impl From<SshError> for AppError {
             SshError::Connect { .. } | SshError::Timeout { .. } | SshError::Proxy { .. } => {
                 ErrorKind::Network
             }
-            SshError::AuthRejected { .. } | SshError::KeyParse { .. } | SshError::AgentAuth(_) => {
-                ErrorKind::Auth
-            }
+            SshError::AuthRejected { .. }
+            | SshError::KeyParse { .. }
+            | SshError::AgentAuth(_)
+            | SshError::UserDeclined(_) => ErrorKind::Auth,
             SshError::SessionNotFound(_) | SshError::KeyNotFound(_) => ErrorKind::NotFound,
             SshError::InvalidInput(_) | SshError::KeyExists(_) | SshError::RemoteFileExists(_) => {
                 ErrorKind::InvalidInput

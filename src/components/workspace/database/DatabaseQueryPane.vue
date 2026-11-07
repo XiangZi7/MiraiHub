@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, useTemplateRef } from 'vue'
+import { computed, nextTick, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { toast } from '@/composables/useToast'
 import type {
   DatabaseExecution,
   DatabaseKind,
@@ -44,6 +46,11 @@ const emit = defineEmits<{
   closeResult: [id: string]
 }>()
 const editor = useTemplateRef<InstanceType<typeof SqlEditor>>('editor')
+const { t } = useI18n()
+const AI_FIX_MAX_ROUNDS = 2
+// 接受修复并重跑后，等执行结束再决定是否生成下一轮；非响应式，不参与渲染。
+let awaitingFixRun = false
+let fixRound = 0
 const style = computed(() => {
   if (props.resultsHidden) return { gridTemplateRows: '1fr 0 0' }
   const value = Math.min(
@@ -86,6 +93,58 @@ function locate(statement: DatabaseStatementResult): void {
   if (range) editor.value?.revealRange(range.start, range.end)
 }
 
+/** 打开 AI 修复面板：只针对失败语句，定位不到时提示而不替换。 */
+function openAiFix(statement: DatabaseStatementResult, round: number): void {
+  const range = statementRange(statement)
+  if (!range) {
+    toast.warning(t('内容已变化，无法应用 AI 结果'))
+    return
+  }
+  editor.value?.startAiFix(range, statement.error ?? props.error, round)
+}
+
+/** 用户从错误面板发起修复，重新开始计轮。 */
+function startAiFix(statement: DatabaseStatementResult): void {
+  fixRound = 0
+  awaitingFixRun = false
+  openAiFix(statement, 0)
+}
+
+/** 接受修复并重跑；迭代只生成建议，每次执行都由用户点击确认。 */
+function runAiFix(statement: string): void {
+  awaitingFixRun = true
+  emit('run', statement)
+}
+
+/** 用户手动运行时结束修复迭代。 */
+function runFromEditor(statement: string): void {
+  awaitingFixRun = false
+  fixRound = 0
+  emit('run', statement)
+}
+
+// 重跑结束后：成功则收束；再次失败时在上限内自动生成下一轮修复建议。
+watch(
+  () => props.loading,
+  async (now, was) => {
+    if (now || !was || !awaitingFixRun) return
+    awaitingFixRun = false
+    await nextTick()
+    const failed = props.execution?.statements.find(item => item.error)
+    if (!failed) {
+      fixRound = 0
+      return
+    }
+    if (fixRound >= AI_FIX_MAX_ROUNDS) {
+      fixRound = 0
+      toast.warning(t('已达自动修复上限'))
+      return
+    }
+    fixRound++
+    openAiFix(failed, fixRound)
+  }
+)
+
 defineExpose({ runnableSql: () => editor.value?.runnableSql() ?? sql.value })
 </script>
 
@@ -103,7 +162,8 @@ defineExpose({ runnableSql: () => editor.value?.runnableSql() ?? sql.value })
       :table-columns="tableColumns"
       :error-range="loading ? null : errorRange"
       @explain="emit('explain', $event)"
-      @run="emit('run', $event)"
+      @run="runFromEditor"
+      @ai-fix-run="runAiFix"
       @save="emit('save')"
       @ask-agent="(content, intent) => emit('askAgent', content, intent)"
     />
@@ -123,6 +183,7 @@ defineExpose({ runnableSql: () => editor.value?.runnableSql() ?? sql.value })
       :plan-sql="planSql"
       :history="history"
       @fix-error="emit('askAgent', $event, 'fix')"
+      @ai-fix="startAiFix"
       @cancel="emit('cancel')"
       @retry="emit('retry')"
       @locate="locate"

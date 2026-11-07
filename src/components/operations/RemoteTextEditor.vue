@@ -13,14 +13,30 @@ const emit = defineEmits<{
   close: []
   status: [dirty: boolean, busy: boolean]
 }>()
-const { state, dirty, requestClose, confirmDiscard, save } =
-  useRemoteTextDocument(
+const {
+  state,
+  dirty,
+  requestClose,
+  confirmDiscard,
+  save,
+  overwriteRemote,
+  reloadRemote,
+  dismissConflict,
+} = useRemoteTextDocument(
     props,
     !!props.standalone,
     () => emit('close'),
     (isDirty, isBusy) => emit('status', isDirty, isBusy)
   )
-const { document: remote, draft, busy, error, message, discard } = toRefs(state)
+const {
+  document: remote,
+  draft,
+  busy,
+  error,
+  message,
+  discard,
+  conflict,
+} = toRefs(state)
 const fileName = computed(() => props.path.split('/').pop() || t('远端文件'))
 defineExpose({ requestClose })
 </script>
@@ -57,8 +73,36 @@ defineExpose({ requestClose })
         size="sm"
         :title="t('保存') + ' (Ctrl+S)'"
         :disabled="!dirty || busy"
-        @click="save"
+        @click="save()"
         >{{ t('保存') }}</AppButton
+      >
+    </div>
+    <div
+      v-if="conflict"
+      role="alert"
+      class="border-amber/40 bg-amber/10 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs"
+    >
+      <span class="text-txt min-w-0 flex-1">
+        {{ t('远端文件已被修改。覆盖保存会丢弃远端的改动，重新加载会丢弃本地草稿。') }}
+      </span>
+      <AppButton
+        size="sm"
+        variant="primary"
+        :disabled="busy"
+        @click="overwriteRemote"
+        >{{ t('覆盖保存') }}</AppButton
+      >
+      <AppButton
+        size="sm"
+        :disabled="busy"
+        @click="reloadRemote"
+        >{{ t('重新加载') }}</AppButton
+      >
+      <AppButton
+        size="sm"
+        :disabled="busy"
+        @click="dismissConflict"
+        >{{ t('取消') }}</AppButton
       >
     </div>
     <p

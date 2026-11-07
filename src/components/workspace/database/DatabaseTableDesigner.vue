@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 
 import {
   computed,
+  nextTick,
   onMounted,
   reactive,
   ref,
@@ -13,7 +14,9 @@ import {
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
 import AppInput from '@/components/ui/AppInput.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import { toast } from '@/composables/useToast'
 import type { DatabaseKind, DatabaseObject } from '@/types/database'
 import type { DatabaseTableDetail } from '@/types/database'
@@ -22,11 +25,14 @@ import type {
   TableDesignerColumn,
   TableDesignerIndex,
   ReferentialAction,
+  TableDesignerTrigger,
+  TriggerEvent,
 } from '@/types/database-designer'
 import {
-  buildAlterTableSql,
-  buildCreateTableSql,
+  buildAlterTableStatements,
+  buildCreateTableStatements,
   columnTypes,
+  summarizeTableChanges,
   designerColumnFromStored,
   designerIndexFromStored,
   normalizeDataTypeLabel,
@@ -34,6 +40,9 @@ import {
 } from '@/utils/database-ddl'
 import { copyText } from '@/utils/clipboard'
 import { tableDesignerSnapshot } from '@/utils/database-designer'
+import DatabaseTableChecksEditor from './designer/DatabaseTableChecksEditor.vue'
+import DatabaseTableDdlPreview from './designer/DatabaseTableDdlPreview.vue'
+import DatabaseTableTriggersEditor from './designer/DatabaseTableTriggersEditor.vue'
 import DatabaseTableFieldsEditor from './designer/DatabaseTableFieldsEditor.vue'
 import DatabaseTableForeignKeysEditor from './designer/DatabaseTableForeignKeysEditor.vue'
 import DatabaseTableIndexesEditor from './designer/DatabaseTableIndexesEditor.vue'
@@ -41,7 +50,14 @@ import DatabaseTableOptionsEditor from './designer/DatabaseTableOptionsEditor.vu
 
 const { t } = useI18n()
 
-type DesignerPanel = 'columns' | 'indexes' | 'foreignKeys' | 'options' | 'sql'
+type DesignerPanel =
+  | 'columns'
+  | 'indexes'
+  | 'foreignKeys'
+  | 'checks'
+  | 'triggers'
+  | 'options'
+  | 'sql'
 
 const props = defineProps<{
   sessionId: string
@@ -65,6 +81,7 @@ const loadingDetail = ref(false)
 const loadError = ref('')
 const extraTypes = ref<string[]>([])
 
+/** 新建表时的默认草稿：一个自增主键 id。 */
 function defaultDraft(schema: string): TableDesignerDraft {
   return {
     schema,
@@ -92,6 +109,9 @@ function defaultDraft(schema: string): TableDesignerDraft {
     ],
     indexes: [],
     foreignKeys: [],
+    checks: [],
+    triggers: [],
+    partition: null,
   }
 }
 
@@ -114,18 +134,52 @@ const validation = computed(() =>
 const alterResult = computed(() => {
   const current = currentDetail.value
   if (!editing.value || !current || !validation.value.valid || !dirty.value)
-    return { sql: '', error: '' }
+    return { sql: '', statements: [] as string[], error: '' }
   try {
-    const sql = buildAlterTableSql({
+    const statements = buildAlterTableStatements({
       kind: props.databaseKind,
       current,
       draft,
       extraTypes: extraTypes.value,
     })
-    return { sql, error: '' }
+    return { sql: joinStatements(statements), statements, error: '' }
   } catch (cause) {
-    return { sql: '', error: database.errorMessage(cause) }
+    return {
+      sql: '',
+      statements: [] as string[],
+      error: database.errorMessage(cause),
+    }
   }
+})
+
+/** 新建表的语句列表；配置不完整时为空。 */
+const createStatements = computed(() => {
+  if (editing.value) return [] as string[]
+  try {
+    return buildCreateTableStatements({
+      kind: props.databaseKind,
+      draft,
+      extraTypes: extraTypes.value,
+    })
+  } catch {
+    return [] as string[]
+  }
+})
+
+/** 把语句列表拼成可读、可直接粘贴执行的 SQL 文本。 */
+function joinStatements(statements: readonly string[]): string {
+  return statements.map(statement => `${statement};`).join('\n\n')
+}
+
+/** 保存前展示的变更摘要。 */
+const changeSummary = computed(() => {
+  if (editing.value && !currentDetail.value) return []
+  if (!validation.value.valid) return []
+  return summarizeTableChanges(
+    props.databaseKind,
+    editing.value ? currentDetail.value : null,
+    draft
+  )
 })
 
 const sqlPreview = computed(() => {
@@ -139,11 +193,9 @@ const sqlPreview = computed(() => {
       `-- ${alterResult.value.error || t('没有需要保存的修改')}`
     )
   }
-  try {
-    return buildCreateTableSql({ kind: props.databaseKind, draft })
-  } catch {
+  if (!createStatements.value.length)
     return t('-- 完成必填配置后将在这里生成 CREATE TABLE SQL')
-  }
+  return joinStatements(createStatements.value)
 })
 const tableObjects = computed(() =>
   props.objects.filter(object => object.kind === 'table')
@@ -166,6 +218,18 @@ const panelItems = computed(() => [
     label: t('外键'),
     icon: 'lucide:link-2',
     count: draft.foreignKeys.length,
+  },
+  {
+    id: 'checks' as const,
+    label: t('检查约束'),
+    icon: 'lucide:shield-check',
+    count: draft.checks?.length ?? 0,
+  },
+  {
+    id: 'triggers' as const,
+    label: t('触发器'),
+    icon: 'lucide:zap',
+    count: draft.triggers?.length ?? 0,
   },
   {
     id: 'options' as const,
@@ -191,6 +255,12 @@ const foreignKeysEditor =
   useTemplateRef<InstanceType<typeof DatabaseTableForeignKeysEditor>>(
     'foreignKeysEditor'
   )
+const checksEditor =
+  useTemplateRef<InstanceType<typeof DatabaseTableChecksEditor>>('checksEditor')
+const triggersEditor =
+  useTemplateRef<InstanceType<typeof DatabaseTableTriggersEditor>>(
+    'triggersEditor'
+  )
 
 /**
  * 「添加」按钮跟着当前面板走。
@@ -209,12 +279,23 @@ const addAction = computed(() => {
         label: t('添加外键'),
         run: () => foreignKeysEditor.value?.add(),
       }
+    case 'checks':
+      return {
+        label: t('添加检查约束'),
+        run: () => checksEditor.value?.add(),
+      }
+    case 'triggers':
+      return {
+        label: t('添加触发器'),
+        run: () => triggersEditor.value?.add(),
+      }
     default:
       return null
   }
 })
 
 let loadVersion = 0
+/** 读取要编辑的现有表结构并灌入草稿，同时重置撤销历史。 */
 async function loadEditTarget(): Promise<void> {
   const version = ++loadVersion
   const target = props.editTable
@@ -236,6 +317,7 @@ async function loadEditTarget(): Promise<void> {
     currentDetail.value = detail
     hydrateFromDetail(detail)
     baseline.value = tableDesignerSnapshot(draft)
+    resetHistory()
   } catch (cause) {
     if (version !== loadVersion) return
     loadError.value = database.errorMessage(cause)
@@ -268,18 +350,16 @@ function hydrateFromDetail(detail: DatabaseTableDetail): void {
     return item ? [item] : []
   })
 
-  const foreignKeys = detail.foreignKeys
-    .filter(foreignKey => foreignKey.columns.length === 1)
-    .map((foreignKey, index) => ({
-      id: `fk-${foreignKey.name}-${index}`,
-      name: foreignKey.name,
-      column: foreignKey.columns[0] ?? '',
-      referencedSchema: foreignKey.referencedSchema,
-      referencedTable: foreignKey.referencedTable,
-      referencedColumn: foreignKey.referencedColumns[0] ?? '',
-      onDelete: (foreignKey.deleteRule || 'NO ACTION') as ReferentialAction,
-      onUpdate: (foreignKey.updateRule || 'NO ACTION') as ReferentialAction,
-    }))
+  const foreignKeys = detail.foreignKeys.map((foreignKey, index) => ({
+    id: `fk-${foreignKey.name}-${index}`,
+    name: foreignKey.name,
+    columns: [...foreignKey.columns],
+    referencedSchema: foreignKey.referencedSchema,
+    referencedTable: foreignKey.referencedTable,
+    referencedColumns: [...foreignKey.referencedColumns],
+    onDelete: (foreignKey.deleteRule || 'NO ACTION') as ReferentialAction,
+    onUpdate: (foreignKey.updateRule || 'NO ACTION') as ReferentialAction,
+  }))
 
   draft.schema = detail.schema
   draft.name = detail.name
@@ -299,6 +379,24 @@ function hydrateFromDetail(detail: DatabaseTableDetail): void {
   )
   draft.indexes = indexes
   draft.foreignKeys = foreignKeys
+  // 后端没读到（如 SQLite）时保持 undefined，差异生成就不会去动库里的对象。
+  draft.checks = detail.checks?.map((check, index) => ({
+    id: `check-${check.name}-${index}`,
+    name: check.name,
+    expression: check.expression,
+  }))
+  draft.triggers = detail.triggers?.map(
+    (trigger, index): TableDesignerTrigger => ({
+      id: `trigger-${trigger.name}-${index}`,
+      name: trigger.name,
+      timing: trigger.timing.toUpperCase() === 'AFTER' ? 'AFTER' : 'BEFORE',
+      events: trigger.events.map(event => event.toUpperCase() as TriggerEvent),
+      level: trigger.level?.toUpperCase() === 'STATEMENT' ? 'STATEMENT' : 'ROW',
+      body: trigger.body,
+      functionName: trigger.function ?? '',
+    })
+  )
+  draft.partition = null
 }
 
 onMounted(() => {
@@ -312,6 +410,7 @@ watch(
   }
 )
 
+/** 读取引用表字段并缓存，供外键的引用字段下拉联动。 */
 async function inspectReference(schema: string, table: string): Promise<void> {
   const key = `${schema}.${table}`
   if (!props.sessionId || !schema || !table || referencedColumns[key]) return
@@ -333,77 +432,155 @@ async function inspectReference(schema: string, table: string): Promise<void> {
   }
 }
 
+/** 复制当前 SQL 预览。 */
 async function copySql(): Promise<void> {
   if (!hasChanges.value) return
   await copyText(sqlPreview.value)
   toast.success(editing.value ? t('修改 SQL 已复制') : t('建表 SQL 已复制'))
 }
 
+/** 把 SQL 送到查询页，由用户自行执行。 */
 function openSqlQuery(): void {
   if (!hasChanges.value) return
   emit('query', sqlPreview.value)
 }
 
-async function createTable(): Promise<void> {
+/** 保存前确认对话框是否打开。 */
+const confirmOpen = ref(false)
+/** 最近一次执行失败的详情，在 SQL 预览中展示。 */
+const lastFailure = ref<{
+  statement: string
+  error: string
+  rolledBack: boolean
+  executed: number
+} | null>(null)
+const transactional = computed(() => props.databaseKind !== 'mysql')
+
+/** 点击创建 / 保存：先校验，再弹出变更摘要确认。 */
+function requestSave(): void {
   if (!validation.value.valid) {
     toast.warning(validation.value.errors[0] ?? t('请完善建表配置'))
     return
   }
+  if (editing.value) {
+    if (!currentDetail.value) return
+    if (alterResult.value.error) {
+      toast.warning(alterResult.value.error)
+      return
+    }
+    if (!alterResult.value.statements.length) {
+      toast.info(t('没有需要保存的修改'))
+      return
+    }
+  } else if (!createStatements.value.length) {
+    toast.warning(t('请完善建表配置'))
+    return
+  }
+  confirmOpen.value = true
+}
+
+/** 确认后执行：按语句列表走 executeDdl，PostgreSQL / SQLite 在事务中执行。 */
+async function confirmSave(): Promise<void> {
+  confirmOpen.value = false
+  if (editing.value) await applyChanges()
+  else await createTable()
+}
+
+/**
+ * 执行 DDL 语句列表；失败时记录出错语句并切到 SQL 预览展示。
+ * 返回 true 表示全部成功。
+ */
+async function runStatements(
+  statements: string[],
+  failureTitle: string
+): Promise<boolean> {
+  lastFailure.value = null
+  try {
+    const result = await database.executeDdl(props.sessionId, statements)
+    if (!result.error) return true
+    lastFailure.value = {
+      statement: result.failedStatement ?? '',
+      error: result.error,
+      rolledBack: result.rolledBack,
+      executed: result.executed,
+    }
+    activePanel.value = 'sql'
+    toast.error({
+      title: failureTitle,
+      description: result.rolledBack
+        ? t('第 {value0} 条语句执行失败，已回滚全部修改：{value1}', {
+            value0: (result.failedIndex ?? 0) + 1,
+            value1: result.error,
+          })
+        : t('第 {value0} 条语句执行失败，此前 {value1} 条已生效：{value2}', {
+            value0: (result.failedIndex ?? 0) + 1,
+            value1: result.executed,
+            value2: result.error,
+          }),
+    })
+    return false
+  } catch (cause) {
+    toast.error({
+      title: failureTitle,
+      description: database.errorMessage(cause),
+    })
+    return false
+  }
+}
+
+/** 执行建表语句。 */
+async function createTable(): Promise<void> {
   creating.value = true
   try {
-    const execution = await database.execute(
-      props.sessionId,
-      sqlPreview.value,
-      1
+    const ok = await runStatements(
+      [...createStatements.value],
+      t('创建数据表失败')
     )
-    const failed = execution.statements.find(statement => statement.error)
-    if (failed?.error) throw new Error(failed.error)
+    if (!ok) return
     baseline.value = tableDesignerSnapshot(draft)
     emit('dirty', false)
     emit('created', draft.schema, draft.name)
-  } catch (cause) {
-    toast.error({
-      title: t('创建数据表失败'),
-      description: database.errorMessage(cause),
-    })
   } finally {
     creating.value = false
   }
 }
 
+/** 执行修改表结构的语句；非事务方言部分成功时刷新库中结构，保留草稿以便继续修正。 */
 async function applyChanges(): Promise<void> {
   const current = currentDetail.value
   if (!current) return
-  if (!validation.value.valid) {
-    toast.warning(validation.value.errors[0] ?? t('请完善建表配置'))
-    return
-  }
-  if (alterResult.value.error) {
-    toast.warning(alterResult.value.error)
-    return
-  }
-  const alterSql = alterResult.value.sql
-  if (!alterSql) {
-    toast.info(t('没有需要保存的修改'))
-    return
-  }
   applying.value = true
   try {
-    if (alterSql) {
-      const execution = await database.execute(props.sessionId, alterSql, 1)
-      const failed = execution.statements.find(statement => statement.error)
-      if (failed?.error) throw new Error(failed.error)
+    const ok = await runStatements(
+      [...alterResult.value.statements],
+      t('保存表结构修改失败')
+    )
+    if (!ok) {
+      if (lastFailure.value?.executed && !lastFailure.value.rolledBack)
+        await refreshCurrentDetail()
+      return
     }
     baseline.value = tableDesignerSnapshot(draft)
     emit('dirty', false)
     emit('applied', draft.schema, draft.name)
-  } catch (cause) {
-    toast.error({
-      title: t('保存表结构修改失败'),
-      description: database.errorMessage(cause),
-    })
   } finally {
     applying.value = false
+  }
+}
+
+/** 只刷新库中现有结构（不覆盖草稿），让后续差异基于已生效的部分。 */
+async function refreshCurrentDetail(): Promise<void> {
+  const target = props.editTable
+  if (!target) return
+  try {
+    currentDetail.value = await database.tableDetail(
+      props.sessionId,
+      target.schema,
+      target.name,
+      'table'
+    )
+  } catch {
+    // 刷新失败时保留旧结构，用户可手动点刷新。
   }
 }
 
@@ -415,7 +592,7 @@ const hasChanges = computed(() => {
     applying.value
   )
     return false
-  if (!editing.value) return validation.value.valid
+  if (!editing.value) return createStatements.value.length > 0
   return Boolean(alterResult.value.sql)
 })
 
@@ -427,11 +604,13 @@ const dirty = computed(() => {
 })
 watch(dirty, value => emit('dirty', value), { immediate: true, flush: 'sync' })
 
+/** 还原到最近一次读取 / 保存的状态。 */
 function resetDraft(): void {
   if (currentDetail.value) hydrateFromDetail(currentDetail.value)
   else Object.assign(draft, defaultDraft(props.schema))
 }
 
+/** 字段编辑器回传：联动索引外键，并维护自增计数器。 */
 function updateColumns(columns: TableDesignerColumn[]): void {
   const previouslyIncrementing = draft.columns.some(
     column => column.autoIncrement
@@ -494,11 +673,230 @@ function cascadeColumnChanges(
     if (!columns.length) return []
     return [{ ...index, columns, columnOptions }]
   })
+  // 多列外键：删掉被移除字段对应的那一对，全空时整条外键移除。
   draft.foreignKeys = draft.foreignKeys.flatMap(foreignKey => {
-    if (removed.has(foreignKey.column)) return []
-    const name = renames.get(foreignKey.column)
-    return [name ? { ...foreignKey, column: name } : foreignKey]
+    const keep = foreignKey.columns
+      .map((column, index) => ({ column, index }))
+      .filter(item => !removed.has(item.column))
+    if (!keep.length) return []
+    return [
+      {
+        ...foreignKey,
+        columns: keep.map(item => renames.get(item.column) ?? item.column),
+        referencedColumns: keep.map(
+          item => foreignKey.referencedColumns[item.index] ?? ''
+        ),
+      },
+    ]
   })
+}
+
+// ---------- 撤销 / 重做 ----------
+/** 草稿的完整快照（含编辑器 id，恢复后行身份不变）。 */
+const historyPast: string[] = []
+const historyFuture: string[] = []
+let historyCurrent = JSON.stringify(draft)
+let historyStamp = 0
+let restoring = false
+const historyVersion = ref(0)
+const canUndo = computed(
+  () => historyVersion.value >= 0 && historyPast.length > 0
+)
+const canRedo = computed(
+  () => historyVersion.value >= 0 && historyFuture.length > 0
+)
+
+/** 清空撤销历史（读取表结构、复制结构后调用）。 */
+function resetHistory(): void {
+  historyPast.length = 0
+  historyFuture.length = 0
+  historyCurrent = JSON.stringify(draft)
+  historyStamp = 0
+  historyVersion.value++
+}
+
+watch(
+  () => JSON.stringify(draft),
+  value => {
+    if (restoring || value === historyCurrent) return
+    const now = Date.now()
+    // 连续输入 600ms 内合并成一步，避免每个字符一步。
+    if (now - historyStamp > 600 || !historyPast.length) {
+      historyPast.push(historyCurrent)
+      if (historyPast.length > 100) historyPast.shift()
+    }
+    historyStamp = now
+    historyCurrent = value
+    historyFuture.length = 0
+    historyVersion.value++
+  }
+)
+
+/** 把草稿恢复为指定快照。 */
+function restoreSnapshot(snapshot: string): void {
+  restoring = true
+  const value = JSON.parse(snapshot) as TableDesignerDraft
+  draft.checks = undefined
+  draft.triggers = undefined
+  draft.partition = null
+  Object.assign(draft, value)
+  historyCurrent = snapshot
+  historyStamp = 0
+  historyVersion.value++
+  void nextTick(() => {
+    restoring = false
+  })
+}
+
+/** 撤销一步。 */
+function undo(): void {
+  const previous = historyPast.pop()
+  if (previous === undefined) return
+  historyFuture.push(historyCurrent)
+  restoreSnapshot(previous)
+}
+
+/** 重做一步。 */
+function redo(): void {
+  const next = historyFuture.pop()
+  if (next === undefined) return
+  historyPast.push(historyCurrent)
+  restoreSnapshot(next)
+}
+
+/** Ctrl+Z 撤销、Ctrl+Y / Ctrl+Shift+Z 重做；多行文本框内保留原生撤销。 */
+function onDesignerKeydown(event: KeyboardEvent): void {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+  if (event.target instanceof HTMLTextAreaElement) return
+  if (editorDisabled.value || confirmOpen.value) return
+  const key = event.key.toLowerCase()
+  if (key === 'z' && !event.shiftKey) {
+    event.preventDefault()
+    undo()
+  } else if (key === 'y' || (key === 'z' && event.shiftKey)) {
+    event.preventDefault()
+    redo()
+  }
+}
+
+// ---------- 从模板 / 现有表复制结构 ----------
+const copyingStructure = ref(false)
+const templateOptions = computed(() => [
+  { value: 'template:basic', label: t('模板：基础表（主键 + 时间戳）') },
+  { value: 'template:log', label: t('模板：日志表') },
+  ...tableObjects.value.map(object => ({
+    value: `table:${object.schema}.${object.name}`,
+    label: `${t('复制表')}：${object.schema}.${object.name}`,
+  })),
+])
+
+/** 生成模板字段。 */
+function templateColumn(
+  name: string,
+  dataType: string,
+  patch: Partial<TableDesignerColumn> = {}
+): TableDesignerColumn {
+  return {
+    id: `column-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    dataType,
+    length: '',
+    nullable: true,
+    primaryKey: false,
+    unique: false,
+    unsigned: false,
+    autoIncrement: false,
+    defaultValue: '',
+    comment: '',
+    ...patch,
+  }
+}
+
+/** 应用内置模板，覆盖当前草稿的字段与索引。 */
+function applyTemplate(name: string): void {
+  const kind = props.databaseKind
+  const timestampType =
+    kind === 'postgresql' ? 'TIMESTAMP' : kind === 'mysql' ? 'DATETIME' : 'TEXT'
+  const id = templateColumn('id', kind === 'sqlite' ? 'INTEGER' : 'BIGINT', {
+    nullable: false,
+    primaryKey: true,
+    unsigned: kind === 'mysql',
+    autoIncrement: true,
+    comment: t('主键'),
+  })
+  const timestamp = (column: string) =>
+    templateColumn(column, timestampType, {
+      nullable: false,
+      defaultValue: 'CURRENT_TIMESTAMP',
+    })
+  const base = defaultDraft(draft.schema)
+  base.name = draft.name
+  base.columns =
+    name === 'log'
+      ? [
+          id,
+          templateColumn('level', 'VARCHAR', { length: '16', nullable: false }),
+          templateColumn('message', 'TEXT'),
+          timestamp('created_at'),
+        ]
+      : [id, timestamp('created_at'), timestamp('updated_at')]
+  Object.assign(draft, base)
+}
+
+/** 从模板或现有表复制结构到新建表草稿；约束、索引、触发器名加后缀避免与原表冲突。 */
+async function copyStructure(value: string): Promise<void> {
+  if (!value || editing.value) return
+  if (value.startsWith('template:')) {
+    applyTemplate(value.slice('template:'.length))
+    return
+  }
+  const object = tableObjects.value.find(
+    item => `table:${item.schema}.${item.name}` === value
+  )
+  if (!object) return
+  copyingStructure.value = true
+  try {
+    const detail = await database.tableDetail(
+      props.sessionId,
+      object.schema,
+      object.name,
+      'table'
+    )
+    hydrateFromDetail(detail)
+    const suffix = '_copy'
+    draft.schema = props.schema || detail.schema
+    draft.name = `${detail.name}${suffix}`
+    draft.autoIncrement = null
+    draft.columns = draft.columns.map(column => ({
+      ...column,
+      originalName: undefined,
+    }))
+    draft.indexes = draft.indexes.map(index => ({
+      ...index,
+      name: `${index.name}${suffix}`,
+    }))
+    draft.foreignKeys = draft.foreignKeys.map(foreignKey => ({
+      ...foreignKey,
+      name: `${foreignKey.name}${suffix}`,
+    }))
+    draft.checks = (draft.checks ?? []).map(check => ({
+      ...check,
+      name: `${check.name}${suffix}`,
+    }))
+    draft.triggers = (draft.triggers ?? []).map(trigger => ({
+      ...trigger,
+      name: `${trigger.name}${suffix}`,
+      functionName: '',
+    }))
+    toast.success(t('已复制表结构，请检查后创建'))
+  } catch (cause) {
+    toast.error({
+      title: t('读取表结构失败'),
+      description: database.errorMessage(cause),
+    })
+  } finally {
+    copyingStructure.value = false
+  }
 }
 
 const editorDisabled = computed(
@@ -511,7 +909,10 @@ const editorDisabled = computed(
 </script>
 
 <template>
-  <div class="table-designer">
+  <div
+    class="table-designer"
+    @keydown="onDesignerKeydown"
+  >
     <!-- 常规属性一行放下：标签横排在输入框前，标题交给标签页显示 -->
     <fieldset
       class="general-bar"
@@ -540,6 +941,24 @@ const editorDisabled = computed(
           :aria-label="t('数据库或 Schema')"
         />
       </label>
+      <div
+        v-if="!editing"
+        class="general-field w-60 flex-none"
+      >
+        <AppSelect
+          model-value=""
+          :label="t('从模板或现有表复制结构')"
+          :placeholder="
+            copyingStructure ? t('正在读取表结构…') : t('从模板或现有表复制结构')
+          "
+          :options="templateOptions"
+          :disabled="copyingStructure"
+          hide-label
+          compact
+          searchable
+          @update:model-value="copyStructure"
+        />
+      </div>
       <label class="general-field comment-field">
         <span>{{ t('表备注') }}</span>
         <AppInput
@@ -579,6 +998,28 @@ const editorDisabled = computed(
         </AppButton>
       </nav>
       <div class="designer-actions">
+        <AppButton
+          size="sm"
+          class="h-7"
+          :disabled="!canUndo || editorDisabled"
+          :title="t('撤销 (Ctrl+Z)')"
+          :aria-label="t('撤销 (Ctrl+Z)')"
+          @click="undo"
+          ><AppIcon
+            name="lucide:undo-2"
+            :size="11"
+        /></AppButton>
+        <AppButton
+          size="sm"
+          class="h-7"
+          :disabled="!canRedo || editorDisabled"
+          :title="t('重做 (Ctrl+Y)')"
+          :aria-label="t('重做 (Ctrl+Y)')"
+          @click="redo"
+          ><AppIcon
+            name="lucide:redo-2"
+            :size="11"
+        /></AppButton>
         <AppButton
           size="sm"
           class="h-7"
@@ -636,8 +1077,8 @@ const editorDisabled = computed(
           variant="primary"
           size="sm"
           class="h-7"
-          :disabled="creating || !validation.valid"
-          @click="createTable"
+          :disabled="creating || !hasChanges"
+          @click="requestSave"
           ><AppIcon
             :name="creating ? 'lucide:loader-circle' : 'lucide:check'"
             :size="12"
@@ -650,7 +1091,7 @@ const editorDisabled = computed(
           size="sm"
           class="h-7"
           :disabled="applying || !hasChanges"
-          @click="applyChanges"
+          @click="requestSave"
           ><AppIcon
             :name="applying ? 'lucide:loader-circle' : 'lucide:check'"
             :size="12"
@@ -713,8 +1154,41 @@ const editorDisabled = computed(
           :tables="tableObjects"
           :referenced-columns="referencedColumns"
           :loading-reference="loadingReference"
+          :database-kind="databaseKind"
+          :errors="validation.foreignKeyErrors"
           @inspect-table="inspectReference"
         />
+        <template v-if="activePanel === 'checks'">
+          <DatabaseTableChecksEditor
+            v-if="draft.checks"
+            ref="checksEditor"
+            v-model="draft.checks"
+            :database-kind="databaseKind"
+            :editing="editing"
+            :errors="validation.checkErrors"
+          />
+          <p
+            v-else
+            class="text-txt-4 p-6 text-[11px]"
+          >
+            {{ t('当前数据库未返回检查约束信息，暂不支持在此编辑。') }}
+          </p>
+        </template>
+        <template v-if="activePanel === 'triggers'">
+          <DatabaseTableTriggersEditor
+            v-if="draft.triggers"
+            ref="triggersEditor"
+            v-model="draft.triggers"
+            :database-kind="databaseKind"
+            :errors="validation.triggerErrors"
+          />
+          <p
+            v-else
+            class="text-txt-4 p-6 text-[11px]"
+          >
+            {{ t('当前数据库未返回触发器信息，暂不支持在此编辑。') }}
+          </p>
+        </template>
         <DatabaseTableOptionsEditor
           v-show="activePanel === 'options'"
           v-model:engine="draft.engine"
@@ -723,18 +1197,102 @@ const editorDisabled = computed(
           v-model:row-format="draft.rowFormat"
           v-model:comment="draft.comment"
           v-model:auto-increment="draft.autoIncrement"
+          v-model:partition="draft.partition"
           :session-id="sessionId"
           :database-kind="databaseKind"
           :columns="draft.columns"
           :current="currentDetail"
           :editing="editing"
         />
-        <pre
-          v-show="activePanel === 'sql'"
-          class="sql-preview scroll-thin"
-        ><code>{{ sqlPreview }}</code></pre>
+        <DatabaseTableDdlPreview
+          v-if="activePanel === 'sql'"
+          :sql="hasChanges ? sqlPreview : ''"
+          :error="
+            lastFailure
+              ? t('执行失败的语句：{value0}\n错误：{value1}', {
+                  value0: lastFailure.statement,
+                  value1: lastFailure.error,
+                })
+              : !hasChanges && !loadingDetail
+                ? sqlPreview.replace(/^--\s*/u, '')
+                : ''
+          "
+          :changes="changeSummary"
+          :editing="editing"
+          :transactional="transactional"
+          @copy="copySql"
+        />
       </template>
     </fieldset>
+
+    <AppDialog
+      v-if="confirmOpen"
+      :title="editing ? t('确认保存表结构修改') : t('确认创建数据表')"
+      :description="
+        transactional
+          ? t('保存时在事务中执行，任一语句失败将整体回滚。')
+          : t('MySQL 的 DDL 会隐式提交，失败前已执行的语句无法回滚。')
+      "
+      wide
+      @close="confirmOpen = false"
+    >
+      <div class="grid gap-3 p-4">
+        <ul class="scroll-thin grid max-h-48 gap-1 overflow-y-auto text-[11px]">
+          <li
+            v-for="(change, index) in changeSummary"
+            :key="index"
+            class="text-txt-2 flex items-center gap-1.5"
+          >
+            <span
+              class="rounded px-1.5 py-0.5 text-[10px]"
+              :class="{
+                'bg-success/10 text-success': change.action === 'add',
+                'bg-orange/10 text-orange': change.action === 'modify',
+                'bg-danger/10 text-danger': change.action === 'remove',
+                'bg-blue/10 text-blue': change.action === 'rename',
+              }"
+              >{{
+                {
+                  add: t('新增'),
+                  modify: t('修改'),
+                  remove: t('删除'),
+                  rename: t('重命名'),
+                }[change.action]
+              }}</span
+            >
+            {{ t(change.target) }}
+            <code class="font-mono">{{ change.name }}</code>
+            <span
+              v-if="change.detail"
+              class="text-txt-4"
+              >（{{ change.detail }}）</span
+            >
+          </li>
+        </ul>
+        <p class="text-txt-4 text-[10px]">
+          {{
+            t('共 {value0} 条语句将被执行，可在 SQL 预览中查看完整内容。', {
+              value0: editing
+                ? alterResult.statements.length
+                : createStatements.length,
+            })
+          }}
+        </p>
+      </div>
+      <template #footer>
+        <AppButton
+          size="sm"
+          @click="confirmOpen = false"
+          >{{ t('取消') }}</AppButton
+        >
+        <AppButton
+          variant="primary"
+          size="sm"
+          @click="confirmSave"
+          >{{ editing ? t('保存修改') : t('创建表') }}</AppButton
+        >
+      </template>
+    </AppDialog>
 
     <!-- 底栏只在出错时说话；没问题就安静地报个数 -->
     <footer class="designer-footer">
@@ -889,21 +1447,6 @@ const editorDisabled = computed(
   min-height: 0;
   flex: 1;
   flex-direction: column;
-}
-.sql-preview {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  margin: 10px;
-  border: 1px solid var(--color-line-soft);
-  border-radius: 9px;
-  background: color-mix(in oklch, var(--color-panel) 78%, transparent);
-  padding: 14px;
-  color: var(--color-txt-2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.7;
-  box-shadow: inset 0 1px var(--glass-highlight);
 }
 .designer-footer {
   display: flex;

@@ -341,9 +341,11 @@ onBeforeUnmount(() => clearTimeout(feedbackTimer))
     flex-shrink: 0;
     padding: 2px 6px;
     border-radius: 4px;
+  }
+  .markdown-body :deep(.md-code-header button:enabled) {
     cursor: pointer;
   }
-  .markdown-body :deep(.md-code-header button:hover) {
+  .markdown-body :deep(.md-code-header button:enabled:hover) {
     background: var(--color-hover);
     color: var(--color-txt);
   }

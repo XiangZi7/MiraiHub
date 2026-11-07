@@ -16,6 +16,8 @@ import type {
   McpServerInput,
   McpProbe,
   ShellCommandSuggestion,
+  SqlAssistInput,
+  SqlAssistResult,
 } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -192,3 +194,28 @@ export function errorMessage(error: unknown): string {
     return String(error.message)
   return String(error)
 }
+
+/** SQL 编辑器的一次性 AI 调用：onText 收到累计文本，可用 requestId 中止。 */
+export async function sqlAssist(
+  target: AgentTarget,
+  requestId: string,
+  input: SqlAssistInput,
+  onText: (text: string) => void
+): Promise<SqlAssistResult> {
+  const channel = new Channel<string>()
+  channel.onmessage = onText
+  try {
+    return await call<SqlAssistResult>('ai_sql_assist', {
+      target,
+      requestId,
+      input,
+      onProgress: channel,
+    })
+  } finally {
+    channel.onmessage = () => {}
+  }
+}
+
+/** 中止进行中的 SQL AI 请求；请求已结束时无副作用。 */
+export const cancelSqlAssist = (requestId: string) =>
+  call<void>('ai_sql_assist_cancel', { requestId })

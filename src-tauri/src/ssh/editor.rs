@@ -1,7 +1,7 @@
 //! UTF-8 editing of remote regular files.
 use super::{tunnels::random_id, SessionManager};
 use crate::{
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, ErrorKind},
     platform::remote_editor::RemoteEditorWindows,
 };
 use russh_sftp::{
@@ -30,6 +30,34 @@ pub struct TextDocument {
 struct Document {
     owner: String,
     view: TextDocument,
+    /// 打开或最近一次保存后远端文件的版本（大小 + 修改时间），保存前据此检测冲突
+    version: RemoteVersion,
+}
+/// 远端文件版本指纹。SFTP v3 的 mtime 精度为秒，配合大小一起比较。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RemoteVersion {
+    size: Option<u64>,
+    mtime: Option<u32>,
+}
+impl RemoteVersion {
+    fn of(attrs: &FileAttributes) -> Self {
+        Self {
+            size: attrs.size,
+            mtime: attrs.mtime,
+        }
+    }
+}
+/// 远端在打开后被他人修改时返回的冲突错误，前端据此提供覆盖 / 重新加载选项。
+fn remote_changed() -> AppError {
+    AppError::new(
+        ErrorKind::Conflict,
+        "远端文件已被修改，请选择覆盖保存或重新加载",
+    )
+}
+/// 原子保存使用的同目录临时文件：`.<name>.miraihub.tmp`。
+fn temp_path(path: &str) -> String {
+    let (parent, name) = path.rsplit_once('/').unwrap_or(("", path));
+    format!("{parent}/.{name}.miraihub.tmp")
 }
 #[derive(Default)]
 pub struct EditorManager {
@@ -150,6 +178,86 @@ pub(crate) async fn write_file(sftp: &SftpSession, path: &str, bytes: &[u8]) -> 
     file.shutdown().await?;
     Ok(())
 }
+/// 把内容完整写入临时文件并返回其属性；失败时尽力清理残留。
+async fn write_temp(
+    sftp: &SftpSession,
+    temp: &str,
+    bytes: &[u8],
+    permissions: Option<u32>,
+) -> AppResult<FileAttributes> {
+    let mut attrs = FileAttributes::empty();
+    attrs.permissions = permissions;
+    let result = async {
+        let mut file = sftp
+            .open_with_flags_and_attributes(
+                temp,
+                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
+                attrs,
+            )
+            .await
+            .map_err(sftp_error)?;
+        file.write_all(bytes).await?;
+        file.flush().await?;
+        file.sync_all().await.map_err(sftp_error)?;
+        file.shutdown().await?;
+        // 创建时的权限会被远端 umask 削减，写完后再显式设置一次
+        if permissions.is_some() {
+            let mut mode = FileAttributes::empty();
+            mode.permissions = permissions;
+            sftp.set_metadata(temp, mode).await.map_err(sftp_error)?;
+        }
+        sftp.symlink_metadata(temp).await.map_err(sftp_error)
+    }
+    .await;
+    if result.is_err() {
+        let _ = sftp.remove_file(temp).await;
+    }
+    result
+}
+/// 用临时文件替换目标：先直接 rename（部分服务器允许覆盖），
+/// 不允许时把原文件挪成备份再落位，落位失败则还原备份。
+async fn replace_with_temp(sftp: &SftpSession, temp: &str, path: &str) -> AppResult<()> {
+    if sftp.rename(temp, path).await.is_ok() {
+        return Ok(());
+    }
+    let backup = format!("{}.bak", temp.trim_end_matches(".tmp"));
+    let _ = sftp.remove_file(&backup).await;
+    sftp.rename(path, &backup).await.map_err(sftp_error)?;
+    if let Err(error) = sftp.rename(temp, path).await {
+        let _ = sftp.rename(&backup, path).await;
+        return Err(sftp_error(error));
+    }
+    let _ = sftp.remove_file(&backup).await;
+    Ok(())
+}
+/// 原子保存：写入同目录临时文件后 rename 覆盖，尽量保留原权限。
+///
+/// 以下情况回退为直接截断写入原文件：
+/// - 目录不可写，临时文件建不出来；
+/// - 临时文件的属主 / 属组与原文件不同（rename 会悄悄改变文件归属）；
+/// - rename 失败。
+pub(crate) async fn save_atomic(
+    sftp: &SftpSession,
+    path: &str,
+    bytes: &[u8],
+    original: &FileAttributes,
+) -> AppResult<()> {
+    let temp = temp_path(path);
+    let permissions = original.permissions.map(|mode| mode & 0o7777);
+    let replaced = match write_temp(sftp, &temp, bytes, permissions).await {
+        Ok(written) => {
+            let same_owner = (original.uid.is_none() || written.uid == original.uid)
+                && (original.gid.is_none() || written.gid == original.gid);
+            same_owner && replace_with_temp(sftp, &temp, path).await.is_ok()
+        }
+        Err(_) => false,
+    };
+    if !replaced {
+        let _ = sftp.remove_file(&temp).await;
+        write_file(sftp, path, bytes).await?;
+    }
+    Ok(())
+}
 #[tauri::command]
 pub async fn ssh_text_open(
     window: WebviewWindow,
@@ -173,11 +281,11 @@ pub async fn ssh_text_open(
             return Err(AppError::invalid_input("请打开符号链接的实际目标文件"));
         }
         let path = sftp.canonicalize(path).await.map_err(sftp_error)?;
-        let (bytes, _) = read_file(&sftp, &path).await?;
+        let (bytes, attrs) = read_file(&sftp, &path).await?;
         let (text, line_ending, bom) = decode(&bytes)?;
-        Ok::<_, AppError>((path, text, line_ending, bom))
+        Ok::<_, AppError>((path, text, line_ending, bom, RemoteVersion::of(&attrs)))
     };
-    let (path, text, line_ending, bom) = tokio::time::timeout(Duration::from_secs(20), operation)
+    let (path, text, line_ending, bom, version) = tokio::time::timeout(Duration::from_secs(20), operation)
         .await
         .map_err(|_| AppError::internal("读取远端文件超时"))??;
     let view = TextDocument {
@@ -206,6 +314,7 @@ pub async fn ssh_text_open(
         Document {
             owner: window.label().to_owned(),
             view: view.clone(),
+            version,
         },
     );
     Ok(view)
@@ -217,6 +326,7 @@ pub async fn ssh_text_save(
     editor: State<'_, EditorManager>,
     id: String,
     text: String,
+    force: Option<bool>,
 ) -> AppResult<TextDocument> {
     // Serialize saves from this editor window.
     let mut documents = editor.documents.lock().await;
@@ -227,17 +337,26 @@ pub async fn ssh_text_save(
     let bytes = encode(&text, &document.view.line_ending, document.view.bom)?;
     let session = manager.get(&document.view.session_id).await?;
     let path = document.view.path.clone();
+    let expected = document.version;
+    let force = force.unwrap_or(false);
     let operation = async {
         let sftp = session.open_sftp().await?;
         let attrs = sftp.symlink_metadata(&path).await.map_err(sftp_error)?;
         if !attrs.is_regular() || attrs.is_symlink() {
             return Err(AppError::invalid_input("仅可保存普通文件"));
         }
-        write_file(&sftp, &path, &bytes).await
+        // 打开后远端被他人改过：除非用户明确选择覆盖，否则拒绝保存
+        if !force && RemoteVersion::of(&attrs) != expected {
+            return Err(remote_changed());
+        }
+        save_atomic(&sftp, &path, &bytes, &attrs).await?;
+        let saved = sftp.symlink_metadata(&path).await.map_err(sftp_error)?;
+        Ok(RemoteVersion::of(&saved))
     };
-    tokio::time::timeout(Duration::from_secs(45), operation)
+    let version = tokio::time::timeout(Duration::from_secs(45), operation)
         .await
         .map_err(|_| AppError::internal("保存超时，请重新加载核对远端文件"))??;
+    document.version = version;
     document.view.text = text;
     Ok(document.view.clone())
 }
@@ -292,5 +411,22 @@ mod tests {
         assert!(same_metadata(&a, &b));
         b.mtime = Some(5);
         assert!(!same_metadata(&a, &b));
+    }
+    #[test]
+    fn remote_version_tracks_size_and_mtime() {
+        let mut a = FileAttributes::empty();
+        a.size = Some(10);
+        a.mtime = Some(4);
+        let mut b = a.clone();
+        b.permissions = Some(0o600);
+        assert_eq!(RemoteVersion::of(&a), RemoteVersion::of(&b));
+        b.size = Some(11);
+        assert_ne!(RemoteVersion::of(&a), RemoteVersion::of(&b));
+        assert!(matches!(remote_changed().kind, ErrorKind::Conflict));
+    }
+    #[test]
+    fn temp_file_sits_next_to_target() {
+        assert_eq!(temp_path("/etc/nginx.conf"), "/etc/.nginx.conf.miraihub.tmp");
+        assert_eq!(temp_path("/a.txt"), "/.a.txt.miraihub.tmp");
     }
 }

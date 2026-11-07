@@ -2,6 +2,7 @@ import { i18n } from '@/i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import * as api from '@/api/operations'
+import { isAppError } from '@/api/ssh'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
 import { textMetrics } from '@/utils/text-metrics'
 
@@ -25,17 +26,21 @@ export function useRemoteTextDocument(
     message: '',
     // 待确认的放弃草稿动作
     discard: '' as '' | 'close',
+    // 保存时发现远端文件已被他人修改，等待用户选择覆盖、重新加载或取消
+    conflict: false,
   })
 
   const dirty = computed(
     () => !!state.document && state.draft !== state.document.text
   )
   let alive = true
+  // 从远端读取文件内容，替换当前文档与草稿
   async function load(): Promise<void> {
     if (state.busy) return
     state.busy = true
     state.error = ''
     state.message = ''
+    state.conflict = false
     try {
       const doc = await api.openText(request.sessionId, request.path)
       if (!alive) {
@@ -52,7 +57,8 @@ export function useRemoteTextDocument(
       state.busy = false
     }
   }
-  async function save(): Promise<void> {
+  // 保存草稿；force 为 true 时跳过远端变更检测直接覆盖
+  async function save(force = false): Promise<void> {
     if (!dirty.value || !state.document || state.busy) return
     if (textMetrics(state.draft).bytes > 1024 * 1024) {
       state.error = i18n.global.t('草稿超过 1 MB，请缩短后再保存')
@@ -62,16 +68,31 @@ export function useRemoteTextDocument(
     state.busy = true
     state.error = ''
     state.message = ''
+    state.conflict = false
     try {
-      const doc = await api.saveText(state.document.id, text)
+      const doc = await api.saveText(state.document.id, text, force)
       state.document = doc
       state.draft = doc.text
       state.message = i18n.global.t('已保存')
     } catch (error) {
-      state.error = api.errorMessage(error)
+      if (isAppError(error) && error.kind === 'conflict') state.conflict = true
+      else state.error = api.errorMessage(error)
     } finally {
       state.busy = false
     }
+  }
+  // 冲突时用户选择覆盖远端修改
+  function overwriteRemote(): void {
+    void save(true)
+  }
+  // 冲突时放弃本地草稿并重新读取远端内容
+  function reloadRemote(): void {
+    state.conflict = false
+    void load()
+  }
+  // 关闭冲突提示，保留草稿稍后处理
+  function dismissConflict(): void {
+    state.conflict = false
   }
   function requestClose(): void {
     if (state.busy) {
@@ -92,7 +113,7 @@ export function useRemoteTextDocument(
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
       event.preventDefault()
       event.stopPropagation()
-      if (!state.discard) void save()
+      if (!state.discard && !state.conflict) void save()
     }
   })
   useEventListener(window, 'beforeunload', (event: BeforeUnloadEvent) => {
@@ -120,5 +141,8 @@ export function useRemoteTextDocument(
     requestClose,
     confirmDiscard,
     save,
+    overwriteRemote,
+    reloadRemote,
+    dismissConflict,
   }
 }

@@ -222,6 +222,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         title: '数据库',
         fields: [
           {
+            key: 'sqlAiInlineCompletion',
+            label: 'SQL AI 内联补全',
+            description: '开启后光标前后的 SQL 会发送给 AI 模型',
+            control: 'switch',
+          },
+          {
             key: 'shortcutDbNewQuery',
             label: '新建查询',
             control: 'shortcut',

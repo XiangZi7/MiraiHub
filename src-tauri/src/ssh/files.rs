@@ -288,6 +288,160 @@ pub async fn delete_path(session: &SshSession, path: &str, is_directory: bool) -
     }
 }
 
+/// 拒绝对根目录或家目录这类“整盘”路径做递归操作。
+fn validate_tree_root(path: &str) -> SshResult<()> {
+    validate_remote_path(path)?;
+    let trimmed = path.trim_end_matches('/');
+    if !path.starts_with('/') || trimmed.is_empty() || trimmed.split('/').any(|part| part == "..") {
+        return Err(SshError::InvalidInput(
+            "请提供有效的远端绝对路径，且不能是根目录".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// 目录项的属性：READDIR 自带 lstat 结果时直接用，服务器没给权限位时再单独 lstat。
+async fn entry_attributes(
+    sftp: &SftpSession,
+    path: &str,
+    listed: FileAttributes,
+) -> SshResult<FileAttributes> {
+    if listed.permissions.is_some() {
+        return Ok(listed);
+    }
+    sftp.symlink_metadata(path)
+        .await
+        .map_err(|error| tree_error("读取", path, error))
+}
+
+/// 递归操作中的失败带上具体路径，便于用户定位。
+fn tree_error(action: &str, path: &str, error: russh_sftp::client::error::Error) -> SshError {
+    SshError::Sftp(format!("{action} {path} 失败：{error}"))
+}
+
+/// 递归删除远端目录：后序遍历，先删文件与软链，再删已清空的目录。
+///
+/// 软链只删除链接本身，不跟随进入目标。遇到第一个错误立即停止，
+/// 错误信息包含失败路径与已删除数量。返回删除的项目数（含目录自身）。
+pub async fn delete_tree(session: &SshSession, path: &str) -> SshResult<u64> {
+    validate_tree_root(path)?;
+    let sftp = session.open_sftp().await?;
+    let root = sftp
+        .symlink_metadata(path)
+        .await
+        .map_err(|error| tree_error("读取", path, error))?;
+    let mut deleted = 0u64;
+    let mut pending = vec![(path.trim_end_matches('/').to_owned(), root, false)];
+    while let Some((current, attrs, visited)) = pending.pop() {
+        let result = if attrs.is_dir() && !attrs.is_symlink() {
+            if visited {
+                sftp.remove_dir(&current)
+                    .await
+                    .map_err(|error| tree_error("删除目录", &current, error))
+            } else {
+                let entries = sftp
+                    .read_dir(&current)
+                    .await
+                    .map_err(|error| tree_error("读取目录", &current, error));
+                match entries {
+                    Ok(entries) => {
+                        pending.push((current.clone(), attrs, true));
+                        for entry in entries {
+                            let child = join_path(&current, &entry.file_name());
+                            let child_attrs =
+                                entry_attributes(&sftp, &child, entry.metadata()).await?;
+                            pending.push((child, child_attrs, false));
+                        }
+                        continue;
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+        } else {
+            sftp.remove_file(&current)
+                .await
+                .map_err(|error| tree_error("删除", &current, error))
+        };
+        match result {
+            Ok(()) => deleted += 1,
+            Err(error) => {
+                return Err(SshError::Sftp(format!("{error}（已删除 {deleted} 项）")));
+            }
+        }
+    }
+    Ok(deleted)
+}
+
+/// 修改远端路径的权限位（SFTP setstat）。
+///
+/// `recursive` 仅对目录生效，遍历时不跟随软链（软链本身的权限无意义）。
+/// 目录当前缺少属主读/执行位时先改目录再进入，否则先处理子项再改目录，
+/// 避免收紧权限后无法继续遍历。返回修改的项目数。
+pub async fn chmod_path(
+    session: &SshSession,
+    path: &str,
+    mode: u32,
+    recursive: bool,
+) -> SshResult<u64> {
+    if mode > 0o7777 {
+        return Err(SshError::InvalidInput("权限值需在 0000–7777 之间".into()));
+    }
+    if recursive {
+        validate_tree_root(path)?;
+    } else {
+        validate_remote_path(path)?;
+    }
+    let sftp = session.open_sftp().await?;
+    let set_mode = |target: String| {
+        let sftp = &sftp;
+        async move {
+            let mut attrs = FileAttributes::empty();
+            attrs.permissions = Some(mode);
+            sftp.set_metadata(&target, attrs)
+                .await
+                .map_err(|error| tree_error("修改权限", &target, error))
+        }
+    };
+    let root = sftp
+        .symlink_metadata(path)
+        .await
+        .map_err(|error| tree_error("读取", path, error))?;
+    if !recursive || !root.is_dir() || root.is_symlink() {
+        set_mode(path.to_owned()).await?;
+        return Ok(1);
+    }
+    let mut changed = 0u64;
+    let mut pending = vec![(path.trim_end_matches('/').to_owned(), root, false)];
+    while let Some((current, attrs, visited)) = pending.pop() {
+        if attrs.is_symlink() {
+            continue;
+        }
+        if !attrs.is_dir() || visited {
+            set_mode(current).await?;
+            changed += 1;
+            continue;
+        }
+        let owner_bits = attrs.permissions.unwrap_or(0) & 0o500;
+        let change_first = owner_bits != 0o500;
+        if change_first {
+            set_mode(current.clone()).await?;
+            changed += 1;
+        } else {
+            pending.push((current.clone(), attrs, true));
+        }
+        let entries = sftp
+            .read_dir(&current)
+            .await
+            .map_err(|error| tree_error("读取目录", &current, error))?;
+        for entry in entries {
+            let child = join_path(&current, &entry.file_name());
+            let child_attrs = entry_attributes(&sftp, &child, entry.metadata()).await?;
+            pending.push((child, child_attrs, false));
+        }
+    }
+    Ok(changed)
+}
+
 pub async fn upload_file(
     app: &AppHandle,
     session: &SshSession,
@@ -1106,17 +1260,26 @@ fn parse_listing(stdout: &str) -> DirectoryListing {
 /// 简单 split_whitespace 取最后一段会把 "my notes.txt" 截成 "notes.txt"。
 fn parse_entry(line: &str, dir: &str) -> Option<RemoteFile> {
     // perms links owner group size date time
-    let (head, rest) = take_fields(line, 7)?;
+    let (mut head, mut rest) = take_fields(line, 7)?;
+
+    // 字符 / 块设备的大小列是 "主设备号, 次设备号" 两段，多吃一列才能对齐后面的日期
+    let device = head[4].ends_with(',');
+    if device {
+        let (extra, tail) = next_field(rest)?;
+        head.remove(4);
+        head.push(extra);
+        rest = tail;
+    }
 
     let permissions = head[0];
     let owner = head[2];
     let group = head[3];
-    let size: u64 = head[4].parse().unwrap_or(0);
+    let size: u64 = if device { 0 } else { head[4].parse().unwrap_or(0) };
 
     // 第 8 个字段两种格式都有，但含义不同：
     // full-iso 里是时区（+0800），短格式里是时间（09:41）或年份（2023）。
     // 无论哪种，文件名都从它之后开始
-    let (eighth, name_part) = next_field(rest)?;
+    let (eighth, name_part) = next_name_field(rest)?;
 
     // full-iso 不被内核自带的 ls 支持时会退化成短格式，
     // 短格式没有年份信息，索性不猜时间，让前端显示为未知
@@ -1126,13 +1289,15 @@ fn parse_entry(line: &str, dir: &str) -> Option<RemoteFile> {
         0
     };
 
-    // 符号链接的 " -> 目标" 要从名字里摘出来
+    // 符号链接的 " -> 目标" 要从名字里摘出来；普通文件名本身可能含 " -> "，不能拆
+    let kind = kind_of(permissions);
+    let name_part = name_part.trim_end_matches('\r');
     let (name, link_target) = match name_part.split_once(" -> ") {
-        Some((name, target)) => (name, Some(target.trim_end().to_owned())),
-        None => (name_part, None),
+        Some((name, target)) if kind == FileKind::Symlink => (name, Some(target.to_owned())),
+        _ => (name_part, None),
     };
 
-    let name = name.trim_end();
+    // 不再 trim：文件名首尾的空格是名字的一部分，去掉后路径会指向别的文件
     if name.is_empty() || name == "." || name == ".." {
         return None;
     }
@@ -1140,7 +1305,7 @@ fn parse_entry(line: &str, dir: &str) -> Option<RemoteFile> {
     Some(RemoteFile {
         path: join_path(dir, name),
         name: name.to_owned(),
-        kind: kind_of(permissions),
+        kind,
         size,
         modified_at,
         permissions: permissions.to_owned(),
@@ -1177,6 +1342,18 @@ fn next_field(input: &str) -> Option<(&str, &str)> {
     let end = trimmed.find(char::is_whitespace).unwrap_or(trimmed.len());
 
     Some((&trimmed[..end], trimmed[end..].trim_start()))
+}
+
+/// 取文件名前的最后一个字段：与 `next_field` 不同，字段后只跳过一个分隔空格，
+/// 保留文件名开头的空格。
+fn next_name_field(input: &str) -> Option<(&str, &str)> {
+    let trimmed = input.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let end = trimmed.find(char::is_whitespace)?;
+    let rest = &trimmed[end..];
+    Some((&trimmed[..end], rest.strip_prefix(' ').unwrap_or(rest)))
 }
 
 /// 是否是 `+0800` / `-0500` 这样的时区偏移。
@@ -1350,6 +1527,45 @@ mod tests {
         assert_eq!(listing.path, "/home/ubuntu");
         assert_eq!(listing.entries.len(), 1);
         assert_eq!(listing.entries[0].name, "a.txt");
+    }
+
+    #[test]
+    fn keeps_arrow_and_edge_spaces_in_regular_file_names() {
+        let line = "-rw-r--r-- 1 u g 10 2024-05-22 09:41:21.000000000 +0800  a -> b ";
+        let entry = parse_entry(line, "/tmp").unwrap();
+
+        assert_eq!(entry.name, " a -> b ");
+        assert_eq!(entry.link_target, None);
+    }
+
+    #[test]
+    fn symlink_with_spaces_on_both_sides() {
+        let line =
+            "lrwxrwxrwx 1 u g 9 2024-05-22 09:41:21.000000000 +0800 my link -> my target";
+        let entry = parse_entry(line, "/tmp").unwrap();
+
+        assert_eq!(entry.name, "my link");
+        assert_eq!(entry.link_target.as_deref(), Some("my target"));
+    }
+
+    #[test]
+    fn parses_device_entries_with_major_minor() {
+        let line = "crw-rw---- 1 root tty 4,   1 2024-05-20 18:30:00.000000000 +0000 tty1";
+        let entry = parse_entry(line, "/dev").unwrap();
+
+        assert_eq!(entry.name, "tty1");
+        assert_eq!(entry.kind, FileKind::Other);
+        assert_eq!(entry.size, 0);
+        assert!(entry.modified_at > 0);
+    }
+
+    #[test]
+    fn recursive_operations_refuse_root() {
+        assert!(validate_tree_root("/").is_err());
+        assert!(validate_tree_root("//").is_err());
+        assert!(validate_tree_root("relative").is_err());
+        assert!(validate_tree_root("/var/../").is_err());
+        assert!(validate_tree_root("/var/www").is_ok());
     }
 
     #[test]

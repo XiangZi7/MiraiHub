@@ -791,8 +791,9 @@ export function buildCreateTableSql(options: TableDesignerOptions): string {
 export function buildCreateTableStatements({
   kind,
   draft,
+  extraTypes,
 }: TableDesignerOptions): string[] {
-  const validation = validateTableDraft({ kind, draft })
+  const validation = validateTableDraft({ kind, draft, extraTypes })
   if (!validation.valid) throw new Error(validation.errors[0])
 
   const table = qualifiedName(draft.schema, draft.name, kind)

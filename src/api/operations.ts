@@ -66,8 +66,9 @@ export const forgetBatch = (id: string) =>
   call<void>('ssh_batch_forget', { id })
 export const openText = (sessionId: string, path: string) =>
   call<TextDocument>('ssh_text_open', { sessionId, path })
-export const saveText = (id: string, text: string) =>
-  call<TextDocument>('ssh_text_save', { id, text })
+// 保存远端文本；force 为 true 时忽略“远端已被修改”的冲突检测直接覆盖。
+export const saveText = (id: string, text: string, force = false) =>
+  call<TextDocument>('ssh_text_save', { id, text, force })
 export const closeText = (id: string) => call<void>('ssh_text_close', { id })
 export const writeBackup = (path: string, payload: unknown, password: string) =>
   call<void>('connection_backup_write', { path, payload, password })

@@ -54,6 +54,7 @@ export const DEFAULT_SETTINGS = {
   sshTimeout: '30',
   keepConnectionAlive: true,
   autoReconnect: false,
+  sqlAiInlineCompletion: false,
   databaseTimeout: '30',
   maxDatabaseConnections: '10',
   sqlExecutionTimeout: '300',

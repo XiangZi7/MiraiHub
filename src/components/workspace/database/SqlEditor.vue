@@ -38,6 +38,9 @@ import {
 } from '@/utils/sql-snippets'
 import { useSqlSnippets } from '@/composables/useSqlSnippets'
 import DatabaseSqlSnippetsDialog from './DatabaseSqlSnippetsDialog.vue'
+import SqlAiPanel, { type SqlAiPanelMode } from './ai/SqlAiPanel.vue'
+import { sqlAiUsage, useDatabaseAi } from '@/composables/useDatabaseAi'
+import { cleanInlineCompletion } from '@/utils/sql-ai'
 import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
@@ -67,6 +70,8 @@ const emit = defineEmits<{
   askAgent: [content: string, intent: 'explain' | 'optimize']
   /** 请求分析某条语句的执行计划 */
   explain: [sql: string]
+  /** 接受 AI 修复并重跑；由查询面板判断是否继续迭代 */
+  aiFixRun: [sql: string]
 }>()
 
 const sql = defineModel<string>({ required: true })
@@ -85,6 +90,22 @@ const replaceEnd = shallowRef(0)
 const filteredSuggestions = shallowRef<SqlSuggestion[]>([])
 const snippetsDialogOpen = shallowRef(false)
 const { customSnippets } = useSqlSnippets()
+
+/** 当前打开的 AI 面板及其作用的文本范围；key 变化时重建面板以开始新请求。 */
+const aiPanel = shallowRef<{
+  key: number
+  mode: SqlAiPanelMode
+  source: string
+  from: number
+  to: number
+  error: string
+  round: number
+} | null>(null)
+let aiPanelKey = 0
+const inline = useDatabaseAi()
+const ghostText = shallowRef('')
+const ghostAt = shallowRef(0)
+let ghostTimer: ReturnType<typeof setTimeout> | undefined
 
 /** 进行中的片段占位跳转；只驱动按键逻辑，不参与渲染。stops 按文本位置排序。 */
 interface SnippetSession {
@@ -120,6 +141,13 @@ const state = reactive({
 })
 const { contextMenu, autocompleteStyle } = toRefs(state)
 const contextItems = computed<ContextMenuItem[]>(() => [
+  {
+    id: 'ai-generate',
+    label: t('AI 生成 / 改写 SQL'),
+    icon: 'lucide:sparkle',
+    shortcut: 'Ctrl+K',
+    disabled: props.disabled,
+  },
   {
     id: 'ai-explain',
     label: t('让 AI 解释选中 SQL'),
@@ -240,11 +268,15 @@ async function handleContextAction(id: string): Promise<void> {
   state.contextMenu.open = false
   if (id === 'ai-explain' || id === 'ai-optimize') {
     if (!props.disabled && selection.selected.trim())
-      emit(
-        'askAgent',
-        selection.selected,
-        id === 'ai-optimize' ? 'optimize' : 'explain'
+      openAiPanel(
+        id === 'ai-optimize' ? 'optimize' : 'explain',
+        selection.start,
+        selection.end
       )
+    return
+  }
+  if (id === 'ai-generate') {
+    if (!props.disabled) openAiPanel('generate', selection.start, selection.end)
     return
   }
   if (id === 'run-current' || id === 'explain') {
@@ -646,6 +678,27 @@ function insertSuggestion(value: SqlSuggestion): void {
 /** 保留运行、保存和补全快捷键，并在候选列表内处理选择与滚动。 */
 function handleKeydown(event: KeyboardEvent): void {
   if (event.isComposing) return
+  if (ghostText.value && event.key === 'Tab' && !event.shiftKey) {
+    event.preventDefault()
+    acceptGhost()
+    return
+  }
+  // 单独按下修饰键不算输入，其余按键都中止内联补全。
+  if (!['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) clearGhost()
+  // Ctrl+K 在编辑器内优先于全局命令面板。
+  if (
+    (event.ctrlKey || event.metaKey) &&
+    !event.shiftKey &&
+    !event.altKey &&
+    event.key.toLowerCase() === 'k'
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    const editor = editorRef.value
+    if (editor && !props.disabled)
+      openAiPanel('generate', editor.selectionStart, editor.selectionEnd)
+    return
+  }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault()
     emit('save')
@@ -743,9 +796,11 @@ function handleInput(event: Event): void {
   ) {
     autocompleteOpen.value = false
     autocompleteForced.value = false
+    scheduleGhost()
     return
   }
   updateAutocomplete()
+  scheduleGhost()
 }
 
 function syncScroll(): void {
@@ -755,7 +810,133 @@ function syncScroll(): void {
   if (gutterRef.value) gutterRef.value.scrollTop = scroll.top
 }
 
-defineExpose({ runnableSql, revealRange })
+/** 打开 AI 面板并记下作用范围；打开时收起内联补全和候选列表。 */
+function openAiPanel(
+  mode: SqlAiPanelMode,
+  from: number,
+  to: number,
+  error = '',
+  round = 0
+): void {
+  clearGhost()
+  autocompleteOpen.value = false
+  aiPanel.value = {
+    key: ++aiPanelKey,
+    mode,
+    source: sql.value.slice(from, to),
+    from,
+    to,
+    error,
+    round,
+  }
+}
+
+/** 由查询面板调用：对失败语句发起修复，只作用于该语句的范围。 */
+function startAiFix(
+  range: { start: number; end: number },
+  error: string,
+  round = 0
+): void {
+  openAiPanel('fix', range.start, range.end, error, round)
+}
+
+/** 应用 AI 结果：原范围内容已变化时拒绝，避免覆盖用户的新输入；可选立即运行。 */
+function acceptAi(text: string, run: boolean): void {
+  const panel = aiPanel.value
+  if (!panel || props.disabled) return
+  if (sql.value.slice(panel.from, panel.to) !== panel.source) {
+    toast.warning(t('内容已变化，无法应用 AI 结果'))
+    return
+  }
+  aiPanel.value = null
+  replaceEditorRange(panel.from, panel.to, text)
+  if (!run) return
+  if (panel.mode === 'fix') emit('aiFixRun', text)
+  else emit('run', text)
+}
+
+/** 收起内联补全并中止未完成的请求；任何输入、点击、失焦都会走到这里。 */
+function clearGhost(): void {
+  clearTimeout(ghostTimer)
+  ghostTimer = undefined
+  inline.cancel()
+  ghostText.value = ''
+}
+
+/** 取光标前文本里提到的表的字段，给内联补全当上下文。 */
+function inlineColumns(before: string): string {
+  const lower = before.toLowerCase()
+  return Object.entries(props.tableColumns)
+    .filter(([table]) => lower.includes(table.toLowerCase()))
+    .slice(0, 12)
+    .map(([table, columns]) => `${table}(${columns.slice(0, 60).join(', ')})`)
+    .join('\n')
+}
+
+/** 输入后防抖 600ms 请求内联补全；只在开关开启、光标位于行尾且无候选列表时触发。 */
+function scheduleGhost(): void {
+  clearGhost()
+  const editor = editorRef.value
+  if (
+    !shortcuts.sqlAiInlineCompletion ||
+    !editor ||
+    props.disabled ||
+    aiPanel.value ||
+    autocompleteOpen.value ||
+    editor.selectionStart !== editor.selectionEnd
+  )
+    return
+  const cursor = editor.selectionStart
+  const source = sql.value
+  const next = source[cursor]
+  if (!source.slice(0, cursor).trim() || (next && next !== '\n')) return
+  ghostTimer = setTimeout(() => void requestGhost(cursor, source), 600)
+}
+
+/** 请求内联补全；文本或光标已变化的回复直接丢弃，失败静默以免打断输入。 */
+async function requestGhost(cursor: number, source: string): Promise<void> {
+  const before = source.slice(0, cursor)
+  try {
+    const result = await inline.run({
+      mode: 'inline',
+      sql: before.slice(-6000),
+      instruction: source.slice(cursor, cursor + 1000),
+      extra: inlineColumns(before),
+    })
+    const editor = editorRef.value
+    if (
+      !result ||
+      !editor ||
+      sql.value !== source ||
+      editor.selectionStart !== cursor ||
+      editor.selectionEnd !== cursor
+    )
+      return
+    const completion = cleanInlineCompletion(result.text, before)
+    // 光标后还有内容时只显示首行，避免幽灵文字压住后面的行。
+    ghostText.value =
+      cursor < source.length ? (completion.split('\n')[0] ?? '') : completion
+    ghostAt.value = cursor
+  } catch {
+    ghostText.value = ''
+  }
+}
+
+/** Tab 接受内联补全；写入保留撤销栈。 */
+function acceptGhost(): void {
+  const text = ghostText.value
+  const at = ghostAt.value
+  clearGhost()
+  replaceEditorRange(at, at, text)
+  editorRef.value?.setSelectionRange(at + text.length, at + text.length)
+}
+
+// 外部改写文本（切换标签、历史回填）时幽灵文字不再对应当前内容。
+watch(sql, () => {
+  if (ghostText.value) ghostText.value = ''
+})
+
+defineExpose({ runnableSql, revealRange, startAiFix })
 </script>
 
 <template>
@@ -789,6 +970,11 @@ defineExpose({ runnableSql, revealRange })
         class="pointer-events-none absolute inset-0 overflow-hidden px-3 py-2 whitespace-pre"
         aria-hidden="true"
       ><code :style="{ display: 'block', transform: `translate(${-scroll.left}px, ${-scroll.top}px)` }"><span v-for="(token, index) in tokens" :key="index" :class="`sql-token-${token.kind}`">{{ token.text }}</span></code></pre>
+      <pre
+        v-if="ghostText"
+        class="pointer-events-none absolute inset-0 overflow-hidden px-3 py-2 whitespace-pre"
+        aria-hidden="true"
+      ><code :style="{ display: 'block', transform: `translate(${-scroll.left}px, ${-scroll.top}px)` }"><span class="invisible">{{ sql.slice(0, ghostAt) }}</span><span class="text-txt-4 italic">{{ ghostText }}</span></code></pre>
       <textarea
         ref="editor"
         v-model="sql"
@@ -798,12 +984,18 @@ defineExpose({ runnableSql, revealRange })
         :aria-label="t('SQL 编辑器')"
         :placeholder="t('输入 SQL；选中片段后按 Ctrl+Enter 可只执行选中内容')"
         @input="handleInput"
-        @click="updateAutocomplete()"
+        @click="
+          clearGhost();
+          updateAutocomplete()
+        "
         @keydown="handleKeydown"
         @keyup.left="updateAutocomplete()"
         @keyup.right="updateAutocomplete()"
         @scroll="syncScroll"
-        @blur="autocompleteOpen = false"
+        @blur="
+          autocompleteOpen = false;
+          clearGhost()
+        "
         @contextmenu.prevent.stop="openContextMenu"
         @pointerdown="captureContextSelection"
         @compositionend="
@@ -812,6 +1004,27 @@ defineExpose({ runnableSql, revealRange })
         "
       />
     </div>
+    <SqlAiPanel
+      v-if="aiPanel"
+      :key="aiPanel.key"
+      :mode="aiPanel.mode"
+      :source="aiPanel.source"
+      :error="aiPanel.error"
+      :round="aiPanel.round"
+      @accept="acceptAi"
+      @close="aiPanel = null"
+    />
+    <span
+      v-if="shortcuts.sqlAiInlineCompletion && sqlAiUsage.inlineRequests"
+      class="bg-panel/80 text-txt-4 pointer-events-none absolute right-3 bottom-1 z-10 rounded px-1.5 font-sans text-[10px] tabular-nums"
+    >
+      {{
+        t('AI 补全 {count} 次 · {tokens} tokens', {
+          count: sqlAiUsage.inlineRequests,
+          tokens: sqlAiUsage.inlineTokens,
+        })
+      }}
+    </span>
     <Teleport
       v-if="autocompleteOpen && filteredSuggestions.length"
       to="body"

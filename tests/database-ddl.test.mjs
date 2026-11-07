@@ -7,6 +7,8 @@ await load('src/i18n/index.ts')
 const {
   buildAlterTableSql,
   buildCreateTableSql,
+  buildCreateTableStatements,
+  summarizeTableChanges,
   validateTableDraft,
   parseStoredType,
   normalizeDataTypeLabel,
@@ -615,12 +617,22 @@ test('外键规则变化触发重建，复合外键保持原样', () => {
       {
         id: 'f1',
         name: 'fk_order',
-        column: 'order_id',
+        columns: ['order_id'],
         referencedSchema: 'app',
         referencedTable: 'orders',
-        referencedColumn: 'id',
+        referencedColumns: ['id'],
         onDelete: 'SET NULL',
         onUpdate: 'CASCADE',
+      },
+      {
+        id: 'f2',
+        name: 'fk_multi',
+        columns: ['a', 'b'],
+        referencedSchema: 'app',
+        referencedTable: 'items',
+        referencedColumns: ['x', 'y'],
+        onDelete: 'CASCADE',
+        onUpdate: 'NO ACTION',
       },
     ],
   }
@@ -638,12 +650,22 @@ test('外键规则变化触发重建，复合外键保持原样', () => {
       {
         id: 'f1',
         name: 'fk_order',
-        column: 'order_id',
+        columns: ['order_id'],
         referencedSchema: 'app',
         referencedTable: 'orders',
-        referencedColumn: 'id',
+        referencedColumns: ['id'],
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
+      },
+      {
+        id: 'f2',
+        name: 'fk_multi',
+        columns: ['a', 'b'],
+        referencedSchema: 'app',
+        referencedTable: 'items',
+        referencedColumns: ['x', 'y'],
+        onDelete: 'CASCADE',
+        onUpdate: 'NO ACTION',
       },
     ],
   }
@@ -888,4 +910,41 @@ test('MySQL 字符串默认值回填为字面量，自增非键字段被拦截',
   })
   assert.equal(validation.valid, false)
   assert.ok(validation.columnErrors.c?.length)
+})
+
+test('建表输出多列外键、检查约束、触发器与 MySQL 分区', () => {
+  const draft = optionsDraft({
+    autoIncrement: null,
+    columns: [
+      draftColumn(),
+      draftColumn({ id: 'c2', name: 'a', dataType: 'INT', primaryKey: false, autoIncrement: false, nullable: true }),
+      draftColumn({ id: 'c3', name: 'b', dataType: 'INT', primaryKey: false, autoIncrement: false, nullable: true }),
+    ],
+    foreignKeys: [
+      { id: 'f', name: 'fk_ab', columns: ['a', 'b'], referencedSchema: 'app', referencedTable: 'items', referencedColumns: ['x', 'y'], onDelete: 'CASCADE', onUpdate: 'NO ACTION' },
+    ],
+    checks: [{ id: 'k', name: 'chk_a', expression: 'a >= 0' }],
+    triggers: [{ id: 't', name: 'trg_a', timing: 'BEFORE', events: ['INSERT'], level: 'ROW', body: 'SET NEW.a = 1; SET NEW.b = 2', functionName: '' }],
+  })
+  const statements = buildCreateTableStatements({ kind: 'mysql', draft })
+  assert.match(statements[0], /FOREIGN KEY \(`a`, `b`\) REFERENCES `app`\.`items` \(`x`, `y`\)/u)
+  assert.match(statements[0], /CONSTRAINT `chk_a` CHECK \(a >= 0\)/u)
+  assert.match(statements[1], /CREATE TRIGGER `trg_a` BEFORE INSERT .* FOR EACH ROW BEGIN/su)
+  const mismatch = validateTableDraft({
+    kind: 'mysql',
+    draft: { ...draft, foreignKeys: [{ ...draft.foreignKeys[0], referencedColumns: ['x'] }] },
+  })
+  assert.equal(mismatch.valid, false)
+  assert.ok(mismatch.foreignKeyErrors.f?.length)
+
+  const partitioned = buildCreateTableSql({
+    kind: 'mysql',
+    draft: optionsDraft({
+      autoIncrement: null,
+      partition: { method: 'HASH', expression: 'id', count: '4', items: [] },
+    }),
+  })
+  assert.match(partitioned, /PARTITION BY HASH \(id\) PARTITIONS 4/u)
+  const summary = summarizeTableChanges('mysql', null, draft)
+  assert.ok(summary.some(item => item.target === '触发器' && item.action === 'add'))
 })

@@ -601,11 +601,12 @@
 @utility glass {
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  html.reduce-motion &,
-  html.material-solid & {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+}
+/* 用平铺选择器而不是 @utility 内嵌套，生产压缩后关闭模糊的规则才不会丢 */
+html.reduce-motion .glass,
+html.material-solid .glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* CSS zoom 不会重算 vh/vw，浏览器预览时补偿窗口尺寸以保留底部操作栏。 */

@@ -41,16 +41,20 @@ const load = sourceLoader({
     export function useEventListener() {}
   `),
   '@xterm/addon-fit': dataModule('export class FitAddon { fit() {} }'),
+  '@xterm/addon-unicode11': dataModule('export class Unicode11Addon {}'),
+  '@xterm/addon-web-links': dataModule('export class WebLinksAddon {}'),
   '@xterm/xterm': dataModule(`
     export class Terminal {
       cols = 80
       rows = 24
       output = []
       focuses = 0
+      unicode = {}
       constructor(options) { this.options = options }
       loadAddon() {}
       open() {}
       onData() {}
+      onSelectionChange() { return { dispose() {} } }
       write(data) { this.output.push(data) }
       writeln(data) { this.output.push(data) }
       focus() { this.focuses++ }

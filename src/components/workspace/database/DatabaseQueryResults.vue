@@ -36,6 +36,7 @@ import {
   type GridCopyFormat,
 } from '@/utils/database-grid'
 import ExplainPlanView from './ExplainPlanView.vue'
+import SqlAiResultAsk from './ai/SqlAiResultAsk.vue'
 import type { PlanNode } from '@/utils/explain-plan'
 import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
@@ -62,6 +63,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** 把报错连同失败语句交给 AI 修复 */
   fixError: [content: string]
+  /** 在编辑器内联修复失败语句 */
+  aiFix: [statement: DatabaseStatementResult]
   cancel: []
   retry: []
   /** 在编辑器中定位失败语句 */
@@ -71,11 +74,14 @@ const emit = defineEmits<{
 }>()
 
 const panelId = useId()
-type ViewTab = 'results' | 'messages' | 'plan'
+type ViewTab = 'results' | 'messages' | 'plan' | 'ask'
 const activeTab = shallowRef<ViewTab>('results')
 const viewTabs = computed(() => [
   { id: 'results' as const, label: t('结果') },
   { id: 'messages' as const, label: t('消息') },
+  ...(result.value?.columns.length
+    ? [{ id: 'ask' as const, label: t('问 AI') }]
+    : []),
   ...(props.plan || props.planLoading
     ? [{ id: 'plan' as const, label: t('执行计划') }]
     : []),
@@ -556,8 +562,12 @@ async function copyResult(): Promise<void> {
         </div>
       </Transition>
 
+      <SqlAiResultAsk
+        v-if="activeTab === 'ask'"
+        :statement="result"
+      />
       <div
-        v-if="activeTab === 'plan'"
+        v-else-if="activeTab === 'plan'"
         class="scroll-thin min-h-0 flex-1 overflow-auto p-2"
       >
         <div
@@ -718,6 +728,19 @@ async function copyResult(): Promise<void> {
                   :size="12"
                 />
                 {{ t('复制错误') }}
+              </AppButton>
+              <AppButton
+                v-if="failedStatement"
+                size="sm"
+                variant="primary"
+                :disabled="loading"
+                @click="emit('aiFix', failedStatement)"
+              >
+                <AppIcon
+                  name="lucide:wand-sparkles"
+                  :size="12"
+                />
+                {{ t('AI 修复') }}
               </AppButton>
               <AppButton
                 size="sm"

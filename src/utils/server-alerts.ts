@@ -13,6 +13,7 @@ export function serverAlerts(stats: SshSystemStats | null): string[] {
   const t = i18n.global.t
   const { cpu, memory, disk } = stats
   const alerts: string[] = []
+  // 已用量占总量的百分比，总量未知时视为 0
   const ratio = (used: number, total: number) =>
     total > 0 ? (used / total) * 100 : 0
   if (cpu.usage > SERVER_ALERT_PERCENT)

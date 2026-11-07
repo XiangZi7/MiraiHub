@@ -186,6 +186,30 @@ pub async fn ssh_delete_path(
     Ok(files::delete_path(&session, &path, is_directory).await?)
 }
 
+/// 递归删除远端目录，返回删除的项目数。
+#[tauri::command]
+pub async fn ssh_delete_tree(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    path: String,
+) -> AppResult<u64> {
+    let session = manager.get(&session_id).await?;
+    Ok(files::delete_tree(&session, &path).await?)
+}
+
+/// 修改远端权限位，目录可选递归应用到子项，返回修改的项目数。
+#[tauri::command]
+pub async fn ssh_chmod_path(
+    manager: State<'_, SessionManager>,
+    session_id: String,
+    path: String,
+    mode: u32,
+    recursive: bool,
+) -> AppResult<u64> {
+    let session = manager.get(&session_id).await?;
+    Ok(files::chmod_path(&session, &path, mode, recursive).await?)
+}
+
 /// 文件菜单的复制到目录操作，使用独立 SFTP 通道保留当前终端和 Agent。
 #[tauri::command]
 pub async fn ssh_copy_path(

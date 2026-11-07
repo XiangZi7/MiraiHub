@@ -6,12 +6,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use russh::client::{self, Handle, Msg};
-use russh::keys::{
-    known_hosts::{check_known_hosts_path, learn_known_hosts_path},
-    load_secret_key, PrivateKeyWithHashAlg, PublicKey,
-};
-use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect};
+use russh::client::{self, AuthResult, DisconnectReason, Handle, KeyboardInteractiveAuthResponse, Msg};
+use russh::keys::{load_secret_key, PrivateKeyWithHashAlg, PublicKey};
+use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect, MethodKind, MethodSet};
 use russh_sftp::client::SftpSession;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
@@ -19,7 +16,13 @@ use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
 use super::error::{SshError, SshResult};
 use super::events::{emit_status, StatusEvent};
+use super::known_hosts::{self, HostKeyCheck};
+use super::liveness::{self, LinkState};
 use super::models::{AuthMethod, CommandOutput, PtyOptions, SshConfig};
+use super::prompt::{
+    self, timeout_excluding_prompts, AuthPrompt, AuthPromptField, HostKeyPrompt, PauseClock,
+    Prompter,
+};
 use super::proxy;
 use super::sftp_stream::SftpStream;
 
@@ -27,14 +30,46 @@ use super::sftp_stream::SftpStream;
 const MAX_TRANSFER_CHANNELS: usize = 4;
 /// Reserve room for shell/exec channels even while path checks and transfers overlap.
 const MAX_METADATA_CHANNELS: usize = 2;
+/// 键盘交互认证最多来回的轮数，防止服务端无限追问。
+const MAX_KEYBOARD_INTERACTIVE_ROUNDS: usize = 12;
 
 /// 连接事件处理器。
 ///
-/// 主机密钥采用 TOFU：首次写入 ~/.ssh/known_hosts，之后严格比对。
+/// 主机密钥：已记录且一致直接放行；未知或变化时弹窗让用户决定（无前端时未知主机沿用 TOFU，变化一律拒绝）。
+/// 连接结束时（russh 后台任务退出、处理器被丢弃）通过 `link` 通知会话表清理。
 struct ClientHandler {
     host: String,
     port: u16,
     verify_host_key: bool,
+    link: Arc<LinkState>,
+    clock: Arc<PauseClock>,
+    prompter: Option<Arc<Prompter>>,
+    /// 测试用：覆盖 ~/.ssh/known_hosts
+    known_hosts: Option<std::path::PathBuf>,
+}
+
+impl ClientHandler {
+    fn new(config: &SshConfig, prompter: Option<Arc<Prompter>>) -> Self {
+        Self {
+            host: config.host.clone(),
+            port: config.port,
+            verify_host_key: config.verify_host_key,
+            link: Arc::default(),
+            clock: Arc::default(),
+            prompter,
+            known_hosts: None,
+        }
+    }
+
+    fn endpoint(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+}
+
+impl Drop for ClientHandler {
+    fn drop(&mut self) {
+        self.link.mark_closed();
+    }
 }
 
 impl client::Handler for ClientHandler {
@@ -44,29 +79,94 @@ impl client::Handler for ClientHandler {
         &mut self,
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        let fingerprint = server_public_key.fingerprint(Default::default());
+        let fingerprint = known_hosts::fingerprint(server_public_key);
         if !self.verify_host_key {
             log::warn!(
-                "已按设置跳过 {}:{} 的主机密钥校验（{fingerprint}）",
-                self.host,
-                self.port
+                "已按设置跳过 {} 的主机密钥校验（{fingerprint}）",
+                self.endpoint()
             );
             return Ok(true);
         }
 
-        let home = dirs::home_dir().ok_or(russh::keys::Error::NoHomeDir)?;
-        let known_hosts = home.join(".ssh").join("known_hosts");
-        if check_known_hosts_path(&self.host, self.port, server_public_key, &known_hosts)? {
-            return Ok(true);
-        }
+        let path = match &self.known_hosts {
+            Some(path) => path.clone(),
+            None => known_hosts::default_path()?,
+        };
+        let old_fingerprint =
+            match known_hosts::check(&self.host, self.port, server_public_key, &path)? {
+                HostKeyCheck::Trusted => return Ok(true),
+                HostKeyCheck::Unknown => None,
+                HostKeyCheck::Changed { old_fingerprint } => Some(old_fingerprint),
+            };
+        let changed = old_fingerprint.is_some();
 
-        learn_known_hosts_path(&self.host, self.port, server_public_key, &known_hosts)?;
-        log::info!(
-            "首次信任并记录 {}:{} 的主机密钥（{fingerprint}）",
-            self.host,
-            self.port
-        );
-        Ok(true)
+        let Some(prompter) = self.prompter.clone() else {
+            if changed {
+                log::warn!("{} 的主机密钥已变化（{fingerprint}），拒绝连接", self.endpoint());
+                self.link.decline(format!(
+                    "{} 的主机密钥与 known_hosts 记录不一致，已拒绝连接",
+                    self.endpoint()
+                ));
+                return Ok(false);
+            }
+            known_hosts::learn(&self.host, self.port, server_public_key, &path)?;
+            log::info!("首次信任并记录 {} 的主机密钥（{fingerprint}）", self.endpoint());
+            return Ok(true);
+        };
+
+        let request = HostKeyPrompt {
+            host: self.host.clone(),
+            port: self.port,
+            algorithm: server_public_key.algorithm().to_string(),
+            fingerprint: fingerprint.clone(),
+            status: if changed { "changed" } else { "unknown" },
+            old_fingerprint: old_fingerprint.flatten(),
+        };
+        match self.clock.pause(prompter.host_key(request)).await {
+            Ok(decision) if decision.accept => {
+                if decision.remember {
+                    let saved = if changed {
+                        known_hosts::replace(&self.host, self.port, server_public_key, &path)
+                    } else {
+                        known_hosts::learn(&self.host, self.port, server_public_key, &path)
+                    };
+                    match saved {
+                        Ok(()) => log::info!(
+                            "用户信任并记录 {} 的主机密钥（{fingerprint}）",
+                            self.endpoint()
+                        ),
+                        // 写不进 known_hosts 不影响本次连接，下次会再问
+                        Err(error) => log::warn!("写入 known_hosts 失败：{error}"),
+                    }
+                } else {
+                    log::info!("用户仅本次信任 {} 的主机密钥（{fingerprint}）", self.endpoint());
+                }
+                Ok(true)
+            }
+            Ok(_) => {
+                self.link
+                    .decline(format!("已拒绝 {} 的主机密钥，连接已取消", self.endpoint()));
+                Ok(false)
+            }
+            Err(reason) => {
+                self.link.decline(format!("主机密钥未确认：{reason}"));
+                Ok(false)
+            }
+        }
+    }
+
+    async fn disconnected(
+        &mut self,
+        reason: DisconnectReason<Self::Error>,
+    ) -> Result<(), Self::Error> {
+        let readable = liveness::describe(&reason);
+        log::info!("SSH 连接 {} 已结束：{readable}", self.endpoint());
+        self.link.set_reason(readable);
+        // 与默认实现一致：错误继续向 join 传递
+        match reason {
+            DisconnectReason::ReceivedDisconnect(_) => Ok(()),
+            DisconnectReason::Error(error) => Err(error),
+        }
     }
 }
 
@@ -81,6 +181,8 @@ pub struct SshSession {
     shell: Mutex<Option<ChannelWriteHalf<Msg>>>,
     transfer_slots: Arc<Semaphore>,
     metadata_slots: Arc<Semaphore>,
+    /// 目标机连接的存活状态，会话表靠它发现死会话
+    link: Arc<LinkState>,
 }
 
 impl SshSession {
@@ -120,6 +222,8 @@ impl SshSession {
             }
         }
         let mut jump_handles = Vec::new();
+        // 首次连接前由命令层安装；没有时（测试、后台任务早于主窗口）按无前端处理
+        let prompter = prompt::global();
         let report = |index: usize, endpoint: String, status: &str| {
             if let Some((app, request_id)) = &progress {
                 let _ = app.emit("ssh://connect-progress", serde_json::json!({"requestId": request_id, "hop": index, "total": config.jump_hosts.len() + 1, "endpoint": endpoint, "status": status}));
@@ -127,8 +231,8 @@ impl SshSession {
         };
         for (index, hop) in config.jump_hosts.iter().enumerate() {
             report(index, hop.endpoint(), "connecting");
-            match connect_handle(hop, jump_handles.last()).await {
-                Ok(handle) => {
+            match connect_handle(hop, jump_handles.last(), prompter.as_ref()).await {
+                Ok((handle, _)) => {
                     jump_handles.push(handle);
                     report(index, hop.endpoint(), "connected");
                 }
@@ -139,16 +243,17 @@ impl SshSession {
             }
         }
         report(config.jump_hosts.len(), config.endpoint(), "connecting");
-        let handle = match connect_handle(&config, jump_handles.last()).await {
-            Ok(handle) => {
-                report(config.jump_hosts.len(), config.endpoint(), "connected");
-                handle
-            }
-            Err(error) => {
-                report(config.jump_hosts.len(), config.endpoint(), "failed");
-                return Err(error);
-            }
-        };
+        let (handle, link) =
+            match connect_handle(&config, jump_handles.last(), prompter.as_ref()).await {
+                Ok(connected) => {
+                    report(config.jump_hosts.len(), config.endpoint(), "connected");
+                    connected
+                }
+                Err(error) => {
+                    report(config.jump_hosts.len(), config.endpoint(), "failed");
+                    return Err(error);
+                }
+            };
         log::info!(
             "SSH 已连接：{}（{} 跳）",
             config.endpoint(),

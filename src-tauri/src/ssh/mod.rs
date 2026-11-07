@@ -40,3 +40,10 @@ pub mod editor;
 pub mod tunnels;
 
 pub mod workspace_files;
+
+mod known_hosts;
+mod liveness;
+pub mod prompt;
+
+pub mod key_deploy;
+pub mod openssh_config;
