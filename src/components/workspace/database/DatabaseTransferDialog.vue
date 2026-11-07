@@ -37,6 +37,8 @@ import {
   matchImportTarget,
   importMappingError,
   prepareImportRows,
+  parseImportWorkbook,
+  createImportTemplate,
 } from '@/utils/database-import'
 import { databaseExportFileName } from '@/utils/database-export'
 import { toast } from '@/composables/useToast'
@@ -166,32 +168,8 @@ const ready = computed(
     (state.sources.length > 0 && !mappingErrors.value.some(Boolean))
 )
 let planRevision = 0
-let workbookWorker: Worker | undefined
-
-/** 同一弹窗处理上传、模板与字段预览；重型 Excel 解析和压缩放到 Worker，任务结束立即释放。 */
-async function workbookTask(
-  action: 'parse' | 'template',
-  payload: Record<string, unknown>
-): Promise<{ sources?: DatabaseImportSource[]; bytes?: Uint8Array }> {
-  const worker = new Worker(
-    new URL('../../../services/database-import.worker.ts', import.meta.url),
-    { type: 'module' }
-  )
-  workbookWorker = worker
-  try {
-    return await new Promise((resolve, reject) => {
-      worker.onmessage = event =>
-        event.data.error
-          ? reject(new Error(event.data.error))
-          : resolve(event.data)
-      worker.onerror = event => reject(new Error(event.message))
-      worker.postMessage({ action, ...payload })
-    })
-  } finally {
-    worker.terminate()
-    if (workbookWorker === worker) workbookWorker = undefined
-  }
-}
+// 上传预检的 Excel 解析在 Worker 内执行；新预检或弹窗销毁时中止旧任务。
+let workbookAbort: AbortController | undefined
 
 /** 切换导入格式时清空旧文件路径，避免把 Excel 交给 SQL 解析或反过来处理。 */
 function changeImportFormat(format: 'sql' | 'xlsx'): void {
@@ -211,6 +189,8 @@ function selectTarget(source: DatabaseImportSource, value: string): void {
 /** 文件、格式或导入范围改变后重新只读预检；过期请求不会覆盖新文件的预览。 */
 async function prepareImport(): Promise<void> {
   const revision = ++planRevision
+  workbookAbort?.abort()
+  workbookAbort = undefined
   state.sources = []
   state.selectedTargets = {}
   state.selectedColumns = {}
@@ -226,14 +206,15 @@ async function prepareImport(): Promise<void> {
       state.catalogLoaded = true
     }
     if (!state.path) return
-    const sources =
-      state.importFormat === 'xlsx'
-        ? (
-            await workbookTask('parse', {
-              bytes: await database.readImportFile(state.path),
-            })
-          ).sources!
-        : (await database.previewImportSql(props.sessionId, state.path)).sources
+    let sources: DatabaseImportSource[]
+    if (state.importFormat === 'xlsx') {
+      const bytes = await database.readImportFile(state.path)
+      if (revision !== planRevision) return
+      workbookAbort = new AbortController()
+      sources = await parseImportWorkbook(bytes, workbookAbort.signal)
+    } else
+      sources = (await database.previewImportSql(props.sessionId, state.path))
+        .sources
     if (revision !== planRevision) return
     state.sources = markRaw(sources)
     for (const source of sources) {
@@ -272,59 +253,30 @@ async function downloadTemplate(): Promise<void> {
       connectionName: props.connection?.name || databaseName.value,
       run: context =>
         withDatabaseExportTransfer(context, async () => {
-          const worker = new Worker(
-            new URL(
-              '../../../services/database-import.worker.ts',
-              import.meta.url
-            ),
-            { type: 'module' }
-          )
-          /** 取消模板生成时释放压缩 Worker。 */
-          const abort = (): void => worker.terminate()
-          context.signal.addEventListener('abort', abort, { once: true })
-          try {
+          context.signal.throwIfAborted()
+          context.progress({ phase: 'encoding' })
+          // 取消模板生成时由 Worker 包装层立即释放压缩 Worker。
+          const bytes = await createImportTemplate(targets, context.signal)
+          for (let offset = 0; offset < bytes.length; offset += 256 * 1024) {
             context.signal.throwIfAborted()
-            context.progress({ phase: 'encoding' })
-            const bytes = await new Promise<Uint8Array>((resolve, reject) => {
-              worker.onmessage = event =>
-                event.data.error
-                  ? reject(new Error(event.data.error))
-                  : resolve(event.data.bytes)
-              worker.onerror = event => reject(new Error(event.message))
-              context.signal.addEventListener(
-                'abort',
-                () => reject(new DOMException('Cancelled', 'AbortError')),
-                { once: true }
-              )
-              worker.postMessage({
-                action: 'template',
-                targets: JSON.parse(JSON.stringify(targets)),
-              })
-            })
-            for (let offset = 0; offset < bytes.length; offset += 256 * 1024) {
-              context.signal.throwIfAborted()
-              await database.writeExportChunk(
-                path,
-                bytes.subarray(offset, offset + 256 * 1024),
-                context.taskId
-              )
-              context.progress({
-                phase: 'writing',
-                totalBytes: bytes.length,
-                transferredBytes: Math.min(bytes.length, offset + 256 * 1024),
-              })
-            }
             await database.writeExportChunk(
               path,
-              new Uint8Array(),
-              context.taskId,
-              true
+              bytes.subarray(offset, offset + 256 * 1024),
+              context.taskId
             )
-            return path
-          } finally {
-            worker.terminate()
-            context.signal.removeEventListener('abort', abort)
+            context.progress({
+              phase: 'writing',
+              totalBytes: bytes.length,
+              transferredBytes: Math.min(bytes.length, offset + 256 * 1024),
+            })
           }
+          await database.writeExportChunk(
+            path,
+            new Uint8Array(),
+            context.taskId,
+            true
+          )
+          return path
         }),
     })
   } catch (error) {
@@ -337,7 +289,7 @@ async function downloadTemplate(): Promise<void> {
 // 组件销毁时释放上传预检 Worker，已入队的导入导出任务独立运行。
 onBeforeUnmount(() => {
   planRevision++
-  workbookWorker?.terminate()
+  workbookAbort?.abort()
 })
 
 // 每次打开重置上一次文件和映射，目标库的元数据在本次弹窗内复用。

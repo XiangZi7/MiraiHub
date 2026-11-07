@@ -114,14 +114,6 @@ export interface AppError {
   message: string
 }
 
-/** 终端输出事件负载 */
-export interface SshOutputEvent {
-  sessionId: string
-  /** base64 编码的原始字节 */
-  data: string
-  isStderr: boolean
-}
-
 /** 会话状态变更事件负载 */
 export interface SshStatusEvent {
   sessionId: string

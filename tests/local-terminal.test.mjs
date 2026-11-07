@@ -8,8 +8,9 @@ const nativeUrl = dataModule(`
   export const calls = { created: [], written: [], closed: [] }
   export const behavior = {}
   let nextId = 0
-  export async function create(config) {
+  export async function create(config, onOutput) {
     calls.created.push(config)
+    behavior.output = onOutput
     const id = 'session-' + ++nextId
     if (behavior.create) await behavior.create(id)
     return id
@@ -20,15 +21,10 @@ const nativeUrl = dataModule(`
   }
   export async function close(id) { calls.closed.push(id) }
   export async function resize() {}
-  export async function onOutput(handler) {
-    behavior.output = handler
-    return () => { delete behavior.output }
-  }
   export async function onStatus(handler) {
     behavior.status = handler
     return () => { delete behavior.status }
   }
-  export function decodeBase64(data) { return data }
   export function reset() {
     for (const values of Object.values(calls)) values.length = 0
     for (const key of Object.keys(behavior)) delete behavior[key]
@@ -123,6 +119,21 @@ test('each new local shell session submits multiline startup commands once with 
   }
 })
 
+test('output sent before create returns reaches the terminal, and stale output after reconnect is dropped', async () => {
+  const terminal = setup()
+  const prompt = new Uint8Array([0x50, 0x53, 0x3e])
+  native.behavior.create = () => native.behavior.output(prompt)
+  await terminal.connect(config)
+  assert.ok(terminal.term.value.output.includes(prompt))
+  const stale = native.behavior.output
+  delete native.behavior.create
+  await terminal.connect(config)
+  const before = terminal.term.value.output.length
+  stale(new Uint8Array([0x6f, 0x6c, 0x64]))
+  assert.equal(terminal.term.value.output.length, before)
+  await terminal.disconnect()
+})
+
 test('a shell that exits during creation never receives startup commands', async () => {
   const terminal = setup()
   native.behavior.create = id =>
@@ -172,7 +183,10 @@ test('startup write errors release the native session and surface the failure', 
   assert.equal(terminal.error.value, 'PTY unavailable')
   assert.equal(terminal.sessionId.value, '')
   assert.deepEqual(native.calls.closed, [native.calls.written[0].id])
-  assert.equal(native.behavior.output, undefined)
+  // 失败后迟到的输出不再写入终端。
+  const written = terminal.term.value.output.length
+  native.behavior.output(new Uint8Array([0x6c, 0x61, 0x74, 0x65]))
+  assert.equal(terminal.term.value.output.length, written)
   assert.equal(native.behavior.status, undefined)
 })
 

@@ -1,15 +1,13 @@
 //! SSH 会话推送到前端的事件。
 //!
-//! 终端输出是持续流式的，走 `invoke` 请求-响应模型不合适，
-//! 所以统一用 Tauri 事件往前端推。
+//! 会话状态与传输进度用 Tauri 事件往前端推；
+//! 终端输出量大，走 shell 打开时传入的 Channel（见 session::pump_output）。
 //!
 //! 事件名带 `ssh://` 前缀做命名空间，避免和后续数据库模块的事件撞名。
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-/// 终端有新输出。
-pub const EVENT_OUTPUT: &str = "ssh://output";
 /// 渲染终端、订阅会话状态和传输进度的窗口 label。
 /// 传输进度每 40ms 一条，其他窗口用不到，不必逐条接收。
 pub const TERMINAL_WINDOW: &str = "main";
@@ -17,21 +15,6 @@ pub const TERMINAL_WINDOW: &str = "main";
 pub const EVENT_STATUS: &str = "ssh://status";
 /// 文件传输进度与状态变化。
 pub const EVENT_TRANSFER: &str = "ssh://transfer";
-
-/// 终端输出负载。
-///
-/// data 是 base64 而非 String —— 远端输出是任意字节流：
-/// 多字节 UTF-8 字符会被 SSH 的分包切断，直接按 String 解会得到乱码或丢字符。
-/// 交给前端在 xterm.js 侧按字节写入，由它自己处理跨块的不完整字符。
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OutputEvent {
-    pub session_id: String,
-    /// base64 编码的原始字节
-    pub data: String,
-    /// 是否来自 stderr（SSH 的扩展数据通道）
-    pub is_stderr: bool,
-}
 
 /// 会话状态变更负载。
 #[derive(Debug, Clone, Serialize)]
@@ -132,19 +115,6 @@ impl StatusEvent {
 ///
 /// 发送失败只记日志不上抛：调用方多在后台读取循环里，
 /// 前端窗口已关闭属于正常情况，不该让整个会话因此中断。
-///
-/// 终端只渲染在主窗口，输出是最高频的事件，只发给主窗口，
-/// 设置、远端编辑器等窗口不必为每一块输出反序列化一次。
-///
-/// 事件名带上会话 id（`ssh://output/<id>`），每个终端只订阅自己的那一路，
-/// 开多个标签时一块输出不必触发所有标签的回调再各自过滤。
-pub fn emit_output(app: &AppHandle, payload: OutputEvent) {
-    let event = format!("{EVENT_OUTPUT}/{}", payload.session_id);
-    if let Err(err) = app.emit_to(TERMINAL_WINDOW, event.as_str(), payload) {
-        log::warn!("推送终端输出失败：{err}");
-    }
-}
-
 pub fn emit_status(app: &AppHandle, payload: StatusEvent) {
     if let Err(err) = app.emit_to(TERMINAL_WINDOW, EVENT_STATUS, payload) {
         log::warn!("推送会话状态失败：{err}");

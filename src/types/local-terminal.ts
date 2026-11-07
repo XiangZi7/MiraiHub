@@ -8,12 +8,6 @@ export interface LocalTerminalConfig {
   rows: number
 }
 
-export interface LocalTerminalOutputEvent {
-  sessionId: string
-  data: string
-  isStderr: boolean
-}
-
 export interface LocalTerminalStatusEvent {
   sessionId: string
   status: SshSessionStatus

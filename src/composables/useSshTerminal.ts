@@ -108,24 +108,6 @@ export function useSshTerminal() {
 
       state.sessionId = id
 
-      // 先订阅再开 shell：反过来的话 shell 启动瞬间的输出（登录 banner、
-      // 提示符）会在订阅建立前就推送出来，前几行就丢了
-      const stopOutput = await ssh.onOutput(id, payload => {
-        if (state.sessionId === id) {
-          const data = ssh.decodeBase64(payload.data)
-          recordOutput(terminal, data)
-          terminal.write(data)
-        }
-      })
-
-      if (!isActive(currentOperation)) {
-        stopOutput()
-        await discardSession(id)
-        return
-      }
-
-      unlisteners.push(stopOutput)
-
       const stopStatus = await ssh.onStatus(id, payload => {
         if (state.sessionId !== id) return
 
@@ -153,11 +135,21 @@ export function useSshTerminal() {
 
       unlisteners.push(stopStatus)
 
-      await ssh.openShell(id, {
-        term: options.terminalType || 'xterm-256color',
-        cols: terminal.cols,
-        rows: terminal.rows,
-      })
+      // 输出通道随 openShell 一起交给后端，shell 启动瞬间的登录 banner 也能收到。
+      // 断开或换会话后 sessionId 变了，迟到的输出直接丢弃。
+      await ssh.openShell(
+        id,
+        {
+          term: options.terminalType || 'xterm-256color',
+          cols: terminal.cols,
+          rows: terminal.rows,
+        },
+        data => {
+          if (state.sessionId !== id) return
+          recordOutput(terminal, data)
+          terminal.write(data)
+        }
+      )
 
       if (!isActive(currentOperation)) {
         await discardSession(id)

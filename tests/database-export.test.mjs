@@ -7,6 +7,7 @@ const load = sourceLoader()
 const { exportDataText, exportDataBytes } = await load(
   'src/utils/database-export.ts'
 )
+const { exportWorkbookBytes } = await load('src/utils/database-xlsx.ts')
 const data = {
   name: 'events',
   schema: 'app',
@@ -104,7 +105,8 @@ test('SQL exports decode binary columns and preserve boolean and identity values
 })
 
 test('Excel export produces a real workbook and preserves text, formulas and nulls', async () => {
-  const bytes = await exportDataBytes(data, 'xlsx')
+  // 主线程的 exportDataBytes 把 Excel 转发给 Worker，这里直接测 Worker 共用的编码器。
+  const bytes = await exportWorkbookBytes(data)
   assert.equal(String.fromCharCode(...bytes.slice(0, 2)), 'PK')
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(bytes)

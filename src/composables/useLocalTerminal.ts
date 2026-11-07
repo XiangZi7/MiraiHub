@@ -6,10 +6,7 @@ import * as localTerminal from '@/api/local-terminal'
 import { errorMessage } from '@/api/ssh'
 import { useXterm } from '@/composables/useXterm'
 import type { LocalConnectionSettings } from '@/types/connection'
-import type {
-  LocalTerminalOutputEvent,
-  LocalTerminalStatusEvent,
-} from '@/types/local-terminal'
+import type { LocalTerminalStatusEvent } from '@/types/local-terminal'
 import type { SshSessionStatus } from '@/types/ssh'
 
 export function useLocalTerminal() {
@@ -46,24 +43,9 @@ export function useLocalTerminal() {
     state.status = 'connecting'
     state.error = ''
 
-    const pendingOutput: LocalTerminalOutputEvent[] = []
     const pendingStatus: LocalTerminalStatusEvent[] = []
 
     try {
-      const stopOutput = await localTerminal.onOutput(payload => {
-        if (!state.sessionId) {
-          pendingOutput.push(payload)
-          return
-        }
-        if (payload.sessionId === state.sessionId)
-          terminal.write(localTerminal.decodeBase64(payload.data))
-      })
-      if (disposed || operation !== currentOperation) {
-        stopOutput()
-        return
-      }
-      unlisteners.push(stopOutput)
-
       const stopStatus = await localTerminal.onStatus(payload => {
         if (!state.sessionId) {
           pendingStatus.push(payload)
@@ -77,12 +59,19 @@ export function useLocalTerminal() {
       }
       unlisteners.push(stopStatus)
 
-      const id = await localTerminal.create({
-        shell: settings.shell,
-        workingDirectory: settings.workingDirectory,
-        cols: terminal.cols,
-        rows: terminal.rows,
-      })
+      // 输出通道只属于这一次创建，create 返回前的提示符也直接写入；
+      // 断开或重连后 operation 变了，迟到的输出直接丢弃。
+      const id = await localTerminal.create(
+        {
+          shell: settings.shell,
+          workingDirectory: settings.workingDirectory,
+          cols: terminal.cols,
+          rows: terminal.rows,
+        },
+        data => {
+          if (!disposed && operation === currentOperation) terminal.write(data)
+        }
+      )
 
       if (disposed || operation !== currentOperation) {
         await localTerminal.close(id).catch(() => {})
@@ -91,11 +80,6 @@ export function useLocalTerminal() {
 
       state.sessionId = id
       state.status = 'connected'
-      pendingOutput
-        .filter(payload => payload.sessionId === id)
-        .forEach(payload =>
-          terminal.write(localTerminal.decodeBase64(payload.data))
-        )
       pendingStatus
         .filter(payload => payload.sessionId === id)
         .forEach(applyStatus)

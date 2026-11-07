@@ -20,6 +20,9 @@ importers:
       '@iconify/vue':
         specifier: ^5.0.1
         version: 5.0.1(vue@3.5.42(typescript@5.9.3))
+      '@lezer/common':
+        specifier: ^1.5.2
+        version: 1.5.2
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1

@@ -22,6 +22,7 @@ import { toast } from '@/composables/useToast'
 import {
   completeSql,
   parseSql,
+  type SqlDocument,
   type SqlSuggestion,
 } from '@/utils/sql-completion'
 import { cn } from '@/utils/cn'
@@ -250,7 +251,10 @@ async function handleContextAction(id: string): Promise<void> {
   }
 }
 
-const parsedSql = computed(() => parseSql(sql.value, props.databaseKind))
+// 以上次结果为基础增量解析，按键时只重解析变更附近；仍是同步计算，高亮不会落后于文字。
+const parsedSql = computed<SqlDocument>(previous =>
+  parseSql(sql.value, props.databaseKind, previous)
+)
 const tokens = computed(() => parsedSql.value.tokens)
 // 只数换行符得到行数，避免每次按键 split 出整份行数组。
 const lineCount = computed(() => {

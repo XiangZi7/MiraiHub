@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use base64::Engine as _;
 use russh::client::{self, Handle, Msg};
 use russh::keys::{
     known_hosts::{check_known_hosts_path, learn_known_hosts_path},
@@ -14,11 +13,12 @@ use russh::keys::{
 };
 use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect};
 use russh_sftp::client::SftpSession;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
 use super::error::{SshError, SshResult};
-use super::events::{emit_output, emit_status, OutputEvent, StatusEvent};
+use super::events::{emit_status, StatusEvent};
 use super::models::{AuthMethod, CommandOutput, PtyOptions, SshConfig};
 use super::proxy;
 use super::sftp_stream::SftpStream;
@@ -175,7 +175,12 @@ impl SshSession {
     }
 
     /// 打开带 PTY 的交互式 shell，并起一个后台任务把输出推给前端。
-    pub async fn open_shell(&self, app: AppHandle, pty: PtyOptions) -> SshResult<()> {
+    pub async fn open_shell(
+        &self,
+        app: AppHandle,
+        pty: PtyOptions,
+        output: Channel<InvokeResponseBody>,
+    ) -> SshResult<()> {
         let channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
@@ -210,7 +215,7 @@ impl SshSession {
         let session_id = self.id.clone();
 
         tokio::spawn(async move {
-            pump_output(app, session_id, read_half).await;
+            pump_output(app, session_id, read_half, output).await;
         });
 
         Ok(())
@@ -506,31 +511,25 @@ async fn connect_handle(
 }
 
 /// 后台读循环：把远端输出源源不断推给前端，直到 channel 关闭。
-async fn pump_output(app: AppHandle, session_id: String, mut channel: ChannelReadHalf) {
+///
+/// 输出走 Tauri Channel 发原始字节：只送到打开这个 shell 的窗口和这一个终端，
+/// 省掉 base64 编码、JSON 序列化和前端解码；通道自带序号，乱序到达也会按顺序交付。
+/// stderr 与 stdout 在终端里显示方式相同，一并写入。
+async fn pump_output(
+    app: AppHandle,
+    session_id: String,
+    mut channel: ChannelReadHalf,
+    output: Channel<InvokeResponseBody>,
+) {
     let mut exit_code = None;
-    let encoder = base64::engine::general_purpose::STANDARD;
 
     while let Some(msg) = channel.wait().await {
         match msg {
-            ChannelMsg::Data { data } => {
-                emit_output(
-                    &app,
-                    OutputEvent {
-                        session_id: session_id.clone(),
-                        data: encoder.encode(&data),
-                        is_stderr: false,
-                    },
-                );
-            }
-            ChannelMsg::ExtendedData { data, ext: 1 } => {
-                emit_output(
-                    &app,
-                    OutputEvent {
-                        session_id: session_id.clone(),
-                        data: encoder.encode(&data),
-                        is_stderr: true,
-                    },
-                );
+            ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, ext: 1 } => {
+                // 窗口已关闭时发送失败属正常，继续读到 shell 结束，退出状态仍要上报。
+                if let Err(err) = output.send(InvokeResponseBody::Raw(data.to_vec())) {
+                    log::debug!("推送终端输出失败：{err}");
+                }
             }
             ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
             ChannelMsg::Eof | ChannelMsg::Close => break,

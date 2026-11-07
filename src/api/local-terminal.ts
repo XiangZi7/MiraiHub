@@ -3,22 +3,30 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   LocalTerminalConfig,
-  LocalTerminalOutputEvent,
   LocalTerminalStatusEvent,
 } from '@/types/local-terminal'
 import { IS_TAURI } from '@/utils/window'
-import { decodeBase64 } from './ssh'
+import { outputChannel } from './ssh'
 
-const EVENT_OUTPUT = 'local-terminal://output'
 const EVENT_STATUS = 'local-terminal://status'
 
 function ensureTauri(): void {
   if (!IS_TAURI) throw new Error(i18n.global.t('本地终端需要在桌面应用中运行'))
 }
 
-export async function create(config: LocalTerminalConfig): Promise<string> {
+/**
+ * 启动本地 Shell。输出通道在进程启动前就交给后端，
+ * 创建命令返回前输出的提示符也会经 onOutput 送达，不会丢首屏。
+ */
+export async function create(
+  config: LocalTerminalConfig,
+  onOutput: (data: Uint8Array) => void
+): Promise<string> {
   ensureTauri()
-  return invoke<string>('local_terminal_create', { config })
+  return invoke<string>('local_terminal_create', {
+    config,
+    onOutput: outputChannel(onOutput),
+  })
 }
 
 export async function write(sessionId: string, data: string): Promise<void> {
@@ -40,18 +48,6 @@ export async function close(sessionId: string): Promise<void> {
   await invoke('local_terminal_close', { sessionId })
 }
 
-/**
- * 本地 Shell 启动极快，创建命令返回前就可能输出提示符；因此先订阅全局事件，
- * 由调用方在拿到 sessionId 后过滤并回放极短暂的缓冲，避免丢首屏。
- */
-export function onOutput(
-  handler: (payload: LocalTerminalOutputEvent) => void
-): Promise<UnlistenFn> {
-  return listen<LocalTerminalOutputEvent>(EVENT_OUTPUT, event =>
-    handler(event.payload)
-  )
-}
-
 export function onStatus(
   handler: (payload: LocalTerminalStatusEvent) => void
 ): Promise<UnlistenFn> {
@@ -59,5 +55,3 @@ export function onStatus(
     handler(event.payload)
   )
 }
-
-export { decodeBase64 }

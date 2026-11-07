@@ -2,7 +2,13 @@ import type {
   DatabaseExportData,
   DatabaseDataExportFormat,
 } from '@/types/database-export'
-import { exportDataText } from '@/utils/database-export'
+import { exportDataText } from '@/utils/database-export-text'
+import {
+  createExportWorkbook,
+  createImportTemplate,
+  exportWorkbookBytes,
+  parseImportWorkbook,
+} from '@/utils/database-xlsx'
 import type ExcelJS from 'exceljs'
 
 let source: DatabaseExportData
@@ -15,12 +21,26 @@ let sheet: ExcelJS.Worksheet | undefined
 let keys: string[] = []
 const encoder = new TextEncoder()
 
-/** 每个任务独占 Worker；分批接收数据，文本格式立即归还字节，Excel 编码也不占用界面线程。 */
+/**
+ * 数据库导入导出共用的唯一 Excel Worker，ExcelJS 只打包这一份。
+ * start/rows/finish 分批流式导出；parse/template/workbook 为一次性导入解析、模板与小型 Excel 编码。
+ */
 self.onmessage = async (event: MessageEvent) => {
   const { id, action } = event.data
   try {
+    if (action === 'parse') {
+      self.postMessage({
+        id,
+        sources: await parseImportWorkbook(event.data.bytes),
+      })
+      return
+    }
     let bytes = new Uint8Array()
-    if (action === 'start') {
+    if (action === 'template')
+      bytes = await createImportTemplate(event.data.targets)
+    else if (action === 'workbook')
+      bytes = await exportWorkbookBytes(event.data.data)
+    else if (action === 'start') {
       source = event.data.source
       format = event.data.format
       tableName = event.data.tableName
@@ -29,22 +49,9 @@ self.onmessage = async (event: MessageEvent) => {
       workbook = undefined
       sheet = undefined
       keys = []
-      if (format === 'xlsx') {
-        const { default: ExcelJS } = await import('exceljs')
-        workbook = new ExcelJS.Workbook()
-        sheet = workbook.addWorksheet(
-          source.name
-            .replace(/[\\/*?:[\]]/gu, '_')
-            .replace(/^'+|'+$/gu, '')
-            .slice(0, 31) || 'Result'
-        )
-        sheet.addRow(source.columns.map(column => column.name))
-        sheet.getRow(1).font = { bold: true }
-        sheet.views = [{ state: 'frozen', ySplit: 1 }]
-        sheet.columns.forEach(column => {
-          column.width = 24
-        })
-      } else if (format === 'dictionary')
+      if (format === 'xlsx')
+        ({ workbook, sheet } = await createExportWorkbook(source))
+      else if (format === 'dictionary')
         bytes = encoder.encode(exportDataText(source, format, tableName))
       else if (format === 'json') {
         const used = new Set<string>()

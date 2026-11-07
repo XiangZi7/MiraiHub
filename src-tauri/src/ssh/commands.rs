@@ -4,6 +4,7 @@
 //! 任何实际逻辑都不该写在这里 —— 命令函数难以单独测试，
 //! 逻辑放在 session/keys/manager 里才能被 `cargo test` 覆盖。
 
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, State};
 
 use crate::error::AppResult;
@@ -51,16 +52,17 @@ pub async fn ssh_list_sessions(manager: State<'_, SessionManager>) -> AppResult<
     Ok(manager.list().await)
 }
 
-/// 打开交互式 shell。开好后输出走 `ssh://output/<id>` 事件推送。
+/// 打开交互式 shell。远端输出经 `on_output` 通道以原始字节推给发起调用的窗口。
 #[tauri::command]
 pub async fn ssh_open_shell(
     app: AppHandle,
     manager: State<'_, SessionManager>,
     session_id: String,
     pty: PtyOptions,
+    on_output: Channel<InvokeResponseBody>,
 ) -> AppResult<()> {
     let session = manager.get(&session_id).await?;
-    session.open_shell(app.clone(), pty).await?;
+    session.open_shell(app.clone(), pty, on_output).await?;
 
     // shell 就绪后再报 connected：前端据此才开始接收输出、允许输入
     events::emit_status(&app, events::StatusEvent::connected(&session_id));

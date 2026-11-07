@@ -3,14 +3,17 @@ import { test } from 'node:test'
 import ExcelJS from 'exceljs'
 import { sourceLoader } from './helpers/source-module.mjs'
 
+const load = sourceLoader()
 const {
-  parseImportWorkbook,
-  createImportTemplate,
   matchImportTarget,
   matchImportColumns,
   importMappingError,
   prepareImportRows,
-} = await sourceLoader()('src/utils/database-import.ts')
+} = await load('src/utils/database-import.ts')
+// ExcelJS 逻辑只在 Worker 内运行；Node 下直接测试 Worker 共用的纯模块。
+const { parseImportWorkbook, createImportTemplate } = await load(
+  'src/utils/database-xlsx.ts'
+)
 const columns = [
   {
     name: 'id',

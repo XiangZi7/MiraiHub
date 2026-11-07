@@ -9,7 +9,7 @@ import { i18n } from '@/i18n'
  * 命令名统一 `ssh_` 前缀，与后续数据库模块的 `db_` 区分开。
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   AppError,
@@ -19,7 +19,6 @@ import type {
   SshConfig,
   SshDirectoryListing,
   SshKeyInfo,
-  SshOutputEvent,
   SshRouteProgress,
   SshSessionInfo,
   ShellSuggestion,
@@ -32,7 +31,6 @@ import { isSshConnection, toSshConfig } from '@/types/connection'
 import { IS_TAURI } from '@/utils/window'
 
 /** 事件名，与 Rust 侧 `ssh/events.rs` 的常量对应 */
-const EVENT_OUTPUT = 'ssh://output'
 const EVENT_STATUS = 'ssh://status'
 const EVENT_TRANSFER = 'ssh://transfer'
 
@@ -122,14 +120,32 @@ export async function listSessions(): Promise<SshSessionInfo[]> {
 
 /**
  * 在会话上开一个带 PTY 的交互式 shell。
- * 开好之后远端输出会通过 `ssh://output/<id>` 事件持续推来，用 onOutput 订阅。
+ * 远端输出经 onOutput 回调持续送来，shell 启动瞬间的登录 banner 也不会丢。
  */
 export async function openShell(
   sessionId: string,
-  pty: PtyOptions
+  pty: PtyOptions,
+  onOutput: (data: Uint8Array) => void
 ): Promise<void> {
   ensureTauri()
-  await invoke('ssh_open_shell', { sessionId, pty })
+  await invoke('ssh_open_shell', {
+    sessionId,
+    pty,
+    onOutput: outputChannel(onOutput),
+  })
+}
+
+/**
+ * 终端输出通道。
+ *
+ * 后端把原始字节经 Tauri Channel 只推给这一个终端：不经 base64 和 JSON，
+ * 也不用按会话 id 过滤。通道自带序号，回调按发送顺序执行；
+ * xterm.js 自己处理跨块截断的 UTF-8 字符。
+ */
+export function outputChannel(
+  handler: (data: Uint8Array) => void
+): Channel<ArrayBuffer> {
+  return new Channel<ArrayBuffer>(buffer => handler(new Uint8Array(buffer)))
 }
 
 /**
@@ -312,20 +328,6 @@ export async function deleteKey(keyId: string): Promise<void> {
   await invoke('ssh_delete_key', { keyId })
 }
 
-/**
- * 订阅终端输出。返回取消订阅函数。
- *
- * 后端按会话分事件名（`ssh://output/<id>`），只会收到这个会话的输出。
- */
-export function onOutput(
-  sessionId: string,
-  handler: (payload: SshOutputEvent) => void
-): Promise<UnlistenFn> {
-  return listen<SshOutputEvent>(`${EVENT_OUTPUT}/${sessionId}`, event =>
-    handler(event.payload)
-  )
-}
-
 /** 订阅会话状态变更。返回取消订阅函数 */
 export function onStatus(
   sessionId: string,
@@ -342,19 +344,4 @@ export function onTransfer(
   return listen<SshTransferEvent>(EVENT_TRANSFER, event =>
     handler(event.payload)
   )
-}
-
-/**
- * base64 → Uint8Array。
- *
- * 终端输出以 base64 过 IPC（见 Rust 侧 events.rs 的说明），
- * 这里解回字节交给 xterm.js —— 它自己会处理跨块的不完整 UTF-8 字符。
- */
-export function decodeBase64(data: string): Uint8Array {
-  const binary = atob(data)
-  const bytes = new Uint8Array(binary.length)
-
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-
-  return bytes
 }

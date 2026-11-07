@@ -132,3 +132,54 @@ test('别名不来自其它语句或字符串、注释，高亮保留完整原�
     sql
   )
 })
+
+test('增量解析在插入、删除、整段粘贴后与全量解析结果一致', () => {
+  const base = [
+    'SELECT device, COUNT(*) AS count FROM `solo-band`.`app_logs`',
+    "WHERE path LIKE '/api/%' AND created_at > NOW() -- 最近日志",
+    'GROUP BY device ORDER BY count DESC;',
+    '/* 第二条 */ UPDATE app_logs SET payload = NULL WHERE id IN (1, 2, 3);',
+    'INSERT INTO app_logs (device, path) VALUES ("a", \'b\');',
+  ].join('\n')
+  const at = (text, needle) => text.indexOf(needle)
+  // 每一步都基于上一步文本，覆盖普通输入、开启注释/字符串等影响后文的编辑
+  const edits = [
+    text =>
+      text.slice(0, at(text, 'FROM')) +
+      ', path ' +
+      text.slice(at(text, 'FROM')),
+    text =>
+      text.slice(0, at(text, 'GROUP')) + '/*' + text.slice(at(text, 'GROUP')),
+    text => text.replace('/*GROUP', 'GROUP'),
+    text =>
+      text.slice(0, at(text, 'UPDATE')) + "'" + text.slice(at(text, 'UPDATE')),
+    text => text.replace("'UPDATE", 'UPDATE'),
+    text =>
+      text.slice(0, at(text, 'WHERE id')) + text.slice(at(text, ';\nINSERT')),
+    text => text + '\nSELECT 1;',
+    text => text.slice(1),
+    text => text.slice(0, -5),
+    () => "DELETE FROM app_logs WHERE device = 'x' /* 粘贴整段 */;",
+    text => `SELECT * FROM t;\n${text}`,
+    () => '',
+    () => base,
+  ]
+  for (const kind of ['mysql', 'postgresql', 'sqlite']) {
+    let previous = parseSql(base, kind)
+    for (const [index, edit] of edits.entries()) {
+      const sql = edit(previous.sql)
+      const incremental = parseSql(sql, kind, previous)
+      const full = parseSql(sql, kind)
+      assert.deepEqual(incremental.tokens, full.tokens, `${kind} #${index}`)
+      assert.deepEqual(incremental.lexemes, full.lexemes, `${kind} #${index}`)
+      assert.equal(incremental.tree.toString(), full.tree.toString())
+      previous = incremental
+    }
+  }
+  // 切换方言时不复用其它方言的语法树
+  const mysql = parseSql(base, 'mysql')
+  assert.deepEqual(
+    parseSql(base, 'postgresql', mysql).tokens,
+    parseSql(base, 'postgresql').tokens
+  )
+})

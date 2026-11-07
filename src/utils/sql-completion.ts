@@ -1,4 +1,5 @@
 import { MySQL, PostgreSQL, SQLite } from '@codemirror/lang-sql'
+import { TreeFragment, type Tree } from '@lezer/common'
 import type { DatabaseKind } from '@/types/database'
 
 export interface SqlToken {
@@ -96,10 +97,66 @@ function objects(labels: readonly string[]): SqlCandidate[] {
   return values
 }
 
-/** 同一次解析同时服务高亮、字符串/注释判断和语句内标识符补全。 */
-export function parseSql(sql: string, kind: DatabaseKind = 'mysql') {
-  const tree = dialects[kind].language.parser.parse(sql)
-  const lexemes: { name: string; text: string; from: number; to: number }[] = []
+export interface SqlLexeme {
+  name: string
+  text: string
+  from: number
+  to: number
+}
+
+export interface SqlDocument {
+  sql: string
+  kind: DatabaseKind
+  tree: Tree
+  lexemes: SqlLexeme[]
+  tokens: SqlToken[]
+}
+
+/**
+ * 有上次结果时按公共前缀/后缀得出唯一变更区间，复用旧树中未受影响的节点；
+ * 方言变化或可复用部分不足一半时，片段收益抵不上开销，直接全量解析。
+ */
+function parseTree(sql: string, kind: DatabaseKind, previous?: SqlDocument) {
+  const parser = dialects[kind].language.parser
+  if (!previous || previous.kind !== kind) return parser.parse(sql)
+  const before = previous.sql
+  const limit = Math.min(before.length, sql.length)
+  let prefix = 0
+  while (prefix < limit && before.charCodeAt(prefix) === sql.charCodeAt(prefix))
+    prefix++
+  // 后缀不能与前缀重叠，否则重复字符处的变更区间会算错。
+  let suffix = 0
+  while (
+    suffix < limit - prefix &&
+    before.charCodeAt(before.length - 1 - suffix) ===
+      sql.charCodeAt(sql.length - 1 - suffix)
+  )
+    suffix++
+  if ((prefix + suffix) * 2 < sql.length) return parser.parse(sql)
+  const fragments = TreeFragment.applyChanges(
+    TreeFragment.addTree(previous.tree),
+    [
+      {
+        fromA: prefix,
+        toA: before.length - suffix,
+        fromB: prefix,
+        toB: sql.length - suffix,
+      },
+    ]
+  )
+  return parser.parse(sql, fragments)
+}
+
+/** 同一次解析同时服务高亮、字符串/注释判断和语句内标识符补全。
+ *  传入上一次的结果即走增量解析，产出与全量解析一致。 */
+export function parseSql(
+  sql: string,
+  kind: DatabaseKind = 'mysql',
+  previous?: SqlDocument
+): SqlDocument {
+  if (previous?.sql === sql && previous.kind === kind) return previous
+  const tree = parseTree(sql, kind, previous)
+  const lexemes: SqlLexeme[] = []
   tree.iterate({
     enter(node) {
       if (!node.node.firstChild && node.to > node.from)
@@ -133,8 +190,6 @@ export function parseSql(sql: string, kind: DatabaseKind = 'mysql') {
     tokens.push({ text: sql.slice(offset), kind: 'plain' })
   return { sql, kind, tree, lexemes, tokens }
 }
-
-type SqlDocument = ReturnType<typeof parseSql>
 
 function completionRange(document: SqlDocument, cursor: number) {
   const token = document.lexemes.find(

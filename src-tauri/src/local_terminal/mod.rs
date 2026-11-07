@@ -1,22 +1,21 @@
 //! 本地交互式终端。
 //!
 //! 使用系统 PTY（Windows 为 ConPTY）承载 PowerShell、CMD 或 Git Bash，
-//! 并通过 Tauri 事件把原始字节流推给 xterm.js。
+//! 并通过 Tauri Channel 把原始字节流推给 xterm.js。
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use base64::Engine as _;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::ssh::events::TERMINAL_WINDOW;
 
-const EVENT_OUTPUT: &str = "local-terminal://output";
 const EVENT_STATUS: &str = "local-terminal://status";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -35,14 +34,6 @@ pub enum LocalShell {
     Powershell,
     Cmd,
     GitBash,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct OutputEvent {
-    session_id: String,
-    data: String,
-    is_stderr: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -155,7 +146,12 @@ impl LocalTerminalManager {
         Self::default()
     }
 
-    pub fn create(&self, app: AppHandle, config: LocalTerminalConfig) -> AppResult<String> {
+    pub fn create(
+        &self,
+        app: AppHandle,
+        config: LocalTerminalConfig,
+        output: Channel<InvokeResponseBody>,
+    ) -> AppResult<String> {
         let id = new_session_id();
         let (session, reader) = LocalTerminalSession::spawn(&config)?;
         let session = Arc::new(session);
@@ -165,7 +161,7 @@ impl LocalTerminalManager {
             .map_err(|_| AppError::internal("本地终端会话表已损坏"))?
             .insert(id.clone(), Arc::clone(&session));
 
-        pump_output(app, id.clone(), session, reader);
+        pump_output(app, id.clone(), session, reader, output);
         Ok(id)
     }
 
@@ -211,26 +207,25 @@ impl LocalTerminalManager {
     }
 }
 
+/// 输出经创建时传入的 Channel 以原始字节推送：通道在进程启动前就建好，
+/// 首屏提示符不会丢，也不用 base64 编码和按会话 id 过滤。
 fn pump_output(
     app: AppHandle,
     session_id: String,
     session: Arc<LocalTerminalSession>,
     mut reader: Box<dyn Read + Send>,
+    output: Channel<InvokeResponseBody>,
 ) {
     std::thread::spawn(move || {
-        let encoder = base64::engine::general_purpose::STANDARD;
         let mut buffer = [0_u8; 8192];
 
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(read) => {
-                    let payload = OutputEvent {
-                        session_id: session_id.clone(),
-                        data: encoder.encode(&buffer[..read]),
-                        is_stderr: false,
-                    };
-                    if let Err(error) = app.emit_to(TERMINAL_WINDOW, EVENT_OUTPUT, payload) {
+                    if let Err(error) =
+                        output.send(InvokeResponseBody::Raw(buffer[..read].to_vec()))
+                    {
                         log::warn!("推送本地终端输出失败：{error}");
                     }
                 }
@@ -338,10 +333,11 @@ fn now_millis() -> u128 {
 pub async fn local_terminal_create(
     app: AppHandle,
     config: LocalTerminalConfig,
+    on_output: Channel<InvokeResponseBody>,
 ) -> AppResult<String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<LocalTerminalManager>()
-            .create(app.clone(), config)
+            .create(app.clone(), config, on_output)
     })
     .await
     .map_err(|error| AppError::internal(format!("启动本地终端失败：{error}")))?
