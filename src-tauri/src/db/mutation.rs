@@ -79,7 +79,10 @@ pub async fn mutate(
 }
 
 /// 提交前预览将要执行的语句（占位符已代入字面值），不触碰数据。
-pub async fn preview(pool: &DatabasePool, request: &MutationRequest) -> DatabaseResult<Vec<String>> {
+pub async fn preview(
+    pool: &DatabasePool,
+    request: &MutationRequest,
+) -> DatabaseResult<Vec<String>> {
     let schema = request.schema.trim();
     let table = request.table.trim();
     if table.is_empty() {

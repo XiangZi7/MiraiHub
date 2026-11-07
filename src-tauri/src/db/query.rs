@@ -57,6 +57,20 @@ pub async fn execute(
     max_rows: usize,
     timeout_secs: u64,
 ) -> DatabaseResult<DatabaseExecution> {
+    execute_with_params(manager, session_id, sql_text, &[], max_rows, timeout_secs).await
+}
+
+/// 带绑定参数执行。`params` 为空时与 [`execute`] 完全一致；非空时只接受单条语句，
+/// 占位符须已是方言原生写法（MySQL/SQLite 用 `?`，PostgreSQL 用 `$n`），
+/// 改走预处理协议把值作为参数绑定，不做任何字符串拼接。
+pub async fn execute_with_params(
+    manager: &DatabaseManager,
+    session_id: &str,
+    sql_text: &str,
+    params: &[Option<String>],
+    max_rows: usize,
+    timeout_secs: u64,
+) -> DatabaseResult<DatabaseExecution> {
     let pool = manager.pool(session_id).await?;
     let kind = pool.kind();
     let statements = sql::split_statements(sql_text, kind);
@@ -64,6 +78,11 @@ pub async fn execute(
     if statements.is_empty() {
         return Err(DatabaseError::InvalidInput(
             "没有可执行的 SQL 语句".to_owned(),
+        ));
+    }
+    if !params.is_empty() && statements.len() > 1 {
+        return Err(DatabaseError::InvalidInput(
+            "参数化查询一次只能执行一条语句".to_owned(),
         ));
     }
 
@@ -80,7 +99,7 @@ pub async fn execute(
         let statement_started = Instant::now();
         let outcome = match tokio::time::timeout(
             Duration::from_secs(timeout_secs.clamp(1, 86_400)),
-            run_statement(&mut connection, &statement.text, max_rows, &running),
+            run_statement(&mut connection, &statement.text, params, max_rows, &running),
         )
         .await
         {
@@ -190,6 +209,7 @@ fn cancelled_statement(statement: &sql::Statement, elapsed_ms: u64) -> DatabaseS
 async fn run_statement(
     connection: &mut DatabaseConnection,
     statement: &str,
+    params: &[Option<String>],
     max_rows: usize,
     running: &RunningQuery,
 ) -> DatabaseResult<StatementOutcome> {
@@ -198,11 +218,15 @@ async fn run_statement(
     }
 
     match connection {
-        DatabaseConnection::Mysql(conn) => run_mysql(conn, statement, max_rows, running).await,
-        DatabaseConnection::Postgresql(conn) => {
-            run_postgresql(conn, statement, max_rows, running).await
+        DatabaseConnection::Mysql(conn) => {
+            run_mysql(conn, statement, params, max_rows, running).await
         }
-        DatabaseConnection::Sqlite(conn) => run_sqlite(conn, statement, max_rows, running).await,
+        DatabaseConnection::Postgresql(conn) => {
+            run_postgresql(conn, statement, params, max_rows, running).await
+        }
+        DatabaseConnection::Sqlite(conn) => {
+            run_sqlite(conn, statement, params, max_rows, running).await
+        }
     }
 }
 
@@ -210,15 +234,28 @@ async fn run_statement(
 fn returns_rows(statement: &str) -> bool {
     matches!(
         sql::leading_keyword(statement).as_str(),
-        "SELECT" | "WITH" | "SHOW" | "EXPLAIN" | "DESC" | "DESCRIBE" | "TABLE" | "VALUES" | "PRAGMA"
+        "SELECT"
+            | "WITH"
+            | "SHOW"
+            | "EXPLAIN"
+            | "DESC"
+            | "DESCRIBE"
+            | "TABLE"
+            | "VALUES"
+            | "PRAGMA"
     )
 }
 
 macro_rules! run_dialect {
-    ($conn:expr, $statement:expr, $max_rows:expr, $running:expr, $columns_of:expr, $decode_row:expr) => {{
+    ($conn:expr, $statement:expr, $params:expr, $bind:expr, $max_rows:expr, $running:expr, $columns_of:expr, $decode_row:expr) => {{
         let conn = $conn;
         let mut outcome = StatementOutcome::empty();
-        let mut stream = sqlx::raw_sql($statement).fetch_many(&mut **conn);
+        // 无参数走简单查询协议（兼容 USE/SHOW 等）；有参数才走预处理并绑定。
+        let mut stream = if $params.is_empty() {
+            sqlx::raw_sql($statement).fetch_many(&mut **conn)
+        } else {
+            ($bind)(sqlx::query($statement), $params).fetch_many(&mut **conn)
+        };
 
         loop {
             let next = tokio::select! {
@@ -266,9 +303,11 @@ macro_rules! run_dialect {
     }};
 }
 
+#[allow(deprecated)] // 单条语句的预处理流，不涉及被弃用的多语句行为
 async fn run_mysql(
     conn: &mut sqlx::pool::PoolConnection<sqlx::MySql>,
     statement: &str,
+    params: &[Option<String>],
     max_rows: usize,
     running: &RunningQuery,
 ) -> DatabaseResult<StatementOutcome> {
@@ -276,6 +315,8 @@ async fn run_mysql(
     run_dialect!(
         conn,
         statement,
+        params,
+        bind_text_params,
         max_rows,
         running,
         |row: &MySqlRow| {
@@ -296,15 +337,54 @@ async fn run_mysql(
     )
 }
 
+#[allow(deprecated)]
 async fn run_postgresql(
     conn: &mut sqlx::pool::PoolConnection<sqlx::Postgres>,
     statement: &str,
+    params: &[Option<String>],
     max_rows: usize,
     running: &RunningQuery,
 ) -> DatabaseResult<StatementOutcome> {
+    // PostgreSQL 按声明类型严格匹配参数：先 describe 拿到服务端推断的类型，再逐个转换。
+    let typed = if params.is_empty() {
+        Vec::new()
+    } else {
+        let described = (&mut **conn)
+            .describe(statement)
+            .await
+            .map_err(DatabaseError::Query)?;
+        let types: Vec<String> = match described.parameters() {
+            Some(Either::Left(types)) => types.iter().map(|t| t.name().to_owned()).collect(),
+            Some(Either::Right(count)) => vec!["TEXT".to_owned(); count],
+            None => Vec::new(),
+        };
+        if types.len() != params.len() {
+            return Err(DatabaseError::InvalidInput(format!(
+                "语句需要 {} 个参数，实际提供了 {} 个",
+                types.len(),
+                params.len()
+            )));
+        }
+        types
+            .iter()
+            .zip(params)
+            .enumerate()
+            .map(|(index, (type_name, value))| {
+                pg_param(type_name, value.as_deref()).map_err(|error| {
+                    DatabaseError::InvalidInput(format!(
+                        "参数 ${} 无法转换为 {type_name}：{error}",
+                        index + 1
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let typed = typed.as_slice();
     run_dialect!(
         conn,
         statement,
+        typed,
+        bind_pg_params,
         max_rows,
         running,
         postgresql_columns,
@@ -312,13 +392,142 @@ async fn run_postgresql(
     )
 }
 
+#[allow(deprecated)]
 async fn run_sqlite(
     conn: &mut sqlx::pool::PoolConnection<sqlx::Sqlite>,
     statement: &str,
+    params: &[Option<String>],
     max_rows: usize,
     running: &RunningQuery,
 ) -> DatabaseResult<StatementOutcome> {
-    run_dialect!(conn, statement, max_rows, running, sqlite_columns, decode_sqlite_row)
+    run_dialect!(
+        conn,
+        statement,
+        params,
+        bind_text_params,
+        max_rows,
+        running,
+        sqlite_columns,
+        decode_sqlite_row
+    )
+}
+
+/// MySQL / SQLite 对文本参数做隐式转换，统一按可空文本绑定即可。
+fn bind_text_params<'q, DB>(
+    mut query: sqlx::query::Query<'q, DB, <DB as sqlx::Database>::Arguments<'q>>,
+    params: &'q [Option<String>],
+) -> sqlx::query::Query<'q, DB, <DB as sqlx::Database>::Arguments<'q>>
+where
+    DB: sqlx::Database,
+    Option<&'q str>: sqlx::Encode<'q, DB> + sqlx::Type<DB>,
+{
+    for value in params {
+        query = query.bind(value.as_deref());
+    }
+    query
+}
+
+/// 已按 PostgreSQL 参数类型转换好的值；空值也带类型，避免 `NULL` 被声明成 text。
+enum PgParam {
+    Text(Option<String>),
+    I16(Option<i16>),
+    I32(Option<i32>),
+    I64(Option<i64>),
+    F32(Option<f32>),
+    F64(Option<f64>),
+    Bool(Option<bool>),
+    Numeric(Option<Decimal>),
+    Uuid(Option<Uuid>),
+    Date(Option<NaiveDate>),
+    Time(Option<NaiveTime>),
+    Timestamp(Option<NaiveDateTime>),
+    Timestamptz(Option<DateTime<Utc>>),
+    Json(Option<serde_json::Value>),
+}
+
+fn parse_param<T>(
+    value: Option<&str>,
+    parse: impl Fn(&str) -> Result<T, String>,
+) -> Result<Option<T>, String> {
+    value.map(|text| parse(text.trim())).transpose()
+}
+
+fn parse_with<T: std::str::FromStr>(value: Option<&str>) -> Result<Option<T>, String>
+where
+    T::Err: std::fmt::Display,
+{
+    parse_param(value, |text| text.parse().map_err(|error: T::Err| error.to_string()))
+}
+
+fn pg_param(type_name: &str, value: Option<&str>) -> Result<PgParam, String> {
+    Ok(match type_name {
+        "INT2" => PgParam::I16(parse_with(value)?),
+        "INT4" => PgParam::I32(parse_with(value)?),
+        "INT8" => PgParam::I64(parse_with(value)?),
+        "FLOAT4" => PgParam::F32(parse_with(value)?),
+        "FLOAT8" => PgParam::F64(parse_with(value)?),
+        "NUMERIC" => PgParam::Numeric(parse_with(value)?),
+        "UUID" => PgParam::Uuid(parse_with(value)?),
+        "BOOL" => PgParam::Bool(parse_param(value, |text| {
+            match text.to_ascii_lowercase().as_str() {
+                "true" | "t" | "1" | "yes" | "y" | "on" => Ok(true),
+                "false" | "f" | "0" | "no" | "n" | "off" => Ok(false),
+                _ => Err("应为 true / false".to_owned()),
+            }
+        })?),
+        "DATE" => PgParam::Date(parse_param(value, |text| {
+            NaiveDate::parse_from_str(text, "%Y-%m-%d").map_err(|error| error.to_string())
+        })?),
+        "TIME" => PgParam::Time(parse_param(value, |text| {
+            NaiveTime::parse_from_str(text, "%H:%M:%S%.f")
+                .or_else(|_| NaiveTime::parse_from_str(text, "%H:%M"))
+                .map_err(|error| error.to_string())
+        })?),
+        "TIMESTAMP" => PgParam::Timestamp(parse_param(value, parse_naive_datetime)?),
+        "TIMESTAMPTZ" => PgParam::Timestamptz(parse_param(value, |text| {
+            DateTime::parse_from_rfc3339(text)
+                .or_else(|_| DateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%.f%#z"))
+                .map(|time| time.with_timezone(&Utc))
+                .or_else(|_| parse_naive_datetime(text).map(|time| time.and_utc()))
+        })?),
+        "JSON" | "JSONB" => PgParam::Json(parse_param(value, |text| {
+            serde_json::from_str(text).map_err(|error| error.to_string())
+        })?),
+        // 其余类型（文本、枚举等）按文本交给服务端转换。
+        _ => PgParam::Text(value.map(str::to_owned)),
+    })
+}
+
+fn parse_naive_datetime(value: &str) -> Result<NaiveDateTime, String> {
+    NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f")
+        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f"))
+        .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M"))
+        .map_err(|error| error.to_string())
+}
+
+fn bind_pg_params<'q>(
+    mut query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    params: &'q [PgParam],
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+    for value in params {
+        query = match value {
+            PgParam::Text(v) => query.bind(v.as_deref()),
+            PgParam::I16(v) => query.bind(*v),
+            PgParam::I32(v) => query.bind(*v),
+            PgParam::I64(v) => query.bind(*v),
+            PgParam::F32(v) => query.bind(*v),
+            PgParam::F64(v) => query.bind(*v),
+            PgParam::Bool(v) => query.bind(*v),
+            PgParam::Numeric(v) => query.bind(*v),
+            PgParam::Uuid(v) => query.bind(*v),
+            PgParam::Date(v) => query.bind(*v),
+            PgParam::Time(v) => query.bind(*v),
+            PgParam::Timestamp(v) => query.bind(*v),
+            PgParam::Timestamptz(v) => query.bind(*v),
+            PgParam::Json(v) => query.bind(v.clone()),
+        };
+    }
+    query
 }
 
 pub(crate) fn elapsed_millis(started: Instant) -> u64 {
@@ -613,10 +822,15 @@ mod tests {
 /// 把单条查询包装成该方言输出 JSON 执行计划的 EXPLAIN 语句。
 ///
 /// 只接受一条语句：多条语句拼进 EXPLAIN 会让第二条在无保护的情况下真正执行。
-pub fn explain_statement(kind: super::models::DatabaseKind, sql_text: &str) -> DatabaseResult<String> {
+pub fn explain_statement(
+    kind: super::models::DatabaseKind,
+    sql_text: &str,
+) -> DatabaseResult<String> {
     let statements = sql::split_statements(sql_text, kind);
     let [statement] = statements.as_slice() else {
-        return Err(DatabaseError::InvalidInput("执行计划一次只能分析一条语句".into()));
+        return Err(DatabaseError::InvalidInput(
+            "执行计划一次只能分析一条语句".into(),
+        ));
     };
     let body = statement.text.trim().trim_end_matches(';').trim();
     if body.is_empty() {
@@ -639,7 +853,11 @@ pub async fn explain(
 ) -> DatabaseResult<String> {
     let kind = manager.pool(session_id).await?.kind();
     let wrapped = explain_statement(kind, sql_text)?;
-    let max_rows = if kind == super::models::DatabaseKind::Sqlite { 500 } else { 10 };
+    let max_rows = if kind == super::models::DatabaseKind::Sqlite {
+        500
+    } else {
+        10
+    };
     let execution = execute(manager, session_id, &wrapped, max_rows, timeout_secs).await?;
     let statement = execution
         .statements

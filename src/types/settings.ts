@@ -43,6 +43,13 @@ export const DEFAULT_SETTINGS = {
   shortcutTerminal: 'Ctrl+T',
   shortcutSearch: 'Ctrl+Shift+F',
   shortcutFiles: 'Ctrl+O',
+  shortcutDbNewQuery: 'Ctrl+N',
+  shortcutDbExecute: 'Ctrl+Enter',
+  shortcutDbExecuteCurrent: 'Ctrl+Shift+Enter',
+  shortcutDbFormat: 'Shift+Alt+F',
+  shortcutDbToggleResults: 'Ctrl+J',
+  shortcutDbRefresh: 'F5',
+  shortcutDbFocusFilter: 'Ctrl+Shift+L',
 
   sshTimeout: '30',
   keepConnectionAlive: true,
@@ -60,6 +67,7 @@ export const DEFAULT_SETTINGS = {
   terminalCursor: 'block',
   terminalCursorBlink: true,
   terminalScrollback: '5000',
+  terminalCopyOnSelect: false,
 
   showHiddenFiles: false,
   confirmFileDelete: true,

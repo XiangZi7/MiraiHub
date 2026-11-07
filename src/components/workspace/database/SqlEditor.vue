@@ -27,6 +27,8 @@ import {
 } from '@/utils/sql-completion'
 import { cn } from '@/utils/cn'
 import { formatSql, statementAtCursor } from '@/utils/sql-format'
+import { formatShortcut, matchesShortcut } from '@/utils/shortcut'
+import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
 
@@ -37,12 +39,15 @@ const props = withDefaults(
     suggestions?: readonly string[]
     /** 表名 → 字段映射，`别名.` 后按表补全字段 */
     tableColumns?: Readonly<Record<string, readonly string[]>>
+    /** 执行失败语句在编辑器文本中的范围，行号槽标红 */
+    errorRange?: { start: number; end: number } | null
   }>(),
   {
     databaseKind: 'mysql',
     disabled: false,
     suggestions: () => [],
     tableColumns: () => ({}),
+    errorRange: null,
   }
 )
 
@@ -55,6 +60,8 @@ const emit = defineEmits<{
 }>()
 
 const sql = defineModel<string>({ required: true })
+/** 执行/格式化快捷键来自设置 → 快捷键 → 数据库，可自定义。 */
+const shortcuts = useSettingsStore().values
 const editorRef = useTemplateRef<HTMLTextAreaElement>('editor')
 const gutterRef = useTemplateRef<HTMLElement>('gutter')
 const autocompleteRef = useTemplateRef<HTMLElement>('autocomplete')
@@ -106,14 +113,14 @@ const contextItems = computed<ContextMenuItem[]>(() => [
     separatorBefore: true,
     label: t('运行选中的 SQL'),
     icon: 'lucide:play',
-    shortcut: 'Ctrl+Enter',
+    shortcut: formatShortcut(shortcuts.shortcutDbExecute),
     disabled: props.disabled || !state.contextMenu.selected.trim(),
   },
   {
     id: 'run-current',
     label: t('运行当前语句'),
     icon: 'lucide:text-cursor-input',
-    shortcut: 'Ctrl+Shift+Enter',
+    shortcut: formatShortcut(shortcuts.shortcutDbExecuteCurrent),
     disabled: props.disabled || !sql.value.trim(),
   },
   {
@@ -133,7 +140,7 @@ const contextItems = computed<ContextMenuItem[]>(() => [
     id: 'format',
     label: t('格式化 SQL'),
     icon: 'lucide:align-left',
-    shortcut: 'Shift+Alt+F',
+    shortcut: formatShortcut(shortcuts.shortcutDbFormat),
     disabled: props.disabled || !sql.value.trim(),
   },
   {
@@ -264,6 +271,36 @@ const lineCount = computed(() => {
   while ((index = text.indexOf('\n', index + 1)) !== -1) count++
   return count
 })
+
+function lineAt(index: number): number {
+  let line = 1
+  let cursor = -1
+  while (
+    (cursor = sql.value.indexOf('\n', cursor + 1)) !== -1 &&
+    cursor < index
+  )
+    line++
+  return line
+}
+// 出错语句覆盖的行号区间；编辑后范围越界时自动失效。
+const errorLines = computed(() => {
+  const range = props.errorRange
+  if (!range || range.start > sql.value.length) return null
+  return {
+    from: lineAt(range.start),
+    to: lineAt(Math.max(range.start, range.end - 1)),
+  }
+})
+
+/** 选中并滚动到指定范围，供错误面板“定位”使用。 */
+function revealRange(start: number, end: number): void {
+  const editor = editorRef.value
+  if (!editor) return
+  editor.focus()
+  editor.setSelectionRange(start, end)
+  editor.scrollTop = Math.max(0, (lineAt(start) - 3) * 19.8)
+  syncScroll()
+}
 
 /** 将补全菜单定位到光标附近，并按实际缩放和窗口边缘调整浮层位置。 */
 function positionAutocomplete(): void {
@@ -411,7 +448,7 @@ function handleKeydown(event: KeyboardEvent): void {
     return
   }
 
-  if (event.shiftKey && event.altKey && event.key.toLowerCase() === 'f') {
+  if (matchesShortcut(event, shortcuts.shortcutDbFormat)) {
     event.preventDefault()
     void formatEditor()
     return
@@ -424,11 +461,7 @@ function handleKeydown(event: KeyboardEvent): void {
     return
   }
 
-  if (
-    (event.ctrlKey || event.metaKey) &&
-    event.shiftKey &&
-    event.key === 'Enter'
-  ) {
+  if (matchesShortcut(event, shortcuts.shortcutDbExecuteCurrent)) {
     event.preventDefault()
     autocompleteOpen.value = false
     const statement = currentStatement()
@@ -436,7 +469,7 @@ function handleKeydown(event: KeyboardEvent): void {
     return
   }
 
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+  if (matchesShortcut(event, shortcuts.shortcutDbExecute)) {
     event.preventDefault()
     if (!props.disabled) {
       autocompleteOpen.value = false
@@ -514,7 +547,7 @@ function syncScroll(): void {
   if (gutterRef.value) gutterRef.value.scrollTop = scroll.top
 }
 
-defineExpose({ runnableSql })
+defineExpose({ runnableSql, revealRange })
 </script>
 
 <template>
@@ -529,7 +562,15 @@ defineExpose({ runnableSql })
       <div
         v-for="line in lineCount"
         :key="line"
-        class="h-[19.8px] pr-2.5"
+        :class="
+          cn(
+            'h-[19.8px] pr-2.5',
+            errorLines &&
+              line >= errorLines.from &&
+              line <= errorLines.to &&
+              'bg-danger/15 text-danger'
+          )
+        "
       >
         {{ line }}
       </div>

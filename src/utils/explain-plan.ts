@@ -1,4 +1,9 @@
+import type { InjectionKey, Ref } from 'vue'
+import type { AgentTarget } from '@/types/agent'
 import type { DatabaseKind } from '@/types/database'
+
+/** 数据库视图向执行计划视图提供 AI 解读所需的执行目标。 */
+export const EXPLAIN_AGENT_TARGET: InjectionKey<Ref<AgentTarget>> = Symbol('explain-agent-target')
 
 /** 统一后的执行计划节点：两种方言的 JSON 结构差异很大，视图只认这一种。 */
 export interface PlanNode {
@@ -111,4 +116,37 @@ export function parseExplainPlan(kind: DatabaseKind, json: string): PlanNode {
 /** 计划树中的最大代价，视图用它换算每个节点的代价占比条。 */
 export function maxPlanCost(node: PlanNode): number {
   return Math.max(node.cost ?? 0, ...node.children.map(maxPlanCost))
+}
+
+/** 按先序遍历为节点分配 n1、n2… 编号，AI 解读用它引用具体节点。 */
+export function indexPlanNodes(root: PlanNode): Map<PlanNode, string> {
+  const ids = new Map<PlanNode, string>()
+  const walk = (node: PlanNode) => {
+    ids.set(node, `n${ids.size + 1}`)
+    node.children.forEach(walk)
+  }
+  walk(root)
+  return ids
+}
+
+/** 把计划树序列化成带编号的缩进文本，体积远小于原始 JSON，便于发给模型。 */
+export function serializePlan(root: PlanNode, ids: Map<PlanNode, string>): string {
+  const lines: string[] = []
+  const walk = (node: PlanNode, depth: number) => {
+    const parts = [`${'  '.repeat(depth)}[${ids.get(node)}] ${node.label}`]
+    if (node.target) parts.push(`target: ${node.target}`)
+    if (node.rows !== undefined) parts.push(`rows: ${node.rows}`)
+    if (node.cost !== undefined) parts.push(`cost: ${node.cost}`)
+    if (node.warning) parts.push('full scan')
+    if (node.detail) parts.push(node.detail.slice(0, 400))
+    lines.push(parts.join(' | '))
+    node.children.forEach((child) => walk(child, depth + 1))
+  }
+  walk(root, 0)
+  return lines.join('\n')
+}
+
+/** 提取 AI 回复中引用的节点编号（形如 [n3]），保持出现顺序去重。 */
+export function mentionedPlanNodes(text: string): string[] {
+  return [...new Set([...text.matchAll(/\[(n\d+)\]/gu)].map((m) => m[1]!))]
 }

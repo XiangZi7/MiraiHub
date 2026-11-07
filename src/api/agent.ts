@@ -45,6 +45,13 @@ export const deleteConfig = (profileId: string) =>
   call<AgentSettings>('ai_delete_config', { profileId })
 export const testConfig = (profileId: string) =>
   call<string>('ai_test_config', { profileId })
+/** 一次性解读执行计划：后端附带相关表索引，不进入对话历史，也不调用工具。 */
+export const explainPlan = (
+  target: AgentTarget,
+  sql: string,
+  plan: string,
+  language: string
+) => call<string>('ai_explain_plan', { target, sql, plan, language })
 export const listMcpServers = () => call<McpServer[]>('ai_list_mcp_servers')
 export const saveMcpServer = (input: McpServerInput) =>
   call<McpServer[]>('ai_save_mcp_server', { input })

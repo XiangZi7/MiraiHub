@@ -73,6 +73,22 @@ export async function connect(
   onProgress?: (progress: SshRouteProgress) => void
 ): Promise<string> {
   ensureTauri()
+  const target = await resolveSshRoute(config)
+  const requestId = crypto.randomUUID()
+  const stop = onProgress
+    ? await listen<SshRouteProgress>('ssh://connect-progress', event => {
+        if (event.payload.requestId === requestId) onProgress(event.payload)
+      })
+    : undefined
+  try {
+    return await invoke<string>('ssh_connect', { config: target, requestId })
+  } finally {
+    stop?.()
+  }
+}
+
+/** 把已保存的跳板连接 ID 解析成后端可用的完整路由。 */
+export async function resolveSshRoute(config: SshConfig): Promise<SshConfig> {
   const { jumpHostIds, ...target } = config
   if (jumpHostIds?.length) {
     if (
@@ -93,17 +109,7 @@ export async function connect(
       target.jumpHosts.push(hop)
     }
   }
-  const requestId = crypto.randomUUID()
-  const stop = onProgress
-    ? await listen<SshRouteProgress>('ssh://connect-progress', event => {
-        if (event.payload.requestId === requestId) onProgress(event.payload)
-      })
-    : undefined
-  try {
-    return await invoke<string>('ssh_connect', { config: target, requestId })
-  } finally {
-    stop?.()
-  }
+  return target
 }
 
 /** 断开并清理会话。对已不存在的会话调用是安全的 */

@@ -2,7 +2,16 @@ import { en as features } from './features'
 import { en as parameterized } from './parameterized'
 import { en as native } from './native'
 import { en as redis } from './redis'
+import { en as redisEdit } from './redisEdit'
 import { en as enhance } from './enhance'
+import { en as queryFeedback } from './query-feedback'
+import { en as tableDesigner } from './table-designer'
+import { en as sshSecurity } from './ssh-security'
+import { en as sshTunnels } from './ssh-tunnels'
+import { en as sshKeysConfig } from './ssh-keys-config'
+import { en as sshFiles } from './ssh-files'
+import { en as sshTerminal } from './ssh-terminal'
+import { en as databaseSafety } from './database-safety'
 export default {
   数据导入完成: 'Data import completed',
   数据导入失败: 'Data import failed',
@@ -132,7 +141,16 @@ export default {
   ...parameterized,
   ...native,
   ...redis,
+  ...redisEdit,
   ...enhance,
+  ...queryFeedback,
+  ...tableDesigner,
+  ...sshSecurity,
+  ...sshTunnels,
+  ...sshKeysConfig,
+  ...sshFiles,
+  ...sshTerminal,
+  ...databaseSafety,
   请求批准: 'Ask to approve',
   帮我批准: 'Auto approve',
   完全访问权限: 'Full access',

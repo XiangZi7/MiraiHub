@@ -18,7 +18,16 @@ use sqlx::{MySql, Postgres, Row, Sqlite};
 use tokio::sync::{Notify, RwLock};
 
 use super::error::{DatabaseError, DatabaseResult};
+use super::guard::{self, GuardPolicy, Risk};
 use super::models::{DatabaseConfig, DatabaseKind, DatabaseSession, DatabaseSslMode};
+use super::tunnel::DatabaseTunnel;
+
+/// 空闲连接保留时长：远端（尤其经 NAT/SSH）常会静默掐掉长时间不动的连接。
+const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+/// 连接最长寿命，定期换新以避开服务端 wait_timeout 与负载均衡的连接回收。
+const POOL_MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
+/// 元数据小池的连接数：对象树、补全与表结构读取不和用户查询抢连接。
+const META_POOL_CONNECTIONS: u32 = 2;
 
 #[derive(Clone)]
 pub(crate) enum DatabasePool {
@@ -166,6 +175,8 @@ impl RunningQuery {
 struct SessionEntry {
     revision: u64,
     pool: DatabasePool,
+    /// 元数据专用小池，首次使用时创建；SQLite 直接复用主池。
+    meta: Option<DatabasePool>,
     config: DatabaseConfig,
     /// 当前活动库。MySQL 允许为空（未选库）。
     database: String,
@@ -193,11 +204,26 @@ async fn connect_mysql(config: &DatabaseConfig) -> Result<MySqlPool, sqlx::Error
         options = options.ssl_client_key(Path::new(config.client_key.trim()));
     }
 
+    // 只读模式的服务端兜底：每条新连接都开启只读事务。
+    let read_only = config.read_only;
     MySqlPoolOptions::new()
         // 至少留一条额外连接给取消查询命令，避免执行连接占满池后无法发 KILL。
         .max_connections(config.max_connections.clamp(2, 50))
         .min_connections(1)
         .acquire_timeout(Duration::from_secs(config.timeout_secs.max(1)))
+        .idle_timeout(POOL_IDLE_TIMEOUT)
+        .max_lifetime(POOL_MAX_LIFETIME)
+        .test_before_acquire(true)
+        .after_connect(move |conn, _meta| {
+            Box::pin(async move {
+                if read_only {
+                    sqlx::query("SET SESSION TRANSACTION READ ONLY")
+                        .execute(&mut *conn)
+                        .await?;
+                }
+                Ok(())
+            })
+        })
         .connect_with(options)
         .await
 }
@@ -210,6 +236,9 @@ async fn connect_postgresql(config: &DatabaseConfig) -> Result<PgPool, sqlx::Err
         .password(&config.password)
         .application_name("MiraiHub")
         .ssl_mode(postgresql_ssl_mode(config.ssl_mode));
+    if config.read_only {
+        options = options.options([("default_transaction_read_only", "on")]);
+    }
 
     if !config.database.trim().is_empty() {
         options = options.database(config.database.trim());
@@ -228,6 +257,9 @@ async fn connect_postgresql(config: &DatabaseConfig) -> Result<PgPool, sqlx::Err
         .max_connections(config.max_connections.clamp(2, 50))
         .min_connections(1)
         .acquire_timeout(Duration::from_secs(config.timeout_secs.max(1)))
+        .idle_timeout(POOL_IDLE_TIMEOUT)
+        .max_lifetime(POOL_MAX_LIFETIME)
+        .test_before_acquire(true)
         .connect_with(options)
         .await
 }
@@ -236,7 +268,8 @@ async fn connect_postgresql(config: &DatabaseConfig) -> Result<PgPool, sqlx::Err
 async fn connect_sqlite(config: &DatabaseConfig) -> Result<SqlitePool, sqlx::Error> {
     let options = SqliteConnectOptions::new()
         .filename(config.host.trim())
-        .create_if_missing(true)
+        .create_if_missing(!config.read_only)
+        .read_only(config.read_only)
         .foreign_keys(true);
     SqlitePoolOptions::new()
         .max_connections(config.max_connections.clamp(2, 8))
@@ -342,13 +375,15 @@ impl DatabaseManager {
         Self::default()
     }
 
-    pub async fn test(&self, config: DatabaseConfig) -> DatabaseResult<()> {
+    pub async fn test(&self, mut config: DatabaseConfig) -> DatabaseResult<()> {
+        attach_tunnel(&mut config).await?;
         let pool = DatabasePool::connect(&config).await?;
         pool.close().await;
         Ok(())
     }
 
-    pub async fn connect(&self, config: DatabaseConfig) -> DatabaseResult<DatabaseSession> {
+    pub async fn connect(&self, mut config: DatabaseConfig) -> DatabaseResult<DatabaseSession> {
+        attach_tunnel(&mut config).await?;
         let pool = DatabasePool::connect(&config).await?;
         let server_version = read_server_version(&pool).await;
         let database = read_current_database(&pool, &config.database).await;
@@ -360,6 +395,8 @@ impl DatabaseManager {
             endpoint: config.endpoint(),
             database: database.clone(),
             server_version: server_version.clone(),
+            environment: config.environment,
+            read_only: config.read_only,
         };
 
         self.sessions.write().await.insert(
@@ -367,6 +404,7 @@ impl DatabaseManager {
             SessionEntry {
                 revision: 0,
                 pool,
+                meta: None,
                 config,
                 database,
                 server_version,
@@ -404,6 +442,92 @@ impl DatabaseManager {
             .ok_or_else(|| DatabaseError::SessionNotFound(id.to_owned()))
     }
 
+    /// 元数据读取用的独立小池。用户查询占满主池（或长事务阻塞）时，
+    /// 对象树与补全仍然能响应；建池失败就退回主池，不影响功能。
+    pub(crate) async fn meta_pool(&self, id: &str) -> DatabaseResult<DatabasePool> {
+        let (config, revision) = {
+            let sessions = self.sessions.read().await;
+            let entry = sessions
+                .get(id)
+                .ok_or_else(|| DatabaseError::SessionNotFound(id.to_owned()))?;
+            if let Some(meta) = &entry.meta {
+                return Ok(meta.clone());
+            }
+            if entry.config.kind == DatabaseKind::Sqlite {
+                return Ok(entry.pool.clone());
+            }
+            let mut config = entry.config.clone();
+            config.database = entry.database.clone();
+            config.max_connections = META_POOL_CONNECTIONS;
+            (config, entry.revision)
+        };
+
+        let pool = match DatabasePool::connect(&config).await {
+            Ok(pool) => pool,
+            Err(error) => {
+                log::debug!("元数据连接池创建失败，改用主连接池：{error}");
+                return self.pool(id).await;
+            }
+        };
+
+        let mut sessions = self.sessions.write().await;
+        let entry = sessions
+            .get_mut(id)
+            .ok_or_else(|| DatabaseError::SessionNotFound(id.to_owned()))?;
+        // 建池期间切了库或另一个请求抢先建好，丢弃这份。
+        if entry.revision != revision || entry.meta.is_some() {
+            let current = entry.meta.clone().unwrap_or_else(|| entry.pool.clone());
+            drop(sessions);
+            pool.close().await;
+            return Ok(current);
+        }
+        entry.meta = Some(pool.clone());
+        Ok(pool)
+    }
+
+    /// 执行入口的安全检查：只读拒绝写入，生产环境危险语句需要 `confirm` 等于库名。
+    pub(crate) async fn guard_sql(
+        &self,
+        id: &str,
+        sql_text: &str,
+        confirm: Option<&str>,
+    ) -> DatabaseResult<()> {
+        let (policy, kind, database) = self.policy(id).await?;
+        guard::check(
+            policy,
+            guard::classify_script(sql_text, kind),
+            &database,
+            confirm,
+        )
+    }
+
+    /// 非 SQL 文本的操作（删表、清空表、改表选项等）。`dangerous` 为 None 表示普通写入。
+    pub(crate) async fn guard_action(
+        &self,
+        id: &str,
+        dangerous: Option<String>,
+        confirm: Option<&str>,
+    ) -> DatabaseResult<()> {
+        let (policy, _, database) = self.policy(id).await?;
+        let risk = dangerous.map_or(Risk::Write, Risk::Dangerous);
+        guard::check(policy, risk, &database, confirm)
+    }
+
+    async fn policy(&self, id: &str) -> DatabaseResult<(GuardPolicy, DatabaseKind, String)> {
+        let sessions = self.sessions.read().await;
+        let entry = sessions
+            .get(id)
+            .ok_or_else(|| DatabaseError::SessionNotFound(id.to_owned()))?;
+        Ok((
+            GuardPolicy {
+                environment: entry.config.environment,
+                read_only: entry.config.read_only,
+            },
+            entry.config.kind,
+            entry.database.clone(),
+        ))
+    }
+
     /// Capture AI targets atomically; manual USE/SET cannot alter the isolated AI pool.
     pub(crate) async fn agent_config(
         &self,
@@ -438,6 +562,8 @@ impl DatabaseManager {
             endpoint: entry.config.endpoint(),
             database: entry.database.clone(),
             server_version: entry.server_version.clone(),
+            environment: entry.config.environment,
+            read_only: entry.config.read_only,
         })
     }
 
@@ -460,7 +586,7 @@ impl DatabaseManager {
         let pool = DatabasePool::connect(&config).await?;
         let server_version = read_server_version(&pool).await;
 
-        let previous = {
+        let (previous, previous_meta) = {
             let mut sessions = self.sessions.write().await;
             let entry = sessions
                 .get_mut(id)
@@ -470,10 +596,13 @@ impl DatabaseManager {
             entry.config = config.clone();
             entry.database = config.database.clone();
             entry.server_version = server_version.clone();
-            previous
+            (previous, entry.meta.take())
         };
 
         previous.close().await;
+        if let Some(meta) = previous_meta {
+            meta.close().await;
+        }
 
         Ok(DatabaseSession {
             session_id: id.to_owned(),
@@ -481,6 +610,8 @@ impl DatabaseManager {
             endpoint: config.endpoint(),
             database: config.database,
             server_version,
+            environment: config.environment,
+            read_only: config.read_only,
         })
     }
 
@@ -523,6 +654,10 @@ impl DatabaseManager {
         match entry {
             Some(entry) => {
                 entry.pool.close().await;
+                if let Some(meta) = entry.meta {
+                    meta.close().await;
+                }
+                // 配置里的隧道随 entry 释放；派生会话仍持有时继续保留。
                 Ok(())
             }
             None => Err(DatabaseError::SessionNotFound(id.to_owned())),
@@ -536,11 +671,32 @@ impl DatabaseManager {
             .write()
             .await
             .drain()
-            .map(|(_, entry)| entry.pool)
+            .flat_map(|(_, entry)| std::iter::once(entry.pool).chain(entry.meta))
             .collect();
         // 各连接池互不依赖，并行关闭，一个慢连接不拖住其余的。
         futures_util::future::join_all(pools.iter().map(|pool| pool.close())).await;
     }
+}
+
+/// 配置要求走 SSH 时先建隧道，再把 host/port 改写成本机转发端口。
+/// 已带隧道的配置（派生会话）直接复用，不重复建立。
+async fn attach_tunnel(config: &mut DatabaseConfig) -> DatabaseResult<()> {
+    if config.tunnel.is_some() {
+        return Ok(());
+    }
+    let Some(ssh) = config.ssh_tunnel.take() else {
+        return Ok(());
+    };
+    if config.kind == DatabaseKind::Sqlite {
+        return Err(DatabaseError::InvalidInput(
+            "SQLite 是本地文件，不支持 SSH 隧道".to_owned(),
+        ));
+    }
+    let tunnel = DatabaseTunnel::start(ssh, &config.host, config.port).await?;
+    config.host = "127.0.0.1".to_owned();
+    config.port = tunnel.local_port();
+    config.tunnel = Some(tunnel);
+    Ok(())
 }
 
 fn new_session_id() -> String {
@@ -573,6 +729,10 @@ mod tests {
             client_key: String::new(),
             timeout_secs: 20,
             max_connections: 8,
+            environment: Default::default(),
+            read_only: false,
+            ssh_tunnel: None,
+            tunnel: None,
         }
     }
 

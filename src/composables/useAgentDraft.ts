@@ -197,7 +197,7 @@ export function useAgentDraft(
           : request.source === 'schema'
             ? '请分析附加表结构，并给出索引与字段设计建议。'
             : request.intent === 'optimize'
-              ? '请分析附加 SQL 的性能，并给出优化建议。'
+              ? '请先调用 explain_sql 获取执行计划与相关索引，再分析附加 SQL 的性能并给出优化建议。'
               : request.source === 'terminal'
                 ? '请分析附加的终端输出，解释问题并建议下一步。'
                 : '请解释附加 SQL 的用途，并检查可能的问题。'

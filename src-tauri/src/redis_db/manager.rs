@@ -19,15 +19,20 @@ use tokio::sync::{Mutex, RwLock};
 
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
-pub struct Session {
+pub(super) struct Session {
     connection: Option<MultiplexedConnection>,
+    /// 订阅等需要独立连接的功能从这里派生，共享已建立的隧道。
+    pub(super) client: Client,
     info: RedisSession,
     config: RedisConfig,
     revision: u64,
 }
 
 impl Session {
-    async fn query<T: redis::FromRedisValue>(&mut self, command: &redis::Cmd) -> AppResult<T> {
+    pub(super) async fn query<T: redis::FromRedisValue>(
+        &mut self,
+        command: &redis::Cmd,
+    ) -> AppResult<T> {
         let connection = self
             .connection
             .as_mut()
@@ -43,6 +48,30 @@ impl Session {
             }
         }
     }
+
+    pub(super) fn timeout(&self) -> Duration {
+        Duration::from_secs(self.config.timeout_secs.clamp(1, 300))
+    }
+
+    /// 管道批量执行，用于大 key 扫描等需要逐键附带查询的场景。
+    pub(super) async fn pipeline<T: redis::FromRedisValue>(
+        &mut self,
+        pipe: &redis::Pipeline,
+    ) -> AppResult<T> {
+        let connection = self
+            .connection
+            .as_mut()
+            .ok_or_else(|| AppError::not_found("Redis 连接已断开，请重新连接"))?;
+        match pipe.query_async(connection).await {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                if error.is_io_error() || error.is_timeout() {
+                    self.connection = None;
+                }
+                Err(redis_error(error))
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -50,7 +79,7 @@ pub struct RedisManager {
     sessions: RwLock<HashMap<String, Arc<Mutex<Session>>>>,
 }
 
-fn redis_error(error: redis::RedisError) -> AppError {
+pub(super) fn redis_error(error: redis::RedisError) -> AppError {
     let kind = if error.kind() == redis::ErrorKind::AuthenticationFailed
         || matches!(error.code(), Some("NOAUTH" | "WRONGPASS"))
     {
@@ -70,10 +99,20 @@ async fn certificate(path: &str) -> AppResult<Option<Vec<u8>>> {
     Ok(Some(tokio::fs::read(path.trim()).await?))
 }
 
-async fn open(config: RedisConfig) -> AppResult<Session> {
+async fn open(mut config: RedisConfig) -> AppResult<Session> {
     let db = database_index(&config.database)?;
     if config.host.trim().is_empty() || config.host.contains('\0') || config.port == 0 {
         return Err(AppError::invalid_input("Invalid Redis host or port"));
+    }
+    // 走 SSH 时先建隧道，再改连本机转发端口；派生连接已带隧道则直接复用。
+    if config.tunnel.is_none() {
+        if let Some(ssh) = config.ssh_tunnel.take() {
+            let tunnel =
+                crate::db::tunnel::DatabaseTunnel::start(ssh, &config.host, config.port).await?;
+            config.host = "127.0.0.1".to_owned();
+            config.port = tunnel.local_port();
+            config.tunnel = Some(tunnel);
+        }
     }
     let tls = match config.ssl_mode {
         DatabaseSslMode::Disable => false,
@@ -143,10 +182,14 @@ async fn open(config: RedisConfig) -> AppResult<Session> {
         .map_err(redis_error)?;
     let mut session = Session {
         connection: Some(connection),
+        client,
         info: RedisSession {
             session_id: String::new(),
             database: db.to_string(),
-            endpoint: format!("{host}:{}", config.port),
+            endpoint: match &config.tunnel {
+                Some(tunnel) => format!("{} (SSH {})", tunnel.target(), tunnel.via()),
+                None => format!("{host}:{}", config.port),
+            },
         },
         config,
         revision: 0,
@@ -172,7 +215,7 @@ impl RedisManager {
         Ok(info)
     }
 
-    async fn session(&self, id: &str) -> AppResult<Arc<Mutex<Session>>> {
+    pub(super) async fn session(&self, id: &str) -> AppResult<Arc<Mutex<Session>>> {
         self.sessions
             .read()
             .await
@@ -183,6 +226,7 @@ impl RedisManager {
 
     pub async fn disconnect(&self, id: &str) {
         let session = self.sessions.write().await.remove(id);
+        super::monitor::stop_session(id);
         if let Some(session) = session {
             session.lock().await.connection = None;
         }

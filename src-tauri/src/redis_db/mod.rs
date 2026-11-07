@@ -1,6 +1,8 @@
 //! Redis 工作台与专用 AI 工具，不进入 SQL 方言。
 pub mod commands;
+mod editor;
 mod manager;
+mod monitor;
 pub mod models;
 mod protocol;
 pub use manager::RedisManager;

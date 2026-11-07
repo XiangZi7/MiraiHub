@@ -24,7 +24,48 @@ import type {
 } from '@/types/database'
 import { IS_TAURI } from '@/utils/window'
 import { settingNumber } from '@/composables/useSettings'
+import { isAppError, resolveSshRoute } from './ssh'
+import { get as getConnection } from './connections'
+import { isSshConnection, toSshConfig } from '@/types/connection'
+import { requestGuardConfirm } from '@/composables/useDatabaseGuard'
 export { errorMessage, isAppError } from './ssh'
+
+type TunnelFields = Pick<DatabaseConfig, 'sshTunnel' | 'sshTunnelConnectionId'>
+
+/** 把隧道引用的已保存 SSH 连接和跳板解析成后端需要的完整配置。 */
+export async function resolveTunnel<T extends TunnelFields>(
+  config: T
+): Promise<T> {
+  const { sshTunnelConnectionId: id, ...rest } = config
+  let tunnel = config.sshTunnel
+  if (id) {
+    const connection = await getConnection(id)
+    if (!connection || !isSshConnection(connection))
+      throw new Error(i18n.global.t('隧道使用的 SSH 连接不存在，请重新选择'))
+    tunnel = toSshConfig(connection)
+  }
+  if (!tunnel) return rest as T
+  return { ...rest, sshTunnel: await resolveSshRoute(tunnel) } as T
+}
+
+/** 后端要求确认时弹框输入库名，确认后带凭据重试一次；取消则抛回原错误。 */
+async function guardedInvoke<T>(
+  command: string,
+  args: Record<string, unknown>
+): Promise<T> {
+  ensureTauri()
+  try {
+    return await invoke<T>(command, args)
+  } catch (error) {
+    if (!isAppError(error) || error.kind !== 'confirmRequired') throw error
+    const confirm = await requestGuardConfirm(
+      error.message,
+      error.confirm ?? 'CONFIRM'
+    )
+    if (confirm === null) throw error
+    return invoke<T>(command, { ...args, confirm })
+  }
+}
 
 export async function forkSession(
   sessionId: string,
@@ -61,14 +102,16 @@ function ensureTauri(): void {
 
 export async function testConnection(config: DatabaseConfig): Promise<void> {
   ensureTauri()
-  await invoke('db_test_connection', { config })
+  await invoke('db_test_connection', { config: await resolveTunnel(config) })
 }
 
 export async function connect(
   config: DatabaseConfig
 ): Promise<DatabaseSession> {
   ensureTauri()
-  return invoke<DatabaseSession>('db_connect', { config })
+  return invoke<DatabaseSession>('db_connect', {
+    config: await resolveTunnel(config),
+  })
 }
 
 export async function describeSession(
@@ -76,6 +119,12 @@ export async function describeSession(
 ): Promise<DatabaseSession> {
   ensureTauri()
   return invoke<DatabaseSession>('db_describe_session', { sessionId })
+}
+
+/** 在会话连接池上执行 SELECT 1，返回往返耗时（毫秒）。 */
+export async function ping(sessionId: string): Promise<number> {
+  ensureTauri()
+  return invoke<number>('db_ping', { sessionId })
 }
 
 export async function useDatabase(
@@ -179,7 +228,7 @@ export async function alterTableOptions(
   options: TableAlterOptions
 ): Promise<string[]> {
   ensureTauri()
-  return invoke<string[]>('db_alter_table_options', {
+  return guardedInvoke<string[]>('db_alter_table_options', {
     sessionId,
     schema,
     name,
@@ -193,7 +242,7 @@ export async function truncateTable(
   name: string
 ): Promise<void> {
   ensureTauri()
-  await invoke('db_truncate_table', { sessionId, schema, name })
+  await guardedInvoke('db_truncate_table', { sessionId, schema, name })
 }
 
 export async function routineDetail(
@@ -215,7 +264,7 @@ export async function createDatabase(
   name: string
 ): Promise<void> {
   ensureTauri()
-  await invoke('db_create_database', { sessionId, name })
+  await guardedInvoke('db_create_database', { sessionId, name })
 }
 
 export async function renameDatabase(
@@ -224,7 +273,7 @@ export async function renameDatabase(
   newName: string
 ): Promise<void> {
   ensureTauri()
-  await invoke('db_rename_database', { sessionId, oldName, newName })
+  await guardedInvoke('db_rename_database', { sessionId, oldName, newName })
 }
 
 export async function dropDatabase(
@@ -232,7 +281,7 @@ export async function dropDatabase(
   name: string
 ): Promise<void> {
   ensureTauri()
-  await invoke('db_drop_database', { sessionId, name })
+  await guardedInvoke('db_drop_database', { sessionId, name })
 }
 
 export async function renameObject(
@@ -241,7 +290,7 @@ export async function renameObject(
   newName: string
 ): Promise<void> {
   ensureTauri()
-  await invoke('db_rename_object', {
+  await guardedInvoke('db_rename_object', {
     sessionId,
     schema: object.schema,
     name: object.name,
@@ -256,7 +305,7 @@ export async function dropObject(
   object: Pick<DatabaseObject, 'schema' | 'name' | 'kind' | 'identity'>
 ): Promise<void> {
   ensureTauri()
-  await invoke('db_drop_object', {
+  await guardedInvoke('db_drop_object', {
     sessionId,
     schema: object.schema,
     name: object.name,
@@ -287,7 +336,7 @@ export async function mutateRows(
   request: MutationRequest
 ): Promise<MutationResult> {
   ensureTauri()
-  return invoke<MutationResult>('db_mutate_rows', { sessionId, request })
+  return guardedInvoke<MutationResult>('db_mutate_rows', { sessionId, request })
 }
 
 /** 预览表格改动将要执行的 SQL（只渲染，不提交）。 */
@@ -305,7 +354,7 @@ export async function execute(
   maxRows = 500
 ): Promise<DatabaseExecution> {
   ensureTauri()
-  return invoke<DatabaseExecution>('db_execute', {
+  return guardedInvoke<DatabaseExecution>('db_execute', {
     sessionId,
     sql,
     maxRows,
@@ -387,7 +436,7 @@ export async function importRows(
   taskId: string
 ): Promise<DatabaseImportResult> {
   ensureTauri()
-  return invoke('db_import_rows', { sessionId, tables, taskId })
+  return guardedInvoke('db_import_rows', { sessionId, tables, taskId })
 }
 
 export async function importSql(
@@ -396,7 +445,7 @@ export async function importSql(
   options: DatabaseImportOptions
 ): Promise<DatabaseImportResult> {
   ensureTauri()
-  return invoke<DatabaseImportResult>('db_import_sql', {
+  return guardedInvoke<DatabaseImportResult>('db_import_sql', {
     sessionId,
     path,
     options: {

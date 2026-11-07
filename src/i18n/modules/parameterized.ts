@@ -249,8 +249,8 @@ const entries = {
     '{columns} columns · {indexes} indexes · {keys} foreign keys',
   ],
   'database.unsavedTabs': [
-    '{names}包含未保存的 SQL 或建表草稿。关闭后这些草稿将被丢弃；取消后可先保存或复制内容。',
-    '{names} contain unsaved SQL or table drafts. Closing discards these drafts. Cancel to save or copy them first.',
+    '{names}包含未保存的 SQL、建表草稿或未提交的数据改动。关闭后这些内容将被丢弃；取消后可先保存、提交或复制内容。',
+    '{names} contain unsaved SQL, table drafts or uncommitted data changes. Closing discards them. Cancel to save, commit or copy them first.',
   ],
   'database.moreTabs': [' 等 {count} 个标签', ' and others ({count} tabs)'],
   'database.unsavedTableDrafts': [

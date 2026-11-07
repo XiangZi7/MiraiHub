@@ -25,6 +25,8 @@ pub enum ErrorKind {
     Io,
     /// 其余未归类的内部错误
     Internal,
+    /// 危险操作需要用户二次确认（如生产库 DROP），带确认凭据重试即可
+    ConfirmRequired,
 }
 
 /// 跨 IPC 边界的错误载荷。
@@ -33,6 +35,9 @@ pub enum ErrorKind {
 pub struct AppError {
     pub kind: ErrorKind,
     pub message: String,
+    /// `ConfirmRequired` 时用户需要输入的确认文本（当前库名）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirm: Option<String>,
     /// 服务端要求的最短重试等待（HTTP `Retry-After` 等），只在后端使用，不跨 IPC
     #[serde(skip)]
     pub retry_after: Option<Duration>,
@@ -43,6 +48,7 @@ impl AppError {
         Self {
             kind,
             message: message.into(),
+            confirm: None,
             retry_after: None,
         }
     }

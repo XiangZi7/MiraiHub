@@ -12,6 +12,7 @@ import type {
   DatabaseObjectKind,
 } from '@/types/database'
 import { cn } from '@/utils/cn'
+import DatabaseTreeCollapse from './DatabaseTreeCollapse.vue'
 
 const { t } = useI18n()
 
@@ -35,6 +36,8 @@ const emit = defineEmits<{
   open: [object: DatabaseObject]
   context: [event: MouseEvent, object: DatabaseObject]
   categoryContext: [event: MouseEvent, schema: string, kind: DatabaseObjectKind]
+  rename: [object: DatabaseObject]
+  remove: [object: DatabaseObject]
 }>()
 
 /**
@@ -89,6 +92,28 @@ function selectObject(object: DatabaseObject): void {
   else state.expandedObjects.add(key)
 }
 
+/** 对象行键盘：Enter 打开、→/← 展开收起字段、F2 重命名、Del 删除；其余交给对象树导航。 */
+function objectKeydown(event: KeyboardEvent, object: DatabaseObject): void {
+  if (event.altKey || event.ctrlKey || event.metaKey) return
+  const key = databaseObjectKey(object)
+  const open = state.expandedObjects.has(key)
+  if (event.key === 'Enter') emit('open', object)
+  else if (event.key === 'F2') emit('rename', object)
+  else if (event.key === 'Delete') emit('remove', object)
+  else if (event.key === 'ArrowRight' && hasColumns() && !open)
+    selectObject(object)
+  else if (event.key === 'ArrowLeft' && open) state.expandedObjects.delete(key)
+  else return
+  event.preventDefault()
+}
+
+function categoryKeydown(event: KeyboardEvent): void {
+  if (event.key === 'ArrowRight' && !state.expanded) state.expanded = true
+  else if (event.key === 'ArrowLeft' && state.expanded) state.expanded = false
+  else return
+  event.preventDefault()
+}
+
 watch(
   () => props.defaultExpanded,
   expanded => {
@@ -101,16 +126,25 @@ watch(
   <AppButton
     variant="bare"
     class="nav-item h-7 w-full gap-1.5 pl-6 text-xs"
+    role="treeitem"
+    tabindex="-1"
+    aria-level="2"
     :aria-expanded="state.expanded"
     :aria-busy="loading"
+    :data-tree-key="`category:${schema}:${kind}`"
+    :data-tree-label="label"
     @click="state.expanded = !state.expanded"
+    @keydown="categoryKeydown"
     @contextmenu.prevent.stop="emit('categoryContext', $event, schema, kind)"
   >
     <AppIcon
       name="lucide:chevron-right"
       :size="12"
       :class="
-        cn('text-txt-4 transition-transform', state.expanded && 'rotate-90')
+        cn(
+          'text-txt-4 motion-safe:transition-transform',
+          state.expanded && 'rotate-90'
+        )
       "
     />
     <AppIcon
@@ -131,7 +165,7 @@ watch(
     >
   </AppButton>
 
-  <template v-if="state.expanded">
+  <DatabaseTreeCollapse :open="state.expanded">
     <div
       v-if="loading && !objects.length"
       class="space-y-2 py-2 pr-4 pl-10 motion-safe:animate-pulse"
@@ -166,6 +200,17 @@ watch(
             selectedKey === databaseObjectKey(object) && 'nav-item-active'
           )
         "
+        role="treeitem"
+        tabindex="-1"
+        aria-level="3"
+        :aria-selected="selectedKey === databaseObjectKey(object)"
+        :aria-expanded="
+          hasColumns()
+            ? state.expandedObjects.has(databaseObjectKey(object))
+            : undefined
+        "
+        :data-tree-key="databaseObjectKey(object)"
+        :data-tree-label="object.name"
         :title="
           t('{value0}.{value1}{value2}（双击打开）', {
             value0: object.schema,
@@ -174,6 +219,7 @@ watch(
           })
         "
         @dblclick="emit('open', object)"
+        @keydown="objectKeydown($event, object)"
         @contextmenu.prevent.stop="emit('context', $event, object)"
       >
         <AppIcon
@@ -183,7 +229,7 @@ watch(
           :size="11"
           :class="
             cn(
-              'text-txt-4 transition-transform',
+              'text-txt-4 motion-safe:transition-transform',
               state.expandedObjects.has(databaseObjectKey(object)) &&
                 'rotate-90'
             )
@@ -215,10 +261,9 @@ watch(
         </span>
       </AppButton>
 
-      <template
-        v-if="
-          hasColumns() && state.expandedObjects.has(databaseObjectKey(object))
-        "
+      <DatabaseTreeCollapse
+        v-if="hasColumns()"
+        :open="state.expandedObjects.has(databaseObjectKey(object))"
       >
         <div
           v-if="inspectingKeys.has(databaseObjectKey(object))"
@@ -229,7 +274,12 @@ watch(
         <div
           v-for="column in columnsFor(object)"
           :key="`${databaseObjectKey(object)}:${column.name}`"
-          class="text-txt-3 flex h-6 items-center gap-1.5 pr-2 pl-15 text-[10.5px]"
+          class="text-txt-3 focus-visible:bg-hover flex h-6 items-center gap-1.5 pr-2 pl-15 text-[10.5px] outline-none"
+          role="treeitem"
+          tabindex="-1"
+          aria-level="4"
+          :data-tree-key="`${databaseObjectKey(object)}:${column.name}`"
+          :data-tree-label="column.name"
           :title="`${column.dataType}${column.nullable ? ' · nullable' : ''}`"
         >
           <AppIcon
@@ -242,7 +292,7 @@ watch(
             {{ column.dataType }}
           </span>
         </div>
-      </template>
+      </DatabaseTreeCollapse>
     </template>
     <AppButton
       v-if="remaining > 0"
@@ -253,5 +303,5 @@ watch(
     >
       {{ t('显示更多（还有 {count} 个）', { count: remaining }) }}
     </AppButton>
-  </template>
+  </DatabaseTreeCollapse>
 </template>

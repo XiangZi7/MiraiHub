@@ -106,12 +106,20 @@ export interface GenerateKeyRequest {
 
 /** 错误分类。与 Rust 的 ErrorKind 对应 */
 export type AppErrorKind =
-  'invalidInput' | 'network' | 'auth' | 'notFound' | 'io' | 'internal'
+  | 'invalidInput'
+  | 'network'
+  | 'auth'
+  | 'notFound'
+  | 'io'
+  | 'internal'
+  | 'confirmRequired'
 
 /** 跨 IPC 边界的错误载荷 */
 export interface AppError {
   kind: AppErrorKind
   message: string
+  /** `confirmRequired` 时用户需要输入的确认文本（当前库名） */
+  confirm?: string
 }
 
 /** 会话状态变更事件负载 */

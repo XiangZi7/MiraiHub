@@ -111,7 +111,9 @@ pub async fn fetch_rows(
             let rows = query.fetch_all(pool).await.map_err(DatabaseError::Query)?;
             (
                 rows.first().map(query::sqlite_columns).unwrap_or_default(),
-                rows.iter().map(query::decode_sqlite_row).collect::<Vec<_>>(),
+                rows.iter()
+                    .map(query::decode_sqlite_row)
+                    .collect::<Vec<_>>(),
             )
         }
     };
@@ -159,7 +161,9 @@ fn build_where(
                     DatabaseKind::Mysql => format!("CAST({quoted} AS CHAR) LIKE {placeholder}"),
                     DatabaseKind::Postgresql => format!("{quoted}::text ILIKE {placeholder}"),
                     // SQLite 的 LIKE 对 ASCII 默认不区分大小写
-                    DatabaseKind::Sqlite => format!("CAST({quoted} AS TEXT) LIKE {placeholder} ESCAPE '\\'"),
+                    DatabaseKind::Sqlite => {
+                        format!("CAST({quoted} AS TEXT) LIKE {placeholder} ESCAPE '\\'")
+                    }
                 }
             }
             _ => {

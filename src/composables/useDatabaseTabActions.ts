@@ -7,7 +7,7 @@ interface QueryActionTab {
   kind: 'query' | 'object' | 'table-designer'
   sql?: string
   savedQueryId?: string | null
-  /** 建表标签：设计器有真正修改（草稿或 ALTER 差异）才提示未保存。 */
+  /** 建表标签有真正修改（草稿或 ALTER 差异），或表数据标签有未提交的行改动。 */
   dirty?: boolean
 }
 interface Options {
@@ -22,7 +22,7 @@ export function useDatabaseTabActions(options: Options) {
   const state = reactive({ pendingIds: [] as string[] })
   function draft(tab: QueryActionTab): boolean {
     return (
-      (tab.kind === 'table-designer' && Boolean(tab.dirty)) ||
+      (tab.kind !== 'query' && Boolean(tab.dirty)) ||
       (tab.kind === 'query' &&
         Boolean(tab.sql?.trim()) &&
         (!tab.savedQueryId || !options.hasSavedQuery(tab.savedQueryId)))

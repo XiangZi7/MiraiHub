@@ -10,6 +10,7 @@ import type {
   DatabaseConfig,
   DatabaseConnectionConfig,
   DatabaseConnectionKind,
+  DatabaseEnvironment,
   DatabaseKind,
   DatabaseSslMode,
 } from '@/types/database'
@@ -80,6 +81,17 @@ export interface SshConnectionSettings {
   proxy?: SshProxyConfig
 }
 
+/** 数据库连接走的 SSH 隧道：引用已保存的 SSH 连接，或手动填写。 */
+export interface DatabaseSshTunnelSettings {
+  enabled: boolean
+  /** 非空时使用已保存的 SSH 连接，下面的手动字段被忽略 */
+  connectionId?: string
+  host: string
+  port: number
+  username: string
+  auth: SshAuthMethod
+}
+
 /** 数据库连接的专属配置 */
 export interface DatabaseConnectionSettings {
   /** 默认打开的库名 */
@@ -92,6 +104,10 @@ export interface DatabaseConnectionSettings {
   caCertificate?: string
   clientCertificate?: string
   clientKey?: string
+  /** 以下均可选：旧连接没有这些字段，等同开发环境、可写、直连。 */
+  environment?: DatabaseEnvironment
+  readOnly?: boolean
+  sshTunnel?: DatabaseSshTunnelSettings
 }
 
 /** 本地 PTY 终端的专属配置 */
@@ -219,6 +235,31 @@ export function toSshConfig(connection: SavedConnection): SshConfig {
   }
 }
 
+/** 环境决定连接的标签颜色。 */
+export function environmentTagColor(
+  environment: DatabaseEnvironment = 'development'
+): ConnectionTagColor {
+  if (environment === 'production') return 'red'
+  return environment === 'testing' ? 'amber' : 'green'
+}
+
+/** 隧道设置 → 连接入参；引用已保存连接的由 API 层在调用后端前解析。 */
+export function tunnelConfigOf(
+  tunnel?: DatabaseSshTunnelSettings
+): Pick<DatabaseConfig, 'sshTunnel' | 'sshTunnelConnectionId'> {
+  if (!tunnel?.enabled) return {}
+  if (tunnel.connectionId) return { sshTunnelConnectionId: tunnel.connectionId }
+  return {
+    sshTunnel: {
+      host: tunnel.host,
+      port: tunnel.port,
+      username: tunnel.username,
+      auth: tunnel.auth,
+      verifyHostKey: settingsSnapshot().verifyHostKey,
+    },
+  }
+}
+
 /** 已保存的数据库连接 → Rust 驱动入参。 */
 export function toDatabaseConfig(
   connection: SavedConnection,
@@ -253,6 +294,11 @@ export function toDatabaseConnectionConfig(
     clientKey: settings.clientKey ?? '',
     timeoutSecs: settingNumber('databaseTimeout', 30),
     maxConnections: settingNumber('maxDatabaseConnections', 10),
+    environment: settings.environment ?? 'development',
+    readOnly: settings.readOnly ?? false,
+    ...tunnelConfigOf(
+      connection.kind === 'sqlite' ? undefined : settings.sshTunnel
+    ),
   }
 }
 

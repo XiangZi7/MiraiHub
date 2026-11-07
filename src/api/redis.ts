@@ -7,7 +7,12 @@ import type {
   RedisKeyPage,
   RedisKeyDetail,
   RedisCommandResult,
+  RedisKey,
+  RedisCollectionPage,
+  RedisCollectionOp,
+  RedisPatternPreview,
 } from '@/types/redis'
+import { resolveTunnel } from './database'
 export { errorMessage, isAppError } from './ssh'
 
 function call<T>(command: string, args: Record<string, unknown>): Promise<T> {
@@ -18,9 +23,13 @@ function call<T>(command: string, args: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args)
 }
 export const testConnection = (config: RedisConfig) =>
-  call<void>('redis_test_connection', { config })
+  resolveTunnel(config).then(resolved =>
+    call<void>('redis_test_connection', { config: resolved })
+  )
 export const connect = (config: RedisConfig) =>
-  call<RedisSession>('redis_connect', { config })
+  resolveTunnel(config).then(resolved =>
+    call<RedisSession>('redis_connect', { config: resolved })
+  )
 export const disconnect = (sessionId: string) =>
   call<void>('redis_disconnect', { sessionId })
 export const useDatabase = (sessionId: string, database: string) =>
@@ -37,3 +46,39 @@ export const deleteKey = (sessionId: string, key: string) =>
   call<void>('redis_delete_key', { sessionId, key })
 export const expireKey = (sessionId: string, key: string, ttlSecs: number) =>
   call<void>('redis_expire_key', { sessionId, key, ttlSecs })
+export const collectionPage = (
+  sessionId: string,
+  key: string,
+  cursor: string,
+  pattern: string,
+  count: number
+) =>
+  call<RedisCollectionPage>('redis_collection_page', {
+    sessionId,
+    key,
+    cursor,
+    pattern,
+    count,
+  })
+export const collectionWrite = (
+  sessionId: string,
+  key: string,
+  op: RedisCollectionOp,
+  create = false
+) => call<number>('redis_collection_write', { sessionId, key, op, create })
+export const createString = (
+  sessionId: string,
+  key: string,
+  value: string,
+  ttlSecs: number
+) => call<void>('redis_create_string', { sessionId, key, value, ttlSecs })
+export const renameKey = (
+  sessionId: string,
+  key: string,
+  newName: string,
+  overwrite: boolean
+) => call<RedisKey>('redis_rename_key', { sessionId, key, newName, overwrite })
+export const previewPattern = (sessionId: string, pattern: string) =>
+  call<RedisPatternPreview>('redis_preview_pattern', { sessionId, pattern })
+export const deletePattern = (sessionId: string, pattern: string) =>
+  call<number>('redis_delete_pattern', { sessionId, pattern })

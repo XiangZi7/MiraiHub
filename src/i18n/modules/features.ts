@@ -812,6 +812,18 @@ export const en = {
   新增行: 'Add row',
   提交: 'Commit',
   放弃未提交改动: 'Discard uncommitted changes',
+  有未提交的改动: 'Uncommitted changes',
+  '当前页有 {value0} 项未提交改动，继续操作会丢失它们。可以先提交，或放弃后继续（放弃后可撤销一次）。':
+    'This page has {value0} uncommitted changes that would be lost. Commit them first, or discard and continue (you can undo the discard once).',
+  放弃并继续: 'Discard and continue',
+  提交并继续: 'Commit and continue',
+  恢复改动: 'Restore changes',
+  '撤销刚才的放弃，恢复当时的页面和改动': 'Undo the discard and restore that page with its changes',
+  '已放弃未提交改动，可点击工具栏“恢复改动”撤销':
+    'Uncommitted changes discarded. Click “Restore changes” in the toolbar to undo',
+  '{value0} 个表数据标签有未提交的改动，关闭连接后将丢失。':
+    '{value0} table data tabs have uncommitted changes that will be lost when this connection closes.',
+  请先提交或放弃表数据改动再切换数据库: 'Commit or discard table data changes before switching databases',
   撤销删除: 'Undo deletion',
   标记删除: 'Mark for deletion',
   移除新增行: 'Remove new row',

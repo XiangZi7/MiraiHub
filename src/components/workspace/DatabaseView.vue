@@ -11,6 +11,7 @@ import {
   toRefs,
   watch,
   useTemplateRef,
+  provide,
 } from 'vue'
 import {
   createReusableTemplate,
@@ -26,6 +27,7 @@ import {
   listQueryHistory,
   updateQueryHistory,
 } from '@/api/database-history'
+import { EXPLAIN_AGENT_TARGET } from '@/utils/explain-plan'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
@@ -57,6 +59,10 @@ import type {
   PersistedDatabaseQueryTab,
   SavedDatabaseQuery,
 } from '@/types/database-query'
+import {
+  pushQueryResult,
+  type QueryResultEntry,
+} from '@/utils/query-result-history'
 import type { SshSessionStatus } from '@/types/ssh'
 import { copyText } from '@/utils/clipboard'
 import { openConnectionWindow } from '@/utils/window'
@@ -72,6 +78,7 @@ import DatabaseTableOverview from './database/DatabaseTableOverview.vue'
 import DatabaseTableView from '@/components/workspace/database/DatabaseTableView.vue'
 import ErDiagramView from './database/ErDiagramView.vue'
 import DatabaseSchemaDiffDialog from './database/DatabaseSchemaDiffDialog.vue'
+import DatabaseGuardDialog from './database/DatabaseGuardDialog.vue'
 import DatabaseTransferDialog, {
   type DatabaseTransferMode,
 } from './database/DatabaseTransferDialog.vue'
@@ -320,10 +327,20 @@ const state = reactive({
   // 各查询标签独立保留执行结果和错误。
   queryResults: {} as Record<
     string,
-    { execution: DatabaseExecution | null; error: string }
+    {
+      execution: DatabaseExecution | null
+      error: string
+      // 最近一次执行的 SQL，用于定位失败语句和重试
+      sql?: string
+      // 最近 N 次结果与固定结果
+      history?: QueryResultEntry[]
+    }
   >,
   // 各查询标签最近一次的执行计划与分析状态
-  queryPlans: {} as Record<string, { plan: PlanNode | null; loading: boolean }>,
+  queryPlans: {} as Record<
+    string,
+    { plan: PlanNode | null; loading: boolean; sql?: string }
+  >,
   // ER 图与结构对比浮层
   erOpen: false,
   schemaDiffOpen: false,
@@ -363,6 +380,23 @@ const {
     emit('status', nextStatus, nextSessionId),
 })
 
+// 开发环境且可写是默认状态，不占用界面；其余情况在顶部常驻提示。
+const safetyBand = computed(() => {
+  const current = session.value
+  if (!current) return null
+  const production = current.environment === 'production'
+  const testing = current.environment === 'testing'
+  if (!production && !testing && !current.readOnly) return null
+  const labels = [
+    ...(production ? [t('生产环境')] : testing ? [t('测试环境')] : []),
+    ...(current.readOnly ? [t('只读')] : []),
+  ]
+  return {
+    label: labels.join(' · '),
+    color: production ? 'bg-danger' : testing ? 'bg-amber' : 'bg-accent-deep',
+  }
+})
+
 // 真正返回该连接时初始化侧栏；同连接各分屏之间聚焦不会触发，也不打断后台执行。
 watch(
   () =>
@@ -395,6 +429,7 @@ const agentTarget = computed(() => ({
   sessionId: connected.value ? sessionId.value : '',
   database: session.value?.database ?? '',
 }))
+provide(EXPLAIN_AGENT_TARGET, agentTarget)
 watch(
   () => JSON.stringify(agentTarget.value),
   () => {
@@ -505,6 +540,12 @@ const dirtyDesignerIds = reactive(new Set<string>())
 function setDesignerDirty(id: string, dirty: boolean): void {
   if (dirty) dirtyDesignerIds.add(id)
   else dirtyDesignerIds.delete(id)
+}
+/* 表数据标签的未提交行改动：标签显示圆点，关闭标签或连接前提示。 */
+const dirtyObjectIds = reactive(new Set<string>())
+function setObjectDirty(id: string, dirty: boolean): void {
+  if (dirty) dirtyObjectIds.add(id)
+  else dirtyObjectIds.delete(id)
 }
 
 const persistedQueryTabs = computed<PersistedDatabaseQueryTab[]>(() =>
@@ -713,8 +754,18 @@ defineExpose({
     const dirtyTabs = designerTabs.value.filter(tab =>
       dirtyDesignerIds.has(tab.id)
     )
-    return dirtyTabs.length
-      ? `${props.connection.name}: ${t('database.unsavedTableDrafts', { count: dirtyTabs.length })}`
+    const warnings = [
+      dirtyTabs.length
+        ? t('database.unsavedTableDrafts', { count: dirtyTabs.length })
+        : '',
+      dirtyObjectIds.size
+        ? t('{value0} 个表数据标签有未提交的改动，关闭连接后将丢失。', {
+            value0: dirtyObjectIds.size,
+          })
+        : '',
+    ].filter(Boolean)
+    return warnings.length
+      ? `${props.connection.name}: ${warnings.join(' ')}`
       : ''
   },
 })
@@ -770,6 +821,7 @@ function closeTab(id: string): void {
 function closeQueryTabs(ids: string[]): void {
   const closing = new Set(ids)
   for (const id of closing) dirtyDesignerIds.delete(id)
+  for (const id of closing) dirtyObjectIds.delete(id)
   for (const id of closing) delete state.queryResults[id]
   const next = activeAfterTabClose(queryState.tabs, queryState.activeId, ids)
   queryState.tabs = queryState.tabs.filter(tab => !closing.has(tab.id))
@@ -779,7 +831,9 @@ const queryTabActions = useDatabaseTabActions({
   tabs: () =>
     queryState.tabs.map(tab => ({
       ...tab,
-      dirty: tab.kind === 'table-designer' && dirtyDesignerIds.has(tab.id),
+      dirty:
+        (tab.kind === 'table-designer' && dirtyDesignerIds.has(tab.id)) ||
+        (tab.kind === 'object' && dirtyObjectIds.has(tab.id)),
     })),
   close: closeQueryTabs,
   hasSavedQuery: id => savedQueries.value.some(query => query.id === id),
@@ -823,7 +877,7 @@ registerDatabaseWorkspaceTabs(props.connection?.id, {
       id: tab.id,
       icon: tab.icon,
       closable: tab.closable,
-      label: tabLabel(tab),
+      label: tabLabel(tab) + (dirtyObjectIds.has(tab.id) ? ' •' : ''),
       tooltip: tabTooltip(tab),
     })),
   activeId: () => queryState.activeId,
@@ -1375,7 +1429,8 @@ async function runQuery(
       }).id
       historyEntries.value = listQueryHistory(props.connection.id)
     }
-    state.queryResults[tabId] = { execution: null, error: '' }
+    // 重跑时保留上一次结果（界面置灰），完成后整体替换，避免结果区闪烁。
+    const previous = state.queryResults[tabId]
     const maxRows = Number(queryRowLimit.value)
     await executeSql(
       sql,
@@ -1403,11 +1458,56 @@ async function runQuery(
       state.queryResults[tabId] = markRaw({
         execution: queryExecution.value,
         error: queryError.value,
+        sql,
+        history: pushQueryResult(previous?.history ?? [], {
+          id: historyId || `${Date.now()}`,
+          sql,
+          executedAt: Date.now(),
+          execution: queryExecution.value,
+          error: queryError.value,
+          pinned: false,
+          evicted: false,
+        }),
       })
   } finally {
     state.preparingQuery = false
     state.runningQueryId = ''
   }
+}
+
+/** 用上一次执行的 SQL 原样重跑，不受编辑器当前选区影响。 */
+function retryQuery(tabId: string): void {
+  const sql = state.queryResults[tabId]?.sql
+  void runQuery(sql || undefined, tabId)
+}
+
+/** 固定/取消固定或关闭某次历史结果；关闭的是最新结果时回退到上一次。 */
+function updateResultHistory(
+  tabId: string,
+  entryId: string,
+  action: 'pin' | 'close'
+): void {
+  const current = state.queryResults[tabId]
+  if (!current?.history) return
+  const history =
+    action === 'pin'
+      ? current.history.map(entry =>
+          entry.id === entryId ? { ...entry, pinned: !entry.pinned } : entry
+        )
+      : current.history.filter(entry => entry.id !== entryId)
+  const latest = history.at(-1)
+  const closedLatest = current.history.at(-1)?.id !== latest?.id
+  state.queryResults[tabId] = markRaw({
+    ...current,
+    history,
+    ...(closedLatest
+      ? {
+          execution: latest?.execution ?? null,
+          error: latest?.error ?? '',
+          sql: latest?.sql ?? '',
+        }
+      : {}),
+  })
 }
 
 /** 分析当前标签里某条语句的执行计划，结果挂在该标签下的 Plan 页签。 */
@@ -1420,6 +1520,7 @@ async function explainQuery(sql: string, tabId: string): Promise<void> {
     state.queryPlans[tabId] = {
       plan: parseExplainPlan(kind, json),
       loading: false,
+      sql,
     }
   } catch (error) {
     delete state.queryPlans[tabId]
@@ -1475,6 +1576,10 @@ async function changeDatabase(
     const dirty = designerTabs.value.some(tab => dirtyDesignerIds.has(tab.id))
     if (dirty) {
       toast.warning(t('请先保存或关闭表设计草稿再切换数据库'))
+      return
+    }
+    if (dirtyObjectIds.size) {
+      toast.warning(t('请先提交或放弃表数据改动再切换数据库'))
       return
     }
     for (const tab of [...queryState.tabs])
@@ -1561,8 +1666,19 @@ watch(
     v-else
     ref="databaseContainer"
     data-database-layout
-    class="relative flex min-h-0 min-w-0 flex-1"
+    :class="['relative flex min-h-0 min-w-0 flex-1', safetyBand && 'pt-5']"
   >
+    <div
+      v-if="safetyBand"
+      :class="[
+        'absolute inset-x-0 top-0 z-10 flex h-5 items-center justify-center text-[11px] font-medium text-white',
+        safetyBand.color,
+      ]"
+      role="status"
+    >
+      {{ safetyBand.label }}
+    </div>
+    <DatabaseGuardDialog />
     <!-- 工具栏模板放在根元素内，让父级 v-show 能正确隐藏缓存的连接视图。 -->
     <DefineDatabaseActions v-slot="{ tab }">
       <div
@@ -1857,6 +1973,12 @@ watch(
                 :database-name="tab.database"
                 :execution="state.queryResults[tab.id]?.execution ?? null"
                 :error="state.queryResults[tab.id]?.error ?? ''"
+                :history="state.queryResults[tab.id]?.history ?? []"
+                :executed-sql="state.queryResults[tab.id]?.sql ?? ''"
+                @cancel="cancelQuery"
+                @retry="retryQuery(tab.id)"
+                @toggle-pin="id => updateResultHistory(tab.id, id, 'pin')"
+                @close-result="id => updateResultHistory(tab.id, id, 'close')"
                 :loading="
                   state.runningQueryId === tab.id &&
                   (queryLoading || state.preparingQuery)
@@ -1865,6 +1987,7 @@ watch(
                 :table-columns="sqlTableColumns"
                 :plan="state.queryPlans[tab.id]?.plan ?? null"
                 :plan-loading="state.queryPlans[tab.id]?.loading ?? false"
+                :plan-sql="state.queryPlans[tab.id]?.sql ?? ''"
                 @explain="sql => explainQuery(sql, tab.id)"
                 @update:model-value="
                   value => {
@@ -1888,6 +2011,7 @@ watch(
                 :initial-panel="tab.panel"
                 :panel-nonce="tab.panelNonce"
                 @query="openQuery"
+                @dirty="value => setObjectDirty(tab.id, value)"
               >
                 <template #toolbar>
                   <DatabaseActions :tab="tab" />

@@ -6,6 +6,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppTextField from '@/components/ui/AppTextField.vue'
 import AppTextarea from '@/components/ui/AppTextarea.vue'
 import * as connectionsStore from '@/api/connections'
@@ -14,11 +15,20 @@ import * as redisApi from '@/api/redis'
 import { useConnections } from '@/composables/useConnections'
 import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
-import type { NewConnection } from '@/types/connection'
-import { isDatabaseConnection } from '@/types/connection'
+import type {
+  DatabaseSshTunnelSettings,
+  NewConnection,
+} from '@/types/connection'
+import {
+  environmentTagColor,
+  isDatabaseConnection,
+  tunnelConfigOf,
+} from '@/types/connection'
+import type { SshAuthMethod } from '@/types/ssh'
 import type {
   DatabaseConnectionConfig,
   DatabaseConnectionKind,
+  DatabaseEnvironment,
   DatabaseSslMode,
 } from '@/types/database'
 import ConnectionFilePathField from './ConnectionFilePathField.vue'
@@ -28,7 +38,7 @@ const { t } = useI18n()
 
 const { settings } = useSettings()
 
-type SectionId = 'general' | 'ssl'
+type SectionId = 'general' | 'ssl' | 'ssh'
 
 const props = withDefaults(
   defineProps<{
@@ -48,7 +58,7 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const { create, update } = useConnections()
+const { create, update, connections } = useConnections()
 
 const activeSection = shallowRef<SectionId>('general')
 const testing = shallowRef(false)
@@ -103,6 +113,20 @@ const availableSslModes = computed(() =>
     : sslModeOptions
 )
 
+const environmentOptions = computed(() => [
+  { value: 'development', label: t('开发环境') },
+  { value: 'testing', label: t('测试环境') },
+  { value: 'production', label: t('生产环境') },
+])
+const savedSshOptions = computed(() =>
+  connections
+    .filter(connection => connection.kind === 'ssh')
+    .map(connection => ({
+      value: connection.id,
+      label: `${connection.name} (${connection.username}@${connection.host}:${connection.port})`,
+    }))
+)
+
 const form = reactive({
   name: '',
   group: props.defaultGroup,
@@ -116,7 +140,82 @@ const form = reactive({
   caCertificate: '',
   clientCertificate: '',
   clientKey: '',
+  environment: 'development' as DatabaseEnvironment,
+  readOnly: false,
 })
+
+const tunnel = reactive({
+  enabled: false,
+  source: 'saved' as 'saved' | 'manual',
+  connectionId: '',
+  host: '',
+  port: '22',
+  username: '',
+  authType: 'password' as 'password' | 'privateKey',
+  password: '',
+  keyPath: '',
+  passphrase: '',
+})
+
+function tunnelSettings(): DatabaseSshTunnelSettings | undefined {
+  if (!tunnel.enabled || isSqlite.value) return undefined
+  const auth: SshAuthMethod =
+    tunnel.authType === 'password'
+      ? { type: 'password', password: tunnel.password }
+      : {
+          type: 'privateKey',
+          path: tunnel.keyPath.trim(),
+          ...(tunnel.passphrase ? { passphrase: tunnel.passphrase } : {}),
+        }
+  return tunnel.source === 'saved'
+    ? {
+        enabled: true,
+        connectionId: tunnel.connectionId,
+        host: '',
+        port: 22,
+        username: '',
+        auth: { type: 'agent' },
+      }
+    : {
+        enabled: true,
+        host: tunnel.host.trim(),
+        port: Number(tunnel.port),
+        username: tunnel.username.trim(),
+        auth,
+      }
+}
+
+function loadTunnel(saved?: DatabaseSshTunnelSettings): void {
+  if (!saved) return
+  Object.assign(tunnel, {
+    enabled: saved.enabled,
+    source: saved.connectionId ? 'saved' : 'manual',
+    connectionId: saved.connectionId ?? '',
+    host: saved.host,
+    port: String(saved.port),
+    username: saved.username,
+    authType: saved.auth.type === 'privateKey' ? 'privateKey' : 'password',
+    password: saved.auth.type === 'password' ? saved.auth.password : '',
+    keyPath: saved.auth.type === 'privateKey' ? saved.auth.path : '',
+    passphrase:
+      saved.auth.type === 'privateKey' ? (saved.auth.passphrase ?? '') : '',
+  })
+}
+
+function validateTunnel(): string {
+  if (!tunnel.enabled || isSqlite.value) return ''
+  if (tunnel.source === 'saved')
+    return tunnel.connectionId ? '' : t('请选择 SSH 连接')
+  const port = Number(tunnel.port)
+  if (!tunnel.host.trim() || !tunnel.username.trim())
+    return t('请填写 SSH 主机和用户名')
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    return t('端口必须是 1–65535 之间的整数')
+  if (tunnel.authType === 'privateKey' && !tunnel.keyPath.trim())
+    return t('请选择 SSH 私钥文件')
+  return ''
+}
+
 
 const isReady = computed<boolean>(
   () =>
@@ -154,7 +253,10 @@ async function loadConnection(): Promise<void> {
       caCertificate: settings.caCertificate ?? '',
       clientCertificate: settings.clientCertificate ?? '',
       clientKey: settings.clientKey ?? '',
+      environment: settings.environment ?? 'development',
+      readOnly: settings.readOnly ?? false,
     })
+    loadTunnel(settings.sshTunnel)
     savePassword.value = Boolean(settings.password)
   } catch (error) {
     toast.error({
@@ -218,6 +320,13 @@ function validate(): boolean {
 
   if (isSqlite.value) return true
 
+  const tunnelProblem = validateTunnel()
+  if (tunnelProblem) {
+    activeSection.value = 'ssh'
+    toast.warning(tunnelProblem)
+    return false
+  }
+
   const port = Number(form.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     activeSection.value = 'general'
@@ -261,6 +370,9 @@ function buildConfig(): DatabaseConnectionConfig {
     clientKey: form.clientKey.trim(),
     timeoutSecs: settingNumber('databaseTimeout', 30),
     maxConnections: settingNumber('maxDatabaseConnections', 10),
+    environment: form.environment,
+    readOnly: form.readOnly,
+    ...tunnelConfigOf(tunnelSettings()),
   }
 }
 
@@ -305,7 +417,7 @@ async function saveConnection(): Promise<void> {
       group: form.group.trim(),
       description: form.description.trim(),
       tags: [],
-      tagColor: 'green',
+      tagColor: environmentTagColor(form.environment),
       settings: {
         database: form.database.trim(),
         // 没勾"保存密码"就不写进存储，下次连接时再问
@@ -315,6 +427,9 @@ async function saveConnection(): Promise<void> {
         caCertificate: form.caCertificate.trim(),
         clientCertificate: form.clientCertificate.trim(),
         clientKey: form.clientKey.trim(),
+        environment: form.environment,
+        readOnly: form.readOnly,
+        sshTunnel: tunnelSettings(),
       },
     }
 
@@ -352,6 +467,7 @@ async function saveConnection(): Promise<void> {
           : ([
               { id: 'general', label: t('General') },
               { id: 'ssl', label: 'SSL' },
+              { id: 'ssh', label: 'SSH 隧道' },
             ] as const)"
         :key="section.id"
         variant="bare"
@@ -493,6 +609,19 @@ async function saveConnection(): Promise<void> {
           />
         </div>
 
+        <template v-if="kind !== 'redis'">
+          <AppSelect
+            v-model="form.environment"
+            :label="t('环境')"
+            :options="environmentOptions"
+          />
+          <AppSwitch
+            v-model="form.readOnly"
+            :label="t('只读连接')"
+            :description="t('拒绝所有写入语句，并在数据库会话层启用只读')"
+          />
+        </template>
+
         <AppTextarea
           v-model="form.description"
           :label="t('Description (Optional)')"
@@ -500,6 +629,83 @@ async function saveConnection(): Promise<void> {
           class="resize-none"
           :placeholder="t('Add a description for this connection…')"
         />
+      </div>
+
+      <div
+        v-else-if="activeSection === 'ssh'"
+        class="grid gap-3.5"
+      >
+        <AppSwitch
+          v-model="tunnel.enabled"
+          :label="t('通过 SSH 隧道连接')"
+          :description="t('连接断开后自动重连，关闭数据库会话时释放隧道')"
+        />
+        <template v-if="tunnel.enabled">
+          <AppSelect
+            v-model="tunnel.source"
+            :label="t('SSH 服务器')"
+            :options="[
+              { value: 'saved', label: t('使用已保存的 SSH 连接') },
+              { value: 'manual', label: t('手动填写') },
+            ]"
+          />
+          <AppSelect
+            v-if="tunnel.source === 'saved'"
+            v-model="tunnel.connectionId"
+            :label="t('SSH 连接')"
+            :options="savedSshOptions"
+          />
+          <template v-else>
+            <div class="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
+              <AppTextField
+                v-model="tunnel.host"
+                :label="t('SSH 主机')"
+                required
+              />
+              <AppTextField
+                v-model="tunnel.port"
+                :label="t('Port')"
+                inputmode="numeric"
+                required
+              />
+            </div>
+            <AppTextField
+              v-model="tunnel.username"
+              :label="t('SSH 用户名')"
+              required
+            />
+            <AppSelect
+              v-model="tunnel.authType"
+              :label="t('认证方式')"
+              :options="[
+                { value: 'password', label: t('密码') },
+                { value: 'privateKey', label: t('私钥') },
+              ]"
+            />
+            <AppTextField
+              v-if="tunnel.authType === 'password'"
+              v-model="tunnel.password"
+              :label="t('SSH 密码')"
+              type="password"
+            />
+            <template v-else>
+              <ConnectionFilePathField
+                v-model="tunnel.keyPath"
+                :label="t('SSH 私钥文件')"
+                :placeholder="t('选择或输入私钥文件路径')"
+                :dialog-title="t('选择 SSH 私钥文件')"
+                :filter-name="t('SSH 私钥文件')"
+                :extensions="['*']"
+                @error="handleSslFileError"
+              />
+              <AppTextField
+                v-model="tunnel.passphrase"
+                :label="t('私钥口令（可选）')"
+                type="password"
+              />
+            </template>
+          </template>
+        </template>
       </div>
 
       <div

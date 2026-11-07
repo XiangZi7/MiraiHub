@@ -1,6 +1,8 @@
 import type { DatabaseKind } from './database'
 
-export type TableIndexKind = 'index' | 'unique' | 'fulltext'
+export type TableIndexKind = 'index' | 'unique' | 'fulltext' | 'spatial'
+export type TableIndexMethod =
+  'btree' | 'hash' | 'gist' | 'gin' | 'brin' | 'spgist'
 export type ReferentialAction =
   'NO ACTION' | 'RESTRICT' | 'CASCADE' | 'SET NULL' | 'SET DEFAULT'
 
@@ -16,14 +18,38 @@ export interface TableDesignerColumn {
   autoIncrement: boolean
   defaultValue: string
   comment: string
+  /** 现有表里的原字段名：有它才能生成改名语句而不是删列重建。 */
+  originalName?: string
+  /** 主键内的顺序，只在复合主键顺序不同于字段顺序时有意义。 */
+  primaryKeyOrder?: number
+  zerofill?: boolean
+  charset?: string
+  collation?: string
+  onUpdateCurrentTimestamp?: boolean
+  /** 非空表示生成列。 */
+  generatedExpression?: string
+  generatedStored?: boolean
+}
+
+export interface TableDesignerIndexColumnOptions {
+  /** MySQL 前缀长度。 */
+  prefix?: string
+  descending?: boolean
+  /** columns 里的这一项是表达式而不是字段名（PostgreSQL）。 */
+  expression?: boolean
 }
 
 export interface TableDesignerIndex {
   id: string
   name: string
   kind: TableIndexKind
-  method: 'btree' | 'hash'
+  method: TableIndexMethod
+  /** 按顺序的索引项：字段名，或 columnOptions 标记的表达式。 */
   columns: string[]
+  columnOptions?: Record<string, TableDesignerIndexColumnOptions>
+  comment?: string
+  /** PostgreSQL 部分索引的 WHERE 条件。 */
+  predicate?: string
 }
 
 export interface TableDesignerForeignKey {
@@ -55,6 +81,9 @@ export interface TableDesignerDraft {
 export interface TableDesignerValidation {
   valid: boolean
   errors: string[]
+  /** 按字段 / 索引的编辑器 ID 归类，用于行内提示。 */
+  columnErrors: Record<string, string[]>
+  indexErrors: Record<string, string[]>
 }
 
 export interface TableDesignerOptions {

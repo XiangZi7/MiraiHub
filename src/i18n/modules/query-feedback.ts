@@ -1,0 +1,27 @@
+/** 查询结果反馈、错误面板与结果历史的文案。中文为键。 */
+export const en: Record<string, string> = {
+  结果: 'Results',
+  消息: 'Messages',
+  执行计划: 'Plan',
+  结果视图: 'Result views',
+  语句结果: 'Statement results',
+  结果历史: 'Result history',
+  '{count} 行': '{count} rows',
+  '{count} 行受影响': '{count} rows affected',
+  固定结果: 'Pin result',
+  取消固定结果: 'Unpin result',
+  关闭结果: 'Close result',
+  已释放: 'released',
+  '结果已超出内存上限，行数据已释放':
+    'Result exceeded the memory limit; its rows were released',
+  正在查看历史结果: 'Viewing an earlier result',
+  回到最新: 'Back to latest',
+  耗时: 'Elapsed',
+  '读取表数据…': 'Loading table data…',
+  查询执行失败: 'Query failed',
+  '第 {index} 条语句执行失败': 'Statement {index} failed',
+  定位到语句: 'Go to statement',
+  复制错误: 'Copy error',
+  已复制错误信息: 'Error copied',
+  '显示的是上一次成功读取的数据': 'Showing the last successfully loaded data',
+}

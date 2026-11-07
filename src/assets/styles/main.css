@@ -850,6 +850,75 @@ html.reduce-motion::view-transition-new(root) {
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
 
+/* 顶部细进度条：不确定进度时来回滑动；减少动画时退化为静态色条 */
+@keyframes progress-indeterminate-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@utility progress-indeterminate {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 20;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  background: color-mix(in oklch, var(--color-violet) 15%, transparent);
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 33%;
+    background: var(--color-violet);
+    animation: progress-indeterminate-slide 1.1s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &::after {
+      width: 100%;
+      opacity: 0.6;
+      animation: none;
+    }
+  }
+}
+
+/* 加载或失败时保留旧数据但置灰，提示内容已过期 */
+@utility stale-dim {
+  opacity: 0.5;
+  filter: saturate(0.6);
+  pointer-events: none;
+  transition: opacity var(--motion-panel, 160ms ease);
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
+/* 大结果网格的滚动容器：隔离布局与绘制，滚动时不牵动外层 */
+@utility contain-grid {
+  contain: strict;
+}
+
+/* 查询编辑器/结果区分隔条：拖拽中由 --split-* 变量驱动高亮 */
+@utility split-handle-line {
+  position: absolute;
+  top: 50%;
+  inset-inline: 0;
+  height: 1px;
+  background: var(--color-line);
+  transform: translateY(-50%);
+  transition:
+    height 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
 /* 双栏各自按可用宽度收缩列，两端始终使用同一组布局。 */
 .file-pane {
   container-type: inline-size;
@@ -867,5 +936,19 @@ html.reduce-motion::view-transition-new(root) {
   }
   .remote-file-modified {
     display: none;
+  }
+}
+
+/* 数据库标签内容切换的淡入：v-show 由隐藏变为显示时动画重新播放，不重建编辑器 */
+@keyframes panel-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@utility panel-fade-in {
+  animation: panel-fade-in 160ms ease-out;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 }

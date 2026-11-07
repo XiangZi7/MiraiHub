@@ -35,6 +35,15 @@ const props = defineProps<{
   /** 标签规则；隐藏标签样式时为 null。 */
   tags: Readonly<Record<string, ColumnTagConfig>> | null
   tagLookups: ReadonlyMap<string, ReadonlyMap<string, ColumnTagRule>> | null
+  /** 本行落在选区内时的列范围；不在选区内为 null，选区变化时其他行不重绘。 */
+  selectionLeft?: number | null
+  selectionRight?: number | null
+  /** 活动单元格在本行时的列号。 */
+  activeColumn?: number | null
+  /** 每列是否数值列，数值右对齐。 */
+  numeric: ReadonlyArray<boolean>
+  /** 单元格高度类，随网格密度变化。 */
+  heightClass: string
 }>()
 
 const emit = defineEmits<{
@@ -43,7 +52,18 @@ const emit = defineEmits<{
   cancel: []
   move: [columnIndex: number, delta: 1 | -1]
   context: [event: MouseEvent]
+  /** 双击单元格；可编辑时进入编辑，否则由父组件打开值查看器。 */
+  open: [columnIndex: number]
 }>()
+
+function selected(columnIndex: number): boolean {
+  return (
+    props.selectionLeft != null &&
+    props.selectionRight != null &&
+    columnIndex >= props.selectionLeft &&
+    columnIndex <= props.selectionRight
+  )
+}
 
 interface CellView {
   value: string | null
@@ -96,44 +116,58 @@ const cells = computed<CellView[]>(() =>
         deleted && 'bg-danger/7 line-through opacity-55'
       )
     "
+    :data-row-index="rowIndex"
     @contextmenu.prevent.stop="emit('context', $event)"
   >
     <td
-      class="border-line-soft text-txt-4 border-r border-b px-1.5 py-1 text-right"
+      data-row-header
+      :class="
+        cn(
+          'border-line-soft text-txt-4 cursor-default border-r border-b px-1.5 py-1 text-right select-none',
+          selectionLeft != null && 'bg-violet/10 text-txt-2'
+        )
+      "
     >
       {{ number }}
     </td>
     <td
       v-for="(cell, columnIndex) in cells"
       :key="columnIndex"
+      :data-col="columnIndex"
+      :aria-selected="selected(columnIndex)"
       :class="
         cn(
-          'border-line-soft relative overflow-hidden border-r border-b p-0 last:border-r-0',
-          cell.edited && 'bg-violet/8'
+          'border-line-soft relative scroll-mt-8 scroll-ml-12 overflow-hidden border-r border-b p-0 last:border-r-0',
+          cell.edited && 'bg-violet/8',
+          selected(columnIndex) && 'bg-violet/15',
+          activeColumn === columnIndex &&
+            editingColumn !== columnIndex &&
+            'ring-violet ring-1 ring-inset'
         )
       "
+      @dblclick="emit('open', columnIndex)"
     >
       <DatabaseCellEditor
         v-if="editingColumn === columnIndex"
         :value="cell.value"
         :data-type="columns[columnIndex]?.dataType"
+        :height-class="heightClass"
         @commit="emit('commit', columnIndex, $event)"
         @cancel="emit('cancel')"
         @move="emit('move', columnIndex, $event)"
       />
-      <component
-        :is="editable ? 'button' : 'span'"
+      <div
         v-else
-        :type="editable ? 'button' : undefined"
         :class="
           cn(
-            'flex h-7 w-full items-center px-2.5 text-left',
-            editable && 'cursor-text',
+            'flex w-full items-center px-2.5 text-left select-none',
+            heightClass,
+            numeric[columnIndex] && 'justify-end text-right tabular-nums',
+            editable && 'cursor-cell',
             !resized && 'max-w-80 min-w-36'
           )
         "
         :title="cell.text"
-        @click="editable && emit('edit', columnIndex)"
       >
         <DatabaseCellTag
           v-if="cell.tag"
@@ -151,7 +185,7 @@ const cells = computed<CellView[]>(() =>
           class="truncate"
           >{{ cell.text }}</span
         >
-      </component>
+      </div>
     </td>
   </tr>
 </template>

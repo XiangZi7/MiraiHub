@@ -7,8 +7,13 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import RedisKeySearch from './RedisKeySearch.vue'
 import RedisKeyList from './RedisKeyList.vue'
+import RedisBatchDeleteDialog from './RedisBatchDeleteDialog.vue'
+import RedisCreateKeyDialog from './RedisCreateKeyDialog.vue'
+import { shallowRef } from 'vue'
 import type { RedisKey } from '@/types/redis'
 defineProps<{
+  /** 新建键与批量删除直接使用当前会话。 */
+  sessionId?: string
   name: string
   database: string
   connected: boolean
@@ -23,8 +28,13 @@ const emit = defineEmits<{
   select: [key: RedisKey]
   refresh: []
   command: []
+  /** 批量删除后需重新扫描。 */
+  changed: []
+  created: [key: RedisKey]
 }>()
 const { t } = useI18n()
+// 打开中的对话框
+const dialog = shallowRef<'create' | 'delete' | null>(null)
 </script>
 
 <template>
@@ -44,6 +54,24 @@ const { t } = useI18n()
         :title="name"
         >{{ name }}</span
       >
+      <IconButton
+        v-if="sessionId"
+        icon="lucide:plus"
+        :size="13"
+        :title="t('新建键')"
+        :aria-label="t('新建键')"
+        :disabled="busy || !connected"
+        @click="dialog = 'create'"
+      />
+      <IconButton
+        v-if="sessionId"
+        icon="lucide:list-x"
+        :size="13"
+        :title="t('按模式批量删除')"
+        :aria-label="t('按模式批量删除')"
+        :disabled="busy || !connected"
+        @click="dialog = 'delete'"
+      />
       <IconButton
         icon="lucide:square-terminal"
         :size="13"
@@ -116,5 +144,20 @@ const { t } = useI18n()
       >
       <span v-else-if="connected && !busy">{{ t('扫描完成') }}</span>
     </footer>
+    <template v-if="sessionId">
+      <RedisCreateKeyDialog
+        :open="dialog === 'create'"
+        :session-id="sessionId"
+        @close="dialog = null"
+        @created="emit('created', $event)"
+      />
+      <RedisBatchDeleteDialog
+        :open="dialog === 'delete'"
+        :session-id="sessionId"
+        :database="database"
+        @close="dialog = null"
+        @deleted="emit('changed')"
+      />
+    </template>
   </aside>
 </template>

@@ -4,8 +4,10 @@
 //! 全部留在 Rust 侧。模块同时支持 MySQL、PostgreSQL 与 SQLite。
 
 mod browse;
+mod ddl_exec;
 pub mod commands;
 pub mod error;
+pub(crate) mod guard;
 pub mod manager;
 pub(crate) mod metadata;
 pub mod models;
@@ -14,8 +16,10 @@ mod object_ops;
 pub(crate) mod query;
 mod sql;
 mod sqlite_meta;
+mod table_extras;
 mod table_ops;
 mod transfer;
+pub mod tunnel;
 
 pub use manager::DatabaseManager;
 

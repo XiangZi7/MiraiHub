@@ -146,6 +146,14 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
     class="scroll-none flex h-full min-w-0 items-center gap-0.5 overflow-x-auto"
   >
     <!-- 关闭按钮嵌在标签里，所以外层用 div 而不是 button：button 不能嵌套 -->
+    <!-- 增删与排序带位移过渡；减少动画时全部瞬时完成 -->
+    <TransitionGroup
+      enter-active-class="motion-safe:transition-[opacity,translate,background-color,color] motion-safe:duration-150 motion-safe:ease-out"
+      enter-from-class="opacity-0 translate-y-1"
+      leave-active-class="motion-safe:transition-opacity motion-safe:duration-100"
+      leave-to-class="opacity-0"
+      move-class="motion-safe:transition-[translate,transform] motion-safe:duration-200 motion-safe:ease-out"
+    >
     <div
       v-for="(tab, index) in tabs"
       :key="tab.id"
@@ -226,6 +234,7 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
         />
       </button>
     </div>
+    </TransitionGroup>
 
     <button
       v-if="addable"

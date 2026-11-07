@@ -36,6 +36,16 @@ pub enum DatabaseError {
 
     #[error("数据库会话 {0} 不存在或已断开")]
     SessionNotFound(String),
+
+    #[error("SSH 隧道失败：{0}")]
+    Tunnel(String),
+
+    #[error("当前连接为只读模式，已拒绝执行：{0}")]
+    ReadOnly(String),
+
+    /// 生产环境危险操作。前端弹框要求输入库名，再把库名作为 confirm 重试。
+    #[error("生产环境危险操作需要确认：{action}")]
+    ConfirmRequired { action: String, database: String },
 }
 
 impl From<DatabaseError> for AppError {
@@ -50,9 +60,18 @@ impl From<DatabaseError> for AppError {
             DatabaseError::Query(_) => ErrorKind::InvalidInput,
             DatabaseError::Io { .. } => ErrorKind::Internal,
             DatabaseError::Connect { source, .. } => connect_error_kind(source),
+            DatabaseError::Tunnel(_) => ErrorKind::Network,
+            DatabaseError::ReadOnly(_) => ErrorKind::InvalidInput,
+            DatabaseError::ConfirmRequired { .. } => ErrorKind::ConfirmRequired,
         };
 
-        AppError::new(kind, error.to_string())
+        let confirm = match &error {
+            DatabaseError::ConfirmRequired { database, .. } => Some(database.clone()),
+            _ => None,
+        };
+        let mut app_error = AppError::new(kind, error.to_string());
+        app_error.confirm = confirm;
+        app_error
     }
 }
 

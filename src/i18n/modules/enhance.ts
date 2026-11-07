@@ -162,4 +162,12 @@ export const en: Record<string, string> = {
   修改索引: 'Modify index',
   修改约束: 'Modify constraint',
   复制失败: 'Copy failed',
+  'AI 解读': 'AI insight',
+  重新解读: 'Explain again',
+  '发送 SQL、执行计划与相关表索引给当前 AI 配置':
+    'Sends the SQL, plan and related table indexes to the active AI profile',
+  'AI 正在解读执行计划…': 'AI is interpreting the plan…',
+  相关节点: 'Related nodes',
+  '请先调用 explain_sql 获取执行计划与相关索引，再分析附加 SQL 的性能并给出优化建议。':
+    'Call explain_sql first to get the plan and related indexes, then analyze the attached SQL performance and suggest optimizations.',
 }

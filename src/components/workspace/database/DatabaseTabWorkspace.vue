@@ -49,7 +49,7 @@ function visible(tab: T): boolean {
     >
       <div
         v-show="visible(tab)"
-        class="bg-panel border-line-soft flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        class="bg-panel border-line-soft panel-fade-in flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         :class="detachedTarget(tab) && 'rounded-[10px]'"
         :data-database-content="tab.id"
       >

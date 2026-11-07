@@ -10,6 +10,8 @@ const {
   validateTableDraft,
   parseStoredType,
   normalizeDataTypeLabel,
+  designerColumnFromStored,
+  designerIndexFromStored,
 } = await load('src/utils/database-ddl.ts')
 
 function optionsDraft(overrides = {}) {
@@ -368,7 +370,7 @@ test('MySQL 主键集合变化生成 DROP/ADD PRIMARY KEY', () => {
     charset: '',
     autoIncrement: null,
     columns: [
-      draftColumn({ primaryKey: false, nullable: true }),
+      draftColumn({ primaryKey: false, nullable: true, autoIncrement: false }),
       draftColumn({
         id: 'c1',
         name: 'code',
@@ -655,4 +657,235 @@ test('外键规则变化触发重建，复合外键保持原样', () => {
     changedSql,
     /ADD CONSTRAINT `fk_order` FOREIGN KEY \(`order_id`\) REFERENCES `app`\.`orders` \(`id`\) ON DELETE CASCADE ON UPDATE CASCADE/u
   )
+})
+
+test('字段改名生成 CHANGE / RENAME COLUMN 而不是删列重建', () => {
+  const current = currentDetail({
+    columns: [
+      currentColumn(),
+      currentColumn({
+        name: 'nick',
+        dataType: 'varchar(32)',
+        nullable: true,
+        ordinal: 2,
+        primaryKey: false,
+        autoIncrement: false,
+      }),
+    ],
+    primaryKey: ['id'],
+  })
+  const draft = {
+    ...optionsDraft({ engine: '', charset: '', collation: '', rowFormat: '' }),
+    autoIncrement: null,
+    columns: [
+      draftColumn(),
+      draftColumn({
+        id: 'c1',
+        originalName: 'nick',
+        name: 'nickname',
+        dataType: 'VARCHAR',
+        length: '32',
+        nullable: true,
+        primaryKey: false,
+        autoIncrement: false,
+      }),
+    ],
+  }
+  const mysql = buildAlterTableSql({ kind: 'mysql', current, draft })
+  assert.match(mysql, /CHANGE COLUMN `nick` `nickname` VARCHAR\(32\) NULL/u)
+  assert.doesNotMatch(mysql, /DROP COLUMN/u)
+  const pg = buildAlterTableSql({
+    kind: 'postgresql',
+    current: currentDetail({
+      ...current,
+      columns: current.columns.map(column => ({
+        ...column,
+        dataType:
+          column.name === 'nick' ? 'character varying(32)' : 'bigint',
+      })),
+    }),
+    draft,
+  })
+  assert.match(pg, /RENAME COLUMN "nick" TO "nickname"/u)
+  assert.doesNotMatch(pg, /DROP COLUMN/u)
+})
+
+test('MySQL 调整字段顺序只移动必要的字段', () => {
+  const columns = ['a', 'b', 'c'].map((name, index) =>
+    currentColumn({
+      name,
+      dataType: 'int',
+      ordinal: index + 1,
+      primaryKey: false,
+      autoIncrement: false,
+      nullable: true,
+    })
+  )
+  const current = currentDetail({ columns })
+  const draftOf = name =>
+    draftColumn({
+      id: name,
+      originalName: name,
+      name,
+      dataType: 'INT',
+      nullable: true,
+      primaryKey: false,
+      autoIncrement: false,
+    })
+  const draft = {
+    ...optionsDraft({ engine: '', charset: '', collation: '', rowFormat: '' }),
+    autoIncrement: null,
+    columns: [draftOf('c'), draftOf('a'), draftOf('b')],
+  }
+  const sql = buildAlterTableSql({ kind: 'mysql', current, draft })
+  assert.match(sql, /MODIFY COLUMN `c` INT NULL FIRST/u)
+  assert.doesNotMatch(sql, /`a` INT NULL AFTER|`b` INT NULL AFTER/u)
+
+  draft.columns = [
+    draftOf('a'),
+    draftColumn({
+      id: 'n',
+      name: 'n',
+      dataType: 'INT',
+      nullable: true,
+      primaryKey: false,
+      autoIncrement: false,
+    }),
+    draftOf('b'),
+    draftOf('c'),
+  ]
+  assert.match(
+    buildAlterTableSql({ kind: 'mysql', current, draft }),
+    /ADD COLUMN `n` INT NULL AFTER `a`/u
+  )
+})
+
+test('索引定义变化会重建，前缀、降序、方法与注释都会输出', () => {
+  const current = currentDetail({
+    columns: [
+      currentColumn(),
+      currentColumn({
+        name: 'title',
+        dataType: 'varchar(200)',
+        ordinal: 2,
+        primaryKey: false,
+        autoIncrement: false,
+      }),
+    ],
+    primaryKey: ['id'],
+    indexes: [
+      {
+        name: 'idx_title',
+        columns: ['title'],
+        unique: false,
+        primary: false,
+        subPart: null,
+        indexType: 'BTREE',
+      },
+    ],
+  })
+  const hydrated = designerIndexFromStored(
+    current.indexes[0],
+    current.columns,
+    'mysql',
+    'i'
+  )
+  const draft = {
+    ...optionsDraft({ engine: '', charset: '', collation: '', rowFormat: '' }),
+    autoIncrement: null,
+    columns: current.columns.map((column, index) =>
+      designerColumnFromStored(column, 'mysql', current, `c${index}`)
+    ),
+    indexes: [hydrated],
+  }
+  assert.equal(buildAlterTableSql({ kind: 'mysql', current, draft }), '')
+  draft.indexes = [
+    {
+      ...hydrated,
+      columnOptions: { title: { prefix: '20', descending: true } },
+      comment: '标题',
+    },
+  ]
+  const sql = buildAlterTableSql({ kind: 'mysql', current, draft })
+  assert.match(sql, /DROP INDEX `idx_title`/u)
+  assert.match(
+    sql,
+    /ADD INDEX `idx_title` \(`title`\(20\) DESC\) USING BTREE COMMENT '标题'/u
+  )
+})
+
+test('生成列与 ON UPDATE、字符集按 MySQL 语法输出', () => {
+  const sql = buildCreateTableSql({
+    kind: 'mysql',
+    draft: optionsDraft({
+      autoIncrement: null,
+      columns: [
+        draftColumn(),
+        draftColumn({
+          id: 'g',
+          name: 'total',
+          dataType: 'DECIMAL',
+          length: '10,2',
+          primaryKey: false,
+          autoIncrement: false,
+          nullable: true,
+          generatedExpression: 'price * qty',
+          generatedStored: true,
+        }),
+        draftColumn({
+          id: 'u',
+          name: 'updated_at',
+          dataType: 'TIMESTAMP',
+          primaryKey: false,
+          autoIncrement: false,
+          defaultValue: 'CURRENT_TIMESTAMP',
+          onUpdateCurrentTimestamp: true,
+        }),
+        draftColumn({
+          id: 's',
+          name: 'code',
+          dataType: 'VARCHAR',
+          length: '8',
+          primaryKey: false,
+          autoIncrement: false,
+          charset: 'ascii',
+          collation: 'ascii_bin',
+        }),
+      ],
+    }),
+  })
+  assert.match(
+    sql,
+    /`total` DECIMAL\(10,2\) GENERATED ALWAYS AS \(price \* qty\) STORED NULL/u
+  )
+  assert.match(
+    sql,
+    /`updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP/u
+  )
+  assert.match(sql, /`code` VARCHAR\(8\) CHARACTER SET ascii COLLATE ascii_bin/u)
+})
+
+test('MySQL 字符串默认值回填为字面量，自增非键字段被拦截', () => {
+  const column = designerColumnFromStored(
+    currentColumn({
+      name: 'status',
+      dataType: 'varchar(10)',
+      defaultValue: "it's",
+      primaryKey: false,
+      autoIncrement: false,
+    }),
+    'mysql',
+    { options: null, primaryKey: [] },
+    's'
+  )
+  assert.equal(column.defaultValue, "'it''s'")
+  const validation = validateTableDraft({
+    kind: 'mysql',
+    draft: optionsDraft({
+      autoIncrement: null,
+      columns: [draftColumn({ primaryKey: false })],
+    }),
+  })
+  assert.equal(validation.valid, false)
+  assert.ok(validation.columnErrors.c?.length)
 })

@@ -218,6 +218,53 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           },
         ],
       },
+      {
+        title: '数据库',
+        fields: [
+          {
+            key: 'shortcutDbNewQuery',
+            label: '新建查询',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutDbExecute',
+            label: '执行 SQL（有选区时执行选区）',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutDbExecuteCurrent',
+            label: '执行光标所在语句',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutDbFormat',
+            label: '格式化 SQL',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutDbToggleResults',
+            label: '显示/隐藏结果面板',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutDbRefresh',
+            label: '刷新对象树',
+            control: 'shortcut',
+            size: 'lg',
+          },
+          {
+            key: 'shortcutDbFocusFilter',
+            label: '聚焦对象树过滤框',
+            control: 'shortcut',
+            size: 'lg',
+          },
+        ],
+      },
     ],
   },
   {
@@ -362,6 +409,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             inputmode: 'numeric',
             size: 'md',
             range: { min: 100, max: 200000 },
+          },
+          {
+            key: 'terminalCopyOnSelect',
+            label: '选中即复制',
+            description: '在终端中拖选文字后自动写入剪贴板',
+            control: 'switch',
           },
         ],
       },

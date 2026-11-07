@@ -13,8 +13,8 @@ use sqlx::{Decode, MySql, Row, ValueRef};
 use super::error::{DatabaseError, DatabaseResult};
 use super::manager::DatabasePool;
 use super::models::{
-    DatabaseColumn, DatabaseForeignKey, DatabaseIndex, DatabaseObject, DatabaseObjectKind,
-    DatabaseRoutineDetail, DatabaseRoutineParameter, DatabaseTableDetail,
+    DatabaseColumn, DatabaseForeignKey, DatabaseIndex, DatabaseIndexPart, DatabaseObject,
+    DatabaseObjectKind, DatabaseRoutineDetail, DatabaseRoutineParameter, DatabaseTableDetail,
 };
 use super::sql;
 use super::sqlite_meta;
@@ -353,7 +353,9 @@ async fn describe_mysql_object(
         r#"
         SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT,
                CAST(ORDINAL_POSITION AS SIGNED) AS ORDINAL_POSITION,
-               COLUMN_KEY, EXTRA, NULLIF(COLUMN_COMMENT, '') AS COLUMN_COMMENT
+               COLUMN_KEY, EXTRA, NULLIF(COLUMN_COMMENT, '') AS COLUMN_COMMENT,
+               CHARACTER_SET_NAME, COLLATION_NAME,
+               NULLIF(GENERATION_EXPRESSION, '') AS GENERATION_EXPRESSION
         FROM information_schema.columns
         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
         ORDER BY ORDINAL_POSITION
@@ -369,7 +371,7 @@ async fn describe_mysql_object(
         .map(|row| {
             let nullable = mysql_metadata_text(&row, "IS_NULLABLE")?;
             let key = mysql_metadata_text(&row, "COLUMN_KEY")?;
-            let extra = mysql_metadata_text(&row, "EXTRA")?;
+            let extra = mysql_metadata_text(&row, "EXTRA")?.to_ascii_lowercase();
             Ok(DatabaseColumn {
                 name: mysql_metadata_text(&row, "COLUMN_NAME")?,
                 data_type: mysql_metadata_text(&row, "COLUMN_TYPE")?,
@@ -379,8 +381,14 @@ async fn describe_mysql_object(
                     .try_get::<i64, _>("ORDINAL_POSITION")
                     .map_err(DatabaseError::Query)? as i32,
                 primary_key: key.eq_ignore_ascii_case("PRI"),
-                auto_increment: extra.to_ascii_lowercase().contains("auto_increment"),
+                auto_increment: extra.contains("auto_increment"),
                 comment: mysql_optional_metadata_text(&row, "COLUMN_COMMENT")?,
+                charset: mysql_optional_metadata_text(&row, "CHARACTER_SET_NAME")?,
+                collation: mysql_optional_metadata_text(&row, "COLLATION_NAME")?,
+                on_update_current_timestamp: extra.contains("on update"),
+                default_is_expression: extra.contains("default_generated"),
+                generated_expression: mysql_optional_metadata_text(&row, "GENERATION_EXPRESSION")?,
+                generated_stored: extra.contains("stored generated"),
             })
         })
         .collect()
@@ -403,11 +411,20 @@ async fn describe_postgresql_object(
                  a.attidentity <> '' OR pg_get_expr(d.adbin, d.adrelid) LIKE 'nextval(%',
                  false
                ) AS auto_increment,
-               col_description(a.attrelid, a.attnum) AS column_comment
+               col_description(a.attrelid, a.attnum) AS column_comment,
+               COALESCE(ic.is_generated::text, 'NEVER') = 'ALWAYS' AS generated,
+               coll.collname::text AS collation_name
         FROM pg_attribute a
         JOIN pg_class c ON c.oid = a.attrelid
         JOIN pg_namespace n ON n.oid = c.relnamespace
         LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        LEFT JOIN information_schema.columns ic
+          ON ic.table_schema::text = n.nspname::text
+         AND ic.table_name::text = c.relname::text
+         AND ic.column_name::text = a.attname::text
+        LEFT JOIN pg_type ty ON ty.oid = a.atttypid
+        LEFT JOIN pg_collation coll
+          ON coll.oid = a.attcollation AND a.attcollation <> ty.typcollation
         LEFT JOIN LATERAL (
           SELECT true AS is_primary
           FROM pg_index i
@@ -426,17 +443,30 @@ async fn describe_postgresql_object(
 
     rows.into_iter()
         .map(|row| {
+            // 生成列的表达式也存在 pg_attrdef 里，不能当成默认值回填。
+            let generated: bool = row.try_get("generated").unwrap_or(false);
+            let column_default: Option<String> = row.try_get("column_default").unwrap_or(None);
             Ok(DatabaseColumn {
                 name: row.try_get("column_name").map_err(DatabaseError::Query)?,
                 data_type: row.try_get("data_type").map_err(DatabaseError::Query)?,
                 nullable: row.try_get("nullable").unwrap_or(true),
-                default_value: row.try_get("column_default").unwrap_or(None),
+                default_value: if generated {
+                    None
+                } else {
+                    column_default.clone()
+                },
                 ordinal: row
                     .try_get("ordinal_position")
                     .map_err(DatabaseError::Query)?,
                 primary_key: row.try_get("primary_key").unwrap_or(false),
                 auto_increment: row.try_get("auto_increment").unwrap_or(false),
                 comment: row.try_get("column_comment").unwrap_or(None),
+                charset: None,
+                collation: row.try_get("collation_name").unwrap_or(None),
+                on_update_current_timestamp: false,
+                default_is_expression: false,
+                generated_expression: if generated { column_default } else { None },
+                generated_stored: generated,
             })
         })
         .collect()
@@ -483,6 +513,21 @@ pub async fn table_detail(
     let ddl = build_ddl(pool, schema, name, kind, &columns)
         .await
         .unwrap_or_default();
+    let (checks, triggers, partition) = if kind == DatabaseObjectKind::Table {
+        (
+            super::table_extras::list_checks(pool, schema, name)
+                .await
+                .unwrap_or_default(),
+            super::table_extras::list_triggers(pool, schema, name)
+                .await
+                .unwrap_or_default(),
+            super::table_extras::partition_info(pool, schema, name)
+                .await
+                .unwrap_or(None),
+        )
+    } else {
+        (Vec::new(), Vec::new(), None)
+    };
     let options = if kind == DatabaseObjectKind::Table {
         super::table_ops::read_table_options(pool, schema, name)
             .await
@@ -502,6 +547,9 @@ pub async fn table_detail(
         row_estimate,
         ddl,
         options,
+        checks,
+        triggers,
+        partition,
     })
 }
 
@@ -725,15 +773,25 @@ async fn postgresql_routine_detail(
     })
 }
 
-/// 索引列按序号排列，保留 MySQL 前缀长度。
-type IndexParts = BTreeMap<(String, bool, bool), Vec<(i64, String, Option<i64>)>>;
+/// 索引级属性，同一索引的每一行都相同。
+#[derive(Default)]
+struct IndexAttributes {
+    unique: bool,
+    primary: bool,
+    index_type: Option<String>,
+    comment: Option<String>,
+    predicate: Option<String>,
+    constraint_backed: bool,
+}
+
+/// 索引名 -> 索引属性与按序号排列的索引项。
+type IndexParts = BTreeMap<String, (IndexAttributes, Vec<(i64, DatabaseIndexPart)>)>;
 
 async fn list_indexes(
     pool: &DatabasePool,
     schema: &str,
     name: &str,
 ) -> DatabaseResult<Vec<DatabaseIndex>> {
-    // (索引名, 唯一, 主键) -> 按序号排列的 (列名, 前缀长度)
     let mut grouped: IndexParts = BTreeMap::new();
 
     if let DatabasePool::Sqlite(pool) = pool {
@@ -747,7 +805,9 @@ async fn list_indexes(
                        CAST(NON_UNIQUE AS SIGNED) AS NON_UNIQUE,
                        CAST(SEQ_IN_INDEX AS SIGNED) AS SEQ_IN_INDEX,
                        COLUMN_NAME,
-                       CAST(SUB_PART AS SIGNED) AS SUB_PART
+                       CAST(SUB_PART AS SIGNED) AS SUB_PART,
+                       COLLATION, INDEX_TYPE,
+                       NULLIF(INDEX_COMMENT, '') AS INDEX_COMMENT
                 FROM information_schema.statistics
                 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
                 ORDER BY INDEX_NAME, SEQ_IN_INDEX
@@ -766,10 +826,29 @@ async fn list_indexes(
                 let sequence = row.try_get::<i64, _>("SEQ_IN_INDEX").unwrap_or(0);
                 let column = mysql_optional_metadata_text(&row, "COLUMN_NAME")?;
                 let sub_part = row.try_get::<Option<i64>, _>("SUB_PART").unwrap_or(None);
+                let descending =
+                    mysql_optional_metadata_text(&row, "COLLATION")?.as_deref() == Some("D");
+                let attributes = IndexAttributes {
+                    unique,
+                    primary,
+                    index_type: mysql_optional_metadata_text(&row, "INDEX_TYPE")?,
+                    comment: mysql_optional_metadata_text(&row, "INDEX_COMMENT")?,
+                    ..Default::default()
+                };
                 grouped
-                    .entry((index_name, unique, primary))
-                    .or_default()
-                    .push((sequence, column.unwrap_or_default(), sub_part));
+                    .entry(index_name)
+                    .or_insert_with(|| (attributes, Vec::new()))
+                    .1
+                    .push((
+                        sequence,
+                        DatabaseIndexPart {
+                            column: column.unwrap_or_default(),
+                            sub_part,
+                            descending,
+                            expression: false,
+                            included: false,
+                        },
+                    ));
             }
         }
         DatabasePool::Sqlite(_) => unreachable!("SQLite 已在上方单独处理"),
@@ -780,12 +859,25 @@ async fn list_indexes(
                        ix.indisunique AS is_unique,
                        ix.indisprimary AS is_primary,
                        k.ord::bigint AS seq,
-                       pg_get_indexdef(ix.indexrelid, k.ord::int, true) AS column_name
+                       COALESCE(a.attname::text, pg_get_indexdef(ix.indexrelid, k.ord::int, true)) AS column_name,
+                       a.attname IS NULL AS is_expression,
+                       k.ord > COALESCE((to_jsonb(ix) ->> 'indnkeyatts')::int, ix.indnatts::int) AS is_included,
+                       COALESCE((ix.indoption[k.ord - 1]::int & 1) = 1, false) AS is_descending,
+                       am.amname::text AS index_type,
+                       obj_description(i.oid, 'pg_class') AS index_comment,
+                       pg_get_expr(ix.indpred, ix.indrelid, true) AS predicate,
+                       EXISTS (
+                         SELECT 1 FROM pg_constraint con
+                         WHERE con.conindid = ix.indexrelid AND con.contype IN ('u', 'x')
+                       ) AS constraint_backed
                 FROM pg_index ix
                 JOIN pg_class i ON i.oid = ix.indexrelid
+                JOIN pg_am am ON am.oid = i.relam
                 JOIN pg_class c ON c.oid = ix.indrelid
                 JOIN pg_namespace n ON n.oid = c.relnamespace
                 JOIN LATERAL generate_series(1, ix.indnatts) AS k(ord) ON true
+                LEFT JOIN pg_attribute a
+                  ON a.attrelid = ix.indrelid AND a.attnum = ix.indkey[k.ord - 1] AND a.attnum > 0
                 WHERE n.nspname = $1 AND c.relname = $2
                 ORDER BY i.relname, k.ord
                 "#,
@@ -802,25 +894,48 @@ async fn list_indexes(
                 let primary = row.try_get("is_primary").unwrap_or(false);
                 let sequence = row.try_get::<i64, _>("seq").unwrap_or(0);
                 let column: Option<String> = row.try_get("column_name").unwrap_or(None);
+                let attributes = IndexAttributes {
+                    unique,
+                    primary,
+                    index_type: row.try_get("index_type").unwrap_or(None),
+                    comment: row.try_get("index_comment").unwrap_or(None),
+                    predicate: row.try_get("predicate").unwrap_or(None),
+                    constraint_backed: row.try_get("constraint_backed").unwrap_or(false),
+                };
                 grouped
-                    .entry((index_name, unique, primary))
-                    .or_default()
-                    .push((sequence, column.unwrap_or_default(), None));
+                    .entry(index_name)
+                    .or_insert_with(|| (attributes, Vec::new()))
+                    .1
+                    .push((
+                        sequence,
+                        DatabaseIndexPart {
+                            column: column.unwrap_or_default(),
+                            sub_part: None,
+                            descending: row.try_get("is_descending").unwrap_or(false),
+                            expression: row.try_get("is_expression").unwrap_or(false),
+                            included: row.try_get("is_included").unwrap_or(false),
+                        },
+                    ));
             }
         }
     }
 
     Ok(grouped
         .into_iter()
-        .map(|((name, unique, primary), mut columns)| {
-            columns.sort_by_key(|(sequence, _, _)| *sequence);
-            let sub_part = columns.iter().find_map(|(_, _, sub_part)| *sub_part);
+        .map(|(name, (attributes, mut parts))| {
+            parts.sort_by_key(|(sequence, _)| *sequence);
+            let parts: Vec<DatabaseIndexPart> = parts.into_iter().map(|(_, part)| part).collect();
             DatabaseIndex {
                 name,
-                columns: columns.into_iter().map(|(_, column, _)| column).collect(),
-                unique,
-                primary,
-                sub_part,
+                columns: parts.iter().map(|part| part.column.clone()).collect(),
+                unique: attributes.unique,
+                primary: attributes.primary,
+                sub_part: parts.iter().find_map(|part| part.sub_part),
+                index_type: attributes.index_type,
+                comment: attributes.comment,
+                predicate: attributes.predicate,
+                constraint_backed: attributes.constraint_backed,
+                parts,
             }
         })
         .collect())
@@ -976,7 +1091,10 @@ async fn list_foreign_keys(
                 columns: parts.iter().map(|(_, column, ..)| column.clone()).collect(),
                 referenced_schema,
                 referenced_table,
-                referenced_columns: parts.into_iter().map(|(.., column)| column).collect(),
+                referenced_columns: parts
+                    .into_iter()
+                    .map(|(_, _, _, _, column, _, _)| column)
+                    .collect(),
                 update_rule,
                 delete_rule,
             }

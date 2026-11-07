@@ -11,7 +11,8 @@ use sqlx::Row;
 
 use super::error::{DatabaseError, DatabaseResult};
 use super::models::{
-    DatabaseColumn, DatabaseForeignKey, DatabaseIndex, DatabaseObject, DatabaseObjectKind,
+    DatabaseColumn, DatabaseForeignKey, DatabaseIndex, DatabaseIndexPart, DatabaseObject,
+    DatabaseObjectKind,
 };
 
 /// SQLite 会话唯一的库名。
@@ -49,11 +50,13 @@ pub async fn list_objects(pool: &SqlitePool) -> DatabaseResult<Vec<DatabaseObjec
 
 /// 读取列定义；整型主键在 SQLite 中即 rowid 别名，视为自增。
 pub async fn describe(pool: &SqlitePool, name: &str) -> DatabaseResult<Vec<DatabaseColumn>> {
-    let rows = sqlx::query("SELECT cid, name, type, \"notnull\", dflt_value, pk FROM pragma_table_info(?)")
-        .bind(name)
-        .fetch_all(pool)
-        .await
-        .map_err(DatabaseError::Query)?;
+    let rows = sqlx::query(
+        "SELECT cid, name, type, \"notnull\", dflt_value, pk FROM pragma_table_info(?)",
+    )
+    .bind(name)
+    .fetch_all(pool)
+    .await
+    .map_err(DatabaseError::Query)?;
     let pk_count = rows
         .iter()
         .filter(|row| row.try_get::<i64, _>("pk").unwrap_or(0) > 0)
@@ -64,14 +67,35 @@ pub async fn describe(pool: &SqlitePool, name: &str) -> DatabaseResult<Vec<Datab
             let primary_key = row.try_get::<i64, _>("pk").unwrap_or(0) > 0;
             Ok(DatabaseColumn {
                 name: row.try_get("name").map_err(DatabaseError::Query)?,
-                auto_increment: primary_key && pk_count == 1 && data_type.eq_ignore_ascii_case("INTEGER"),
+                auto_increment: primary_key
+                    && pk_count == 1
+                    && data_type.eq_ignore_ascii_case("INTEGER"),
                 data_type,
                 nullable: row.try_get::<i64, _>("notnull").unwrap_or(0) == 0 && !primary_key,
                 default_value: row.try_get("dflt_value").unwrap_or(None),
                 ordinal: row.try_get::<i64, _>("cid").unwrap_or(0) as i32 + 1,
                 primary_key,
                 comment: None,
+                charset: None,
+                collation: None,
+                on_update_current_timestamp: false,
+                default_is_expression: false,
+                generated_expression: None,
+                generated_stored: false,
             })
+        })
+        .collect()
+}
+
+fn plain_index_parts(columns: &[String]) -> Vec<DatabaseIndexPart> {
+    columns
+        .iter()
+        .map(|column| DatabaseIndexPart {
+            column: column.clone(),
+            sub_part: None,
+            descending: false,
+            expression: false,
+            included: false,
         })
         .collect()
 }
@@ -86,18 +110,24 @@ pub async fn indexes(pool: &SqlitePool, name: &str) -> DatabaseResult<Vec<Databa
     let mut result = Vec::new();
     for row in &list {
         let index_name: String = row.try_get("name").map_err(DatabaseError::Query)?;
-        let columns: Vec<String> = sqlx::query_scalar("SELECT name FROM pragma_index_info(?) ORDER BY seqno")
-            .bind(&index_name)
-            .fetch_all(pool)
-            .await
-            .map_err(DatabaseError::Query)?;
+        let columns: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_index_info(?) ORDER BY seqno")
+                .bind(&index_name)
+                .fetch_all(pool)
+                .await
+                .map_err(DatabaseError::Query)?;
         let origin: String = row.try_get("origin").unwrap_or_default();
         result.push(DatabaseIndex {
             name: index_name,
+            parts: plain_index_parts(&columns),
             columns,
             unique: row.try_get::<i64, _>("unique").unwrap_or(0) == 1,
             primary: origin == "pk",
             sub_part: None,
+            index_type: None,
+            comment: None,
+            predicate: None,
+            constraint_backed: false,
         });
     }
     // rowid 整型主键没有物理索引，从列信息补一条主键索引，供网格编辑定位行。
@@ -109,20 +139,31 @@ pub async fn indexes(pool: &SqlitePool, name: &str) -> DatabaseResult<Vec<Databa
             .map(|column| column.name)
             .collect();
         if !columns.is_empty() {
-            result.insert(0, DatabaseIndex {
-                name: "PRIMARY".to_owned(),
-                columns,
-                unique: true,
-                primary: true,
-                sub_part: None,
-            });
+            result.insert(
+                0,
+                DatabaseIndex {
+                    name: "PRIMARY".to_owned(),
+                    parts: plain_index_parts(&columns),
+                    columns,
+                    unique: true,
+                    primary: true,
+                    sub_part: None,
+                    index_type: None,
+                    comment: None,
+                    predicate: None,
+                    constraint_backed: false,
+                },
+            );
         }
     }
     Ok(result)
 }
 
 /// 读取外键；同一 id 的多行合并为一个复合外键。
-pub async fn foreign_keys(pool: &SqlitePool, name: &str) -> DatabaseResult<Vec<DatabaseForeignKey>> {
+pub async fn foreign_keys(
+    pool: &SqlitePool,
+    name: &str,
+) -> DatabaseResult<Vec<DatabaseForeignKey>> {
     let rows = sqlx::query("SELECT id, seq, \"table\", \"from\", \"to\", on_update, on_delete FROM pragma_foreign_key_list(?) ORDER BY id, seq")
         .bind(name)
         .fetch_all(pool)
@@ -141,9 +182,11 @@ pub async fn foreign_keys(pool: &SqlitePool, name: &str) -> DatabaseResult<Vec<D
             delete_rule: row.try_get("on_delete").unwrap_or_default(),
         });
         entry.columns.push(row.try_get("from").unwrap_or_default());
-        entry
-            .referenced_columns
-            .push(row.try_get::<Option<String>, _>("to").unwrap_or(None).unwrap_or_default());
+        entry.referenced_columns.push(
+            row.try_get::<Option<String>, _>("to")
+                .unwrap_or(None)
+                .unwrap_or_default(),
+        );
     }
     Ok(grouped.into_values().collect())
 }

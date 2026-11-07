@@ -27,8 +27,9 @@ import {
   buildAlterTableSql,
   buildCreateTableSql,
   columnTypes,
+  designerColumnFromStored,
+  designerIndexFromStored,
   normalizeDataTypeLabel,
-  parseStoredType,
   validateTableDraft,
 } from '@/utils/database-ddl'
 import { copyText } from '@/utils/clipboard'
@@ -257,23 +258,15 @@ function hydrateFromDetail(detail: DatabaseTableDetail): void {
   }
   extraTypes.value = [...extra]
 
-  const indexes: TableDesignerIndex[] = []
-  for (const index of detail.indexes) {
-    if (index.primary) continue
-    const representable = index.columns.every(columnName =>
-      detail.columns.some(
-        column => columnName.toLowerCase() === column.name.toLowerCase()
-      )
+  const indexes = detail.indexes.flatMap((index, position) => {
+    const item = designerIndexFromStored(
+      index,
+      detail.columns,
+      kind,
+      `index-${index.name}-${position}`
     )
-    if (!representable || index.subPart != null) continue
-    indexes.push({
-      id: `index-${index.name}-${indexes.length}`,
-      name: index.name,
-      kind: index.unique ? 'unique' : 'index',
-      method: 'btree',
-      columns: [...index.columns],
-    })
-  }
+    return item ? [item] : []
+  })
 
   const foreignKeys = detail.foreignKeys
     .filter(foreignKey => foreignKey.columns.length === 1)
@@ -296,23 +289,14 @@ function hydrateFromDetail(detail: DatabaseTableDetail): void {
   draft.collation = detail.options?.collation ?? ''
   draft.rowFormat = detail.options?.rowFormat?.toUpperCase() ?? ''
   draft.autoIncrement = detail.options?.autoIncrement ?? null
-  draft.columns = detail.columns.map((column, index) => {
-    const parsed = parseStoredType(column.dataType, kind)
-    return {
-      id: `column-${Date.now()}-${index}`,
-      name: column.name,
-      dataType: normalizeDataTypeLabel(column.dataType, kind),
-      length: parsed.length,
-      nullable: column.nullable,
-      primaryKey: column.primaryKey,
-      // 编辑时唯一约束统一走索引管理，避免 MySQL MODIFY 无法移除内联唯一索引。
-      unique: false,
-      unsigned: parsed.unsigned,
-      autoIncrement: column.autoIncrement,
-      defaultValue: column.defaultValue ?? '',
-      comment: column.comment ?? '',
-    }
-  })
+  draft.columns = detail.columns.map((column, index) =>
+    designerColumnFromStored(
+      column,
+      kind,
+      detail,
+      `column-${Date.now()}-${index}`
+    )
+  )
   draft.indexes = indexes
   draft.foreignKeys = foreignKeys
 }
@@ -452,6 +436,7 @@ function updateColumns(columns: TableDesignerColumn[]): void {
   const previouslyIncrementing = draft.columns.some(
     column => column.autoIncrement
   )
+  cascadeColumnChanges(draft.columns, columns)
   draft.columns = columns
   const incrementing = columns.filter(column => column.autoIncrement)
   if (!incrementing.length) draft.autoIncrement = null
@@ -464,6 +449,56 @@ function updateColumns(columns: TableDesignerColumn[]): void {
   ) {
     draft.autoIncrement = currentDetail.value.options?.autoIncrement ?? null
   }
+}
+
+/**
+ * 字段改名、删除时同步索引和外键，避免改个名字就让索引“包含不存在的字段”。
+ * 按编辑器 ID 对应前后字段；新名字和其他字段撞名时不动，交给校验提示。
+ */
+function cascadeColumnChanges(
+  previous: readonly TableDesignerColumn[],
+  next: readonly TableDesignerColumn[]
+): void {
+  const nextById = new Map(next.map(column => [column.id, column]))
+  const nextNames = new Set(next.map(column => column.name))
+  const renames = new Map<string, string>()
+  const removed = new Set<string>()
+  for (const column of previous) {
+    const updated = nextById.get(column.id)
+    if (!updated) {
+      if (!nextNames.has(column.name)) removed.add(column.name)
+    } else if (
+      updated.name !== column.name &&
+      updated.name &&
+      next.filter(item => item.name === updated.name).length === 1
+    )
+      renames.set(column.name, updated.name)
+  }
+  if (!renames.size && !removed.size) return
+
+  draft.indexes = draft.indexes.flatMap(index => {
+    const options = index.columnOptions ?? {}
+    const columns: string[] = []
+    const columnOptions: NonNullable<TableDesignerIndex['columnOptions']> = {}
+    for (const column of index.columns) {
+      if (options[column]?.expression) {
+        columns.push(column)
+        columnOptions[column] = options[column]
+        continue
+      }
+      if (removed.has(column)) continue
+      const name = renames.get(column) ?? column
+      columns.push(name)
+      if (options[column]) columnOptions[name] = options[column]
+    }
+    if (!columns.length) return []
+    return [{ ...index, columns, columnOptions }]
+  })
+  draft.foreignKeys = draft.foreignKeys.flatMap(foreignKey => {
+    if (removed.has(foreignKey.column)) return []
+    const name = renames.get(foreignKey.column)
+    return [name ? { ...foreignKey, column: name } : foreignKey]
+  })
 }
 
 const editorDisabled = computed(
@@ -656,6 +691,10 @@ const editorDisabled = computed(
           @update:model-value="updateColumns"
           :database-kind="databaseKind"
           :extra-types="extraTypes"
+          :editing="editing"
+          :session-id="sessionId"
+          :table-collation="draft.collation"
+          :errors="validation.columnErrors"
         />
         <DatabaseTableIndexesEditor
           v-show="activePanel === 'indexes'"
@@ -663,6 +702,7 @@ const editorDisabled = computed(
           v-model="draft.indexes"
           :columns="draft.columns"
           :database-kind="databaseKind"
+          :errors="validation.indexErrors"
         />
         <DatabaseTableForeignKeysEditor
           v-show="activePanel === 'foreignKeys'"

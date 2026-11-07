@@ -1,3 +1,4 @@
+import type { DatabaseKind } from '@/types/database'
 import type {
   DatabaseDataExportFormat,
   DatabaseExportData,
@@ -20,6 +21,41 @@ function html(value: string): string {
         character
       ]!
   )
+}
+
+/** 按方言引用标识符。 */
+export function exportSqlQuote(kind: DatabaseKind, value: string): string {
+  return kind === 'mysql'
+    ? `\`${value.replaceAll('`', '``')}\``
+    : `"${value.replaceAll('"', '""')}"`
+}
+
+/** 按方言生成字面量；字符串用 UTF-8 十六进制表达式保存，独立于 MySQL 的反斜线转义模式。 */
+export function exportSqlLiteral(
+  kind: DatabaseKind,
+  value: string | null,
+  dataType: string
+): string {
+  if (value === null) return 'NULL'
+  const type = dataType.toUpperCase()
+  if (/^(BOOL|BOOLEAN)$/u.test(type) && /^(true|false)$/iu.test(value))
+    return value.toUpperCase()
+  if (/(BINARY|BLOB|BYTEA|^BIT)/u.test(type) && value.startsWith('base64:')) {
+    const encoded = value.slice(7)
+    if (/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded))
+      return kind === 'mysql'
+        ? `FROM_BASE64('${encoded}')`
+        : `decode('${encoded}', 'base64')`
+  }
+  if (kind === 'mysql') {
+    const hex = Array.from(new TextEncoder().encode(value), byte =>
+      byte.toString(16).padStart(2, '0')
+    ).join('')
+    return `CONVERT(X'${hex}' USING utf8mb4)`
+  }
+  // SQLite 不支持 E'' 语法，也不处理反斜线转义
+  if (kind === 'sqlite') return `'${value.replaceAll("'", "''")}'`
+  return `E'${value.replaceAll('\\', '\\\\').replaceAll("'", "''")}'`
 }
 
 /** 将一批已提交数据编码成指定文本格式，保留空值、长整数及重名字段。 */
@@ -73,37 +109,13 @@ export function exportDataText(
   }
   if (format === 'sql') {
     const quote = (value: string): string =>
-      data.databaseKind === 'mysql'
-        ? `\`${value.replaceAll('`', '``')}\``
-        : `"${value.replaceAll('"', '""')}"`
+      exportSqlQuote(data.databaseKind, value)
     const target = [data.schema, tableName]
       .filter((part): part is string => Boolean(part))
       .map(quote)
       .join('.')
-    // 字符串用 UTF-8 十六进制表达式保存，独立于 MySQL 的反斜线转义模式。
-    const literal = (value: string | null, dataType: string): string => {
-      if (value === null) return 'NULL'
-      const type = dataType.toUpperCase()
-      if (/^(BOOL|BOOLEAN)$/u.test(type) && /^(true|false)$/iu.test(value))
-        return value.toUpperCase()
-      if (
-        /(BINARY|BLOB|BYTEA|^BIT)/u.test(type) &&
-        value.startsWith('base64:')
-      ) {
-        const encoded = value.slice(7)
-        if (/^[A-Za-z0-9+/]*={0,2}$/u.test(encoded))
-          return data.databaseKind === 'mysql'
-            ? `FROM_BASE64('${encoded}')`
-            : `decode('${encoded}', 'base64')`
-      }
-      if (data.databaseKind === 'mysql') {
-        const hex = Array.from(new TextEncoder().encode(value), byte =>
-          byte.toString(16).padStart(2, '0')
-        ).join('')
-        return `CONVERT(X'${hex}' USING utf8mb4)`
-      }
-      return `E'${value.replaceAll('\\', '\\\\').replaceAll("'", "''")}'`
-    }
+    const literal = (value: string | null, dataType: string): string =>
+      exportSqlLiteral(data.databaseKind, value, dataType)
     return (
       [
         ...(includeHeader

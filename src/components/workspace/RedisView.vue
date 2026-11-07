@@ -17,6 +17,7 @@ import { useDatabaseSidebarWidth } from '@/composables/useDatabaseSidebarWidth'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
 import { isRedisReadCommand } from '@/utils/redis-commands'
 import type { AgentTarget } from '@/types/agent'
+import type { RedisKey } from '@/types/redis'
 import type { SavedConnection } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
 const props = defineProps<{ connection: SavedConnection; active?: boolean }>()
@@ -148,6 +149,18 @@ function toggleAgent() {
 function toggleAgentSplit() {
   state.agentSplit = !state.agentSplit
 }
+/** 键被重命名、新建后刷新列表并打开它。 */
+async function openKey(key: RedisKey) {
+  state.dirty = false
+  await scan(true)
+  state.activeTab = 'keys'
+  await inspect(key)
+}
+/** 批量删除或集合清空后，当前键可能已不存在。 */
+function reloadKeys() {
+  detail.value = null
+  void scan(true)
+}
 function runCommand() {
   if (!connected.value || busy.value || !state.command.trim()) return
   if (isRedisReadCommand(state.command)) void execute(state.command)
@@ -188,6 +201,9 @@ defineExpose({
       :busy="busy"
       :has-more="cursor !== '0'"
       :selected="detail?.key.id"
+      :session-id="session?.sessionId"
+      @changed="reloadKeys()"
+      @created="openKey"
       @search="scan(true, $event)"
       @more="scan()"
       @refresh="scan(true)"
@@ -323,6 +339,9 @@ defineExpose({
             v-show="activeTab === 'keys'"
             :detail="detail"
             :busy="busy"
+            :session-id="session?.sessionId"
+            @renamed="openKey"
+            @gone="reloadKeys()"
             @dirty="dirty = $event"
             @save="saveString"
             @remove="deleteKey"

@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 
 import { onBeforeUnmount, shallowRef } from 'vue'
+import { cn } from '@/utils/cn'
 
 const { t } = useI18n()
 
@@ -32,6 +33,11 @@ let pointerId = -1
 let startY = 0
 let startRatio = 0
 let containerHeight = 0
+let container: HTMLElement | null = null
+// 拖拽中只改父容器的 CSS 变量，并按帧合并；松手时才写回 v-model 与持久化存储。
+let frame = 0
+let pendingY = 0
+let draftRatio = 0
 
 function effectiveBounds(height: number): { min: number; max: number } {
   if (!height) return { min: props.min, max: props.max }
@@ -46,13 +52,26 @@ function clamp(value: number, height = containerHeight): number {
   return Math.min(bounds.max, Math.max(bounds.min, value))
 }
 
+function writeSplit(value: number): void {
+  container?.style.setProperty('--query-split-top', `${value}fr`)
+  container?.style.setProperty('--query-split-bottom', `${100 - value}fr`)
+}
+
+function flushFrame(): void {
+  frame = 0
+  draftRatio = clamp(startRatio + ((pendingY - startY) / containerHeight) * 100)
+  writeSplit(draftRatio)
+}
+
 function startDragging(event: PointerEvent): void {
   if (event.button !== 0) return
   const handle = event.currentTarget as HTMLElement
-  containerHeight = handle.parentElement?.clientHeight ?? 0
+  container = handle.parentElement
+  containerHeight = container?.clientHeight ?? 0
   pointerId = event.pointerId
   startY = event.clientY
   startRatio = ratio.value
+  draftRatio = ratio.value
   dragging.value = true
   handle.setPointerCapture(pointerId)
   document.body.classList.add('app-resizing-rows')
@@ -62,15 +81,21 @@ function startDragging(event: PointerEvent): void {
 function drag(event: PointerEvent): void {
   if (!dragging.value || event.pointerId !== pointerId || !containerHeight)
     return
-  ratio.value = clamp(
-    startRatio + ((event.clientY - startY) / containerHeight) * 100
-  )
+  pendingY = event.clientY
+  if (!frame) frame = requestAnimationFrame(flushFrame)
 }
 
 function stopDragging(event?: PointerEvent): void {
+  if (!dragging.value) return
   if (event && event.pointerId !== pointerId) return
+  if (frame) {
+    cancelAnimationFrame(frame)
+    flushFrame()
+  }
   dragging.value = false
   pointerId = -1
+  ratio.value = draftRatio
+  container = null
   document.body.classList.remove('app-resizing-rows')
 }
 
@@ -96,6 +121,7 @@ function reset(event: MouseEvent): void {
 }
 
 onBeforeUnmount(() => {
+  if (frame) cancelAnimationFrame(frame)
   document.body.classList.remove('app-resizing-rows')
 })
 </script>
@@ -112,7 +138,8 @@ onBeforeUnmount(() => {
     :aria-valuetext="
       valueText || t('SQL 编辑器占 {value0}%', { value0: Math.round(ratio) })
     "
-    :class="['query-resize-handle', dragging && 'is-dragging']"
+    class="group relative z-20 min-h-2.5 cursor-row-resize touch-none outline-none"
+    :data-dragging="dragging || undefined"
     :title="t('拖动调整高度；双击恢复默认')"
     @dblclick="reset"
     @keydown="handleKeydown"
@@ -123,73 +150,16 @@ onBeforeUnmount(() => {
     @lostpointercapture="stopDragging"
   >
     <span
-      class="query-resize-line"
+      :class="
+        cn(
+          'split-handle-line',
+          'group-hover:bg-violet group-focus-visible:bg-violet group-data-dragging:bg-violet group-hover:h-0.5 group-focus-visible:h-0.5 group-data-dragging:h-0.5',
+          'group-hover:shadow-[0_0_8px_color-mix(in_oklch,var(--color-violet)_52%,transparent)] group-data-dragging:shadow-[0_0_8px_color-mix(in_oklch,var(--color-violet)_52%,transparent)]'
+        )
+      "
       aria-hidden="true"
       ><i
+        class="border-line-strong bg-panel/86 absolute top-1/2 left-1/2 block h-1 w-[34px] -translate-1/2 rounded-full border opacity-0 transition-opacity group-hover:border-violet group-hover:opacity-100 group-focus-visible:opacity-100 group-data-dragging:border-violet group-data-dragging:opacity-100 motion-reduce:transition-none"
     /></span>
   </div>
 </template>
-
-<style scoped>
-.query-resize-handle {
-  position: relative;
-  z-index: 20;
-  min-height: 10px;
-  cursor: row-resize;
-  touch-action: none;
-  outline: none;
-}
-.query-resize-line {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  left: 0;
-  height: 1px;
-  background: var(--color-line);
-  transform: translateY(-50%);
-  transition:
-    height 120ms ease,
-    background-color 120ms ease,
-    box-shadow 120ms ease;
-}
-.query-resize-line i {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: block;
-  width: 34px;
-  height: 4px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-panel) 86%, transparent);
-  opacity: 0;
-  transform: translate(-50%, -50%);
-  transition:
-    opacity 120ms ease,
-    border-color 120ms ease;
-}
-.query-resize-handle:hover .query-resize-line,
-.query-resize-handle:focus-visible .query-resize-line,
-.query-resize-handle.is-dragging .query-resize-line {
-  height: 2px;
-  background: var(--color-violet);
-  box-shadow: 0 0 8px color-mix(in oklch, var(--color-violet) 52%, transparent);
-}
-.query-resize-handle:hover .query-resize-line i,
-.query-resize-handle:focus-visible .query-resize-line i,
-.query-resize-handle.is-dragging .query-resize-line i {
-  border-color: color-mix(in oklch, var(--color-violet) 62%, white 10%);
-  opacity: 1;
-}
-:global(body.app-resizing-rows),
-:global(body.app-resizing-rows *) {
-  cursor: row-resize !important;
-  user-select: none !important;
-}
-@media (prefers-reduced-motion: reduce) {
-  .query-resize-line,
-  .query-resize-line i {
-    transition: none;
-  }
-}
-</style>

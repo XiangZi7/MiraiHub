@@ -1,12 +1,16 @@
 /** 与 Rust `db/models.rs` 对齐的数据库 IPC 类型。 */
 
 import type { ConnectionTagColor } from './connection'
+import type { SshConfig } from './ssh'
 
 export type DatabaseKind = 'mysql' | 'postgresql' | 'sqlite'
 /** 工作台连接协议；SQL 方言仍限定为 DatabaseKind。 */
 export type DatabaseConnectionKind = DatabaseKind | 'redis'
 export type DatabaseSslMode =
   'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full'
+
+/** 连接所属环境，生产环境的危险语句需要输入库名确认。 */
+export type DatabaseEnvironment = 'development' | 'testing' | 'production'
 
 export interface DatabaseConfig {
   kind: DatabaseKind
@@ -21,6 +25,12 @@ export interface DatabaseConfig {
   clientKey: string
   timeoutSecs: number
   maxConnections: number
+  environment?: DatabaseEnvironment
+  readOnly?: boolean
+  /** 已解析好的 SSH 隧道配置，手动填写或由 sshTunnelConnectionId 解析而来。 */
+  sshTunnel?: SshConfig
+  /** 引用已保存的 SSH 连接；调用后端前在 API 层解析为 sshTunnel。 */
+  sshTunnelConnectionId?: string
 }
 
 export type DatabaseConnectionConfig = Omit<DatabaseConfig, 'kind'> & {
@@ -33,6 +43,8 @@ export interface DatabaseSession {
   endpoint: string
   database: string
   serverVersion: string
+  environment?: DatabaseEnvironment
+  readOnly?: boolean
 }
 
 export type DatabaseObjectKind = 'table' | 'view' | 'procedure' | 'function'
@@ -57,6 +69,23 @@ export interface DatabaseColumn {
   primaryKey: boolean
   autoIncrement: boolean
   comment: string | null
+  charset?: string | null
+  collation?: string | null
+  onUpdateCurrentTimestamp?: boolean
+  /** 默认值是表达式而不是字面量（MySQL 8 DEFAULT_GENERATED）。 */
+  defaultIsExpression?: boolean
+  /** 生成列的表达式，普通列为 null。 */
+  generatedExpression?: string | null
+  generatedStored?: boolean
+}
+
+export interface DatabaseIndexPart {
+  column: string
+  subPart: number | null
+  descending: boolean
+  expression: boolean
+  /** PostgreSQL INCLUDE 列，不是键的一部分。 */
+  included: boolean
 }
 
 export interface DatabaseIndex {
@@ -66,6 +95,14 @@ export interface DatabaseIndex {
   primary: boolean
   /** 前缀索引长度（如 name(10) 的 10）；非前缀索引为 null。 */
   subPart: number | null
+  /** 索引方法：BTREE / HASH / FULLTEXT / SPATIAL / gin 等。 */
+  indexType?: string | null
+  comment?: string | null
+  /** PostgreSQL 部分索引的 WHERE 条件。 */
+  predicate?: string | null
+  /** 由 UNIQUE / EXCLUDE 约束持有，只能通过 DROP CONSTRAINT 删除。 */
+  constraintBacked?: boolean
+  parts?: DatabaseIndexPart[]
 }
 
 export interface DatabaseForeignKey {

@@ -108,6 +108,14 @@ pub enum Action {
         schema: String,
         table: String,
     },
+    SearchTables {
+        query: String,
+        limit: usize,
+    },
+    Indexes {
+        schema: String,
+        table: String,
+    },
     Shell {
         command: String,
         reason: String,
@@ -227,6 +235,14 @@ impl Action {
                 json!({"schema":schema,"table":table}).to_string(),
                 "读取当前数据库的对象和字段结构".into(),
             ),
+            Self::SearchTables { query, limit } => (
+                json!({"query":query,"limit":limit}).to_string(),
+                "按关键词检索相关表的名称、备注与字段摘要".into(),
+            ),
+            Self::Indexes { schema, table } => (
+                json!({"schema":schema,"table":table}).to_string(),
+                "读取表的索引与主键定义".into(),
+            ),
             Self::Shell { command, reason } => (command.clone(), reason.clone()),
             Self::Sql { sql, reason } => (sql.clone(), reason.clone()),
             Self::RedisScan { cursor, pattern } => (
@@ -275,6 +291,8 @@ impl Action {
             Self::FileEdit { .. } => "修改远端配置",
             Self::Probe(_) => "读取服务器状态",
             Self::Schema { .. } => "读取数据库结构",
+            Self::SearchTables { .. } => "搜索数据库表",
+            Self::Indexes { .. } => "读取表索引",
             Self::Shell { .. } => "执行 Shell 命令",
             Self::Sql { .. } => "执行 SQL",
             Self::RedisScan { .. } => "扫描 Redis 键",
@@ -458,6 +476,16 @@ struct Schema {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct SearchTables {
+    query: String,
+    #[serde(default = "search_limit")]
+    limit: usize,
+}
+fn search_limit() -> usize {
+    super::schema_context::SEARCH_DEFAULT
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Shell {
     command: String,
     reason: String,
@@ -586,6 +614,28 @@ pub fn classify(
                 return Err(AppError::invalid_input("对象名称过长"));
             }
             Ok(Action::Schema {
+                schema: a.schema,
+                table: a.table,
+            })
+        }
+        ("database", "database_search_tables") => {
+            let a: SearchTables = parse(args)?;
+            bounded(&a.query, 512)?;
+            if !(1..=super::schema_context::SEARCH_MAX).contains(&a.limit) {
+                return Err(AppError::invalid_input("检索数量无效"));
+            }
+            Ok(Action::SearchTables {
+                query: a.query,
+                limit: a.limit,
+            })
+        }
+        ("database", "database_indexes") => {
+            let a: Schema = parse(args)?;
+            bounded(&a.table, 256)?;
+            if a.schema.len() > 256 {
+                return Err(AppError::invalid_input("对象名称过长"));
+            }
+            Ok(Action::Indexes {
                 schema: a.schema,
                 table: a.table,
             })
@@ -883,6 +933,14 @@ mod tests {
                 schema: "public".into(),
                 table: "users".into(),
             },
+            Action::SearchTables {
+                query: "orders".into(),
+                limit: 8,
+            },
+            Action::Indexes {
+                schema: "public".into(),
+                table: "users".into(),
+            },
             Action::Shell {
                 command: "touch /tmp/test".into(),
                 reason: "test".into(),
@@ -896,7 +954,7 @@ mod tests {
         assert!(serde_json::from_str::<ApprovalMode>("\"unknown\"").is_err());
         for (index, action) in actions.iter().enumerate() {
             assert!(ApprovalMode::Ask.requires_approval(action));
-            assert_eq!(ApprovalMode::Auto.requires_approval(action), index >= 2);
+            assert_eq!(ApprovalMode::Auto.requires_approval(action), index >= 4);
             assert!(!ApprovalMode::Full.requires_approval(action));
             let (command, reason) = action.approval_details();
             assert!(!command.is_empty() && !reason.is_empty());

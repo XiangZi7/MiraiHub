@@ -22,6 +22,16 @@ pub enum DatabaseSslMode {
     VerifyFull,
 }
 
+/// 连接所属环境。生产环境下的危险语句需要输入库名二次确认。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DatabaseEnvironment {
+    #[default]
+    Development,
+    Testing,
+    Production,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseConfig {
@@ -45,6 +55,17 @@ pub struct DatabaseConfig {
     pub timeout_secs: u64,
     #[serde(default = "default_max_connections")]
     pub max_connections: u32,
+    #[serde(default)]
+    pub environment: DatabaseEnvironment,
+    /// 只读模式：后端拒绝写语句，并在会话层面开启只读事务作为兜底。
+    #[serde(default)]
+    pub read_only: bool,
+    /// 经 SSH 隧道连接；连上后 host/port 会被改写成本机转发端口。
+    #[serde(default)]
+    pub ssh_tunnel: Option<crate::ssh::models::SshConfig>,
+    /// 已建立的隧道。派生会话（切库、导出、AI）克隆配置时共享同一条隧道。
+    #[serde(skip)]
+    pub(crate) tunnel: Option<std::sync::Arc<super::tunnel::DatabaseTunnel>>,
 }
 
 fn default_timeout_secs() -> u64 {
@@ -60,6 +81,14 @@ impl DatabaseConfig {
         if self.kind == DatabaseKind::Sqlite {
             return self.host.clone();
         }
+        if let Some(tunnel) = &self.tunnel {
+            return format!(
+                "{}@{} (SSH {})",
+                self.username,
+                tunnel.target(),
+                tunnel.via()
+            );
+        }
         format!("{}@{}:{}", self.username, self.host, self.port)
     }
 }
@@ -74,6 +103,8 @@ pub struct DatabaseSession {
     /// 当前活动库；MySQL 未指定库时为空。
     pub database: String,
     pub server_version: String,
+    pub environment: DatabaseEnvironment,
+    pub read_only: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +146,28 @@ pub struct DatabaseColumn {
     pub primary_key: bool,
     pub auto_increment: bool,
     pub comment: Option<String>,
+    /// 字段级字符集与排序规则；不适用的类型为 None。
+    pub charset: Option<String>,
+    pub collation: Option<String>,
+    /// MySQL 的 ON UPDATE CURRENT_TIMESTAMP。
+    pub on_update_current_timestamp: bool,
+    /// 默认值是表达式而不是字面量（MySQL 8 DEFAULT_GENERATED）。
+    pub default_is_expression: bool,
+    /// 生成列的表达式，普通列为 None。
+    pub generated_expression: Option<String>,
+    pub generated_stored: bool,
+}
+
+/// 索引里的一项：普通列或表达式。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseIndexPart {
+    pub column: String,
+    pub sub_part: Option<i64>,
+    pub descending: bool,
+    pub expression: bool,
+    /// PostgreSQL INCLUDE 列，不是键的一部分。
+    pub included: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -127,6 +180,14 @@ pub struct DatabaseIndex {
     /// 前缀索引的长度（如 name(10) 的 10）；非前缀索引为 None。
     #[serde(default)]
     pub sub_part: Option<i64>,
+    /// 索引方法：BTREE / HASH / FULLTEXT / SPATIAL / gin 等；读不出来时为 None。
+    pub index_type: Option<String>,
+    pub comment: Option<String>,
+    /// PostgreSQL 部分索引的 WHERE 条件。
+    pub predicate: Option<String>,
+    /// 索引由 UNIQUE / EXCLUDE 约束持有，只能通过 DROP CONSTRAINT 删除。
+    pub constraint_backed: bool,
+    pub parts: Vec<DatabaseIndexPart>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -183,6 +244,65 @@ pub struct DatabaseTableDetail {
     pub ddl: String,
     /// 表的当前选项（引擎/字符集/备注/自增计数器），视图与读不出来时为 None。
     pub options: Option<DatabaseTableOptions>,
+    /// CHECK 约束；不支持的版本或读不出来时为空。
+    pub checks: Vec<DatabaseCheckConstraint>,
+    pub triggers: Vec<DatabaseTrigger>,
+    /// MySQL 分区信息，非分区表为 None。
+    pub partition: Option<DatabasePartitionInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseCheckConstraint {
+    pub name: String,
+    /// 不带外层 CHECK ( ) 的表达式。
+    pub expression: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseTrigger {
+    pub name: String,
+    /// BEFORE / AFTER / INSTEAD OF
+    pub timing: String,
+    /// INSERT / UPDATE / DELETE / TRUNCATE，PostgreSQL 可多个。
+    pub events: Vec<String>,
+    /// MySQL 为触发语句体；PostgreSQL 为触发函数体（prosrc）。
+    pub body: String,
+    /// PostgreSQL 触发函数的限定名，MySQL 为空。
+    pub function: String,
+    /// ROW / STATEMENT
+    pub level: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabasePartitionInfo {
+    /// RANGE / LIST / HASH / KEY 等
+    pub method: String,
+    pub expression: String,
+    pub partitions: Vec<DatabasePartition>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabasePartition {
+    pub name: String,
+    pub description: String,
+    pub rows: Option<i64>,
+}
+
+/// 表设计器执行 DDL 的结果。支持事务 DDL 的方言失败会整体回滚。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseDdlExecution {
+    pub transactional: bool,
+    /// 成功执行的语句数（事务回滚时这些也已撤销）。
+    pub executed: usize,
+    pub failed_index: Option<usize>,
+    pub failed_statement: Option<String>,
+    pub error: Option<String>,
+    pub rolled_back: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

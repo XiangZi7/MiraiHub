@@ -51,7 +51,11 @@ pub async fn db_import_rows(
     session_id: String,
     tables: Vec<super::import_data::ImportRowsTable>,
     task_id: String,
+    confirm: Option<String>,
 ) -> AppResult<DatabaseImportResult> {
+    manager
+        .guard_action(&session_id, None, confirm.as_deref())
+        .await?;
     Ok(super::import_data::import_rows(
         &manager,
         &session_id,
@@ -131,6 +135,25 @@ pub async fn db_describe_session(
     Ok(manager.describe_session(&session_id).await?)
 }
 
+/// 状态栏周期探活：在会话连接池上执行 `SELECT 1`，返回往返耗时（毫秒）。
+#[tauri::command]
+pub async fn db_ping(manager: State<'_, DatabaseManager>, session_id: String) -> AppResult<u64> {
+    use super::manager::DatabasePool;
+
+    let pool = manager.pool(&session_id).await?;
+    let started = std::time::Instant::now();
+    let result: Result<i64, sqlx::Error> = match &pool {
+        DatabasePool::Mysql(pool) => sqlx::query_scalar("SELECT 1").fetch_one(pool).await,
+        DatabasePool::Postgresql(pool) => sqlx::query_scalar::<_, i32>("SELECT 1")
+            .fetch_one(pool)
+            .await
+            .map(i64::from),
+        DatabasePool::Sqlite(pool) => sqlx::query_scalar("SELECT 1").fetch_one(pool).await,
+    };
+    result.map_err(DatabaseError::Query)?;
+    Ok(started.elapsed().as_millis() as u64)
+}
+
 #[tauri::command]
 pub async fn db_use_database(
     manager: State<'_, DatabaseManager>,
@@ -153,7 +176,7 @@ pub async fn db_list_objects(
     manager: State<'_, DatabaseManager>,
     session_id: String,
 ) -> AppResult<Vec<DatabaseObject>> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(metadata::list_objects(&pool).await?)
 }
 
@@ -162,7 +185,7 @@ pub async fn db_list_databases(
     manager: State<'_, DatabaseManager>,
     session_id: String,
 ) -> AppResult<Vec<String>> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(metadata::list_databases(&pool).await?)
 }
 
@@ -172,7 +195,7 @@ pub async fn db_completion_columns(
     session_id: String,
     schema: String,
 ) -> AppResult<Vec<String>> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(metadata::completion_columns(&pool, &schema).await?)
 }
 
@@ -183,7 +206,7 @@ pub async fn db_completion_table_columns(
     session_id: String,
     schema: String,
 ) -> AppResult<Vec<(String, String)>> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(metadata::completion_table_columns(&pool, &schema).await?)
 }
 
@@ -192,7 +215,7 @@ pub async fn db_table_option_choices(
     manager: State<'_, DatabaseManager>,
     session_id: String,
 ) -> AppResult<table_ops::TableOptionChoices> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(table_ops::table_option_choices(&pool).await?)
 }
 
@@ -203,7 +226,7 @@ pub async fn db_describe_object(
     schema: String,
     name: String,
 ) -> AppResult<Vec<DatabaseColumn>> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(metadata::describe_object(&pool, &schema, &name).await?)
 }
 
@@ -215,7 +238,7 @@ pub async fn db_table_detail(
     name: String,
     kind: DatabaseObjectKind,
 ) -> AppResult<DatabaseTableDetail> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(metadata::table_detail(&pool, &schema, &name, kind).await?)
 }
 
@@ -228,7 +251,7 @@ pub async fn db_routine_detail(
     kind: DatabaseObjectKind,
     identity: String,
 ) -> AppResult<DatabaseRoutineDetail> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(metadata::routine_detail(&pool, &schema, &name, kind, &identity).await?)
 }
 
@@ -237,7 +260,11 @@ pub async fn db_create_database(
     manager: State<'_, DatabaseManager>,
     session_id: String,
     name: String,
+    confirm: Option<String>,
 ) -> AppResult<()> {
+    manager
+        .guard_action(&session_id, None, confirm.as_deref())
+        .await?;
     let pool = manager.pool(&session_id).await?;
     Ok(object_ops::create_database(&pool, &name).await?)
 }
@@ -248,7 +275,15 @@ pub async fn db_rename_database(
     session_id: String,
     old_name: String,
     new_name: String,
+    confirm: Option<String>,
 ) -> AppResult<()> {
+    manager
+        .guard_action(
+            &session_id,
+            Some(format!("重命名数据库 {old_name}")),
+            confirm.as_deref(),
+        )
+        .await?;
     let session = manager.describe_session(&session_id).await?;
     if session.database == old_name {
         return Err(DatabaseError::InvalidInput(
@@ -265,7 +300,15 @@ pub async fn db_drop_database(
     manager: State<'_, DatabaseManager>,
     session_id: String,
     name: String,
+    confirm: Option<String>,
 ) -> AppResult<()> {
+    manager
+        .guard_action(
+            &session_id,
+            Some(format!("删除数据库 {name}")),
+            confirm.as_deref(),
+        )
+        .await?;
     let session = manager.describe_session(&session_id).await?;
     if session.database == name {
         return Err(DatabaseError::InvalidInput(
@@ -286,7 +329,15 @@ pub async fn db_rename_object(
     new_name: String,
     kind: DatabaseObjectKind,
     identity: String,
+    confirm: Option<String>,
 ) -> AppResult<()> {
+    manager
+        .guard_action(
+            &session_id,
+            Some(format!("重命名 {name}")),
+            confirm.as_deref(),
+        )
+        .await?;
     let pool = manager.pool(&session_id).await?;
     Ok(object_ops::rename_object(&pool, &schema, &name, &new_name, kind, &identity).await?)
 }
@@ -299,7 +350,15 @@ pub async fn db_drop_object(
     name: String,
     kind: DatabaseObjectKind,
     identity: String,
+    confirm: Option<String>,
 ) -> AppResult<()> {
+    manager
+        .guard_action(
+            &session_id,
+            Some(format!("删除 {name}")),
+            confirm.as_deref(),
+        )
+        .await?;
     let pool = manager.pool(&session_id).await?;
     Ok(object_ops::drop_object(&pool, &schema, &name, kind, &identity).await?)
 }
@@ -311,7 +370,7 @@ pub async fn db_table_options(
     schema: String,
     name: String,
 ) -> AppResult<Option<DatabaseTableOptions>> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(table_ops::read_table_options(&pool, &schema, &name).await?)
 }
 
@@ -322,7 +381,15 @@ pub async fn db_alter_table_options(
     schema: String,
     name: String,
     options: TableAlterOptions,
+    confirm: Option<String>,
 ) -> AppResult<Vec<String>> {
+    manager
+        .guard_action(
+            &session_id,
+            Some(format!("修改表 {name} 的选项")),
+            confirm.as_deref(),
+        )
+        .await?;
     let pool = manager.pool(&session_id).await?;
     Ok(table_ops::alter_table_options(&pool, &schema, &name, &options).await?)
 }
@@ -333,7 +400,15 @@ pub async fn db_truncate_table(
     session_id: String,
     schema: String,
     name: String,
+    confirm: Option<String>,
 ) -> AppResult<()> {
+    manager
+        .guard_action(
+            &session_id,
+            Some(format!("清空表 {name}")),
+            confirm.as_deref(),
+        )
+        .await?;
     let pool = manager.pool(&session_id).await?;
     Ok(table_ops::truncate_table(&pool, &schema, &name).await?)
 }
@@ -345,7 +420,7 @@ pub async fn db_count_rows(
     schema: String,
     name: String,
 ) -> AppResult<i64> {
-    let pool = manager.pool(&session_id).await?;
+    let pool = manager.meta_pool(&session_id).await?;
     Ok(metadata::count_rows(&pool, &schema, &name).await?)
 }
 
@@ -364,7 +439,11 @@ pub async fn db_mutate_rows(
     manager: State<'_, DatabaseManager>,
     session_id: String,
     request: MutationRequest,
+    confirm: Option<String>,
 ) -> AppResult<MutationResult> {
+    manager
+        .guard_action(&session_id, None, confirm.as_deref())
+        .await?;
     let pool = manager.pool(&session_id).await?;
     Ok(mutation::mutate(&pool, &request).await?)
 }
@@ -376,15 +455,36 @@ pub async fn db_execute(
     sql: String,
     max_rows: Option<usize>,
     timeout_secs: Option<u64>,
+    confirm: Option<String>,
+    params: Option<Vec<Option<String>>>,
 ) -> AppResult<DatabaseExecution> {
-    Ok(query::execute(
+    manager
+        .guard_sql(&session_id, &sql, confirm.as_deref())
+        .await?;
+    Ok(query::execute_with_params(
         &manager,
         &session_id,
         &sql,
+        params.as_deref().unwrap_or_default(),
         max_rows.unwrap_or(DEFAULT_RESULT_ROWS),
         timeout_secs.unwrap_or(300),
     )
     .await?)
+}
+
+/// 表设计器保存：逐条执行前端拆好的 DDL，支持事务 DDL 的方言整批回滚。
+#[tauri::command]
+pub async fn db_execute_ddl(
+    manager: State<'_, DatabaseManager>,
+    session_id: String,
+    statements: Vec<String>,
+    confirm: Option<String>,
+) -> AppResult<super::models::DatabaseDdlExecution> {
+    manager
+        .guard_sql(&session_id, &statements.join(";
+"), confirm.as_deref())
+        .await?;
+    Ok(super::ddl_exec::execute_ddl(&manager, &session_id, &statements).await?)
 }
 
 /// 预览表格编辑将要提交的 SQL，确认弹窗展示用。
@@ -459,6 +559,14 @@ pub async fn db_import_sql(
     session_id: String,
     path: String,
     options: Option<DatabaseImportOptions>,
+    confirm: Option<String>,
 ) -> AppResult<DatabaseImportResult> {
+    manager
+        .guard_action(
+            &session_id,
+            Some("导入 SQL 文件".to_owned()),
+            confirm.as_deref(),
+        )
+        .await?;
     Ok(transfer::import_sql(&manager, &session_id, &path, &options.unwrap_or_default()).await?)
 }

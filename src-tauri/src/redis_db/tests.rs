@@ -76,6 +76,8 @@ async fn servers(connections: Vec<Vec<Step>>) -> (RedisConfig, tokio::task::Join
             client_certificate: String::new(),
             client_key: String::new(),
             timeout_secs: 2,
+            ssh_tunnel: None,
+            tunnel: None,
         },
         task,
     )

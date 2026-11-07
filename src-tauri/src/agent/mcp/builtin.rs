@@ -36,7 +36,7 @@ pub fn specs(kind: &str) -> Vec<ToolSpec> {
         "database" => vec![
             spec(
                 "database_schema",
-                "Read metadata only. Empty schema and table lists objects; supply both for column structure. No row data.",
+                "Read metadata only. Empty schema and table lists up to 200 objects; supply both for column structure. No row data. On large databases prefer database_search_tables to locate relevant tables first.",
                 json!({"schema":{"type":"string"},"table":{"type":"string"}}),
                 json!(["schema", "table"]),
             ),
@@ -79,9 +79,21 @@ pub fn specs(kind: &str) -> Vec<ToolSpec> {
     if kind == "database" {
         tools.extend([spec(
             "explain_sql",
-            "Return optimizer plan for one SQL statement without ANALYZE and without executing it.",
+            "Return optimizer plan for one SQL statement without ANALYZE and without executing it. The result also includes the indexes of tables accessed by the plan. Call this first when asked to optimize SQL.",
             json!({"sql":{"type":"string"}}),
             json!(["sql"]),
+        ),
+        spec(
+            "database_search_tables",
+            "Find tables relevant to keywords by matching table names, comments and column names. Returns the top matches with compact columns and indexes; metadata only, no row data. Use instead of listing every object on large databases.",
+            json!({"query":{"type":"string","minLength":1,"maxLength":512},"limit":{"type":"integer","minimum":1,"maximum":20,"default":8}}),
+            json!(["query"]),
+        ),
+        spec(
+            "database_indexes",
+            "List the indexes and primary key of one table. Empty schema searches the current database. Metadata only.",
+            json!({"schema":{"type":"string"},"table":{"type":"string"}}),
+            json!(["schema", "table"]),
         )]);
     }
     if matches!(kind, "ssh" | "database" | "redis") {

@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, reactive, shallowRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  reactive,
+  shallowRef,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -20,6 +27,7 @@ import { cn } from '@/utils/cn'
 import DatabaseObjectCategory from './DatabaseObjectCategory.vue'
 import DatabaseObjectContextMenu from './DatabaseObjectContextMenu.vue'
 import DatabaseSavedQueryCategory from './DatabaseSavedQueryCategory.vue'
+import DatabaseTreeCollapse from './DatabaseTreeCollapse.vue'
 
 const { t } = useI18n()
 
@@ -498,6 +506,142 @@ function showContext(
   context.open = true
 }
 
+const treeRef = useTemplateRef<HTMLElement>('tree')
+const searchRef =
+  useTemplateRef<InstanceType<typeof SearchField>>('searchField')
+/** 类型首字母跳转：短时间内连续输入的字符拼成前缀。 */
+const typeahead = { text: '', at: 0 }
+
+/** 当前可见的树节点（排除正在收起过渡中的分组），按 DOM 顺序。 */
+function treeItems(): HTMLElement[] {
+  const root = treeRef.value
+  if (!root) return []
+  return [...root.querySelectorAll<HTMLElement>('[role="treeitem"]')].filter(
+    item => !item.closest('[data-tree-collapsed]') && !item.matches(':disabled')
+  )
+}
+
+/** 漫游 tabindex：整棵树只有一个可 Tab 进入的节点。 */
+function focusItem(item: HTMLElement | undefined): void {
+  if (!item) return
+  const focusable = treeRef.value?.querySelectorAll<HTMLElement>(
+    '[role="treeitem"][tabindex="0"]'
+  )
+  for (const other of focusable ?? []) if (other !== item) other.tabIndex = -1
+  item.tabIndex = 0
+  item.focus({ preventScroll: true })
+  item.scrollIntoView({ block: 'nearest' })
+}
+
+function onTreeFocusin(event: FocusEvent): void {
+  const item = (event.target as HTMLElement).closest<HTMLElement>(
+    '[role="treeitem"]'
+  )
+  if (item && item.tabIndex !== 0) focusItem(item)
+}
+
+// 列表变化后保证至少有一个节点可被 Tab 聚焦。
+watch(
+  schemas,
+  async () => {
+    await nextTick()
+    const items = treeItems()
+    if (items.length && !items.some(item => item.tabIndex === 0))
+      items[0]!.tabIndex = 0
+  },
+  { immediate: true, flush: 'post' }
+)
+
+function itemLevel(item: HTMLElement): number {
+  return Number(item.getAttribute('aria-level') ?? 1)
+}
+
+function parentItem(
+  items: HTMLElement[],
+  index: number
+): HTMLElement | undefined {
+  const level = itemLevel(items[index]!)
+  for (let i = index - 1; i >= 0; i--)
+    if (itemLevel(items[i]!) < level) return items[i]
+  return undefined
+}
+
+function typeaheadTarget(
+  items: HTMLElement[],
+  index: number,
+  key: string
+): HTMLElement | undefined {
+  const now = Date.now()
+  typeahead.text =
+    (now - typeahead.at < 700 ? typeahead.text : '') + key.toLocaleLowerCase()
+  typeahead.at = now
+  // 重复按同一字符时在同首字母的节点间循环。
+  const repeated = [...typeahead.text].every(
+    char => char === typeahead.text[0]
+  )
+  const prefix = repeated ? typeahead.text[0]! : typeahead.text
+  const start = repeated || index < 0 ? index + 1 : index
+  return [...items.slice(start), ...items.slice(0, start)].find(item =>
+    (item.dataset.treeLabel ?? '').toLocaleLowerCase().startsWith(prefix)
+  )
+}
+
+/**
+ * 对象树键盘导航（WAI-ARIA Tree View）：节点自身处理展开/打开/重命名/删除并
+ * preventDefault，这里只处理未被消费的移动类按键。
+ */
+function onTreeKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey)
+    return
+  const items = treeItems()
+  const current = (event.target as HTMLElement).closest<HTMLElement>(
+    '[role="treeitem"]'
+  )
+  const index = current ? items.indexOf(current) : -1
+  let next: HTMLElement | undefined
+  if (event.key === 'ArrowDown')
+    next = items[Math.min(index + 1, items.length - 1)]
+  else if (event.key === 'ArrowUp') next = items[Math.max(index - 1, 0)]
+  else if (event.key === 'Home') next = items[0]
+  else if (event.key === 'End') next = items.at(-1)
+  else if (event.key === 'ArrowRight') {
+    // 已展开时进入第一个子节点；叶子节点不动。
+    const child = items[index + 1]
+    if (
+      current?.getAttribute('aria-expanded') === 'true' &&
+      child &&
+      itemLevel(child) > itemLevel(current)
+    )
+      next = child
+  } else if (event.key === 'ArrowLeft') {
+    if (index >= 0) next = parentItem(items, index)
+  } else if (event.key.length === 1 && event.key.trim()) {
+    next = typeaheadTarget(items, index, event.key)
+    if (!next) return
+  } else return
+  event.preventDefault()
+  focusItem(next)
+}
+
+function schemaKeydown(event: KeyboardEvent, name: string): void {
+  if (event.altKey || event.ctrlKey || event.metaKey) return
+  const open = expanded.has(`schema:${name}`)
+  const editable = props.databaseKind !== 'postgresql'
+  if (event.key === 'ArrowRight' && !open) selectSchema(name)
+  else if (event.key === 'ArrowLeft' && open) expanded.delete(`schema:${name}`)
+  else if (event.key === 'F2' && editable) emit('renameDatabase', name)
+  else if (event.key === 'Delete' && editable) emit('removeDatabase', name)
+  else return
+  event.preventDefault()
+}
+
+/** 供快捷键聚焦对象树过滤框。 */
+function focusFilter(): void {
+  searchRef.value?.focus()
+}
+
+defineExpose({ focusFilter })
+
 function handleContextAction(id: string): void {
   const savedQuery = context.savedQuery
   if (id === 'create-database') emit('createDatabase')
@@ -577,13 +721,21 @@ function handleContextAction(id: string): void {
 
     <div class="border-line-soft shrink-0 border-b p-1.5">
       <SearchField
+        ref="searchField"
         v-model="search"
         icon="lucide:search"
         :placeholder="t('搜索查询、表、视图或存储过程')"
       />
     </div>
 
-    <div class="scroll-thin flex-1 overflow-y-auto p-1.5">
+    <div
+      ref="tree"
+      class="scroll-thin flex-1 overflow-y-auto p-1.5"
+      role="tree"
+      :aria-label="t('数据库对象')"
+      @keydown="onTreeKeydown"
+      @focusin="onTreeFocusin"
+    >
       <div
         v-if="(loading || databasesLoading) && !schemas.length"
         class="space-y-3 px-2 py-3 motion-safe:animate-pulse"
@@ -624,10 +776,17 @@ function handleContextAction(id: string): void {
               schema.name === activeDatabase && 'text-txt'
             )
           "
+          role="treeitem"
+          tabindex="-1"
+          aria-level="1"
           :aria-expanded="expanded.has(`schema:${schema.name}`)"
+          :aria-selected="schema.name === activeDatabase"
+          :data-tree-key="`schema:${schema.name}`"
+          :data-tree-label="schema.name"
           :disabled="preparingTransfer || switchingDisabled"
           :aria-busy="state.pendingSchema === schema.name"
           @click.stop="selectSchema(schema.name)"
+          @keydown="schemaKeydown($event, schema.name)"
           @contextmenu.prevent.stop="
             showContext($event, 'database', { database: schema.name })
           "
@@ -641,7 +800,7 @@ function handleContextAction(id: string): void {
             :size="12"
             :class="
               cn(
-                'text-txt-4 transition-transform',
+                'text-txt-4 motion-safe:transition-transform',
                 state.pendingSchema === schema.name &&
                   'text-accent animate-spin',
                 expanded.has(`schema:${schema.name}`) && 'rotate-90'
@@ -663,7 +822,7 @@ function handleContextAction(id: string): void {
           />
         </AppButton>
 
-        <template v-if="expanded.has(`schema:${schema.name}`)">
+        <DatabaseTreeCollapse :open="expanded.has(`schema:${schema.name}`)">
           <DatabaseObjectCategory
             :schema="schema.name"
             kind="table"
@@ -679,6 +838,8 @@ function handleContextAction(id: string): void {
             :default-expanded="schema.name === activeDatabase"
             @select="selectObject"
             @open="emit('open', $event)"
+            @rename="emit('renameObject', $event)"
+            @remove="emit('removeObject', $event)"
             @context="
               (event, object) =>
                 showContext(event, 'object', {
@@ -700,6 +861,8 @@ function handleContextAction(id: string): void {
             "
             @create="emit('createSavedQuery', $event)"
             @open="emit('openSavedQuery', $event)"
+            @rename="emit('renameSavedQuery', $event)"
+            @remove="emit('removeSavedQuery', $event)"
             @context="
               (event, query) =>
                 showContext(event, 'saved-query', {
@@ -729,6 +892,8 @@ function handleContextAction(id: string): void {
             "
             @select="selectObject"
             @open="emit('open', $event)"
+            @rename="emit('renameObject', $event)"
+            @remove="emit('removeObject', $event)"
             @context="
               (event, object) =>
                 showContext(event, 'object', {
@@ -758,6 +923,8 @@ function handleContextAction(id: string): void {
             "
             @select="selectObject"
             @open="emit('open', $event)"
+            @rename="emit('renameObject', $event)"
+            @remove="emit('removeObject', $event)"
             @context="
               (event, object) =>
                 showContext(event, 'object', {
@@ -787,6 +954,8 @@ function handleContextAction(id: string): void {
             "
             @select="selectObject"
             @open="emit('open', $event)"
+            @rename="emit('renameObject', $event)"
+            @remove="emit('removeObject', $event)"
             @context="
               (event, object) =>
                 showContext(event, 'object', {
@@ -799,7 +968,7 @@ function handleContextAction(id: string): void {
                 showContext(event, 'category', { database, category })
             "
           />
-        </template>
+        </DatabaseTreeCollapse>
       </template>
     </div>
 

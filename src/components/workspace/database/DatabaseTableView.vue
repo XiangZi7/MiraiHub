@@ -2,7 +2,17 @@
 import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 
-import { computed, onMounted, reactive, shallowRef, watch } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  nextTick,
+  shallowRef,
+  useTemplateRef,
+  watch,
+} from 'vue'
+import { useResizeObserver, useStorage } from '@vueuse/core'
 import * as columnTagsApi from '@/api/column-tags'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -42,6 +52,20 @@ import { cn } from '@/utils/cn'
 import { IS_TAURI } from '@/utils/window'
 import DatabaseColumnTagDialog from './DatabaseColumnTagDialog.vue'
 import DatabaseDataRow from './DatabaseDataRow.vue'
+import DatabaseGridContextMenu from './DatabaseGridContextMenu.vue'
+import DatabaseValueViewer from './DatabaseValueViewer.vue'
+import {
+  formatGridNumber,
+  useGridDensity,
+  useGridSelection,
+} from '@/composables/useGridSelection'
+import {
+  formatGridSelection,
+  isBinaryValue,
+  isNumericType,
+  type GridCopyFormat,
+  type GridRange,
+} from '@/utils/database-grid'
 import DatabaseValueInput from '@/components/workspace/database/database-value-input.vue'
 import DatabaseExportMenu from './DatabaseExportMenu.vue'
 import type {
@@ -65,11 +89,18 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   query: [sql: string]
+  /** 是否有未提交的单元格修改、删除标记或新增行，供标签页显示圆点和关闭确认。 */
+  dirty: [dirty: boolean]
 }>()
+
+/**
+ * 当前页数据整体替换、不做深层响应：几百行 × 几十列的单元格不必逐个包 Proxy，
+ * 翻页时也只触发一次更新。修改一律走 edits / deletedRows，不直接改 rows。
+ */
+const page = shallowRef<DatabaseRowPage | null>(null)
 
 const state = reactive({
   detail: null as DatabaseTableDetail | null,
-  page: null as DatabaseRowPage | null,
   loading: false,
   pageLoading: false,
   countLoading: false,
@@ -104,8 +135,8 @@ const exportData = computed<DatabaseExportData>(() => ({
   name: props.object.name,
   schema: props.object.schema,
   databaseKind: props.databaseKind ?? 'mysql',
-  columns: state.detail?.columns ?? state.page?.columns ?? [],
-  rows: state.page?.rows ?? [],
+  columns: state.detail?.columns ?? page.value?.columns ?? [],
+  rows: page.value?.rows ?? [],
   detail: state.detail,
 }))
 /** 固定导出目标与筛选，每次最多读取 200 行；等待编码写入后再取下一批，关闭标签也不影响任务。 */
@@ -191,8 +222,8 @@ const panels = computed(() =>
   isView.value ? viewPanels.value : tablePanels.value
 )
 const gridColumns = computed(() =>
-  state.page?.columns.length
-    ? state.page.columns
+  page.value?.columns.length
+    ? page.value.columns
     : (state.detail?.columns ?? []).map(column => ({
         name: column.name,
         dataType: column.dataType,
@@ -230,6 +261,33 @@ const editing = shallowRef<{ row: number; column: number } | null>(null)
 const filterNeedsValue = computed(
   () => !['isNull', 'notNull'].includes(filterDraft.operator)
 )
+const { density, densityIcon, cycleDensity } = useGridDensity()
+const DENSITY_HEIGHT = {
+  compact: 'h-6',
+  standard: 'h-7',
+  comfortable: 'h-9',
+} as const
+const densityLabel = computed(
+  () =>
+    ({
+      compact: t('紧凑'),
+      standard: t('标准'),
+      comfortable: t('宽松'),
+    })[density.value]
+)
+/** 切页或清空改动时递增，值查看器里迟到的草稿不会写到新页面的同一位置。 */
+const viewerGeneration = shallowRef(0)
+const selection = useGridSelection({
+  container: computed(() => scroller.value ?? null),
+  rowCount: () => page.value?.rows.length ?? 0,
+  columnCount: () => gridColumns.value.length,
+  valueAt: (row, column) => displayValue(row, column),
+  numericColumn: column => numericColumns.value[column] ?? false,
+  revealRow: row => revealRow(row),
+  copy: value => void copyText(value),
+  edit: position => openCell(position.row, position.column),
+  clearCells: range => setRangeNull(range),
+})
 const canInsert = computed(() => state.detail?.kind === 'table')
 const canEditExisting = computed(
   () => canInsert.value && Boolean(state.detail?.primaryKey.length)
@@ -290,7 +348,7 @@ const rowMenuItems = computed<ContextMenuItem[]>(() => {
       icon: deleted ? 'lucide:undo-2' : 'lucide:trash-2',
       danger: !deleted,
       disabled:
-        busy || !canEditExisting.value || !state.page?.rows[rowMenu.row],
+        busy || !canEditExisting.value || !page.value?.rows[rowMenu.row],
     },
   ]
 })
@@ -332,13 +390,14 @@ function handleRowAction(id: string): void {
 }
 watch(
   [
-    () => state.page,
+    () => page.value,
     () => state.activePanel,
     () => state.pageLoading,
     () => state.mutationLoading,
   ],
   () => {
     rowMenu.open = false
+    gridMenu.open = false
   }
 )
 
@@ -387,9 +446,9 @@ function saveColumnTags(config: ColumnTagConfig | null): void {
 /** 当前页里某列出现过的非空短值，按出现顺序去重，供“从当前页取值”使用。 */
 function sampleValuesOf(column: string): string[] {
   const index = gridColumns.value.findIndex(item => item.name === column)
-  if (index < 0 || !state.page) return []
+  if (index < 0 || !page.value) return []
   const seen = new Set<string>()
-  for (const row of state.page.rows) {
+  for (const row of page.value.rows) {
     const value = row[index]
     if (!value || value.length > SAMPLE_VALUE_MAX_LENGTH) continue
     seen.add(value)
@@ -399,6 +458,8 @@ function sampleValuesOf(column: string): string[] {
 }
 
 function startEdit(rowIndex: number, columnIndex: number): void {
+  if (!canEditExisting.value || deletedRows.has(rowIndex)) return
+  selection.select({ row: rowIndex, column: columnIndex })
   editing.value = { row: rowIndex, column: columnIndex }
 }
 
@@ -407,10 +468,11 @@ function commitEdit(
   columnIndex: number,
   value: string
 ): void {
-  setCellValue(rowIndex, columnIndex, value)
+  // 只接受仍处于编辑态的单元格：清空改动或换表时编辑器被卸载，不应再写回旧草稿
   const current = editing.value
-  if (current?.row === rowIndex && current.column === columnIndex)
-    editing.value = null
+  if (current?.row !== rowIndex || current.column !== columnIndex) return
+  setCellValue(rowIndex, columnIndex, value)
+  editing.value = null
 }
 
 function cancelEdit(): void {
@@ -420,7 +482,7 @@ function cancelEdit(): void {
 /** Tab / Shift+Tab：编辑焦点移到相邻单元格，行尾折到下一行，跳过已标记删除的行。 */
 function moveEdit(rowIndex: number, columnIndex: number, delta: 1 | -1): void {
   const columns = gridColumns.value.length
-  const rows = state.page?.rows.length ?? 0
+  const rows = page.value?.rows.length ?? 0
   let row = rowIndex
   let column = columnIndex + delta
   if (column >= columns) {
@@ -432,6 +494,10 @@ function moveEdit(rowIndex: number, columnIndex: number, delta: 1 | -1): void {
   }
   while (row >= 0 && row < rows && deletedRows.has(row)) row += delta
   editing.value = row >= 0 && row < rows && column >= 0 ? { row, column } : null
+  if (editing.value) {
+    selection.select(editing.value)
+    revealRow(row)
+  }
 }
 
 onMounted(startColumnTagsReceiver)
@@ -442,6 +508,8 @@ function clearChanges(): void {
   deletedRows.clear()
   insertedRows.splice(0)
   editing.value = null
+  selection.clear()
+  viewerGeneration.value += 1
 }
 
 async function loadDetailAndRows(): Promise<void> {
@@ -449,7 +517,7 @@ async function loadDetailAndRows(): Promise<void> {
   state.loading = true
   state.error = ''
   state.detail = null
-  state.page = null
+  page.value = null
   state.offset = 0
   state.sort = null
   state.filters = []
@@ -489,7 +557,7 @@ async function loadRows(): Promise<void> {
   state.pageLoading = true
   state.error = ''
   try {
-    const page = await database.fetchRows(props.sessionId, {
+    const next = await database.fetchRows(props.sessionId, {
       schema: props.object.schema,
       table: props.object.name,
       offset: state.offset,
@@ -497,7 +565,10 @@ async function loadRows(): Promise<void> {
       sort: state.sort ?? undefined,
       filters: state.filters,
     })
-    if (revision === pageRevision) state.page = page
+    if (revision === pageRevision) {
+      page.value = next
+      resetScroll()
+    }
   } catch (error) {
     if (revision === pageRevision) {
       state.error = database.errorMessage(error)
@@ -510,45 +581,250 @@ async function loadRows(): Promise<void> {
 
 function applyFilter(): void {
   if (!filterDraft.column) return
-  state.filters = [
-    {
-      column: filterDraft.column,
-      operator: filterDraft.operator,
-      value: filterNeedsValue.value ? filterDraft.value : '',
-    },
-  ]
-  state.offset = 0
-  clearChanges()
-  void loadRows()
+  const filter: RowFilter = {
+    column: filterDraft.column,
+    operator: filterDraft.operator,
+    value: filterNeedsValue.value ? filterDraft.value : '',
+  }
+  guardChanges(() => {
+    state.filters = [filter]
+    state.offset = 0
+    clearChanges()
+    void loadRows()
+  })
 }
 
 function clearFilter(): void {
   if (!state.filters.length && !filterDraft.value) return
-  state.filters = []
-  filterDraft.value = ''
-  state.offset = 0
-  clearChanges()
-  void loadRows()
+  guardChanges(() => {
+    state.filters = []
+    filterDraft.value = ''
+    state.offset = 0
+    clearChanges()
+    void loadRows()
+  })
 }
 
 function changePage(direction: -1 | 1): void {
   const next = Math.max(0, state.offset + direction * Number(state.pageSize))
   if (next === state.offset) return
-  state.offset = next
-  clearChanges()
-  void loadRows()
+  guardChanges(() => {
+    state.offset = next
+    clearChanges()
+    void loadRows()
+  })
 }
 
 function toggleSort(column: string): void {
-  state.sort =
-    state.sort?.column === column
-      ? state.sort.descending
-        ? null
-        : { column, descending: true }
-      : { column, descending: false }
-  state.offset = 0
+  guardChanges(() => {
+    state.sort =
+      state.sort?.column === column
+        ? state.sort.descending
+          ? null
+          : { column, descending: true }
+        : { column, descending: false }
+    state.offset = 0
+    clearChanges()
+    void loadRows()
+  })
+}
+
+/** 分页大小经由确认守卫切换，取消时下拉框保持原值。 */
+const pageSizeModel = computed({
+  get: () => state.pageSize,
+  set: (value: string) => {
+    if (value === state.pageSize) return
+    guardChanges(() => {
+      state.pageSize = value
+      state.offset = 0
+      clearChanges()
+      void loadRows()
+    })
+  },
+})
+
+function refreshObject(): void {
+  guardChanges(() => void loadDetailAndRows())
+}
+
+/* ---------- 未提交改动保护 ---------- */
+
+const hasChanges = computed(
+  () => pendingMutationCount.value > 0 || insertedRows.length > 0
+)
+watch(hasChanges, value => emit('dirty', value), { immediate: true })
+
+/** 会丢掉改动的操作先挂起，等用户在确认框里选择提交、放弃或取消。 */
+const guardOpen = shallowRef(false)
+let guardedAction: (() => void) | null = null
+/** 从守卫里选择“提交并继续”时，提交成功后再执行被挂起的操作。 */
+let afterCommit: (() => void) | null = null
+
+function guardChanges(action: () => void): void {
+  if (!hasChanges.value) {
+    action()
+    return
+  }
+  guardedAction = action
+  guardOpen.value = true
+}
+
+function closeGuard(): void {
+  guardOpen.value = false
+  guardedAction = null
+}
+
+function discardAndContinue(): void {
+  const action = guardedAction
+  closeGuard()
+  discardChanges()
+  action?.()
+}
+
+function commitAndContinue(): void {
+  const action = guardedAction
+  closeGuard()
+  // 只有空白新增行时没有可提交的语句，直接丢掉空行继续
+  if (!pendingMutationCount.value) {
+    clearChanges()
+    action?.()
+    return
+  }
+  afterCommit = action
+  requestSave()
+}
+
+/** 放弃时保留一份快照（连同当时的页数据与查询条件），可以撤销一次。 */
+interface DiscardedChanges {
+  page: DatabaseRowPage | null
+  offset: number
+  pageSize: string
+  sort: RowSort | null
+  filters: RowFilter[]
+  edits: Array<[string, string | null]>
+  deleted: number[]
+  inserted: Array<Record<string, string | null>>
+}
+const discarded = shallowRef<DiscardedChanges | null>(null)
+
+function discardChanges(): void {
+  if (!hasChanges.value) return
+  discarded.value = {
+    page: page.value,
+    offset: state.offset,
+    pageSize: state.pageSize,
+    sort: state.sort ? { ...state.sort } : null,
+    filters: state.filters.map(filter => ({ ...filter })),
+    edits: [...edits],
+    deleted: [...deletedRows],
+    inserted: insertedRows.map(row => ({ ...row })),
+  }
   clearChanges()
-  void loadRows()
+  toast.info(t('已放弃未提交改动，可点击工具栏“恢复改动”撤销'))
+}
+
+/** 恢复到放弃前的页面与改动；作废进行中的读取，避免新页覆盖回来的旧行。 */
+function restoreDiscarded(): void {
+  const snapshot = discarded.value
+  if (!snapshot || hasChanges.value) return
+  pageRevision += 1
+  state.pageLoading = false
+  page.value = snapshot.page
+  state.offset = snapshot.offset
+  state.pageSize = snapshot.pageSize
+  state.sort = snapshot.sort
+  state.filters = snapshot.filters
+  clearChanges()
+  for (const [key, value] of snapshot.edits) edits.set(key, value)
+  for (const row of snapshot.deleted) deletedRows.add(row)
+  insertedRows.push(...snapshot.inserted)
+  discarded.value = null
+  resetScroll()
+}
+
+/* ---------- 行虚拟滚动 ---------- */
+
+/** 超过这个行数才启用窗口化，小页面保持整表渲染、列宽完全稳定。 */
+const VIRTUAL_THRESHOLD = 120
+const OVERSCAN = 10
+const scroller = useTemplateRef<HTMLElement>('scroller')
+const scrollTop = shallowRef(0)
+const viewportHeight = shallowRef(600)
+/** 行高按实际渲染测量，默认值对应 h-7 单元格加 1px 边框。 */
+const rowHeight = shallowRef(29)
+let scrollFrame = 0
+
+useResizeObserver(scroller, entries => {
+  const height = entries[0]?.contentRect.height
+  if (height) viewportHeight.value = height
+})
+
+/** 滚动事件按帧合并，快速拖动滚动条时每帧只重算一次窗口。 */
+function handleScroll(): void {
+  if (scrollFrame) return
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = 0
+    scrollTop.value = scroller.value?.scrollTop ?? 0
+  })
+}
+onBeforeUnmount(() => cancelAnimationFrame(scrollFrame))
+
+function resetScroll(): void {
+  if (scroller.value) scroller.value.scrollTop = 0
+  scrollTop.value = 0
+}
+
+const rowWindow = computed(() => {
+  const total = page.value?.rows.length ?? 0
+  if (total <= VIRTUAL_THRESHOLD)
+    return { start: 0, end: total, top: 0, bottom: 0 }
+  const height = rowHeight.value
+  const start = Math.max(0, Math.floor(scrollTop.value / height) - OVERSCAN)
+  const end = Math.min(
+    total,
+    Math.ceil((scrollTop.value + viewportHeight.value) / height) + OVERSCAN
+  )
+  return {
+    start,
+    end,
+    top: start * height,
+    bottom: (total - end) * height,
+  }
+})
+/** 窗口内的行带着真实行索引，编辑、删除标记和右键菜单都按真实索引寻址。 */
+const visibleRows = computed(() => {
+  const rows = page.value?.rows ?? []
+  const { start, end } = rowWindow.value
+  return rows.slice(start, end).map((row, offset) => ({
+    row,
+    index: start + offset,
+  }))
+})
+
+watch(
+  [visibleRows, density],
+  () => {
+    const row = scroller.value?.querySelector<HTMLElement>(
+      'tr[data-row-index]'
+    )
+    const height = row?.getBoundingClientRect().height
+    if (height && Math.abs(height - rowHeight.value) > 0.5)
+      rowHeight.value = height
+  },
+  { flush: 'post' }
+)
+
+/** 键盘移动编辑焦点到窗口外的行时，先把那一行滚进可视区。 */
+function revealRow(rowIndex: number): void {
+  const element = scroller.value
+  if (!element) return
+  const height = rowHeight.value
+  const header = element.querySelector('thead')?.offsetHeight ?? 0
+  const top = rowIndex * height
+  if (top < element.scrollTop) element.scrollTop = top
+  else if (top + height > element.scrollTop + element.clientHeight - header)
+    element.scrollTop = top + height - element.clientHeight + header
+  scrollTop.value = element.scrollTop
 }
 
 async function calculateCount(): Promise<void> {
@@ -579,7 +855,7 @@ function setCellValue(
   columnIndex: number,
   value: string | null
 ): void {
-  const original = state.page?.rows[rowIndex]?.[columnIndex] ?? null
+  const original = page.value?.rows[rowIndex]?.[columnIndex] ?? null
   const key = cellKey(rowIndex, columnIndex)
   if (value === original) edits.delete(key)
   else edits.set(key, value)
@@ -608,8 +884,8 @@ function toggleDelete(rowIndex: number): void {
 
 function primaryKeys(row: Array<string | null>): CellValue[] {
   const detail = state.detail
-  const page = state.page
-  if (!detail || !page) return []
+  const current = page.value
+  if (!detail || !current) return []
   return detail.primaryKey.map(column => {
     const index = gridColumns.value.findIndex(
       candidate => candidate.name === column
@@ -621,11 +897,11 @@ function primaryKeys(row: Array<string | null>): CellValue[] {
 /** 生成当前暂存变更；显式 NULL、空字符串与未填写字段保持区分。 */
 function buildMutations(): RowMutation[] {
   const detail = state.detail
-  const page = state.page
-  if (!detail || !page) return []
+  const current = page.value
+  if (!detail || !current) return []
 
   const mutations: RowMutation[] = []
-  page.rows.forEach((row, rowIndex) => {
+  current.rows.forEach((row, rowIndex) => {
     if (deletedRows.has(rowIndex)) {
       mutations.push({ type: 'delete', keys: primaryKeys(row) })
       return
@@ -654,6 +930,11 @@ function buildMutations(): RowMutation[] {
 }
 
 /** 打开提交确认，并异步渲染将要执行的 SQL 供用户核对。 */
+function cancelSave(): void {
+  confirmOpen.value = false
+  afterCommit = null
+}
+
 function requestSave(): void {
   if (!pendingMutationCount.value) return
   previewStatements.value = []
@@ -687,7 +968,11 @@ async function commitChanges(): Promise<void> {
       mutations,
     })
     clearChanges()
-    await loadRows()
+    discarded.value = null
+    const next = afterCommit
+    afterCommit = null
+    if (next) next()
+    else await loadRows()
     toast.success(
       t('已提交 {value0} 项改动，影响 {value1} 行（{value2} ms）', {
         value0: mutations.length,
@@ -696,6 +981,7 @@ async function commitChanges(): Promise<void> {
       })
     )
   } catch (error) {
+    afterCommit = null
     toast.error({
       title: t('提交数据改动失败'),
       description: database.errorMessage(error),
@@ -710,9 +996,228 @@ async function copyText(value: string): Promise<void> {
   toast.success(t('已复制到剪贴板'))
 }
 
+/* ---------- 单元格选区、右键菜单与值查看器 ---------- */
+
+const numericColumns = computed(() =>
+  gridColumns.value.map(column => isNumericType(column.dataType))
+)
+
+/** 单元格当前显示的值，包含未提交的修改。 */
+function displayValue(rowIndex: number, columnIndex: number): string | null {
+  const key = cellKey(rowIndex, columnIndex)
+  if (edits.has(key)) return edits.get(key) ?? null
+  return page.value?.rows[rowIndex]?.[columnIndex] ?? null
+}
+
+function columnDetail(columnIndex: number) {
+  const name = gridColumns.value[columnIndex]?.name
+  return state.detail?.columns.find(column => column.name === name)
+}
+
+/** 编辑结束后焦点回到表格，方向键可以继续导航。 */
+watch(
+  editing,
+  (value, previous) => {
+    if (!value && previous && document.activeElement === document.body)
+      scroller.value?.focus({ preventScroll: true })
+  },
+  { flush: 'post' }
+)
+
+/** 双击 / F2：可编辑时进入编辑，否则在值查看器中查看。 */
+function openCell(rowIndex: number, columnIndex: number): void {
+  if (
+    canEditExisting.value &&
+    !deletedRows.has(rowIndex) &&
+    !isBinaryValue(
+      displayValue(rowIndex, columnIndex),
+      gridColumns.value[columnIndex]?.dataType
+    )
+  )
+    startEdit(rowIndex, columnIndex)
+  else {
+    selection.select({ row: rowIndex, column: columnIndex })
+    viewerOpen.value = true
+  }
+}
+
+/** 选区内的单元格设为 NULL；跳过已删除行和不允许 NULL 的字段。 */
+function setRangeNull(range: GridRange): void {
+  if (!canEditExisting.value || state.mutationLoading) return
+  let skipped = 0
+  for (let row = range.top; row <= range.bottom; row += 1) {
+    if (deletedRows.has(row)) continue
+    for (let column = range.left; column <= range.right; column += 1) {
+      if (columnDetail(column)?.nullable === false) {
+        skipped += 1
+        continue
+      }
+      setCellValue(row, column, null)
+    }
+  }
+  if (skipped)
+    toast.info(
+      t('{value0} 个单元格的字段不允许为 NULL，已跳过', { value0: skipped })
+    )
+}
+
+const gridMenu = reactive({ open: false, x: 0, y: 0 })
+const menuValue = computed(() => {
+  const cell = selection.anchor.value
+  return cell ? displayValue(cell.row, cell.column) : null
+})
+const menuRangeDeleted = computed(() => {
+  const range = selection.range.value
+  if (!range) return false
+  for (let row = range.top; row <= range.bottom; row += 1)
+    if (!deletedRows.has(row)) return false
+  return true
+})
+const menuCanFilter = computed(() => {
+  const cell = selection.anchor.value
+  return Boolean(
+    cell &&
+    !isBinaryValue(menuValue.value, gridColumns.value[cell.column]?.dataType)
+  )
+})
+
+function openGridMenu(event: MouseEvent, rowIndex: number): void {
+  columnMenu.open = false
+  rowMenu.open = false
+  // 选区已在 pointerdown 时更新；行号上右键且行不在选区内时选中整行
+  if (!selection.rowSelection(rowIndex))
+    selection.select({ row: rowIndex, column: 0 })
+  gridMenu.x = event.clientX
+  gridMenu.y = event.clientY
+  gridMenu.open = true
+}
+
+function exportBase() {
+  return {
+    name: props.object.name,
+    schema: props.object.schema ?? undefined,
+    databaseKind: props.databaseKind ?? 'mysql',
+    columns: gridColumns.value,
+    rows: [],
+  }
+}
+
+async function handleGridAction(id: string): Promise<void> {
+  const range = selection.range.value
+  const cell = selection.anchor.value
+  gridMenu.open = false
+  if (!range || !cell) return
+  const column = gridColumns.value[cell.column]
+  if (id === 'copy-value') await copyText(menuValue.value ?? 'NULL')
+  else if (id === 'copy-row' || id.startsWith('copy:')) {
+    const format = (id === 'copy-row' ? 'tsv' : id.slice(5)) as GridCopyFormat
+    const target =
+      id === 'copy-row'
+        ? { ...range, left: 0, right: gridColumns.value.length - 1 }
+        : range
+    await copyText(
+      formatGridSelection(
+        format,
+        exportBase(),
+        target,
+        displayValue,
+        state.detail?.primaryKey ?? []
+      )
+    )
+  } else if (id === 'view') viewerOpen.value = true
+  else if ((id === 'filter-equal' || id === 'filter-exclude') && column) {
+    if (!menuCanFilter.value) return
+    const value = menuValue.value
+    const equal = id === 'filter-equal'
+    const filter: RowFilter = {
+      column: column.name,
+      operator:
+        value === null
+          ? equal
+            ? 'isNull'
+            : 'notNull'
+          : equal
+            ? 'equals'
+            : 'notEquals',
+      value: value ?? '',
+    }
+    guardChanges(() => {
+      filterDraft.column = filter.column
+      filterDraft.operator = filter.operator
+      filterDraft.value = filter.value
+      state.filters = [filter]
+      state.offset = 0
+      clearChanges()
+      void loadRows()
+    })
+  } else if (id === 'set-null') setRangeNull(range)
+  else if (id === 'clone') cloneRows(range)
+  else if (id === 'delete' && canEditExisting.value) {
+    const restore = menuRangeDeleted.value
+    for (let row = range.top; row <= range.bottom; row += 1) {
+      if (restore) deletedRows.delete(row)
+      else deletedRows.add(row)
+      if (editing.value?.row === row) editing.value = null
+    }
+  }
+}
+
+/** 把选中行当前显示的值复制成新增行，自增列留给数据库生成。 */
+function cloneRows(range: GridRange): void {
+  const detail = state.detail
+  if (!detail || !canInsert.value) return
+  for (let row = range.top; row <= range.bottom; row += 1) {
+    const record: Record<string, string | null> = {}
+    gridColumns.value.forEach((column, index) => {
+      const info = detail.columns.find(item => item.name === column.name)
+      if (!info || info.autoIncrement) return
+      record[column.name] = displayValue(row, index)
+    })
+    insertedRows.push(record)
+  }
+  void nextTick(() => {
+    const element = scroller.value
+    if (element) element.scrollTop = element.scrollHeight
+  })
+}
+
+const viewerOpen = useStorage('miraihub:database-value-viewer', false)
+const viewerCell = computed(() => {
+  const cell = selection.anchor.value
+  if (!viewerOpen.value || !cell || !page.value?.rows[cell.row]) return null
+  const column = gridColumns.value[cell.column]
+  if (!column) return null
+  return {
+    key: `${viewerGeneration.value}:${cell.row}:${cell.column}`,
+    name: column.name,
+    dataType: column.dataType,
+    value: displayValue(cell.row, cell.column),
+    editable: canEditExisting.value && !deletedRows.has(cell.row),
+    nullable: columnDetail(cell.column)?.nullable !== false,
+  }
+})
+
+function saveViewerValue(value: string | null, key: string): void {
+  const [generation, row, column] = key.split(':').map(Number)
+  if (
+    generation !== viewerGeneration.value ||
+    row === undefined ||
+    column === undefined
+  )
+    return
+  if (!canEditExisting.value || deletedRows.has(row)) return
+  if (editing.value?.row === row && editing.value.column === column)
+    editing.value = null
+  setCellValue(row, column, value)
+}
+
 watch(
   [() => props.sessionId, () => props.object.schema, () => props.object.name],
-  () => void loadDetailAndRows(),
+  () => {
+    discarded.value = null
+    afterCommit = null
+    void loadDetailAndRows()
+  },
   { immediate: true }
 )
 
@@ -723,15 +1228,6 @@ watch(
     if (panel) state.activePanel = panel
   },
   { immediate: true }
-)
-
-watch(
-  () => state.pageSize,
-  () => {
-    state.offset = 0
-    clearChanges()
-    void loadRows()
-  }
 )
 </script>
 
@@ -803,7 +1299,7 @@ watch(
         :size="13"
         :title="t('刷新当前对象')"
         :disabled="state.loading || state.pageLoading"
-        @click="loadDetailAndRows"
+        @click="refreshObject"
       />
       <slot name="toolbar" />
     </header>
@@ -884,6 +1380,14 @@ watch(
               @click="clearFilter"
             />
             <span class="bg-line-soft mx-0.5 h-4 w-px" />
+            <IconButton
+              icon="lucide:panel-right"
+              :size="12"
+              :title="viewerOpen ? t('关闭值查看器') : t('打开值查看器')"
+              :aria-pressed="viewerOpen"
+              :class="viewerOpen && 'text-violet'"
+              @click="viewerOpen = !viewerOpen"
+            />
             <AppButton
               v-if="canInsert"
               size="sm"
@@ -914,23 +1418,82 @@ watch(
               :size="12"
               :title="t('放弃未提交改动')"
               :disabled="!pendingMutationCount && !insertedRows.length"
-              @click="clearChanges"
+              @click="discardChanges"
             />
+            <AppButton
+              v-if="discarded && !hasChanges"
+              size="sm"
+              :disabled="state.loading || state.pageLoading"
+              :title="t('撤销刚才的放弃，恢复当时的页面和改动')"
+              @click="restoreDiscarded"
+            >
+              <AppIcon
+                name="lucide:history"
+                :size="11"
+              />
+              {{ t('恢复改动') }}
+            </AppButton>
           </div>
 
-          <div class="scroll-thin relative min-h-0 flex-1 overflow-auto">
+          <div class="flex min-h-0 flex-1">
+          <div
+            ref="scroller"
+            class="scroll-thin focus-visible:ring-violet/35 relative min-h-0 min-w-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset"
+            tabindex="0"
+            role="grid"
+            :aria-label="t('表数据')"
+            :aria-multiselectable="true"
+            @scroll.passive="handleScroll"
+            @pointerdown="selection.handlePointerDown"
+            @keydown="selection.handleKeydown"
+          >
             <div
               v-if="state.pageLoading"
-              class="bg-violet/15 absolute inset-x-0 top-0 z-20 h-0.5 overflow-hidden"
+              class="progress-indeterminate"
+              role="progressbar"
+              :aria-label="t('读取表数据…')"
+            />
+            <div
+              v-if="state.error && page && !state.pageLoading"
+              role="alert"
+              class="border-danger/30 bg-danger/10 sticky top-0 left-0 z-30 flex items-center gap-2 border-b px-3 py-1.5 text-[11px] backdrop-blur"
             >
-              <div class="bg-violet h-full w-1/3 animate-pulse" />
+              <AppIcon
+                name="lucide:circle-alert"
+                :size="12"
+                class="text-danger shrink-0"
+              />
+              <span class="text-danger shrink-0 font-medium">{{
+                t('读取表数据失败')
+              }}</span>
+              <span
+                class="text-txt-3 min-w-0 truncate font-mono"
+                :title="state.error"
+                >{{ state.error }}</span
+              >
+              <span class="text-txt-4 shrink-0">
+                · {{ t('显示的是上一次成功读取的数据') }}</span
+              >
+              <div class="flex-1" />
+              <AppButton
+                size="sm"
+                class="h-5 shrink-0"
+                @click="loadRows"
+              >
+                <AppIcon
+                  name="lucide:rotate-cw"
+                  :size="10"
+                />
+                {{ t('重试') }}
+              </AppButton>
             </div>
             <table
-              v-if="state.page"
+              v-if="page"
               :class="
                 cn(
                   'w-full border-collapse text-left font-mono text-[11px]',
-                  resized && 'table-fixed'
+                  resized && 'table-fixed',
+                  (state.pageLoading || state.error) && 'stale-dim'
                 )
               "
             >
@@ -962,7 +1525,8 @@ watch(
                     :class="
                       cn(
                         'border-line-soft hover:bg-hover focus-visible:ring-violet/45 cursor-pointer border-r border-b px-2.5 py-1.5 font-medium outline-none select-none focus-visible:ring-1 focus-visible:ring-inset',
-                        !resized && 'min-w-36'
+                        !resized && 'min-w-36',
+                        numericColumns[columnIndex] && 'text-right'
                       )
                     "
                     tabindex="0"
@@ -1016,8 +1580,18 @@ watch(
                 </tr>
               </thead>
               <tbody>
+                <tr
+                  v-if="rowWindow.top"
+                  aria-hidden="true"
+                >
+                  <td
+                    :colspan="gridColumns.length + 1"
+                    class="border-0 p-0"
+                    :style="{ height: `${rowWindow.top}px` }"
+                  />
+                </tr>
                 <DatabaseDataRow
-                  v-for="(row, rowIndex) in state.page.rows"
+                  v-for="{ row, index: rowIndex } in visibleRows"
                   :key="rowIndex"
                   :row="row"
                   :row-index="rowIndex"
@@ -1032,20 +1606,32 @@ watch(
                   :resized="resized"
                   :tags="visibleTagConfigs"
                   :tag-lookups="visibleTagLookups"
+                  :selection-left="selection.rowSelection(rowIndex)?.left ?? null"
+                  :selection-right="
+                    selection.rowSelection(rowIndex)?.right ?? null
+                  "
+                  :active-column="selection.activeColumn(rowIndex)"
+                  :numeric="numericColumns"
+                  :height-class="DENSITY_HEIGHT[density]"
+                  @open="openCell(rowIndex, $event)"
                   @edit="startEdit(rowIndex, $event)"
                   @commit="
                     (column, value) => commitEdit(rowIndex, column, value)
                   "
                   @cancel="cancelEdit"
                   @move="(column, delta) => moveEdit(rowIndex, column, delta)"
-                  @context="openRowMenu($event, rowIndex)"
-                  :class="
-                    rowMenu.open &&
-                    !rowMenu.inserted &&
-                    rowMenu.row === rowIndex &&
-                    'bg-violet/8'
-                  "
+                  @context="openGridMenu($event, rowIndex)"
                 />
+                <tr
+                  v-if="rowWindow.bottom"
+                  aria-hidden="true"
+                >
+                  <td
+                    :colspan="gridColumns.length + 1"
+                    class="border-0 p-0"
+                    :style="{ height: `${rowWindow.bottom}px` }"
+                  />
+                </tr>
 
                 <tr
                   v-for="(_, rowIndex) in insertedRows"
@@ -1098,12 +1684,24 @@ watch(
             </table>
             <div
               v-if="
-                state.page && !state.page.rows.length && !insertedRows.length
+                page && !page.rows.length && !insertedRows.length
               "
               class="text-txt-4 grid h-full place-items-center py-12 text-xs"
             >
               {{ t('当前条件下没有数据') }}
             </div>
+          </div>
+          <DatabaseValueViewer
+            v-if="viewerOpen"
+            :cell-key="viewerCell?.key ?? null"
+            :column="viewerCell?.name"
+            :data-type="viewerCell?.dataType"
+            :value="viewerCell?.value ?? null"
+            :editable="viewerCell?.editable"
+            :nullable="viewerCell?.nullable"
+            @save="saveViewerValue"
+            @close="viewerOpen = false"
+          />
           </div>
 
           <footer
@@ -1121,12 +1719,12 @@ watch(
               icon="lucide:chevron-right"
               :size="12"
               :title="t('下一页')"
-              :disabled="!state.page?.hasMore || state.pageLoading"
+              :disabled="!page?.hasMore || state.pageLoading"
               @click="changePage(1)"
             />
             <div class="w-25">
               <AppSelect
-                v-model="state.pageSize"
+                v-model="pageSizeModel"
                 :label="t('分页大小')"
                 :options="pageSizeOptions"
                 hide-label
@@ -1134,8 +1732,8 @@ watch(
               />
             </div>
             <span class="text-txt-4 ml-1">
-              {{ t('common.rows', { count: state.page?.rows.length ?? 0 }) }} ·
-              {{ state.page?.elapsedMs ?? 0 }} ms
+              {{ t('common.rows', { count: page?.rows.length ?? 0 }) }} ·
+              {{ page?.elapsedMs ?? 0 }} ms
             </span>
             <AppButton
               variant="bare"
@@ -1157,22 +1755,41 @@ watch(
                       : t('统计总行数')
               }}
             </AppButton>
+            <span
+              v-if="selection.stats.value"
+              class="text-txt-3 ml-1 truncate tabular-nums"
+              aria-live="polite"
+            >
+              {{ t('已选 {value0} 格', { value0: selection.stats.value.cells }) }}
+              <template v-if="selection.stats.value.numbers">
+                · {{ t('求和') }}
+                {{ formatGridNumber(selection.stats.value.sum) }} ·
+                {{ t('平均') }}
+                {{ formatGridNumber(selection.stats.value.average) }}
+              </template>
+            </span>
             <div class="flex-1" />
+            <IconButton
+              :icon="densityIcon"
+              :size="12"
+              :title="t('行密度：{value0}', { value0: densityLabel })"
+              @click="cycleDensity"
+            />
             <AppButton
-              v-if="state.page?.sql"
+              v-if="page?.sql"
               variant="bare"
               class="text-txt-4 hover:bg-hover hover:text-txt-2 rounded px-1.5 py-1 font-mono"
               :title="t('复制本页实际 SQL')"
-              @click="copyText(state.page.sql)"
+              @click="copyText(page.sql)"
             >
               SQL
             </AppButton>
             <IconButton
-              v-if="state.page?.sql"
+              v-if="page?.sql"
               icon="lucide:external-link"
               :size="11"
               :title="t('发送到查询编辑器')"
-              @click="emit('query', state.page.sql)"
+              @click="emit('query', page.sql)"
             />
           </footer>
         </template>
@@ -1424,7 +2041,7 @@ watch(
       "
       :confirm-label="t('提交改动')"
       :danger="deleteCount > 0"
-      @close="confirmOpen = false"
+      @close="cancelSave"
       @confirm="commitChanges"
     >
       <pre
@@ -1432,6 +2049,46 @@ watch(
         class="scroll-thin bg-terminal border-line-soft text-txt-2 mt-2.5 max-h-48 overflow-auto rounded-md border p-2 font-mono text-[10.5px] leading-4 whitespace-pre-wrap select-text"
         >{{ previewText }}</pre>
     </AppConfirmDialog>
+    <AppConfirmDialog
+      :open="guardOpen"
+      :title="t('有未提交的改动')"
+      :description="
+        t(
+          '当前页有 {value0} 项未提交改动，继续操作会丢失它们。可以先提交，或放弃后继续（放弃后可撤销一次）。',
+          { value0: pendingMutationCount || insertedRows.length }
+        )
+      "
+      :confirm-label="t('放弃并继续')"
+      danger
+      @close="closeGuard"
+      @confirm="discardAndContinue"
+    >
+      <AppButton
+        size="sm"
+        class="mt-2.5"
+        :disabled="state.mutationLoading"
+        @click="commitAndContinue"
+      >
+        <AppIcon
+          name="lucide:save"
+          :size="11"
+        />
+        {{ t('提交并继续') }}
+      </AppButton>
+    </AppConfirmDialog>
+    <DatabaseGridContextMenu
+      :open="gridMenu.open"
+      :x="gridMenu.x"
+      :y="gridMenu.y"
+      :can-filter="menuCanFilter"
+      :can-edit="
+        canEditExisting && !state.pageLoading && !state.mutationLoading
+      "
+      :can-insert="canInsert && !state.mutationLoading"
+      :deleted="menuRangeDeleted"
+      @close="gridMenu.open = false"
+      @select="handleGridAction"
+    />
     <AppContextMenu
       :open="rowMenu.open"
       :x="rowMenu.x"

@@ -45,6 +45,7 @@ const items = computed<ContextMenuItem[]>(() => {
       id: 'open-object',
       label: object.kind === 'table' ? t('浏览数据') : t('打开对象'),
       icon: relation ? 'lucide:table-2' : 'lucide:file-code-2',
+      shortcut: 'Enter',
     },
     {
       id: 'query-object',
@@ -85,7 +86,12 @@ const items = computed<ContextMenuItem[]>(() => {
       label: t('复制限定名称'),
       icon: 'lucide:copy',
     },
-    { id: 'rename-object', label: t('重命名…'), icon: 'lucide:pencil' },
+    {
+      id: 'rename-object',
+      label: t('重命名…'),
+      icon: 'lucide:pencil',
+      shortcut: 'F2',
+    },
     { id: 'refresh', label: t('刷新对象树'), icon: 'lucide:rotate-cw' },
     {
       id: 'remove-object',
@@ -94,6 +100,7 @@ const items = computed<ContextMenuItem[]>(() => {
       iconTone: 'danger',
       danger: true,
       separatorBefore: true,
+      shortcut: 'Del',
     },
   ]
 })
