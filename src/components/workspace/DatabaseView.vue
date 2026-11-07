@@ -83,6 +83,10 @@ import DatabaseTransferDialog, {
   type DatabaseTransferMode,
 } from './database/DatabaseTransferDialog.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
+import DatabaseStatusBar from './database/DatabaseStatusBar.vue'
+import { provideDatabaseStatusSelection } from '@/composables/useDatabaseStatusBar'
+import { useSettingsStore } from '@/stores/settings'
+import { matchesShortcut } from '@/utils/shortcut'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppSidePane from '@/components/ui/AppSidePane.vue'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
@@ -1631,6 +1635,33 @@ watch(
     historyEntries.value = id ? listQueryHistory(id) : []
   }
 )
+
+// 底部状态栏、结果面板开关与数据库快捷键（UX-1）
+const statusSelection = provideDatabaseStatusSelection()
+const objectTree = useTemplateRef<{ focusFilter: () => void }>('objectTree')
+const resultsHidden = useStorage('miraihub:database-results-hidden', false)
+const dbShortcuts = useSettingsStore().values
+const runningQueryCount = computed(() =>
+  queryLoading.value || state.preparingQuery ? 1 : 0
+)
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (props.active === false || event.defaultPrevented || !props.connection)
+    return
+  if (matchesShortcut(event, dbShortcuts.shortcutDbNewQuery)) {
+    event.preventDefault()
+    if (connected.value) void newQueryForSchema()
+  } else if (matchesShortcut(event, dbShortcuts.shortcutDbToggleResults)) {
+    if (!activeQuery.value) return
+    event.preventDefault()
+    resultsHidden.value = !resultsHidden.value
+  } else if (matchesShortcut(event, dbShortcuts.shortcutDbRefresh)) {
+    event.preventDefault()
+    if (connected.value) void refreshAll()
+  } else if (matchesShortcut(event, dbShortcuts.shortcutDbFocusFilter)) {
+    event.preventDefault()
+    objectTree.value?.focusFilter()
+  }
+})
 </script>
 
 <template>
@@ -1822,6 +1853,7 @@ watch(
         class="pane flex-1 flex-row"
       >
         <DatabaseObjectTree
+          ref="objectTree"
           :key="`${sessionId}:${browserEpoch}`"
           v-show="!agentOpen || agentSplit"
           :style="sidebarStyle"
@@ -1969,6 +2001,7 @@ watch(
                 :ref="editor => setEditor(tab.id, editor)"
                 v-model="tab.sql"
                 v-model:ratio="queryEditorRatio"
+                :results-hidden="resultsHidden"
                 :database-kind="databaseKind"
                 :database-name="tab.database"
                 :execution="state.queryResults[tab.id]?.execution ?? null"
