@@ -26,6 +26,7 @@ import DatabaseTransferDialog from './database/DatabaseTransferDialog.vue'
 import type { DatabaseTransferMode } from './database/DatabaseTransferDialog.vue'
 import SidebarProjects from './SidebarProjects.vue'
 import SshConfigTransferDialog from '@/components/connection/SshConfigTransferDialog.vue'
+import OpenSshImportDialog from '@/components/connection/OpenSshImportDialog.vue'
 
 const { t } = useI18n()
 const { settings } = useSettings()
@@ -71,6 +72,8 @@ const state = reactive({
   transferConnection: null as SavedConnection | null,
   transferMode: 'export' as DatabaseTransferMode,
   sshTransferOpen: false,
+  // 从 ~/.ssh/config 导入对话框是否打开
+  opensshImportOpen: false,
 })
 
 const addMenuItems = computed<ContextMenuItem[]>(() => [
@@ -80,6 +83,12 @@ const addMenuItems = computed<ContextMenuItem[]>(() => [
     id: 'database',
     label: t('Database Connection'),
     icon: 'lucide:database',
+    separatorBefore: true,
+  },
+  {
+    id: 'openssh-config',
+    label: t('从 ~/.ssh/config 导入'),
+    icon: 'lucide:file-input',
     separatorBefore: true,
   },
 ])
@@ -138,11 +147,17 @@ function openAddMenu(event: MouseEvent): void {
   addMenuTrigger.value = event.currentTarget as HTMLElement
   const rect = addMenuTrigger.value.getBoundingClientRect()
   state.addMenuX = rect.left
-  state.addMenuY = rect.top - 112
+  // 菜单向上展开，高度随条目数增长（新增“从 ~/.ssh/config 导入”一项及分隔线）
+  state.addMenuY = rect.top - 154
   state.addMenuOpen = true
 }
 
+// 选择新建连接类型；导入 ~/.ssh/config 打开预览对话框
 function selectConnectionKind(kind: string): void {
+  if (kind === 'openssh-config') {
+    state.opensshImportOpen = true
+    return
+  }
   if (kind === 'ssh' || kind === 'local' || kind === 'database')
     openConnectionWindow(kind)
 }
@@ -489,6 +504,11 @@ async function confirmRemoval(): Promise<void> {
   <SshConfigTransferDialog
     :open="state.sshTransferOpen"
     @close="state.sshTransferOpen = false"
+  />
+
+  <OpenSshImportDialog
+    :open="state.opensshImportOpen"
+    @close="state.opensshImportOpen = false"
   />
 </template>
 

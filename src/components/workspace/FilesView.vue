@@ -37,6 +37,7 @@ import { copyText, scheduleClipboardClear } from '@/utils/clipboard'
 import FileConflictDialog from './FileConflictDialog.vue'
 import RemoteFileCreateDialog from './RemoteFileCreateDialog.vue'
 import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
+import RemoteFileChmodDialog from './RemoteFileChmodDialog.vue'
 import RemoteFileList from './RemoteFileList.vue'
 import FileBrowserControls from '@/components/workspace/file-browser-controls.vue'
 import type { FilePaneDrop } from '@/components/workspace/useFilePaneDrag'
@@ -90,6 +91,8 @@ const transfers = useFileTransfers()
 const editor = useRemoteEditor()
 const dropZone = useTemplateRef<HTMLElement>('dropZone')
 const browserDragging = shallowRef(false)
+// 拖拽经过子元素时 dragenter/dragleave 成对触发，用计数判断是否真正离开整个区域
+let dragDepth = 0
 const state = reactive({
   menuOpen: false,
   menuX: 0,
@@ -119,6 +122,8 @@ const state = reactive({
   creating: null as 'file' | 'directory' | null,
   // 正在读取将加入 AI 草稿的配置文件
   readingContext: false,
+  // 正在修改权限的远端项目
+  chmodTarget: null as SshRemoteFile | null,
 })
 const { selection } = toRefs(state)
 
@@ -322,6 +327,12 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       separatorBefore: true,
     },
     {
+      id: 'chmod',
+      label: t('修改权限'),
+      icon: 'lucide:shield',
+      disabled: file.kind === 'symlink' || state.processing,
+    },
+    {
       id: 'copy-paths',
       label: t('复制路径'),
       icon: 'lucide:copy',
@@ -506,8 +517,14 @@ function runContextAction(action: string): void {
   else if (action === 'download') void downloadFiles(state.menuFiles)
   else if (action === 'copy-paths') void copySelectedPaths(state.menuFiles)
   else if (action === 'rename') state.renaming = file
+  else if (action === 'chmod') state.chmodTarget = file
   else if (action === 'delete') {
-    if (settings.confirmFileDelete) state.pendingDelete = [...state.menuFiles]
+    // 目录会被递归删除，即使关闭了删除确认也必须二次确认
+    if (
+      settings.confirmFileDelete ||
+      state.menuFiles.some(item => item.kind === 'directory')
+    )
+      state.pendingDelete = [...state.menuFiles]
     else void deleteFiles(state.menuFiles)
   }
 }
@@ -669,7 +686,34 @@ async function renameFile(name: string): Promise<void> {
   }
 }
 
-// 批量删除逐项执行并汇总失败；沿用后端仅允许删除空目录的规则。
+// 提交权限修改，目录可递归；完成后刷新原目录
+async function chmodFile(mode: number, recursive: boolean): Promise<void> {
+  const file = state.chmodTarget
+  if (!file || state.processing) return
+  const sessionId = props.sessionId
+  const directory = path.value
+  state.processing = true
+  try {
+    const count = await ssh.chmodPath(sessionId, file.path, mode, recursive)
+    state.chmodTarget = null
+    if (props.sessionId === sessionId && path.value === directory)
+      await refresh()
+    toast.success(
+      t('已修改 {count} 个项目的权限', {
+        count,
+      })
+    )
+  } catch (error) {
+    toast.error({
+      title: t('修改权限失败'),
+      description: ssh.errorMessage(error),
+    })
+  } finally {
+    state.processing = false
+  }
+}
+
+// 批量删除逐项执行并汇总失败；目录会递归删除其中全部内容。
 async function deleteFiles(files: SshRemoteFile[]): Promise<void> {
   if (state.processing || !files.length) return
   const sessionId = props.sessionId
@@ -681,7 +725,8 @@ async function deleteFiles(files: SshRemoteFile[]): Promise<void> {
     for (const file of files) {
       if (sessionId !== props.sessionId) break
       try {
-        await ssh.deletePath(sessionId, file.path, file.kind === 'directory')
+        if (file.kind === 'directory') await ssh.deleteTree(sessionId, file.path)
+        else await ssh.deletePath(sessionId, file.path, false)
         deleted++
       } catch (error) {
         failures.push(`${file.name}: ${ssh.errorMessage(error)}`)
@@ -715,7 +760,21 @@ function receivePaneDrop(event: Event): void {
     void uploadPaths(detail.files.map(file => file.path))
 }
 
+// 进入拖拽区域（含子元素）时累加计数并显示上传遮罩
+function handleDragEnter(): void {
+  dragDepth++
+  browserDragging.value = true
+}
+
+// 只有离开最外层区域（计数归零）时才隐藏遮罩，避免经过子元素时闪烁
+function handleDragLeave(): void {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) browserDragging.value = false
+}
+
+// 处理浏览器拖放：内部本地栏拖入或带路径的系统文件
 function handleBrowserDrop(event: DragEvent): void {
+  dragDepth = 0
   const internal = event.dataTransfer?.getData('application/x-miraihub-local')
   if (internal) {
     browserDragging.value = false
@@ -741,9 +800,9 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
 <template>
   <div
     class="relative flex min-h-0 flex-1 flex-col"
-    @dragenter.prevent="browserDragging = true"
+    @dragenter.prevent="handleDragEnter"
     @dragover.prevent
-    @dragleave.prevent="browserDragging = false"
+    @dragleave.prevent="handleDragLeave"
     @drop.prevent="handleBrowserDrop"
   >
     <div class="border-line-soft flex shrink-0 justify-end border-b px-2">
@@ -951,6 +1010,13 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       @submit="renameFile"
       @close="state.renaming = null"
     />
+    <RemoteFileChmodDialog
+      v-if="state.chmodTarget"
+      :file="state.chmodTarget"
+      :busy="state.processing"
+      @submit="chmodFile"
+      @close="state.chmodTarget = null"
+    />
     <RemoteFileTransferDialog
       v-if="state.transfer"
       :session-id="state.transfer.sessionId"
@@ -1040,11 +1106,17 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     :title="t('删除远端项目')"
     :description="
       state.pendingDelete.length > 1
-        ? t('files.confirmBatchDelete', { count: state.pendingDelete.length })
+        ? state.pendingDelete.some(file => file.kind === 'directory')
+          ? t(
+              '确定删除选中的 {count} 个项目吗？其中的目录会连同全部内容递归删除，此操作无法撤销。',
+              { count: state.pendingDelete.length }
+            )
+          : t('files.confirmBatchDelete', { count: state.pendingDelete.length })
         : state.pendingDelete[0]?.kind === 'directory'
-          ? t('确定删除空目录“{value0}”吗？此操作无法撤销。', {
-              value0: state.pendingDelete[0]?.name ?? '',
-            })
+          ? t(
+              '确定删除目录“{value0}”吗？目录中的所有文件和子目录都会被递归删除，此操作无法撤销。',
+              { value0: state.pendingDelete[0]?.name ?? '' }
+            )
           : t('确定删除远端文件“{value0}”吗？此操作无法撤销。', {
               value0: state.pendingDelete[0]?.name ?? '',
             })

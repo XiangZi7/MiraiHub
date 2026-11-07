@@ -268,11 +268,33 @@ impl SshSession {
             shell: Mutex::new(None),
             transfer_slots: Arc::new(Semaphore::new(MAX_TRANSFER_CHANNELS)),
             metadata_slots: Arc::new(Semaphore::new(MAX_METADATA_CHANNELS)),
+            link,
         })
     }
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// 连接存活状态，会话表据此清理死会话。
+    pub(crate) fn link(&self) -> Arc<LinkState> {
+        self.link.clone()
+    }
+
+    /// 连接已死时释放额度，唤醒排队中的传输。
+    pub(crate) fn release(&self) {
+        self.transfer_slots.close();
+        self.metadata_slots.close();
+    }
+
+    /// 目标连接意外断开后的清理：释放额度并关掉仍然活着的跳板连接。
+    pub(crate) async fn abandon(&self) {
+        self.release();
+        for hop in self.jump_handles.lock().await.drain(..).rev() {
+            let _ = hop
+                .disconnect(Disconnect::ByApplication, "目标连接已断开", "")
+                .await;
+        }
     }
 
     pub fn config(&self) -> &SshConfig {
@@ -318,9 +340,10 @@ impl SshSession {
         }
 
         let session_id = self.id.clone();
+        let link = self.link.clone();
 
         tokio::spawn(async move {
-            pump_output(app, session_id, read_half, output).await;
+            pump_output(app, session_id, read_half, output, link).await;
         });
 
         Ok(())
@@ -553,12 +576,13 @@ impl SshSession {
 
     /// 主动断开。
     pub async fn disconnect(&self) -> SshResult<()> {
-        self.transfer_slots.close();
-        self.metadata_slots.close();
+        self.link.mark_manual();
+        self.release();
         let handle = self.handle.lock().await;
-        handle
+        // 目标连接已死时这里会报错，但跳板连接仍要逐个关掉，免得残留
+        let result = handle
             .disconnect(Disconnect::ByApplication, "用户主动断开", "")
-            .await?;
+            .await;
 
         for hop in self.jump_handles.lock().await.iter().rev() {
             let _ = hop
@@ -566,21 +590,23 @@ impl SshSession {
                 .await;
         }
         log::info!("SSH 已断开：{}", self.config.endpoint());
+        result?;
         Ok(())
     }
 }
 
 /// 每跳均独立校验主机密钥和认证，后续 TCP 流由上一跳 direct-tcpip 承载。
+///
+/// 等待用户确认主机密钥或输入验证码的时间不计入连接超时。
 async fn connect_handle(
     config: &SshConfig,
     previous: Option<&Handle<ClientHandler>>,
-) -> SshResult<Handle<ClientHandler>> {
+    prompter: Option<&Arc<Prompter>>,
+) -> SshResult<(Handle<ClientHandler>, Arc<LinkState>)> {
+    let handler = ClientHandler::new(config, prompter.cloned());
+    let link = handler.link.clone();
+    let clock = handler.clock.clone();
     let connect = async {
-        let handler = ClientHandler {
-            host: config.host.clone(),
-            port: config.port,
-            verify_host_key: config.verify_host_key,
-        };
         let ssh_config = Arc::new(client::Config {
             inactivity_timeout: (config.keepalive_secs > 0)
                 .then(|| Duration::from_secs(config.keepalive_secs.saturating_mul(4))),
@@ -597,22 +623,28 @@ async fn connect_handle(
             let stream = proxy::connect(&config.host, config.port, config.proxy.as_ref()).await?;
             client::connect_stream(ssh_config, stream, handler).await
         }
-        .map_err(|source| SshError::Connect {
-            endpoint: config.endpoint(),
-            source,
+        .map_err(|source| match link.take_declined() {
+            // 用户拒绝主机密钥时 russh 只会报 UnknownKey，换成可读的原因
+            Some(reason) => SshError::UserDeclined(reason),
+            None => SshError::Connect {
+                endpoint: config.endpoint(),
+                source,
+            },
         })?;
-        authenticate(&mut handle, config).await?;
+        authenticate(&mut handle, config, &clock, prompter.map(Arc::as_ref)).await?;
         Ok(handle)
     };
-    tokio::time::timeout(
+    let handle = timeout_excluding_prompts(
         Duration::from_secs(config.timeout_secs.clamp(1, 300)),
+        &clock,
         connect,
     )
     .await
-    .map_err(|_| SshError::Timeout {
+    .ok_or_else(|| SshError::Timeout {
         endpoint: config.endpoint(),
         secs: config.timeout_secs,
-    })?
+    })??;
+    Ok((handle, link))
 }
 
 /// 后台读循环：把远端输出源源不断推给前端，直到 channel 关闭。
@@ -626,6 +658,7 @@ async fn pump_output(
     session_id: String,
     mut channel: ChannelReadHalf,
     output: Channel<InvokeResponseBody>,
+    link: Arc<LinkState>,
 ) {
     let mut exit_code = None;
 
@@ -643,18 +676,33 @@ async fn pump_output(
         }
     }
 
+    // 没有退出码且整条连接随之断开：断线原因由会话表的清理任务上报，这里不重复发
+    if exit_code.is_none()
+        && !link.is_manual()
+        && link.wait_closed(Duration::from_secs(2)).await
+    {
+        log::info!("会话 {session_id} 的连接已断开：{}", link.reason());
+        return;
+    }
+
     // 循环退出即远端 shell 结束，通知前端把标签页标成已断开
     emit_status(&app, StatusEvent::disconnected(&session_id, exit_code));
     log::info!("会话 {session_id} 的 shell 已结束（退出码 {exit_code:?}）");
 }
 
-/// 按配置的方式完成认证。
-async fn authenticate(handle: &mut Handle<ClientHandler>, config: &SshConfig) -> SshResult<()> {
-    let accepted = match &config.auth {
-        AuthMethod::Password { password } => handle
-            .authenticate_password(&config.username, password)
-            .await?
-            .success(),
+/// 按配置的方式完成认证；服务端要求键盘交互（验证码、OTP）时转入交互流程。
+async fn authenticate(
+    handle: &mut Handle<ClientHandler>,
+    config: &SshConfig,
+    clock: &PauseClock,
+    prompter: Option<&Prompter>,
+) -> SshResult<()> {
+    let result = match &config.auth {
+        AuthMethod::Password { password } => {
+            handle
+                .authenticate_password(&config.username, password)
+                .await?
+        }
 
         AuthMethod::PrivateKey { path, passphrase } => {
             if !std::path::Path::new(path).exists() {
@@ -678,19 +726,119 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, config: &SshConfig) ->
                     PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg),
                 )
                 .await?
-                .success()
         }
 
         AuthMethod::Agent => authenticate_with_agent(handle, &config.username).await?,
     };
 
-    if !accepted {
-        return Err(SshError::AuthRejected {
-            method: config.auth.label(),
-        });
+    let AuthResult::Failure {
+        remaining_methods,
+        partial_success,
+    } = result
+    else {
+        return Ok(());
+    };
+
+    let saved_password = match &config.auth {
+        AuthMethod::Password { password } => Some(password.as_str()),
+        _ => None,
+    };
+    let password_rejected = saved_password.is_some()
+        && !partial_success
+        && remaining_methods.contains(&MethodKind::Password);
+    // 密码本身被拒时直接报错，不再弹交互框让用户重输一遍
+    if remaining_methods.contains(&MethodKind::KeyboardInteractive) && !password_rejected {
+        // 服务端只开放键盘交互、或密码已通过还要二次验证时，保存的密码可以回答第一个密码提示
+        return keyboard_interactive(handle, config, saved_password, clock, prompter).await;
     }
 
-    Ok(())
+    Err(SshError::AuthRejected {
+        method: config.auth.label(),
+    })
+}
+
+/// 键盘交互认证：逐轮把服务端的提示交给用户（或用保存的密码回答密码提示）。
+async fn keyboard_interactive(
+    handle: &mut Handle<ClientHandler>,
+    config: &SshConfig,
+    mut saved_password: Option<&str>,
+    clock: &PauseClock,
+    prompter: Option<&Prompter>,
+) -> SshResult<()> {
+    const METHOD: &str = "keyboard-interactive";
+    let mut response = handle
+        .authenticate_keyboard_interactive_start(&config.username, None::<String>)
+        .await?;
+
+    for _ in 0..MAX_KEYBOARD_INTERACTIVE_ROUNDS {
+        let (name, instructions, prompts) = match response {
+            KeyboardInteractiveAuthResponse::Success => return Ok(()),
+            KeyboardInteractiveAuthResponse::Failure { .. } => {
+                return Err(SshError::AuthRejected { method: METHOD })
+            }
+            KeyboardInteractiveAuthResponse::InfoRequest {
+                name,
+                instructions,
+                prompts,
+            } => (name, instructions, prompts),
+        };
+
+        let answers = if prompts.is_empty() {
+            // 只有说明没有输入项的轮次（如横幅），按协议回空答复
+            Vec::new()
+        } else if saved_password.is_some() && is_password_prompt(&prompts) {
+            vec![saved_password.take().unwrap_or_default().to_owned()]
+        } else {
+            let Some(prompter) = prompter else {
+                return Err(SshError::UserDeclined(
+                    "服务器要求键盘交互认证，但当前无法弹出输入框".into(),
+                ));
+            };
+            let request = AuthPrompt {
+                host: config.host.clone(),
+                port: config.port,
+                username: config.username.clone(),
+                name,
+                instructions,
+                prompts: prompts
+                    .iter()
+                    .map(|field| AuthPromptField {
+                        prompt: field.prompt.clone(),
+                        echo: field.echo,
+                    })
+                    .collect(),
+            };
+            match clock.pause(prompter.auth(request)).await {
+                Ok(Some(mut answers)) => {
+                    answers.resize(prompts.len(), String::new());
+                    answers
+                }
+                Ok(None) => return Err(SshError::UserDeclined("已取消键盘交互认证".into())),
+                Err(reason) => {
+                    return Err(SshError::UserDeclined(format!(
+                        "键盘交互认证未完成：{reason}"
+                    )))
+                }
+            }
+        };
+
+        response = handle
+            .authenticate_keyboard_interactive_respond(answers)
+            .await?;
+    }
+
+    Err(SshError::AuthRejected { method: METHOD })
+}
+
+/// 单个不回显、看起来在问密码的提示，才用保存的密码自动回答；验证码之类一律交给用户。
+fn is_password_prompt(prompts: &[russh::client::Prompt]) -> bool {
+    match prompts {
+        [only] if !only.echo => {
+            let text = only.prompt.to_lowercase();
+            text.contains("password") || text.contains("密码")
+        }
+        _ => false,
+    }
 }
 
 /// 走 ssh-agent 认证。
@@ -702,7 +850,7 @@ async fn authenticate(handle: &mut Handle<ClientHandler>, config: &SshConfig) ->
 async fn authenticate_with_agent(
     handle: &mut Handle<ClientHandler>,
     username: &str,
-) -> SshResult<bool> {
+) -> SshResult<AuthResult> {
     use russh::keys::agent::client::AgentClient;
 
     /// Windows OpenSSH agent 的固定管道名
@@ -723,19 +871,19 @@ async fn authenticate_with_agent(
 async fn authenticate_with_agent(
     handle: &mut Handle<ClientHandler>,
     username: &str,
-) -> SshResult<bool> {
+) -> SshResult<AuthResult> {
     use russh::keys::agent::client::AgentClient;
 
     let mut agent = AgentClient::connect_env().await.map_err(SshError::Key)?;
     try_agent_identities(handle, username, &mut agent).await
 }
 
-/// 把 agent 里挂着的钥匙挨个试过去，直到有一把被服务端接受。
+/// 把 agent 里挂着的钥匙挨个试过去，直到有一把被服务端接受（含“已接受、还需二次验证”）。
 async fn try_agent_identities<S>(
     handle: &mut Handle<ClientHandler>,
     username: &str,
     agent: &mut russh::keys::agent::client::AgentClient<S>,
-) -> SshResult<bool>
+) -> SshResult<AuthResult>
 where
     S: russh::keys::agent::client::AgentStream + Unpin + Send + 'static,
 {
@@ -747,19 +895,29 @@ where
         ));
     }
 
+    let mut last = AuthResult::Failure {
+        remaining_methods: MethodSet::empty(),
+        partial_success: false,
+    };
     for key in identities {
         let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
 
-        if handle
+        last = handle
             .authenticate_publickey_with(username, key, hash_alg, agent)
-            .await?
-            .success()
-        {
-            return Ok(true);
+            .await?;
+        if matches!(
+            last,
+            AuthResult::Success
+                | AuthResult::Failure {
+                    partial_success: true,
+                    ..
+                }
+        ) {
+            break;
         }
     }
 
-    Ok(false)
+    Ok(last)
 }
 
 /// 连接参数的基本校验。挡住明显错误的入参，避免带着空 host 去做 DNS 解析。
@@ -886,14 +1044,14 @@ mod tests {
                 .unwrap()
                 .await;
         });
+        let config = config_with("test", "test", 22);
+        let mut handler = ClientHandler::new(&config, None);
+        handler.verify_host_key = false;
+        let link = handler.link.clone();
         let mut handle = client::connect_stream(
             Arc::new(client::Config::default()),
             client_stream,
-            ClientHandler {
-                host: "test".into(),
-                port: 22,
-                verify_host_key: false,
-            },
+            handler,
         )
         .await
         .unwrap();
@@ -901,12 +1059,13 @@ mod tests {
         (
             SshSession {
                 id: "test".into(),
-                config: config_with("test", "test", 22),
+                config,
                 jump_handles: Mutex::new(Vec::new()),
                 handle: Mutex::new(handle),
                 shell: Mutex::new(None),
                 transfer_slots: Arc::new(Semaphore::new(MAX_TRANSFER_CHANNELS)),
                 metadata_slots: Arc::new(Semaphore::new(MAX_METADATA_CHANNELS)),
+                link,
             },
             rejected,
         )
@@ -1099,5 +1258,280 @@ mod tests {
         for task in [first_task, second_task, target_task] {
             task.abort();
         }
+    }
+
+    /// 密码通过后还要输入验证码的服务端（AuthenticationMethods password,keyboard-interactive）。
+    struct TwoFactorServer;
+    impl russh::server::Handler for TwoFactorServer {
+        type Error = russh::Error;
+        async fn auth_password(
+            &mut self,
+            _: &str,
+            password: &str,
+        ) -> Result<russh::server::Auth, Self::Error> {
+            Ok(if password == "test" {
+                russh::server::Auth::Reject {
+                    proceed_with_methods: Some(MethodSet::from(
+                        &[MethodKind::KeyboardInteractive][..],
+                    )),
+                    partial_success: true,
+                }
+            } else {
+                russh::server::Auth::reject()
+            })
+        }
+        async fn auth_keyboard_interactive<'a>(
+            &'a mut self,
+            _: &str,
+            _: &str,
+            response: Option<russh::server::Response<'a>>,
+        ) -> Result<russh::server::Auth, Self::Error> {
+            Ok(match response {
+                None => russh::server::Auth::Partial {
+                    name: "2FA".into(),
+                    instructions: "Enter your one-time code".into(),
+                    prompts: vec![("Verification code: ".into(), true)].into(),
+                },
+                Some(mut answers) if answers.next().as_deref() == Some(&b"123456"[..]) => {
+                    russh::server::Auth::Accept
+                }
+                Some(_) => russh::server::Auth::reject(),
+            })
+        }
+    }
+
+    async fn serve_once<H>(handler: H) -> tokio::io::DuplexStream
+    where
+        H: russh::server::Handler + Send + 'static,
+    {
+        let (client_stream, server_stream) = tokio::io::duplex(64 * 1024);
+        let config = Arc::new(russh::server::Config {
+            keys: vec![russh::keys::PrivateKey::random(
+                &mut rand::rngs::OsRng,
+                russh::keys::Algorithm::Ed25519,
+            )
+            .unwrap()],
+            ..Default::default()
+        });
+        tokio::spawn(async move {
+            if let Ok(session) = russh::server::run_stream(config, server_stream, handler).await {
+                let _ = session.await;
+            }
+        });
+        client_stream
+    }
+
+    #[tokio::test]
+    async fn one_time_code_is_asked_after_the_password_is_accepted() {
+        let (prompter, mut events) = crate::ssh::prompt::tests::test_prompter(Duration::from_secs(5));
+        let responder = prompter.clone();
+        let asked = tokio::spawn(async move {
+            let (event, payload) = events.recv().await.unwrap();
+            assert_eq!(event, prompt::EVENT_AUTH_PROMPT);
+            assert_eq!(payload["prompts"][0]["prompt"], "Verification code: ");
+            assert_eq!(payload["prompts"][0]["echo"], true);
+            assert!(responder.respond_auth(
+                payload["requestId"].as_str().unwrap(),
+                Some(vec!["123456".into()])
+            ));
+        });
+
+        let config = SshConfig {
+            auth: AuthMethod::Password {
+                password: "test".into(),
+            },
+            ..config_with("test", "test", 22)
+        };
+        let mut handler = ClientHandler::new(&config, None);
+        handler.verify_host_key = false;
+        let stream = serve_once(TwoFactorServer).await;
+        let mut handle = client::connect_stream(Arc::new(client::Config::default()), stream, handler)
+            .await
+            .unwrap();
+        let clock = PauseClock::default();
+        authenticate(&mut handle, &config, &clock, Some(&prompter))
+            .await
+            .unwrap();
+        asked.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelling_the_code_prompt_aborts_the_connection() {
+        let (prompter, mut events) = crate::ssh::prompt::tests::test_prompter(Duration::from_secs(5));
+        let responder = prompter.clone();
+        tokio::spawn(async move {
+            let (_, payload) = events.recv().await.unwrap();
+            responder.respond_auth(payload["requestId"].as_str().unwrap(), None);
+        });
+        let config = SshConfig {
+            auth: AuthMethod::Password {
+                password: "test".into(),
+            },
+            ..config_with("test", "test", 22)
+        };
+        let mut handler = ClientHandler::new(&config, None);
+        handler.verify_host_key = false;
+        let stream = serve_once(TwoFactorServer).await;
+        let mut handle = client::connect_stream(Arc::new(client::Config::default()), stream, handler)
+            .await
+            .unwrap();
+        let result = authenticate(&mut handle, &config, &PauseClock::default(), Some(&prompter)).await;
+        assert!(matches!(result, Err(SshError::UserDeclined(_))));
+    }
+
+    fn known_hosts_file(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "miraihub-session-known-hosts-{}-{name}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("known_hosts");
+        let _ = std::fs::remove_file(&path);
+        path
+    }
+
+    /// 用指定的 known_hosts 与前端应答方式完成一次握手。
+    async fn handshake(
+        port: u16,
+        known_hosts: &std::path::Path,
+        prompter: Option<Arc<Prompter>>,
+    ) -> (Result<Handle<ClientHandler>, russh::Error>, Arc<LinkState>) {
+        let config = config_with("127.0.0.1", "test", port);
+        let mut handler = ClientHandler::new(&config, prompter);
+        handler.known_hosts = Some(known_hosts.to_owned());
+        let link = handler.link.clone();
+        let stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        let result =
+            client::connect_stream(Arc::new(client::Config::default()), stream, handler).await;
+        (result, link)
+    }
+
+    /// 测试里扮演前端：对每个主机密钥请求给出同一个决定，并转发事件内容。
+    fn answer_host_keys(
+        accept: bool,
+        remember: bool,
+    ) -> (
+        Arc<Prompter>,
+        tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>,
+    ) {
+        let (prompter, mut events) =
+            crate::ssh::prompt::tests::test_prompter(Duration::from_secs(5));
+        let (seen, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let responder = prompter.clone();
+        tokio::spawn(async move {
+            while let Some((event, payload)) = events.recv().await {
+                if event != prompt::EVENT_HOST_KEY_PROMPT {
+                    continue;
+                }
+                let decision = prompt::HostKeyDecision { accept, remember };
+                responder.respond_host_key(payload["requestId"].as_str().unwrap(), decision);
+                let _ = seen.send(payload);
+            }
+        });
+        (prompter, receiver)
+    }
+
+    #[tokio::test]
+    async fn unknown_host_key_waits_for_the_user_and_remembers_on_request() {
+        let (port, server) = jump_test_server().await;
+        let path = known_hosts_file("prompt");
+
+        let (prompter, mut seen) = answer_host_keys(false, false);
+        let (result, link) = handshake(port, &path, Some(prompter)).await;
+        assert!(result.is_err());
+        assert!(link.take_declined().unwrap().contains("已拒绝"));
+        assert_eq!(seen.recv().await.unwrap()["status"], "unknown");
+        assert!(!path.exists());
+
+        let (prompter, mut seen) = answer_host_keys(true, true);
+        let (result, _) = handshake(port, &path, Some(prompter)).await;
+        assert!(result.is_ok());
+        let payload = seen.recv().await.unwrap();
+        assert!(payload["fingerprint"].as_str().unwrap().starts_with("SHA256:"));
+        assert!(std::fs::read_to_string(&path).unwrap().contains("127.0.0.1"));
+
+        // 已记住：不再询问
+        let (prompter, mut seen) = answer_host_keys(false, false);
+        let (result, _) = handshake(port, &path, Some(prompter)).await;
+        assert!(result.is_ok());
+        assert!(seen.try_recv().is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn changed_host_key_is_reported_with_the_old_fingerprint() {
+        let (port, server) = jump_test_server().await;
+        let path = known_hosts_file("changed");
+        let stale = russh::keys::PrivateKey::random(
+            &mut rand::rngs::OsRng,
+            russh::keys::Algorithm::Ed25519,
+        )
+        .unwrap()
+        .public_key()
+        .clone();
+        known_hosts::learn("127.0.0.1", port, &stale, &path).unwrap();
+
+        // 没有前端时变化的密钥一律拒绝
+        let (result, link) = handshake(port, &path, None).await;
+        assert!(result.is_err());
+        assert!(link.take_declined().is_some());
+
+        let (prompter, mut seen) = answer_host_keys(true, true);
+        let (result, _) = handshake(port, &path, Some(prompter)).await;
+        assert!(result.is_ok());
+        let payload = seen.recv().await.unwrap();
+        assert_eq!(payload["status"], "changed");
+        assert_eq!(payload["oldFingerprint"], known_hosts::fingerprint(&stale));
+
+        let (prompter, mut seen) = answer_host_keys(false, false);
+        assert!(handshake(port, &path, Some(prompter)).await.0.is_ok());
+        assert!(seen.try_recv().is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn remote_close_marks_the_link_closed_with_a_reason() {
+        let (port, server) = jump_test_server().await;
+        let config = SshConfig {
+            auth: AuthMethod::Password {
+                password: "test".into(),
+            },
+            verify_host_key: false,
+            timeout_secs: 3,
+            ..config_with("127.0.0.1", "test", port)
+        };
+        let session = SshSession::connect("liveness".into(), config).await.unwrap();
+        let link = session.link();
+        assert!(!link.is_closed());
+        server.abort();
+        assert!(link.wait_closed(Duration::from_secs(5)).await);
+        // 平台不同可能是正常 EOF 也可能是连接被重置，但一定要有具体原因
+        let reason = link.reason();
+        assert!(
+            reason == "远端关闭连接" || reason.starts_with("网络错误"),
+            "{reason}"
+        );
+        assert!(!link.is_manual());
+    }
+
+    #[tokio::test]
+    async fn manual_disconnect_is_not_reported_as_a_drop() {
+        let (port, server) = jump_test_server().await;
+        let config = SshConfig {
+            auth: AuthMethod::Password {
+                password: "test".into(),
+            },
+            verify_host_key: false,
+            timeout_secs: 3,
+            ..config_with("127.0.0.1", "test", port)
+        };
+        let session = SshSession::connect("manual".into(), config).await.unwrap();
+        let link = session.link();
+        session.disconnect().await.unwrap();
+        assert!(link.wait_closed(Duration::from_secs(5)).await);
+        assert!(link.is_manual());
+        server.abort();
     }
 }

@@ -69,7 +69,7 @@ const duplicates = computed(() => {
   return map
 })
 
-// 全选状态：只针对非重复项
+// 全选状态：勾选或清空全部主机（含已存在项）
 const allSelected = computed({
   get: () => {
     const hosts = state.preview?.hosts ?? []
