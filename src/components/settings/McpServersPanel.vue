@@ -29,6 +29,9 @@ const {
   test,
 } = useMcpServers()
 
+// vue-tsc 3.3 会把模板静态属性里的 "//" 误当注释，URL 占位符从脚本绑定。
+const URL_PLACEHOLDER = 'https://mcp.example/rpc'
+
 const transports = [
   { value: 'stdio', label: t('本地程序（stdio）') },
   { value: 'http', label: t('远程服务（HTTP）') },
@@ -173,7 +176,7 @@ function addSecret(list: McpSecretDraft[]): void {
           v-model.trim="draft.url"
           inputmode="url"
           spellcheck="false"
-          placeholder="https://mcp.example/rpc"
+          :placeholder="URL_PLACEHOLDER"
         />
       </div>
       <fieldset class="mcp-secrets">

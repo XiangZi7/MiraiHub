@@ -33,6 +33,23 @@ export function terminalFontFamily(): string {
 }
 
 /**
+ * 用 WebGL 渲染终端，持续大量输出时比 DOM 渲染省得多。
+ * 显卡不支持或上下文丢失（驱动重置、休眠唤醒）时卸载插件，xterm 自动退回 DOM 渲染。
+ */
+async function enableWebgl(terminal: Terminal): Promise<void> {
+  try {
+    const { WebglAddon } = await import('@xterm/addon-webgl')
+    // 终端可能在插件加载期间已经关闭。
+    if (!terminal.element?.isConnected) return
+    const webgl = new WebglAddon()
+    webgl.onContextLoss(() => webgl.dispose())
+    terminal.loadAddon(webgl)
+  } catch {
+    /* 不支持 WebGL2 时保留 DOM 渲染。 */
+  }
+}
+
+/**
  * @param onOptionsChange 字体、字号等设置变化后调用，调用方借此重新 fit 并同步远端尺寸。
  */
 export function useXterm(onOptionsChange: () => void) {
@@ -65,6 +82,7 @@ export function useXterm(onOptionsChange: () => void) {
     terminal.loadAddon(fit)
     terminal.open(container)
     fit.fit()
+    void enableWebgl(terminal)
 
     term.value = terminal
     fitAddon.value = fit

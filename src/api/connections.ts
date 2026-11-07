@@ -76,6 +76,25 @@ function isTagColor(value: unknown): value is ConnectionTagColor {
   ].includes(String(value))
 }
 
+const WATCHED_KEYS = [
+  STORAGE_KEY,
+  GROUP_STORAGE_KEY,
+  UNGROUPED_POSITION_STORAGE_KEY,
+  TAG_STORAGE_KEY,
+]
+/** 各订阅者最近一次刷新时看到的原始字符串，focus 时据此判断内容是否真的变了。 */
+const subscriberSnapshots = new Set<Map<string, string | null>>()
+
+function storageSnapshot(): Map<string, string | null> {
+  return new Map(WATCHED_KEYS.map(key => [key, localStorage.getItem(key)]))
+}
+
+/** 读取途中的规范化回写不派发事件；结果已随本次读取交给调用方，缓存同步跟上。 */
+function writeNormalized(key: string, value: string): void {
+  localStorage.setItem(key, value)
+  for (const seen of subscriberSnapshots) seen.set(key, value)
+}
+
 function writeAll(connections: SavedConnection[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(connections))
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT))
@@ -187,7 +206,7 @@ function readTags(): ConnectionTagDefinition[] {
       }
     }
 
-    if (changed) localStorage.setItem(TAG_STORAGE_KEY, JSON.stringify(tags))
+    if (changed) writeNormalized(TAG_STORAGE_KEY, JSON.stringify(tags))
 
     return tags
   } catch (error) {
@@ -288,7 +307,7 @@ export async function listGroups(): Promise<ConnectionGroup[]> {
     changed = true
   }
 
-  if (changed) localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(groups))
+  if (changed) writeNormalized(GROUP_STORAGE_KEY, JSON.stringify(groups))
 
   return groups
 }
@@ -477,25 +496,31 @@ export async function removeGroup(id: string): Promise<void> {
  *   而"配置窗口关掉、主窗重新拿到焦点"恰好就是需要刷新的那一刻
  */
 export function subscribe(handler: () => void): () => void {
+  // 本窗口的写入都会派发 CHANGE_EVENT，经 notify 同步更新缓存，focus 时不会重复刷新。
+  const seen = storageSnapshot()
+  subscriberSnapshots.add(seen)
+  const notify = (): void => {
+    for (const key of WATCHED_KEYS) seen.set(key, localStorage.getItem(key))
+    handler()
+  }
   const onStorage = (event: StorageEvent): void => {
-    if (
-      event.key === STORAGE_KEY ||
-      event.key === GROUP_STORAGE_KEY ||
-      event.key === UNGROUPED_POSITION_STORAGE_KEY ||
-      event.key === TAG_STORAGE_KEY ||
-      event.key === null
-    )
-      handler()
+    if (event.key === null || WATCHED_KEYS.includes(event.key)) notify()
+  }
+  // focus 只是兜底：内容与上次一致时跳过，避免整份解析并替换 store。
+  const onFocus = (): void => {
+    if (WATCHED_KEYS.some(key => localStorage.getItem(key) !== seen.get(key)))
+      notify()
   }
 
   window.addEventListener('storage', onStorage)
-  window.addEventListener(CHANGE_EVENT, handler)
-  window.addEventListener('focus', handler)
+  window.addEventListener(CHANGE_EVENT, notify)
+  window.addEventListener('focus', onFocus)
 
   return () => {
+    subscriberSnapshots.delete(seen)
     window.removeEventListener('storage', onStorage)
-    window.removeEventListener(CHANGE_EVENT, handler)
-    window.removeEventListener('focus', handler)
+    window.removeEventListener(CHANGE_EVENT, notify)
+    window.removeEventListener('focus', onFocus)
   }
 }
 

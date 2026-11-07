@@ -1,5 +1,6 @@
 import {
   computed,
+  markRaw,
   onBeforeUnmount,
   reactive,
   toRefs,
@@ -343,7 +344,8 @@ export function useDatabaseSession(
       const result = await database.execute(sessionId, sql, maxRows)
       if (state.sessionId !== sessionId) return
 
-      state.queryExecution = result
+      // 结果集只整体替换、从不原地修改；跳过深层代理，大结果集不必逐行建响应式。
+      state.queryExecution = markRaw(result)
       // DDL/DML 可能改变对象结构；异步刷新，不阻塞结果展示。
       if (
         result.statements.some(

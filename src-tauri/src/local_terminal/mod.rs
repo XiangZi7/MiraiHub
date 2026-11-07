@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use base64::Engine as _;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::ssh::events::TERMINAL_WINDOW;
@@ -56,7 +56,9 @@ struct StatusEvent {
 
 pub struct LocalTerminalSession {
     master: Mutex<Box<dyn MasterPty + Send>>,
-    writer: Mutex<Box<dyn Write + Send>>,
+    /// 发往专用写线程的输入队列。PTY 写入是阻塞的：Shell 忙着不读输入时管道写满，
+    /// 直接在命令里写会卡住调用线程；排队交给单独线程写，也保证按键顺序不乱。
+    input: std::sync::mpsc::Sender<Vec<u8>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
 }
 
@@ -97,7 +99,7 @@ impl LocalTerminalSession {
         Ok((
             Self {
                 master: Mutex::new(pair.master),
-                writer: Mutex::new(writer),
+                input: spawn_writer(writer),
                 child: Mutex::new(child),
             },
             reader,
@@ -105,13 +107,9 @@ impl LocalTerminalSession {
     }
 
     fn write(&self, data: &[u8]) -> AppResult<()> {
-        let mut writer = self
-            .writer
-            .lock()
-            .map_err(|_| AppError::internal("本地终端写入锁已损坏"))?;
-        writer.write_all(data)?;
-        writer.flush()?;
-        Ok(())
+        self.input
+            .send(data.to_vec())
+            .map_err(|_| AppError::internal("本地终端已关闭，无法写入"))
     }
 
     fn resize(&self, cols: u16, rows: u16) -> AppResult<()> {
@@ -244,7 +242,8 @@ fn pump_output(
         }
 
         let exit_code = session.wait();
-        let _ = app.emit(
+        let _ = app.emit_to(
+            TERMINAL_WINDOW,
             EVENT_STATUS,
             StatusEvent {
                 session_id,
@@ -254,6 +253,20 @@ fn pump_output(
             },
         );
     });
+}
+
+/// 会话释放（发送端全部丢弃）或写入失败时线程自行退出。
+fn spawn_writer(mut writer: Box<dyn Write + Send>) -> std::sync::mpsc::Sender<Vec<u8>> {
+    let (sender, receiver) = std::sync::mpsc::channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        for data in receiver {
+            if let Err(error) = writer.write_all(&data).and_then(|()| writer.flush()) {
+                log::debug!("本地终端输入通道关闭：{error}");
+                break;
+            }
+        }
+    });
+    sender
 }
 
 fn validate_config(config: &LocalTerminalConfig) -> AppResult<()> {
@@ -320,15 +333,21 @@ fn now_millis() -> u128 {
         .unwrap_or_default()
 }
 
+// 启动 ConPTY 子进程、结束进程都可能耗时，放到阻塞线程池，不占主线程。
 #[tauri::command]
-pub fn local_terminal_create(
+pub async fn local_terminal_create(
     app: AppHandle,
-    manager: tauri::State<'_, LocalTerminalManager>,
     config: LocalTerminalConfig,
 ) -> AppResult<String> {
-    manager.create(app, config)
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<LocalTerminalManager>()
+            .create(app.clone(), config)
+    })
+    .await
+    .map_err(|error| AppError::internal(format!("启动本地终端失败：{error}")))?
 }
 
+// 写入只是入队、尺寸调整很快，保持同步命令：按调用到达的顺序执行，按键和尺寸不会乱序。
 #[tauri::command]
 pub fn local_terminal_write(
     manager: tauri::State<'_, LocalTerminalManager>,
@@ -349,11 +368,12 @@ pub fn local_terminal_resize(
 }
 
 #[tauri::command]
-pub fn local_terminal_close(
-    manager: tauri::State<'_, LocalTerminalManager>,
-    session_id: String,
-) -> AppResult<()> {
-    manager.close(&session_id)
+pub async fn local_terminal_close(app: AppHandle, session_id: String) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<LocalTerminalManager>().close(&session_id)
+    })
+    .await
+    .map_err(|error| AppError::internal(format!("关闭本地终端失败：{error}")))?
 }
 
 #[cfg(test)]

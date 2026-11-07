@@ -237,6 +237,7 @@ impl Store {
         }
         Some(record)
     }
+    #[cfg(test)]
     fn rename_at(
         &mut self,
         dir: &Path,
@@ -244,17 +245,10 @@ impl Store {
         scope: &str,
         title: &str,
     ) -> AppResult<Summary> {
-        let title = title.trim();
-        if title.is_empty() || title.chars().count() > 60 || title.chars().any(char::is_control) {
-            return Err(AppError::invalid_input(
-                "请输入 1 至 60 个字符的会话名称，不能包含换行或控制字符",
-            ));
-        }
-        let mut record = read(dir, conversation_id, scope)?;
-        record.summary.title = title.into();
-        write(dir, &record)?;
-        self.titles.insert(conversation_id.into(), title.into());
-        Ok(record.summary)
+        let summary = rename_record(dir, conversation_id, scope, title)?;
+        self.titles
+            .insert(conversation_id.into(), summary.title.clone());
+        Ok(summary)
     }
     pub fn resume(&self, app: &AppHandle, conversation_id: &str, scope: &str) -> AppResult<Record> {
         let dir = directory(app)?;
@@ -280,6 +274,35 @@ impl Store {
         }
         Ok(record)
     }
+}
+
+/// 改写记录里的标题并落盘，返回新的摘要。
+fn rename_record(
+    dir: &Path,
+    conversation_id: &str,
+    scope: &str,
+    title: &str,
+) -> AppResult<Summary> {
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > 60 || title.chars().any(char::is_control) {
+        return Err(AppError::invalid_input(
+            "请输入 1 至 60 个字符的会话名称，不能包含换行或控制字符",
+        ));
+    }
+    let mut record = read(dir, conversation_id, scope)?;
+    record.summary.title = title.into();
+    write(dir, &record)?;
+    Ok(record.summary)
+}
+
+/// 在阻塞线程池里执行记录读写：单条记录可达数百 MB，解密和 JSON 解析都很慢。
+/// 调用方仍持有 Store 锁，与保存、删除的先后顺序不变。
+async fn blocking<T: Send + 'static>(
+    job: impl FnOnce() -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    tauri::async_runtime::spawn_blocking(job)
+        .await
+        .map_err(|error| AppError::internal(format!("读写聊天记录失败：{error}")))?
 }
 
 // Missing tool results represent interrupted/denied work, never permission to replay it.
@@ -401,7 +424,8 @@ pub async fn ai_open_conversation(
     guard(&window, false)?;
     let scope = scope(&app, &target).await?;
     let _store = state.history.lock().await;
-    Ok(read(&directory(&app)?, &conversation_id, &scope)?.snapshot())
+    let dir = directory(&app)?;
+    blocking(move || Ok(read(&dir, &conversation_id, &scope)?.snapshot())).await
 }
 #[tauri::command]
 pub async fn ai_rename_conversation(
@@ -414,11 +438,12 @@ pub async fn ai_rename_conversation(
 ) -> AppResult<Summary> {
     guard(&window, false)?;
     let scope = scope(&app, &target).await?;
-    state
-        .history
-        .lock()
-        .await
-        .rename_at(&directory(&app)?, &conversation_id, &scope, &title)
+    let mut store = state.history.lock().await;
+    let dir = directory(&app)?;
+    let id = conversation_id.clone();
+    let summary = blocking(move || rename_record(&dir, &id, &scope, &title)).await?;
+    store.titles.insert(conversation_id, summary.title.clone());
+    Ok(summary)
 }
 #[tauri::command]
 pub async fn ai_delete_conversation(
@@ -432,7 +457,10 @@ pub async fn ai_delete_conversation(
     let scope = scope(&app, &target).await?;
     let mut store = state.history.lock().await;
     let dir = directory(&app)?;
-    read(&dir, &conversation_id, &scope)?;
+    {
+        let (dir, id) = (dir.clone(), conversation_id.clone());
+        blocking(move || read(&dir, &id, &scope).map(drop)).await?;
+    }
     if let Some(owner) = store
         .owners
         .remove(&conversation_id)
@@ -447,7 +475,8 @@ pub async fn ai_delete_conversation(
         super::attachment_store::remove_conversation(dir, &attachment_owner)
     })
     .await?;
-    std::fs::remove_file(record_path(&dir, &conversation_id)?)?;
+    let path = record_path(&dir, &conversation_id)?;
+    blocking(move || Ok(std::fs::remove_file(path)?)).await?;
     store.titles.remove(&conversation_id);
     Ok(())
 }

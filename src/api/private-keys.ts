@@ -213,17 +213,26 @@ export async function pickPrivateKeys(): Promise<string[]> {
 }
 
 export function subscribe(listener: () => void): () => void {
+  // focus 兜底时内容没变就跳过；本窗口写入会派发 CHANGE_EVENT，经 notify 同步更新缓存。
+  let seen = localStorage.getItem(STORAGE_KEY)
+  const notify = (): void => {
+    seen = localStorage.getItem(STORAGE_KEY)
+    listener()
+  }
   const handleStorage = (event: StorageEvent): void => {
-    if (event.key === STORAGE_KEY || event.key === null) listener()
+    if (event.key === STORAGE_KEY || event.key === null) notify()
+  }
+  const handleFocus = (): void => {
+    if (localStorage.getItem(STORAGE_KEY) !== seen) notify()
   }
 
   window.addEventListener('storage', handleStorage)
-  window.addEventListener(CHANGE_EVENT, listener)
-  window.addEventListener('focus', listener)
+  window.addEventListener(CHANGE_EVENT, notify)
+  window.addEventListener('focus', handleFocus)
 
   return () => {
     window.removeEventListener('storage', handleStorage)
-    window.removeEventListener(CHANGE_EVENT, listener)
-    window.removeEventListener('focus', listener)
+    window.removeEventListener(CHANGE_EVENT, notify)
+    window.removeEventListener('focus', handleFocus)
   }
 }

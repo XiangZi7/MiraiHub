@@ -1,5 +1,6 @@
 import {
   computed,
+  markRaw,
   onBeforeUnmount,
   reactive,
   toRefs,
@@ -182,10 +183,9 @@ export function useRedisSession(
           seenKeyIds = new Set()
           state.pattern = patternToScan
         }
-        for (const key of page.keys) {
-          seenKeyIds.add(key.id)
-          state.keys.push(key)
-        }
+        // 扫描结果已在批内去重；一次性追加并跳过深层代理，避免逐个 push 反复触发更新。
+        for (const key of page.keys) seenKeyIds.add(key.id)
+        state.keys.push(...page.keys.map(key => markRaw(key)))
         state.cursor = page.cursor
         state.scanned = true
       }

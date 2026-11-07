@@ -1,5 +1,6 @@
 import { computed, toValue, type MaybeRefOrGetter, type Ref } from 'vue'
 import { useElementSize, useStorage } from '@vueuse/core'
+import { usePointerDeferredStorage } from './useAgentPaneWidth'
 
 /** 记住侧栏宽度，并在窗口变窄时为右侧工作区保留空间。 */
 export function useDatabaseSidebarWidth(
@@ -10,7 +11,7 @@ export function useDatabaseSidebarWidth(
     () =>
       `miraihub:database-sidebar-width${toValue(connectionId) ? ':' + toValue(connectionId) : ''}`
   )
-  const preferred = useStorage(key, 248)
+  const preferred = usePointerDeferredStorage(useStorage(key, 248), key)
   const { width: containerWidth } = useElementSize(container)
   const available = computed(() => Math.max(0, containerWidth.value || 900))
   const min = computed(() => Math.round(Math.min(180, available.value * 0.4)))

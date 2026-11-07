@@ -219,7 +219,7 @@ async function handleContextAction(id: string): Promise<void> {
     return
   }
   if (id === 'format') {
-    formatEditor()
+    await formatEditor()
     return
   }
   if (id === 'run-selection' || id === 'run-all') {
@@ -252,12 +252,14 @@ async function handleContextAction(id: string): Promise<void> {
 
 const parsedSql = computed(() => parseSql(sql.value, props.databaseKind))
 const tokens = computed(() => parsedSql.value.tokens)
-const lineNumbers = computed(() =>
-  Array.from(
-    { length: Math.max(1, sql.value.split('\n').length) },
-    (_, index) => index + 1
-  )
-)
+// 只数换行符得到行数，避免每次按键 split 出整份行数组。
+const lineCount = computed(() => {
+  const text = sql.value
+  let count = 1
+  let index = -1
+  while ((index = text.indexOf('\n', index + 1)) !== -1) count++
+  return count
+})
 
 /** 将补全菜单定位到光标附近，并按实际缩放和窗口边缘调整浮层位置。 */
 function positionAutocomplete(): void {
@@ -322,14 +324,20 @@ function currentStatement(): string {
 }
 
 /** 格式化整段 SQL；有选区时只格式化选区。走 setRangeText 以保留撤销栈。 */
-function formatEditor(): void {
+async function formatEditor(): Promise<void> {
   const editor = editorRef.value
   if (!editor || props.disabled) return
   const hasSelection = editor.selectionStart !== editor.selectionEnd
   const start = hasSelection ? editor.selectionStart : 0
   const end = hasSelection ? editor.selectionEnd : sql.value.length
+  const source = sql.value
   try {
-    const formatted = formatSql(sql.value.slice(start, end), props.databaseKind)
+    const formatted = await formatSql(
+      source.slice(start, end),
+      props.databaseKind
+    )
+    // 格式化器异步加载期间内容已变化或被禁用时放弃，避免覆盖新输入
+    if (sql.value !== source || props.disabled) return
     editor.focus()
     editor.setSelectionRange(start, end)
     document.execCommand('insertText', false, formatted)
@@ -401,7 +409,7 @@ function handleKeydown(event: KeyboardEvent): void {
 
   if (event.shiftKey && event.altKey && event.key.toLowerCase() === 'f') {
     event.preventDefault()
-    formatEditor()
+    void formatEditor()
     return
   }
 
@@ -515,7 +523,7 @@ defineExpose({ runnableSql })
       aria-hidden="true"
     >
       <div
-        v-for="line in lineNumbers"
+        v-for="line in lineCount"
         :key="line"
         class="h-[19.8px] pr-2.5"
       >

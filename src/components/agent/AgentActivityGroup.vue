@@ -182,6 +182,7 @@ const preparing = computed(
         />
         <AgentMarkdown
           :content="progress.text"
+          :streaming="busy"
           class="text-txt-2 [&_.markdown-body]:text-agent-body [&_.markdown-body_strong]:text-txt min-w-0 [&_.markdown-body]:leading-[1.35] [&_.markdown-body_p]:mt-0 [&_.markdown-body_p]:mb-1 [&_.markdown-body_strong]:font-semibold [&_.markdown-body>:first-child]:min-h-[22px] [&_.markdown-body>:first-child]:pl-[26px] [&_.markdown-body>:last-child]:mb-0"
         />
       </div>

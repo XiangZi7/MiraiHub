@@ -211,7 +211,8 @@ function findEocd(bytes: Uint8Array): number | null {
 }
 
 async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
-  const reader = new Blob([data])
+  // TS 5.9 起 Blob 只收 ArrayBuffer 支撑的视图；这里的字节都来自普通 ArrayBuffer。
+  const reader = new Blob([data as Uint8Array<ArrayBuffer>])
     .stream()
     .pipeThrough(new DecompressionStream('deflate-raw'))
     .getReader()

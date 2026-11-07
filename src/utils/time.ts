@@ -24,6 +24,18 @@ const UNITS: {
 
 const pad = (value: number): string => String(value).padStart(2, '0')
 
+/** Intl 格式器构造开销不小，列表里大量调用时按语言复用同一个实例。 */
+const relativeFormatters = new Map<string, Intl.RelativeTimeFormat>()
+
+function relativeFormatter(locale: string): Intl.RelativeTimeFormat {
+  let formatter = relativeFormatters.get(locale)
+  if (!formatter) {
+    formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'always' })
+    relativeFormatters.set(locale, formatter)
+  }
+  return formatter
+}
+
 /**
  * 相对时间，如「3 分钟前」。
  *
@@ -41,9 +53,10 @@ export function formatRelative(timestamp: number): string {
 
   for (const { limit, divisor, unit } of UNITS) {
     if (diff < limit)
-      return new Intl.RelativeTimeFormat(i18n.global.locale.value, {
-        numeric: 'always',
-      }).format(-Math.floor(diff / divisor), unit)
+      return relativeFormatter(i18n.global.locale.value).format(
+        -Math.floor(diff / divisor),
+        unit
+      )
   }
 
   return formatDate(timestamp)

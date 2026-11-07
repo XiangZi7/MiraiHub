@@ -1,5 +1,5 @@
 //! Retry only model requests. Tool execution stays outside this loop.
-use super::{clip, now, protocol, Cell, Progress, Run};
+use super::{clip_into, now, protocol, Cell, Progress, Run};
 use crate::error::{AppError, AppResult, ErrorKind};
 use serde::Serialize;
 use serde_json::Value;
@@ -49,7 +49,8 @@ pub(super) async fn completion(
             let mut last_update = Instant::now();
             let mut last_phase = String::new();
             let mut on_progress = |text: &str, phase: &str| {
-                partial_text = clip(text, 16000);
+                // 每个 token 都会回调，复用同一块缓冲区，避免反复分配整段文本。
+                clip_into(&mut partial_text, text, 16000);
                 if phase != last_phase || last_update.elapsed() >= Duration::from_millis(50) {
                     emit(Progress {
                         usage: Some(usage.clone()),

@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, onBeforeUnmount, onMounted, reactive, toRefs } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  toRefs,
+  watch,
+} from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import * as ssh from '@/api/ssh'
 import * as api from '@/api/operations'
@@ -72,7 +79,17 @@ async function poll(): Promise<void> {
     state.polling = false
   }
 }
-useIntervalFn(() => void poll(), 800)
+// 只有计划待执行或执行中才需要轮询；结束或未生成计划时停掉定时器。
+const { pause: stopPolling, resume: startPolling } = useIntervalFn(
+  () => void poll(),
+  800,
+  { immediate: false }
+)
+watch(
+  () => ['running', 'pending'].includes(state.plan?.status ?? ''),
+  active => (active ? startPolling() : stopPolling()),
+  { immediate: true }
+)
 async function prepare(): Promise<void> {
   if (state.busy || !state.selected.length || !state.command.trim()) return
   state.busy = true

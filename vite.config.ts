@@ -106,6 +106,12 @@ export default defineConfig(async () => ({
               test: /node_modules[\\/](markdown-it|entities|linkify-it|mdurl|punycode\.js|uc\.micro)[\\/]/,
               priority: 30,
             },
+            // CodeMirror 解析器与 sql-formatter 只有数据库 SQL 编辑器用到，不进首屏 vendor。
+            {
+              name: 'vendor-sql',
+              test: /node_modules[\\/](@codemirror|@lezer|sql-formatter|style-mod|w3c-keyname|crelt)[\\/]/,
+              priority: 30,
+            },
             {
               name: 'vendor-vue',
               test: /node_modules[\\/](vue|vue-router|pinia|@vue)[\\/]/,

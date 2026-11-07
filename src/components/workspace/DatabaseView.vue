@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 
 import {
   computed,
+  markRaw,
   onBeforeUnmount,
   reactive,
   shallowRef,
@@ -1398,10 +1399,11 @@ async function runQuery(
       sessionId.value === originalSessionId &&
       queryState.tabs.some(tab => tab.id === tabId)
     )
-      state.queryResults[tabId] = {
+      // 每次都整体替换该标签的结果，不需要为整份结果集建立深层代理。
+      state.queryResults[tabId] = markRaw({
         execution: queryExecution.value,
         error: queryError.value,
-      }
+      })
   } finally {
     state.preparingQuery = false
     state.runningQueryId = ''

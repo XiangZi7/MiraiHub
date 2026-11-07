@@ -23,6 +23,9 @@ const dragging = ref(false)
 let pointerId = -1
 let startX = 0
 let startWidth = 0
+// pointermove 可能远高于刷新率；每帧只按最后一个位置更新一次宽度。
+let latestX = 0
+let frame = 0
 
 function clamp(value: number): number {
   return Math.min(props.max, Math.max(props.min, value))
@@ -45,15 +48,26 @@ function startDragging(event: PointerEvent): void {
   event.preventDefault()
 }
 
+function applyDrag(): void {
+  frame = 0
+  width.value = clamp(widthFromHorizontalDelta(latestX - startX))
+}
+
 function drag(event: PointerEvent): void {
   if (!dragging.value || event.pointerId !== pointerId) return
 
-  width.value = clamp(widthFromHorizontalDelta(event.clientX - startX))
+  latestX = event.clientX
+  if (!frame) frame = requestAnimationFrame(applyDrag)
 }
 
 function stopDragging(event?: PointerEvent): void {
   if (event && event.pointerId !== pointerId) return
 
+  // 松手前把还没到帧的最后位置补上，保证最终宽度与指针一致。
+  if (frame) {
+    cancelAnimationFrame(frame)
+    applyDrag()
+  }
   dragging.value = false
   pointerId = -1
   document.body.classList.remove('app-resizing-columns')
@@ -74,6 +88,7 @@ function handleKeydown(event: KeyboardEvent): void {
 }
 
 onBeforeUnmount(() => {
+  if (frame) cancelAnimationFrame(frame)
   document.body.classList.remove('app-resizing-columns')
 })
 </script>

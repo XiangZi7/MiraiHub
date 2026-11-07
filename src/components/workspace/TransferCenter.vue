@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n'
 
 import { computed, shallowRef, useTemplateRef, watch } from 'vue'
-import { useEventListener, useNow } from '@vueuse/core'
+import { useEventListener, useIntervalFn, useNow } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import {
   useFileTransfers,
@@ -48,7 +48,15 @@ const {
 const statusFilter = shallowRef<TransferFilter>('all')
 const triggerRoot = useTemplateRef<HTMLElement>('triggerRoot')
 const panelRoot = useTemplateRef<HTMLElement>('panelRoot')
-const now = useNow({ interval: 1000 })
+// 时钟只用于面板里的速率与剩余时间；面板关闭或没有活动任务时停掉，避免常驻每秒重算。
+const {
+  now,
+  pause: pauseClock,
+  resume: resumeClock,
+} = useNow({
+  controls: true,
+  scheduler: update => useIntervalFn(update, 1000, { immediate: false }),
+})
 
 const isActive = (task: FileTransferTask) =>
   ACTIVE_STATUSES.includes(task.status)
@@ -175,6 +183,17 @@ const emptyLabel = computed(() => {
   if (statusFilter.value === 'failed') return t('当前没有错误或已取消的传输')
   return t('还没有文件传输')
 })
+
+watch(
+  [open, () => activeTasks.value.length > 0],
+  ([visible, active]) => {
+    // 打开或任务状态变化时先校准一次，暂停期间停住的旧时间不参与速率计算。
+    if (visible) now.value = new Date()
+    if (visible && active) resumeClock()
+    else pauseClock()
+  },
+  { immediate: true }
+)
 
 watch([open, unreadCount], ([visible]) => {
   if (visible) markAllSeen()

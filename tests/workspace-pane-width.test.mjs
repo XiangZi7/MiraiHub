@@ -168,3 +168,33 @@ test('数据库共享布局为侧栏预留空间，窗口收窄后仍保留主�
   reserved.value = 250
   assert.equal(agent.width.value, 800)
 })
+
+test('拖动期间宽度只在内存中更新，松开指针时一次性写入存储', t => {
+  const { scope } = fixture(t)
+  const originalWindow = globalThis.window
+  globalThis.window = new EventTarget()
+  t.after(() => {
+    globalThis.window = originalWindow
+  })
+  const container = shallowRef({ width: 1200 })
+  const agent = scope.run(() => useAgentPaneWidth(container, 'database', 'd'))
+  const sidebar = scope.run(() => useDatabaseSidebarWidth(container, 'd'))
+  const agentKey = 'miraihub:agent-pane-width:database:d'
+  const sidebarKey = 'miraihub:database-sidebar-width:d'
+
+  window.dispatchEvent(new Event('pointerdown'))
+  agent.width.value = 360
+  agent.width.value = 380
+  sidebar.width.value = 300
+  assert.equal(agent.width.value, 380)
+  assert.equal(sidebar.width.value, 300)
+  assert.equal(storage.has(agentKey), false)
+  assert.equal(storage.has(sidebarKey), false)
+  window.dispatchEvent(new Event('pointerup'))
+  assert.equal(storage.get(agentKey), 380)
+  assert.equal(storage.get(sidebarKey), 300)
+
+  // 键盘调整没有按下的指针，仍然立即写入。
+  agent.width.value = 420
+  assert.equal(storage.get(agentKey), 420)
+})

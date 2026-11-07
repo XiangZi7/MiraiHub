@@ -1,4 +1,4 @@
-import { computed, type Ref } from 'vue'
+import { computed, shallowRef, type Ref } from 'vue'
 import { useStorage } from '@vueuse/core'
 
 /**
@@ -22,6 +22,15 @@ const AUTO_FIT_PADDING = 34
 type ScopedWidths = Record<string, Record<string, number>>
 
 const store = useStorage<ScopedWidths>(STORAGE_KEY, {})
+/**
+ * 拖动中的列宽只放在内存里，松手时再写回 store：
+ * 否则每次 pointermove 都要复制整个 store 并 JSON 序列化写 localStorage。
+ * 放在模块级，同一作用域的其他表格也能实时跟随。
+ */
+const draft = shallowRef<{
+  scope: string
+  widths: Record<string, number>
+} | null>(null)
 
 function clampWidth(value: number): number {
   return Math.min(
@@ -78,9 +87,11 @@ function measureColumnContent(
 }
 
 export function useDatabaseColumnWidths(scope: Ref<string>) {
-  const widths = computed<Record<string, number>>(
-    () => (scope.value && store.value[scope.value]) || {}
-  )
+  const widths = computed<Record<string, number>>(() => {
+    if (!scope.value) return {}
+    if (draft.value?.scope === scope.value) return draft.value.widths
+    return store.value[scope.value] || {}
+  })
   /** 有任何一列被调整过时才切到 table-fixed + colgroup。 */
   const resized = computed(() => Object.keys(widths.value).length > 0)
 
@@ -93,15 +104,22 @@ export function useDatabaseColumnWidths(scope: Ref<string>) {
     write(scope.value, { ...widths.value, [name]: clampWidth(value) })
   }
 
-  /** 首次拖动前把所有列的当前实际宽度写下来，避免切到 fixed 后跳动。 */
-  function freezeCurrentWidths(table: HTMLTableElement): void {
-    if (resized.value || !scope.value) return
+  /** 量出所有列的当前实际宽度，供首次调整时固化，避免切到 fixed 后跳动。 */
+  function measureCurrentWidths(
+    table: HTMLTableElement
+  ): Record<string, number> {
     const frozen: Record<string, number> = {}
     for (const cell of table.querySelectorAll<HTMLElement>('th[data-column]')) {
       const name = cell.dataset.column
       if (name) frozen[name] = clampWidth(cell.getBoundingClientRect().width)
     }
-    write(scope.value, frozen)
+    return frozen
+  }
+
+  /** 首次调整前把所有列的当前实际宽度写下来。 */
+  function freezeCurrentWidths(table: HTMLTableElement): void {
+    if (resized.value || !scope.value) return
+    write(scope.value, measureCurrentWidths(table))
   }
 
   function beginResize(name: string, event: PointerEvent): void {
@@ -112,23 +130,45 @@ export function useDatabaseColumnWidths(scope: Ref<string>) {
     // 表头本身可能绑定了排序，拖动不应触发它。
     event.preventDefault()
     event.stopPropagation()
-    freezeCurrentWidths(table)
 
     const { pointerId } = event
+    const dragScope = scope.value
+    // 首次拖动的固化宽度也先进草稿，与拖动结果一起在松手时写入。
+    const base = resized.value
+      ? { ...widths.value }
+      : measureCurrentWidths(table)
+    draft.value = { scope: dragScope, widths: base }
     const startX = event.clientX
     const startWidth =
-      widths.value[name] ??
+      base[name] ??
       table
         .querySelector<HTMLElement>(`th[data-column="${CSS.escape(name)}"]`)
         ?.getBoundingClientRect().width ??
       COLUMN_FALLBACK_WIDTH
+    let latestX = startX
+    let frame = 0
 
+    // 每帧只按最后一次指针位置更新草稿。
+    const apply = (): void => {
+      frame = 0
+      draft.value = {
+        scope: dragScope,
+        widths: { ...base, [name]: clampWidth(startWidth + latestX - startX) },
+      }
+    }
     const move = (moved: PointerEvent): void => {
-      if (moved.pointerId === pointerId)
-        setWidth(name, startWidth + (moved.clientX - startX))
+      if (moved.pointerId !== pointerId) return
+      latestX = moved.clientX
+      if (!frame) frame = requestAnimationFrame(apply)
     }
     const stop = (ended: PointerEvent): void => {
       if (ended.pointerId !== pointerId) return
+      if (frame) {
+        cancelAnimationFrame(frame)
+        apply()
+      }
+      if (draft.value?.scope === dragScope) write(dragScope, draft.value.widths)
+      draft.value = null
       document.body.classList.remove('app-resizing-columns')
       grip.removeEventListener('pointermove', move)
       grip.removeEventListener('pointerup', stop)

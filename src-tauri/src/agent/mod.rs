@@ -306,14 +306,23 @@ fn guard(window: &WebviewWindow, settings: bool) -> AppResult<()> {
     Ok(())
 }
 fn clip(value: &str, max: usize) -> String {
+    let mut clipped = String::new();
+    clip_into(&mut clipped, value, max);
+    clipped
+}
+/// 与 clip 相同，但写进已有缓冲区，供流式回调反复调用。
+fn clip_into(target: &mut String, value: &str, max: usize) {
+    target.clear();
     if value.len() <= max {
-        return value.into();
+        target.push_str(value);
+        return;
     }
     let mut end = max;
     while !value.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{}\n[输出已截断]", &value[..end])
+    target.push_str(&value[..end]);
+    target.push_str("\n[输出已截断]");
 }
 impl Run {
     fn entry(&mut self, role: &str, text: impl Into<String>, detail: Option<String>) {
@@ -984,7 +993,11 @@ pub async fn ai_test_config(
     guard(&window, true)?;
     let config = {
         let _lock = state.config_lock.lock().await;
-        config::load(&app).await?.profile(&profile_id)?.config.clone()
+        config::load(&app)
+            .await?
+            .profile(&profile_id)?
+            .config
+            .clone()
     };
     let result = config::completion(
         &config,
@@ -1629,7 +1642,8 @@ pub async fn ai_list_mcp_servers(
 ) -> AppResult<Vec<mcp::PublicMcpServer>> {
     guard(&window, true)?;
     let _lock = state.config_lock.lock().await;
-    Ok(config::load(&app).await?
+    Ok(config::load(&app)
+        .await?
         .mcp_servers
         .iter()
         .map(mcp::McpServer::public)
@@ -1705,7 +1719,8 @@ pub async fn ai_test_mcp_server(
     guard(&window, true)?;
     let server = {
         let _lock = state.config_lock.lock().await;
-        config::load(&app).await?
+        config::load(&app)
+            .await?
             .mcp_servers
             .into_iter()
             .find(|server| server.id == id)

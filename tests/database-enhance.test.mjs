@@ -55,11 +55,16 @@ test('按光标定位当前语句，忽略字符串和注释里的分号', () =>
   assert.equal(statementAtCursor('SELECT 1;   ', 11), 'SELECT 1')
 })
 
-test('格式化按方言输出大写关键字', () => {
+test('格式化按方言输出大写关键字', async () => {
   assert.match(
-    formatSql('select id from users where id=1', 'mysql'),
+    await formatSql('select id from users where id=1', 'mysql'),
     /^SELECT\n {2}id\nFROM/u
   )
+  assert.match(
+    await formatSql('select "id" from users limit 1', 'postgresql'),
+    /^SELECT\n {2}"id"\nFROM/u
+  )
+  await assert.rejects(formatSql('select (', 'sqlite'))
 })
 
 test('解析三种方言的执行计划', () => {

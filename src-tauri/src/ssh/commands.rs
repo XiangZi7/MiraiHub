@@ -51,7 +51,7 @@ pub async fn ssh_list_sessions(manager: State<'_, SessionManager>) -> AppResult<
     Ok(manager.list().await)
 }
 
-/// 打开交互式 shell。开好后输出走 `ssh://output` 事件推送。
+/// 打开交互式 shell。开好后输出走 `ssh://output/<id>` 事件推送。
 #[tauri::command]
 pub async fn ssh_open_shell(
     app: AppHandle,

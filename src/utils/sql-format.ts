@@ -1,16 +1,25 @@
-import { format, type SqlLanguage } from 'sql-formatter'
 import type { DatabaseKind } from '@/types/database'
 
-const formatterLanguage: Record<DatabaseKind, SqlLanguage> = {
-  mysql: 'mysql',
-  postgresql: 'postgresql',
-  sqlite: 'sqlite',
-}
-
-/** 按方言格式化 SQL；关键字统一大写，失败（语法无法识别）时抛出给调用方提示。 */
-export function formatSql(sql: string, kind: DatabaseKind): string {
-  return format(sql, {
-    language: formatterLanguage[kind] ?? 'sql',
+/**
+ * 按方言格式化 SQL；关键字统一大写，失败（语法无法识别）时抛出给调用方提示。
+ * 格式化器首次使用时才加载，且只取项目支持的方言，避免全部方言打进首屏。
+ */
+export async function formatSql(
+  sql: string,
+  kind: DatabaseKind
+): Promise<string> {
+  // 解构动态导入，打包器才能摇掉未用到的方言
+  const {
+    formatDialect,
+    mysql,
+    postgresql,
+    sqlite,
+    sql: generic,
+  } = await import('sql-formatter')
+  const dialects = { mysql, postgresql, sqlite }
+  return formatDialect(sql, {
+    // 未知方言退回通用 SQL，与原先 language: 'sql' 一致
+    dialect: dialects[kind] ?? generic,
     keywordCase: 'upper',
     tabWidth: 2,
     linesBetweenQueries: 1,

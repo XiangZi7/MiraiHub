@@ -45,9 +45,25 @@ const phrases = [
   'FOREIGN KEY',
 ]
 const dialects = { mysql: MySQL, postgresql: PostgreSQL, sqlite: SQLite }
-const vocabularies = new Map<DatabaseKind, SqlSuggestion[]>()
 
-function vocabulary(kind: DatabaseKind): SqlSuggestion[] {
+/** 候选项附带预先算好的小写形式，按键过滤时不再逐个转换。 */
+interface SqlCandidate {
+  suggestion: SqlSuggestion
+  lower: string
+}
+
+const candidate = (suggestion: SqlSuggestion): SqlCandidate => ({
+  suggestion,
+  lower: suggestion.label.toLocaleLowerCase(),
+})
+const objectCandidate = (label: string) =>
+  candidate({ label, text: label, kind: 'object' })
+
+const vocabularies = new Map<DatabaseKind, SqlCandidate[]>()
+// 字段/表名数组由上层整体替换，按数组引用缓存即可跨按键复用。
+const objectCandidates = new WeakMap<readonly string[], SqlCandidate[]>()
+
+function vocabulary(kind: DatabaseKind): SqlCandidate[] {
   let values = vocabularies.get(kind)
   if (!values) {
     const spec = dialects[kind].spec
@@ -59,12 +75,23 @@ function vocabulary(kind: DatabaseKind): SqlSuggestion[] {
         .split(/\s+/u),
     ]
       .filter(Boolean)
-      .map(label => ({
-        label,
-        text: label,
-        kind: functions.has(label) ? 'function' : 'keyword',
-      }))
+      .map(label =>
+        candidate({
+          label,
+          text: label,
+          kind: functions.has(label) ? 'function' : 'keyword',
+        })
+      )
     vocabularies.set(kind, values)
+  }
+  return values
+}
+
+function objects(labels: readonly string[]): SqlCandidate[] {
+  let values = objectCandidates.get(labels)
+  if (!values) {
+    values = labels.map(objectCandidate)
+    objectCandidates.set(labels, values)
   }
   return values
 }
@@ -147,20 +174,33 @@ export function sqlCompletionPrefix(
   return completionRange(parseSql(sql, kind), cursor)?.prefix ?? null
 }
 
+const SUGGESTION_LIMIT = 60
+
+/** 按前缀过滤（忽略大小写），同名只保留首个；凑满上限即停止扫描。
+ *  候选按分组依次传入，避免每次按键拼接整份词库。 */
+function filterCandidates(
+  groups: readonly (readonly SqlCandidate[])[],
+  prefix: string
+): SqlSuggestion[] {
+  const seen = new Set<string>()
+  const lower = prefix.toLocaleLowerCase()
+  const result: SqlSuggestion[] = []
+  for (const group of groups)
+    for (const value of group) {
+      const key = value.lower
+      if (seen.has(key) || key === lower || !key.startsWith(lower)) continue
+      seen.add(key)
+      result.push(value.suggestion)
+      if (result.length >= SUGGESTION_LIMIT) return result
+    }
+  return result
+}
+
 export function filterSqlSuggestions(
   values: readonly string[],
   prefix: string
 ): string[] {
-  const seen = new Set<string>()
-  const lower = prefix.toLocaleLowerCase()
-  return values
-    .filter(value => {
-      const key = value.toLocaleLowerCase()
-      if (seen.has(key) || key === lower || !key.startsWith(lower)) return false
-      seen.add(key)
-      return true
-    })
-    .slice(0, 60)
+  return filterCandidates([objects(values)], prefix).map(item => item.label)
 }
 
 /**
@@ -245,7 +285,9 @@ export function completeSql(
     }
   }
   // `别名.` / `表名.` 之后只补对应表的字段
-  const beforeDot = sql.slice(0, range.from).match(/([\p{L}_][\p{L}\p{N}_$]*|`[^`]+`|"[^"]+")\.$/u)
+  const beforeDot = sql
+    .slice(0, range.from)
+    .match(/([\p{L}_][\p{L}\p{N}_$]*|`[^`]+`|"[^"]+")\.$/u)
   if (beforeDot && columnsByTable && statement) {
     const words = lexemes.filter(
       token =>
@@ -272,30 +314,20 @@ export function completeSql(
     : ['LEFT', 'RIGHT', 'INNER', 'CROSS', 'FULL'].includes(preceding ?? '')
       ? ['JOIN']
       : []
-  const object = (label: string): SqlSuggestion => ({
-    label,
-    text: label,
-    kind: 'object',
-  })
-  const candidates: SqlSuggestion[] = qualifiedColumns
-    ? qualifiedColumns.map(object)
+  const groups: SqlCandidate[][] = qualifiedColumns
+    ? [objects(qualifiedColumns)]
     : [
-    ...preferred.map(label => ({
-      label,
-      text: label,
-      kind: 'keyword' as const,
-    })),
-    ...localNames.map(object),
-    ...suggestions.map(object),
-    ...(!range.quote && preceding !== '.' ? vocabulary(document.kind) : []),
+        preferred.map(label =>
+          candidate({ label, text: label, kind: 'keyword' })
+        ),
+        localNames.map(objectCandidate),
+        objects(suggestions),
+        !range.quote && preceding !== '.' ? vocabulary(document.kind) : [],
       ]
-  const labels = filterSqlSuggestions(
-    candidates.map(item => item.label),
-    range.prefix
-  )
-  const options = labels.map(label => {
-    const candidate = candidates.find(item => item.label === label)!
-    if (candidate.kind !== 'object') return candidate
+  // 过滤直接产出候选对象（同名取首个），无需再按 label 回查。
+  const options = filterCandidates(groups, range.prefix).map(item => {
+    if (item.kind !== 'object') return item
+    const label = item.label
     const quote = range.quote || (document.kind === 'mysql' ? '`' : '"')
     const quoteName = (name: string) =>
       quote + name.replaceAll(quote, quote + quote) + quote
@@ -307,7 +339,7 @@ export function completeSql(
             /^[\p{L}_][\p{L}\p{N}_$]*$/u.test(part) ? part : quoteName(part)
           )
           .join('.')
-    return { ...candidate, text }
+    return { ...item, text }
   })
   return { ...range, options }
 }

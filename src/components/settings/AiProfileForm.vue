@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type {
   AgentApiFormat,
@@ -26,6 +27,9 @@ const formatHelp: Record<AgentApiFormat, string> = {
     'OpenAI Responses 格式；适用于使用 /responses 接口的模型或中转站。',
   anthropic: 'Claude Messages 格式；例如 https://api.anthropic.com/v1。',
 }
+const formatHint = computed(() => t(formatHelp[draft.value.apiFormat]))
+// vue-tsc 3.3 会把模板静态属性里的 "//" 误当注释，URL 占位符从脚本绑定。
+const URL_PLACEHOLDER = 'https://api.openai.com/v1'
 const pricingFields = ['input', 'output', 'cached'] as const
 /**
  * AppInput 的模型声明为 string，但 type="number" 时 Vue 的 v-model 会回传数字（清空时为 ''），
@@ -78,7 +82,7 @@ function normalizePrice(field: keyof AgentPricing): void {
         id="ai-base-url"
         v-model.trim="draft.baseUrl"
         inputmode="url"
-        placeholder="https://api.openai.com/v1"
+        :placeholder="URL_PLACEHOLDER"
         autocomplete="off"
         spellcheck="false"
         aria-describedby="ai-base-url-help"
@@ -87,7 +91,7 @@ function normalizePrice(field: keyof AgentPricing): void {
         id="ai-base-url-help"
         class="text-txt-4 text-[10px] leading-[1.6] wrap-anywhere"
       >
-        {{ t(formatHelp[draft.apiFormat]) }}
+        {{ formatHint }}
         {{ t('基础地址可按服务商要求修改。') }}
       </p>
     </div>

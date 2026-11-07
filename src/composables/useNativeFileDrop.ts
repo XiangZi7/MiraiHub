@@ -10,7 +10,8 @@ export function useNativeFileDrop(
   onDrop: (paths: string[]) => void
 ) {
   const isDragging = shallowRef(false)
-  let unlisten: UnlistenFn | undefined
+  const unlisteners: UnlistenFn[] = []
+  let disposed = false
   let scaleFactor = 1
 
   function isInside(position: { x: number; y: number }): boolean {
@@ -25,27 +26,47 @@ export function useNativeFileDrop(
     )
   }
 
+  /** 注册完成时组件可能已卸载，此时立即注销，避免泄漏 Tauri 监听。 */
+  function keep(unlisten: UnlistenFn): void {
+    if (disposed) unlisten()
+    else unlisteners.push(unlisten)
+  }
+
   onMounted(async () => {
     if (!IS_TAURI) return
 
-    scaleFactor = await getCurrentWindow().scaleFactor()
-    unlisten = await getCurrentWebview().onDragDropEvent(event => {
-      const payload = event.payload
-      if (payload.type === 'leave') {
-        isDragging.value = false
-        return
-      }
+    const appWindow = getCurrentWindow()
+    // 窗口拖到不同 DPI 的显示器时缩放会变，只读一次会让命中区域错位。
+    void appWindow
+      .onScaleChanged(({ payload }) => {
+        scaleFactor = payload.scaleFactor
+      })
+      .then(keep)
+      .catch(() => {})
+    scaleFactor = await appWindow.scaleFactor()
+    if (disposed) return
+    keep(
+      await getCurrentWebview().onDragDropEvent(event => {
+        const payload = event.payload
+        if (payload.type === 'leave') {
+          isDragging.value = false
+          return
+        }
 
-      const position = payload.position.toLogical(scaleFactor)
-      const inside = isInside(position)
-      isDragging.value = inside && payload.type !== 'drop'
+        const position = payload.position.toLogical(scaleFactor)
+        const inside = isInside(position)
+        isDragging.value = inside && payload.type !== 'drop'
 
-      if (payload.type === 'drop' && inside && payload.paths.length)
-        onDrop(payload.paths)
-    })
+        if (payload.type === 'drop' && inside && payload.paths.length)
+          onDrop(payload.paths)
+      })
+    )
   })
 
-  onBeforeUnmount(() => unlisten?.())
+  onBeforeUnmount(() => {
+    disposed = true
+    for (const unlisten of unlisteners.splice(0)) unlisten()
+  })
 
   return { isDragging }
 }

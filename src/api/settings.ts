@@ -71,18 +71,28 @@ export function saveSettings(settings: SettingsValues): void {
  * Tauri 事件总线（WebView 之间的 storage 事件并不可靠），以及窗口重新获得焦点时兜底刷新。
  */
 export function subscribeSettings(listener: () => void): () => void {
+  // 记住最近一次通知时的原始字符串：focus 只是兜底，内容没变就不必重新解析和整体替换。
+  // 本窗口保存会同步派发 CHANGE_EVENT，经 notify 一并更新缓存。
+  let seen = localStorage.getItem(STORAGE_KEY)
+  const notify = (): void => {
+    seen = localStorage.getItem(STORAGE_KEY)
+    listener()
+  }
   const handleStorage = (event: StorageEvent): void => {
-    if (event.key === STORAGE_KEY || event.key === null) listener()
+    if (event.key === STORAGE_KEY || event.key === null) notify()
+  }
+  const handleFocus = (): void => {
+    if (localStorage.getItem(STORAGE_KEY) !== seen) notify()
   }
 
   window.addEventListener('storage', handleStorage)
-  window.addEventListener(CHANGE_EVENT, listener)
-  window.addEventListener('focus', listener)
+  window.addEventListener(CHANGE_EVENT, notify)
+  window.addEventListener('focus', handleFocus)
 
   let unlistenTauri: (() => void) | undefined
   let cancelled = false
   if (IS_TAURI) {
-    void listen(TAURI_EVENT, listener)
+    void listen(TAURI_EVENT, notify)
       .then(unlisten => {
         if (cancelled) unlisten()
         else unlistenTauri = unlisten
@@ -95,8 +105,8 @@ export function subscribeSettings(listener: () => void): () => void {
   return () => {
     cancelled = true
     window.removeEventListener('storage', handleStorage)
-    window.removeEventListener(CHANGE_EVENT, listener)
-    window.removeEventListener('focus', listener)
+    window.removeEventListener(CHANGE_EVENT, notify)
+    window.removeEventListener('focus', handleFocus)
     unlistenTauri?.()
   }
 }

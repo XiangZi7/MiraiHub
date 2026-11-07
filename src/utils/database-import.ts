@@ -95,7 +95,8 @@ export async function parseImportWorkbook(
   if (bytes.length > 16 * 1024 * 1024)
     throw new Error('Excel 文件超过 16 MB，请拆分后导入')
   const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(bytes)
+  // exceljs 的类型要求 Buffer，运行时接受任意 Uint8Array。
+  await workbook.xlsx.load(bytes as unknown as ArrayBuffer)
   const hints = new Map<string, { schema: string; name: string }>()
   workbook.getWorksheet(metadataSheet)?.eachRow((row, index) => {
     if (index > 1)

@@ -365,7 +365,7 @@
           if (command === 'ssh_open_shell') {
             setTimeout(
               () =>
-                emit('ssh://output', {
+                emit('ssh://output/fixture', {
                   sessionId: 'fixture',
                   data: btoa(
                     'demo@server:~$ systemctl status nginx\r\nnginx.service - Web server\r\nActive: inactive (dead)\r\nError: service unavailable\r\ndemo@server:~$ '

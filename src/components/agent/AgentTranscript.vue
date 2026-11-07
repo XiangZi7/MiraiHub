@@ -40,10 +40,15 @@ const turns = computed(() =>
     class="flex min-w-0 flex-col gap-6"
     :aria-label="t('agent.transcript')"
   >
+    <!-- 长对话的历史轮次离屏时跳过渲染；最后一轮仍在增长，保持常规布局以便滚动跟随。 -->
     <section
       v-for="(turn, index) in turns"
       :key="turn.key"
       class="flex min-w-0 flex-col gap-3"
+      :class="
+        index < turns.length - 1 &&
+        '[contain-intrinsic-size:auto_300px] [content-visibility:auto]'
+      "
     >
       <article
         v-if="turn.user"

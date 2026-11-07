@@ -241,3 +241,34 @@ test('child-window readiness waits for paint and has a single bounded fallback f
     { material: 'acrylic', light: true },
   ])
 })
+
+test('settings focus fallback only notifies when the stored text actually changed', async t => {
+  const originalWindow = globalThis.window
+  const originalStorage = globalThis.localStorage
+  let raw = JSON.stringify({ language: 'zh-CN' })
+  globalThis.window = new EventTarget()
+  globalThis.localStorage = {
+    getItem: () => raw,
+    setItem: (_key, value) => {
+      raw = value
+    },
+  }
+  const settingsApi = await sourceLoader()('src/api/settings.ts')
+  let calls = 0
+  const stop = settingsApi.subscribeSettings(() => calls++)
+  t.after(() => {
+    stop()
+    globalThis.window = originalWindow
+    globalThis.localStorage = originalStorage
+  })
+  window.dispatchEvent(new Event('focus'))
+  assert.equal(calls, 0)
+  raw = JSON.stringify({ language: 'en-US' })
+  window.dispatchEvent(new Event('focus'))
+  window.dispatchEvent(new Event('focus'))
+  assert.equal(calls, 1)
+  settingsApi.saveSettings(settingsApi.defaultSettings())
+  assert.equal(calls, 2)
+  window.dispatchEvent(new Event('focus'))
+  assert.equal(calls, 2)
+})

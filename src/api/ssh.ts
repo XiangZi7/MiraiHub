@@ -122,7 +122,7 @@ export async function listSessions(): Promise<SshSessionInfo[]> {
 
 /**
  * 在会话上开一个带 PTY 的交互式 shell。
- * 开好之后远端输出会通过 `ssh://output` 事件持续推来，用 onOutput 订阅。
+ * 开好之后远端输出会通过 `ssh://output/<id>` 事件持续推来，用 onOutput 订阅。
  */
 export async function openShell(
   sessionId: string,
@@ -315,16 +315,15 @@ export async function deleteKey(keyId: string): Promise<void> {
 /**
  * 订阅终端输出。返回取消订阅函数。
  *
- * 事件是全局广播的，每个会话都会推到同一个通道，
- * 所以这里按 sessionId 过滤，让调用方只拿自己关心的那份。
+ * 后端按会话分事件名（`ssh://output/<id>`），只会收到这个会话的输出。
  */
 export function onOutput(
   sessionId: string,
   handler: (payload: SshOutputEvent) => void
 ): Promise<UnlistenFn> {
-  return listen<SshOutputEvent>(EVENT_OUTPUT, event => {
-    if (event.payload.sessionId === sessionId) handler(event.payload)
-  })
+  return listen<SshOutputEvent>(`${EVENT_OUTPUT}/${sessionId}`, event =>
+    handler(event.payload)
+  )
 }
 
 /** 订阅会话状态变更。返回取消订阅函数 */

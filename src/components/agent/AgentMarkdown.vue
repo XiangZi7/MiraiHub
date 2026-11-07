@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, onBeforeUnmount, reactive, toRefs } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  reactive,
+  shallowRef,
+  toRefs,
+  watch,
+} from 'vue'
+import { useThrottleFn } from '@vueuse/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { copyText } from '@/utils/clipboard'
 import { IS_TAURI } from '@/utils/window'
@@ -9,10 +17,37 @@ import { isAgentWebLink, renderAgentMarkdown } from '@/utils/agent-markdown'
 
 const { t } = useI18n()
 
-const props = defineProps<{ content: string; canApplySql?: boolean }>()
+const props = defineProps<{
+  content: string
+  canApplySql?: boolean
+  /** 内容仍在流式追加时节流渲染；完成后的内容始终立即渲染。 */
+  streaming?: boolean
+}>()
 const emit = defineEmits<{ applySql: [sql: string] }>()
+const source = shallowRef(props.content)
+// 流式增量约 50ms 一次，每次都全量解析 markdown 太重；trailing 保证最后一段一定渲染。
+const syncStreaming = useThrottleFn(
+  () => {
+    source.value = props.content
+  },
+  120,
+  true
+)
+watch(
+  () => props.content,
+  content => {
+    if (props.streaming) void syncStreaming()
+    else source.value = content
+  }
+)
+watch(
+  () => props.streaming,
+  streaming => {
+    if (!streaming) source.value = props.content
+  }
+)
 const html = computed(() =>
-  renderAgentMarkdown(props.content, props.canApplySql)
+  renderAgentMarkdown(source.value, props.canApplySql)
 )
 const state = reactive({ feedback: '', failed: false })
 const { feedback, failed } = toRefs(state)

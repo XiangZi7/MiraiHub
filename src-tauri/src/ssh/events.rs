@@ -10,7 +10,8 @@ use tauri::{AppHandle, Emitter};
 
 /// 终端有新输出。
 pub const EVENT_OUTPUT: &str = "ssh://output";
-/// 渲染终端的窗口 label。
+/// 渲染终端、订阅会话状态和传输进度的窗口 label。
+/// 传输进度每 40ms 一条，其他窗口用不到，不必逐条接收。
 pub const TERMINAL_WINDOW: &str = "main";
 /// 会话状态变化（连上、断开）。
 pub const EVENT_STATUS: &str = "ssh://status";
@@ -134,20 +135,24 @@ impl StatusEvent {
 ///
 /// 终端只渲染在主窗口，输出是最高频的事件，只发给主窗口，
 /// 设置、远端编辑器等窗口不必为每一块输出反序列化一次。
+///
+/// 事件名带上会话 id（`ssh://output/<id>`），每个终端只订阅自己的那一路，
+/// 开多个标签时一块输出不必触发所有标签的回调再各自过滤。
 pub fn emit_output(app: &AppHandle, payload: OutputEvent) {
-    if let Err(err) = app.emit_to(TERMINAL_WINDOW, EVENT_OUTPUT, payload) {
+    let event = format!("{EVENT_OUTPUT}/{}", payload.session_id);
+    if let Err(err) = app.emit_to(TERMINAL_WINDOW, event.as_str(), payload) {
         log::warn!("推送终端输出失败：{err}");
     }
 }
 
 pub fn emit_status(app: &AppHandle, payload: StatusEvent) {
-    if let Err(err) = app.emit(EVENT_STATUS, payload) {
+    if let Err(err) = app.emit_to(TERMINAL_WINDOW, EVENT_STATUS, payload) {
         log::warn!("推送会话状态失败：{err}");
     }
 }
 
 pub fn emit_transfer<R: tauri::Runtime>(app: &AppHandle<R>, payload: TransferEvent) {
-    if let Err(err) = app.emit(EVENT_TRANSFER, payload) {
+    if let Err(err) = app.emit_to(TERMINAL_WINDOW, EVENT_TRANSFER, payload) {
         log::warn!("推送文件传输状态失败：{err}");
     }
 }

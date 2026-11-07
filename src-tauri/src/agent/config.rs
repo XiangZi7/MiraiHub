@@ -365,11 +365,28 @@ pub(super) fn protect(_bytes: &[u8], _encrypt: bool) -> AppResult<Vec<u8>> {
     ))
 }
 
+/// 模型请求共用的客户端。
+///
+/// reqwest::Client 自带连接池，克隆只增加引用计数；每步都新建会让
+/// Agent 的每次请求重新做 DNS、TCP 和 TLS 握手，高延迟线路上一步多出几百毫秒。
 pub(super) fn client() -> AppResult<reqwest::Client> {
-    build_client(false)
+    cached_client(&CLIENT, false)
 }
 pub(super) fn streaming_client() -> AppResult<reqwest::Client> {
-    build_client(true)
+    cached_client(&STREAMING_CLIENT, true)
+}
+static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+static STREAMING_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+fn cached_client(
+    cell: &std::sync::OnceLock<reqwest::Client>,
+    streaming: bool,
+) -> AppResult<reqwest::Client> {
+    if let Some(client) = cell.get() {
+        return Ok(client.clone());
+    }
+    // 构建失败不缓存，下次调用再试。
+    let client = build_client(streaming)?;
+    Ok(cell.get_or_init(|| client).clone())
 }
 fn build_client(streaming: bool) -> AppResult<reqwest::Client> {
     let _ = rustls::crypto::ring::default_provider().install_default();
