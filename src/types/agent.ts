@@ -257,3 +257,10 @@ export interface AgentConversation {
   createdAt: number
   updatedAt: number
 }
+
+/** 终端内联 AI 根据自然语言生成的单条 shell 命令建议 */
+export interface ShellCommandSuggestion {
+  command: string
+  explanation: string
+  risk: 'low' | 'medium' | 'high'
+}

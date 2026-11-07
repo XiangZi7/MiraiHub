@@ -52,6 +52,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         agent::ai_explain_plan,
         agent::data_assist::ai_test_data_rules,
         agent::data_assist::ai_describe_tables,
+        agent::sql_assist::ai_sql_assist,
+        agent::sql_assist::ai_sql_assist_cancel,
         agent::ai_list_mcp_servers,
         agent::ai_save_mcp_server,
         agent::ai_delete_mcp_server,

@@ -148,9 +148,10 @@ fn executable(name: &str) -> String {
 /// 常见安装目录。Windows 上 MySQL/PostgreSQL 安装器默认不改 PATH。
 fn common_dirs(kind: DatabaseKind) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    fn dirs.extend(versioned(root: &str, prefix: &str) -> Vec<PathBuf> {
+    /// 列出 root 下以 prefix 开头的版本目录的 bin 子目录。
+    fn versioned(root: &str, prefix: &str) -> Vec<PathBuf> {
         let Ok(entries) = std::fs::read_dir(root) else {
-            return Vec::new());
+            return Vec::new();
         };
         let mut found: Vec<PathBuf> = entries
             .flatten()
@@ -175,7 +176,7 @@ fn common_dirs(kind: DatabaseKind) -> Vec<PathBuf> {
                     dirs.extend(versioned(&format!("{root}\\MySQL"), "mysql"));
                     dirs.extend(versioned(root, "mariadb"));
                 }
-                DatabaseKind::Postgresql => dirs.extend(versioned(&format!("{root}\\PostgreSQL"), ""),
+                DatabaseKind::Postgresql => dirs.extend(versioned(&format!("{root}\\PostgreSQL"), "")),
                 DatabaseKind::Sqlite => {}
             }
         }
@@ -187,7 +188,7 @@ fn common_dirs(kind: DatabaseKind) -> Vec<PathBuf> {
                     "/usr/local/opt/mysql-client/bin",
                     "/usr/local/mysql/bin",
                 ] {
-                    dirs.push(PathBuf::from(dir)));
+                    dirs.push(PathBuf::from(dir));
                 }
             }
             DatabaseKind::Postgresql => {

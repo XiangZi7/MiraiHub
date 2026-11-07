@@ -90,6 +90,15 @@ export function scanSqlParams(sql: string, kind: DatabaseKind): SqlParamScan {
       }
     }
     if (char === '?' && kind !== 'postgresql') {
+      // SQLite 的 `?2` 显式编号：同号共用一个键，整段改写成 `?` 后按出现顺序绑定。
+      const explicit =
+        kind === 'sqlite' ? sql.slice(index + 1).match(/^\d+/u)?.[0] : undefined
+      if (explicit) {
+        const to = index + 1 + explicit.length
+        occurrences.push({ key: `?${Number(explicit)}`, from: index, to })
+        index = to
+        continue
+      }
       occurrences.push({ key: `?${++positional}`, from: index, to: index + 1 })
       index++
       continue

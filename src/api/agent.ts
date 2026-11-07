@@ -15,6 +15,7 @@ import type {
   McpServer,
   McpServerInput,
   McpProbe,
+  ShellCommandSuggestion,
 } from '@/types/agent'
 import { IS_TAURI } from '@/utils/window'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -64,6 +65,19 @@ export const describeTables = (
   tables: string,
   language: string
 ) => call<string>('ai_describe_tables', { target, tables, language })
+/** 终端内联 AI：把自然语言转换为一条 shell 命令，只返回建议不执行。 */
+export const shellCommand = (
+  sessionId: string,
+  request: string,
+  context: string,
+  language: string
+) =>
+  call<ShellCommandSuggestion>('ai_shell_command', {
+    sessionId,
+    request,
+    context,
+    language,
+  })
 export const listMcpServers = () => call<McpServer[]>('ai_list_mcp_servers')
 export const saveMcpServer = (input: McpServerInput) =>
   call<McpServer[]>('ai_save_mcp_server', { input })

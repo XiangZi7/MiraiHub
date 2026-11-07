@@ -12,7 +12,7 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
-import { useResizeObserver, useStorage } from '@vueuse/core'
+import { useResizeObserver, useStorage, useTimeoutFn } from '@vueuse/core'
 import * as columnTagsApi from '@/api/column-tags'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -22,6 +22,7 @@ import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppTextarea from '@/components/ui/AppTextarea.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import {
   columnTagsMessage,
@@ -39,7 +40,9 @@ import type {
   CellValue,
   ColumnTagConfig,
   DatabaseObject,
+  DatabaseForeignKey,
   DatabaseKind,
+  DatabaseReferencingKey,
   DatabaseRowPage,
   DatabaseTableDetail,
   RowFilter,
@@ -85,12 +88,17 @@ const props = defineProps<{
   object: DatabaseObject
   initialPanel?: 'data' | 'columns'
   panelNonce?: number
+  /** 外键跳转带来的筛选条件；filterNonce 变化时替换当前筛选。 */
+  presetFilters?: RowFilter[]
+  filterNonce?: number
 }>()
 
 const emit = defineEmits<{
   query: [sql: string]
   /** 是否有未提交的单元格修改、删除标记或新增行，供标签页显示圆点和关闭确认。 */
   dirty: [dirty: boolean]
+  /** 外键跳转：打开目标表并筛选到相关记录。 */
+  openRelated: [target: { schema: string; name: string; filters: RowFilter[] }]
 }>()
 
 /**
@@ -111,13 +119,20 @@ const state = reactive({
   pageSize: '100',
   sort: null as RowSort | null,
   filters: [] as RowFilter[],
+  /** 条件之间用 OR 连接；默认 AND。 */
+  matchAny: false,
+  /** 已生效的 WHERE 高级条件，与上面的结构化条件以 AND 组合。 */
+  whereSql: '',
   exactCount: null as number | null,
 })
 const filterDraft = reactive({
   column: '',
   operator: 'contains' as RowFilterOperator,
   value: '',
+  value2: '',
 })
+/** WHERE 高级模式的输入框状态；点“应用”后才写入 state.whereSql。 */
+const whereDraft = reactive({ open: false, value: '' })
 const edits = reactive(new Map<string, string | null>())
 const deletedRows = reactive(new Set<number>())
 const insertedRows = reactive<Array<Record<string, string | null>>>([])
@@ -130,6 +145,8 @@ const previewText = computed(() =>
 
 let loadRevision = 0
 let pageRevision = 0
+/** 已应用过的 filterNonce，手动刷新时不再把跳转条件重新套回来。 */
+let appliedFilterNonce: number | undefined
 
 const exportData = computed<DatabaseExportData>(() => ({
   name: props.object.name,
@@ -148,6 +165,8 @@ function loadAllExportRows(): DatabaseExportLoader {
     schema: props.object.schema,
     table: props.object.name,
     filters: state.filters.map(filter => ({ ...filter })),
+    matchAny: state.matchAny,
+    whereSql: state.whereSql || undefined,
     sort: state.sort ? { ...state.sort } : undefined,
     limit: 200,
   }
@@ -203,9 +222,15 @@ const operatorOptions = computed<
   { value: 'contains', label: t('包含') },
   { value: 'equals', label: t('等于') },
   { value: 'notEquals', label: t('不等于') },
+  { value: 'notContains', label: t('不包含') },
   { value: 'startsWith', label: t('开头是') },
   { value: 'greaterThan', label: t('大于') },
+  { value: 'greaterOrEqual', label: t('大于等于') },
   { value: 'lessThan', label: t('小于') },
+  { value: 'lessOrEqual', label: t('小于等于') },
+  { value: 'in', label: t('在列表中') },
+  { value: 'notIn', label: t('不在列表中') },
+  { value: 'between', label: t('介于') },
   { value: 'isNull', label: t('为空') },
   { value: 'notNull', label: t('不为空') },
 ])
@@ -217,6 +242,32 @@ const filterColumnOptions = computed(() =>
     description: column.dataType,
   }))
 )
+/** 条件 chip 上显示的运算符，用 SQL 符号比中文标签更紧凑。 */
+const OPERATOR_SYMBOLS: Record<RowFilterOperator, string> = {
+  equals: '=',
+  notEquals: '!=',
+  contains: 'LIKE',
+  notContains: 'NOT LIKE',
+  startsWith: 'LIKE',
+  greaterThan: '>',
+  lessThan: '<',
+  greaterOrEqual: '>=',
+  lessOrEqual: '<=',
+  in: 'IN',
+  notIn: 'NOT IN',
+  between: 'BETWEEN',
+  isNull: 'IS NULL',
+  notNull: 'IS NOT NULL',
+}
+const hasActiveFilter = computed(
+  () => state.filters.length > 0 || Boolean(state.whereSql)
+)
+/** 空结果的文案：区分筛选无结果、翻过末页和表本身为空。 */
+const emptyMessage = computed(() => {
+  if (hasActiveFilter.value) return t('没有符合筛选条件的数据')
+  if (state.offset > 0) return t('当前页没有数据')
+  return isView.value ? t('视图没有数据') : t('这张表还没有数据')
+})
 const isView = computed(() => props.object.kind === 'view')
 const panels = computed(() =>
   isView.value ? viewPanels.value : tablePanels.value
@@ -261,6 +312,13 @@ const editing = shallowRef<{ row: number; column: number } | null>(null)
 const filterNeedsValue = computed(
   () => !['isNull', 'notNull'].includes(filterDraft.operator)
 )
+const filterNeedsRange = computed(() => filterDraft.operator === 'between')
+const filterValuePlaceholder = computed(() => {
+  if (filterNeedsRange.value) return t('起始值')
+  return ['in', 'notIn'].includes(filterDraft.operator)
+    ? t('多个值用逗号分隔')
+    : t('筛选值')
+})
 const { density, densityIcon, cycleDensity } = useGridDensity()
 const DENSITY_HEIGHT = {
   compact: 'h-6',
@@ -520,7 +578,14 @@ async function loadDetailAndRows(): Promise<void> {
   page.value = null
   state.offset = 0
   state.sort = null
-  state.filters = []
+  // 外键跳转打开的新标签：第一次加载就带上条件，避免先读一遍全表
+  const preset = props.filterNonce !== appliedFilterNonce
+  appliedFilterNonce = props.filterNonce
+  state.filters = preset ? (props.presetFilters ?? []).map(item => ({ ...item })) : []
+  state.matchAny = false
+  state.whereSql = ''
+  whereDraft.value = ''
+  whereDraft.open = false
   state.exactCount = null
   clearChanges()
   if (
@@ -540,6 +605,7 @@ async function loadDetailAndRows(): Promise<void> {
 
     state.detail = detail
     filterDraft.column = detail.columns[0]?.name ?? ''
+    void loadReferencingKeys(revision)
     await loadRows()
   } catch (error) {
     if (revision === loadRevision) {
@@ -564,6 +630,8 @@ async function loadRows(): Promise<void> {
       limit: Number(state.pageSize),
       sort: state.sort ?? undefined,
       filters: state.filters,
+      matchAny: state.matchAny,
+      whereSql: state.whereSql || undefined,
     })
     if (revision === pageRevision) {
       page.value = next
@@ -579,30 +647,105 @@ async function loadRows(): Promise<void> {
   }
 }
 
-function applyFilter(): void {
-  if (!filterDraft.column) return
-  const filter: RowFilter = {
-    column: filterDraft.column,
-    operator: filterDraft.operator,
-    value: filterNeedsValue.value ? filterDraft.value : '',
-  }
+/** 改动筛选条件的统一入口：经未提交改动确认后修改条件，并回到第一页重新读取。 */
+function updateFilters(change: () => void): void {
   guardChanges(() => {
-    state.filters = [filter]
+    change()
     state.offset = 0
     clearChanges()
     void loadRows()
   })
 }
 
-function clearFilter(): void {
-  if (!state.filters.length && !filterDraft.value) return
-  guardChanges(() => {
-    state.filters = []
-    filterDraft.value = ''
-    state.offset = 0
-    clearChanges()
-    void loadRows()
+/** 追加一个条件；完全相同的条件不重复添加。 */
+function addFilter(filter: RowFilter): void {
+  const exists = state.filters.some(
+    item =>
+      item.column === filter.column &&
+      item.operator === filter.operator &&
+      item.value === filter.value &&
+      (item.value2 ?? '') === (filter.value2 ?? '')
+  )
+  updateFilters(() => {
+    if (!exists) state.filters = [...state.filters, filter]
   })
+}
+
+/** 工具栏“添加条件”：校验 IN / BETWEEN 的取值后追加为 chip，并清空输入框。 */
+function applyFilter(): void {
+  if (!filterDraft.column) return
+  const value = filterNeedsValue.value ? filterDraft.value : ''
+  const value2 = filterNeedsRange.value ? filterDraft.value2 : ''
+  if (
+    (filterNeedsRange.value && (!value.trim() || !value2.trim())) ||
+    (['in', 'notIn'].includes(filterDraft.operator) && !value.trim())
+  ) {
+    toast.warning(t('请填写完整的筛选值'))
+    return
+  }
+  const filter: RowFilter = {
+    column: filterDraft.column,
+    operator: filterDraft.operator,
+    value,
+    ...(filterNeedsRange.value ? { value2 } : {}),
+  }
+  addFilter(filter)
+  filterDraft.value = ''
+  filterDraft.value2 = ''
+}
+
+/** 点击 chip 上的关闭按钮时移除对应条件。 */
+function removeFilter(index: number): void {
+  updateFilters(() => {
+    state.filters = state.filters.filter((_, position) => position !== index)
+  })
+}
+
+/** 切换条件之间的 AND / OR；不足两个条件时结果不变，只记住选择不重新读取。 */
+function setMatchAny(value: boolean): void {
+  if (value === state.matchAny) return
+  if (state.filters.length < 2) {
+    state.matchAny = value
+    return
+  }
+  updateFilters(() => {
+    state.matchAny = value
+  })
+}
+
+/** 应用 WHERE 高级模式里手写的条件，分号由后端拒绝。 */
+function applyWhere(): void {
+  const value = whereDraft.value.trim()
+  if (value === state.whereSql) return
+  updateFilters(() => {
+    state.whereSql = value
+  })
+}
+
+/** 清除全部条件和输入框内容。 */
+function clearFilter(): void {
+  const active = hasActiveFilter.value
+  if (!active) {
+    filterDraft.value = ''
+    filterDraft.value2 = ''
+    whereDraft.value = ''
+    return
+  }
+  updateFilters(() => {
+    state.filters = []
+    state.whereSql = ''
+    filterDraft.value = ''
+    filterDraft.value2 = ''
+    whereDraft.value = ''
+  })
+}
+
+/** 生成 chip 上的值文本；空判断没有值，BETWEEN 显示上下界。 */
+function filterValueText(filter: RowFilter): string {
+  if (filter.operator === 'isNull' || filter.operator === 'notNull') return ''
+  if (filter.operator === 'between')
+    return `${filter.value} AND ${filter.value2 ?? ''}`
+  return filter.value
 }
 
 function changePage(direction: -1 | 1): void {
@@ -669,11 +812,13 @@ function guardChanges(action: () => void): void {
   guardOpen.value = true
 }
 
+/** 关闭未提交改动确认框，并丢弃被挂起的操作（对应“取消”）。 */
 function closeGuard(): void {
   guardOpen.value = false
   guardedAction = null
 }
 
+/** 放弃当前改动（保留可撤销快照）后执行被挂起的翻页、排序、筛选或刷新。 */
 function discardAndContinue(): void {
   const action = guardedAction
   closeGuard()
@@ -681,6 +826,7 @@ function discardAndContinue(): void {
   action?.()
 }
 
+/** 先走提交确认流程，提交成功后再执行被挂起的操作。 */
 function commitAndContinue(): void {
   const action = guardedAction
   closeGuard()
@@ -701,6 +847,8 @@ interface DiscardedChanges {
   pageSize: string
   sort: RowSort | null
   filters: RowFilter[]
+  matchAny: boolean
+  whereSql: string
   edits: Array<[string, string | null]>
   deleted: number[]
   inserted: Array<Record<string, string | null>>
@@ -715,6 +863,8 @@ function discardChanges(): void {
     pageSize: state.pageSize,
     sort: state.sort ? { ...state.sort } : null,
     filters: state.filters.map(filter => ({ ...filter })),
+    matchAny: state.matchAny,
+    whereSql: state.whereSql,
     edits: [...edits],
     deleted: [...deletedRows],
     inserted: insertedRows.map(row => ({ ...row })),
@@ -734,6 +884,9 @@ function restoreDiscarded(): void {
   state.pageSize = snapshot.pageSize
   state.sort = snapshot.sort
   state.filters = snapshot.filters
+  state.matchAny = snapshot.matchAny
+  state.whereSql = snapshot.whereSql
+  whereDraft.value = snapshot.whereSql
   clearChanges()
   for (const [key, value] of snapshot.edits) edits.set(key, value)
   for (const row of snapshot.deleted) deletedRows.add(row)
@@ -769,6 +922,7 @@ function handleScroll(): void {
 }
 onBeforeUnmount(() => cancelAnimationFrame(scrollFrame))
 
+/** 换页或恢复快照后把表格滚回顶部，并同步虚拟窗口的滚动位置。 */
 function resetScroll(): void {
   if (scroller.value) scroller.value.scrollTop = 0
   scrollTop.value = 0
@@ -954,6 +1108,13 @@ function requestSave(): void {
     })
 }
 
+/** 提交成功后表格闪一下；时长与 grid-commit-flash 动画一致。 */
+const { isPending: commitFlash, start: flashCommit } = useTimeoutFn(
+  () => {},
+  800,
+  { immediate: false }
+)
+
 async function commitChanges(): Promise<void> {
   const mutations = buildMutations()
   confirmOpen.value = false
@@ -973,6 +1134,7 @@ async function commitChanges(): Promise<void> {
     afterCommit = null
     if (next) next()
     else await loadRows()
+    flashCommit()
     toast.success(
       t('已提交 {value0} 项改动，影响 {value1} 行（{value2} ms）', {
         value0: mutations.length,
@@ -1061,7 +1223,102 @@ function setRangeNull(range: GridRange): void {
     )
 }
 
+/* ---------- 外键跳转 ---------- */
+
+/** 引用当前表的外键，右键“查看引用此行的记录”使用；读取失败时只是没有该菜单项。 */
+const referencingKeys = shallowRef<DatabaseReferencingKey[]>([])
+
+/** 随表结构一起读取反向外键；revision 用于丢弃切换表之后迟到的结果。 */
+async function loadReferencingKeys(revision: number): Promise<void> {
+  referencingKeys.value = []
+  if (props.object.kind !== 'table') return
+  try {
+    const keys = await database.referencingKeys(
+      props.sessionId,
+      props.object.schema,
+      props.object.name
+    )
+    if (revision === loadRevision) referencingKeys.value = keys
+  } catch {
+    // 反向外键只是辅助入口，读取失败不打断看数据
+  }
+}
+
+/** 每一列所属的外键；一列属于多个外键时取第一个。 */
+const columnForeignKeys = computed(() => {
+  const keys = new Map<string, DatabaseForeignKey>()
+  for (const key of state.detail?.foreignKeys ?? [])
+    for (const column of key.columns)
+      if (!keys.has(column)) keys.set(column, key)
+  return keys
+})
+const foreignKeyColumns = computed(() =>
+  gridColumns.value.map(column => columnForeignKeys.value.has(column.name))
+)
+
+/**
+ * 用当前行的值生成目标表上的等值条件，sources 与 targets 按位置对应。
+ * 任一来源列不在结果里或值为 NULL 时返回 null：这一行没有可以定位的目标。
+ */
+function keyFilters(
+  rowIndex: number,
+  sources: string[],
+  targets: string[]
+): RowFilter[] | null {
+  const filters: RowFilter[] = []
+  for (const [position, source] of sources.entries()) {
+    const column = gridColumns.value.findIndex(item => item.name === source)
+    const target = targets[position]
+    const value = column >= 0 ? displayValue(rowIndex, column) : null
+    if (value === null || !target) return null
+    filters.push({ column: target, operator: 'equals', value })
+  }
+  return filters.length ? filters : null
+}
+
+/** 点击外键单元格的链接图标或右键菜单：打开被引用表并筛选到对应行。 */
+function followForeignKey(rowIndex: number, columnIndex: number): void {
+  const name = gridColumns.value[columnIndex]?.name
+  const key = name ? columnForeignKeys.value.get(name) : undefined
+  if (!key) return
+  const filters = keyFilters(rowIndex, key.columns, key.referencedColumns)
+  if (!filters) {
+    toast.info(t('外键值为 NULL，没有引用的记录'))
+    return
+  }
+  emit('openRelated', {
+    schema: key.referencedSchema || props.object.schema,
+    name: key.referencedTable,
+    filters,
+  })
+}
+
+/** 右键“查看引用此行的记录”：打开引用方的表并按外键列筛选到当前行。 */
+function openReferencing(rowIndex: number, key: DatabaseReferencingKey): void {
+  const filters = keyFilters(rowIndex, key.referencedColumns, key.columns)
+  if (!filters) {
+    toast.info(t('被引用列的值为 NULL，没有引用此行的记录'))
+    return
+  }
+  emit('openRelated', {
+    schema: key.schema || props.object.schema,
+    name: key.table,
+    filters,
+  })
+}
+
 const gridMenu = reactive({ open: false, x: 0, y: 0 })
+const menuCanFollow = computed(() => {
+  const cell = selection.anchor.value
+  const name = cell ? gridColumns.value[cell.column]?.name : undefined
+  return Boolean(name && columnForeignKeys.value.has(name))
+})
+const menuReferencing = computed(() =>
+  referencingKeys.value.map((key, index) => ({
+    id: `referencing:${index}`,
+    label: `${key.table} (${key.columns.join(', ')})`,
+  }))
+)
 const menuValue = computed(() => {
   const cell = selection.anchor.value
   return cell ? displayValue(cell.row, cell.column) : null
@@ -1125,7 +1382,11 @@ async function handleGridAction(id: string): Promise<void> {
       )
     )
   } else if (id === 'view') viewerOpen.value = true
-  else if ((id === 'filter-equal' || id === 'filter-exclude') && column) {
+  else if (id === 'follow-key') followForeignKey(cell.row, cell.column)
+  else if (id.startsWith('referencing:')) {
+    const key = referencingKeys.value[Number(id.slice('referencing:'.length))]
+    if (key) openReferencing(cell.row, key)
+  } else if ((id === 'filter-equal' || id === 'filter-exclude') && column) {
     if (!menuCanFilter.value) return
     const value = menuValue.value
     const equal = id === 'filter-equal'
@@ -1141,15 +1402,7 @@ async function handleGridAction(id: string): Promise<void> {
             : 'notEquals',
       value: value ?? '',
     }
-    guardChanges(() => {
-      filterDraft.column = filter.column
-      filterDraft.operator = filter.operator
-      filterDraft.value = filter.value
-      state.filters = [filter]
-      state.offset = 0
-      clearChanges()
-      void loadRows()
-    })
+    addFilter(filter)
   } else if (id === 'set-null') setRangeNull(range)
   else if (id === 'clone') cloneRows(range)
   else if (id === 'delete' && canEditExisting.value) {
@@ -1219,6 +1472,22 @@ watch(
     void loadDetailAndRows()
   },
   { immediate: true }
+)
+
+/** 已打开的标签再次被外键跳转命中：替换条件，有未提交改动时先确认。 */
+watch(
+  () => props.filterNonce,
+  nonce => {
+    if (nonce === appliedFilterNonce) return
+    appliedFilterNonce = nonce
+    const filters = (props.presetFilters ?? []).map(item => ({ ...item }))
+    updateFilters(() => {
+      state.filters = filters
+      state.matchAny = false
+      state.whereSql = ''
+      whereDraft.value = ''
+    })
+  }
 )
 
 watch(
@@ -1345,7 +1614,7 @@ watch(
                 searchable
               />
             </div>
-            <div class="w-24">
+            <div class="w-28">
               <AppSelect
                 v-model="filterDraft.operator"
                 :label="t('筛选方式')"
@@ -1359,7 +1628,15 @@ watch(
               v-model="filterDraft.value"
               size="sm"
               class="min-w-28 flex-1"
-              :placeholder="t('筛选值')"
+              :placeholder="filterValuePlaceholder"
+              @keydown.enter="applyFilter"
+            />
+            <AppInput
+              v-if="filterNeedsRange"
+              v-model="filterDraft.value2"
+              size="sm"
+              class="min-w-28 flex-1"
+              :placeholder="t('结束值')"
               @keydown.enter="applyFilter"
             />
             <AppButton
@@ -1367,16 +1644,29 @@ watch(
               @click="applyFilter"
             >
               <AppIcon
-                name="lucide:filter"
+                name="lucide:list-filter-plus"
                 :size="11"
               />
-              {{ t('筛选') }}
+              {{ t('添加条件') }}
             </AppButton>
             <IconButton
-              icon="lucide:list-filter-plus"
+              icon="lucide:code"
+              :size="12"
+              :title="t('WHERE 高级模式')"
+              :aria-pressed="whereDraft.open"
+              :class="(whereDraft.open || state.whereSql) && 'text-violet'"
+              @click="whereDraft.open = !whereDraft.open"
+            />
+            <IconButton
+              icon="lucide:filter-x"
               :size="12"
               :title="t('清除筛选')"
-              :disabled="!state.filters.length && !filterDraft.value"
+              :disabled="
+                !hasActiveFilter &&
+                !filterDraft.value &&
+                !filterDraft.value2 &&
+                !whereDraft.value
+              "
               @click="clearFilter"
             />
             <span class="bg-line-soft mx-0.5 h-4 w-px" />
@@ -1432,6 +1722,85 @@ watch(
                 :size="11"
               />
               {{ t('恢复改动') }}
+            </AppButton>
+          </div>
+          <div
+            v-if="state.filters.length || state.whereSql"
+            class="border-line-soft flex shrink-0 flex-wrap items-center gap-1 border-b px-2 py-1"
+          >
+            <div
+              v-if="state.filters.length > 1"
+              class="border-line-soft mr-1 flex overflow-hidden rounded border"
+              role="group"
+              :aria-label="t('条件之间的关系')"
+            >
+              <AppButton
+                v-for="option in [
+                  { value: false, label: 'AND' },
+                  { value: true, label: 'OR' },
+                ]"
+                :key="option.label"
+                variant="bare"
+                :class="
+                  cn(
+                    'px-1.5 py-0.5 font-mono text-[10px] transition-colors',
+                    state.matchAny === option.value
+                      ? 'bg-violet/15 text-violet'
+                      : 'text-txt-4 hover:bg-hover hover:text-txt-2'
+                  )
+                "
+                :aria-pressed="state.matchAny === option.value"
+                @click="setMatchAny(option.value)"
+              >
+                {{ option.label }}
+              </AppButton>
+            </div>
+            <span
+              v-for="(filter, index) in state.filters"
+              :key="`${filter.column}:${filter.operator}:${index}`"
+              class="border-line-soft bg-raised text-txt-2 flex max-w-72 items-center gap-1 rounded border py-0.5 pr-0.5 pl-1.5 font-mono text-[10.5px]"
+            >
+              <span class="truncate">{{ filter.column }}</span>
+              <span class="text-violet shrink-0">{{
+                OPERATOR_SYMBOLS[filter.operator]
+              }}</span>
+              <span
+                class="truncate"
+                :title="filterValueText(filter)"
+                >{{ filterValueText(filter) }}</span
+              >
+              <IconButton
+                icon="lucide:x"
+                :size="10"
+                :title="t('移除条件')"
+                @click="removeFilter(index)"
+              />
+            </span>
+            <span
+              v-if="state.whereSql"
+              class="border-violet/30 bg-violet/8 text-txt-2 max-w-96 truncate rounded border px-1.5 py-0.5 font-mono text-[10.5px]"
+              :title="state.whereSql"
+              >WHERE {{ state.whereSql }}</span
+            >
+          </div>
+          <div
+            v-if="whereDraft.open"
+            class="border-line-soft flex shrink-0 items-start gap-1.5 border-b px-2 py-1"
+          >
+            <AppTextarea
+              v-model="whereDraft.value"
+              class="min-w-0 flex-1 font-mono text-[11px]"
+              :rows="2"
+              :label="t('WHERE 条件')"
+              :placeholder="t('WHERE 后的条件，例如 age > 18 AND status = 1')"
+              @keydown.ctrl.enter.prevent="applyWhere"
+            />
+            <AppButton
+              size="sm"
+              :disabled="whereDraft.value.trim() === state.whereSql"
+              @click="applyWhere"
+            >
+              {{ t('应用') }}
             </AppButton>
           </div>
 
@@ -1493,6 +1862,7 @@ watch(
                 cn(
                   'w-full border-collapse text-left font-mono text-[11px]',
                   resized && 'table-fixed',
+                  commitFlash && 'motion-safe:grid-commit-flash',
                   (state.pageLoading || state.error) && 'stale-dim'
                 )
               "
@@ -1612,7 +1982,9 @@ watch(
                   "
                   :active-column="selection.activeColumn(rowIndex)"
                   :numeric="numericColumns"
+                  :foreign-keys="foreignKeyColumns"
                   :height-class="DENSITY_HEIGHT[density]"
+                  @follow="followForeignKey(rowIndex, $event)"
                   @open="openCell(rowIndex, $event)"
                   @edit="startEdit(rowIndex, $event)"
                   @commit="
@@ -1636,13 +2008,13 @@ watch(
                 <tr
                   v-for="(_, rowIndex) in insertedRows"
                   :key="`new:${rowIndex}`"
-                  class="bg-accent/5 text-txt-2"
+                  class="bg-success/8 text-txt-2 motion-safe:grid-row-added"
                   @contextmenu.prevent.stop="
                     openRowMenu($event, rowIndex, true)
                   "
                 >
                   <td
-                    class="border-line-soft text-accent border-r border-b px-1.5 py-1 text-right"
+                    class="border-line-soft text-success border-r border-b px-1.5 py-1 text-right"
                   >
                     {{ t('NEW') }}
                   </td>
@@ -1684,11 +2056,25 @@ watch(
             </table>
             <div
               v-if="
-                page && !page.rows.length && !insertedRows.length
+                page &&
+                !page.rows.length &&
+                !insertedRows.length &&
+                !state.pageLoading
               "
-              class="text-txt-4 grid h-full place-items-center py-12 text-xs"
+              class="text-txt-4 flex flex-col items-center gap-3 py-12 text-xs"
             >
-              {{ t('当前条件下没有数据') }}
+              <AppIcon
+                :name="hasActiveFilter ? 'lucide:filter-x' : 'lucide:inbox'"
+                :size="20"
+              />
+              {{ emptyMessage }}
+              <AppButton
+                v-if="hasActiveFilter"
+                size="sm"
+                @click="clearFilter"
+              >
+                {{ t('清除筛选') }}
+              </AppButton>
             </div>
           </div>
           <DatabaseValueViewer
@@ -2085,6 +2471,8 @@ watch(
         canEditExisting && !state.pageLoading && !state.mutationLoading
       "
       :can-insert="canInsert && !state.mutationLoading"
+      :can-follow="menuCanFollow"
+      :referencing="menuReferencing"
       :deleted="menuRangeDeleted"
       @close="gridMenu.open = false"
       @select="handleGridAction"

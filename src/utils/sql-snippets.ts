@@ -206,6 +206,16 @@ export function snippetsFor(
   return [...own, ...builtins]
 }
 
+/** 按触发词前缀匹配片段（忽略大小写），供编辑器把片段并入补全候选；空前缀不匹配。 */
+export function matchSnippets(
+  snippets: readonly SqlSnippet[],
+  prefix: string
+): SqlSnippet[] {
+  const lower = prefix.toLowerCase()
+  if (!lower) return []
+  return snippets.filter(item => item.prefix.toLowerCase().startsWith(lower))
+}
+
 /** 自定义片段的基本校验，返回错误文案键或空字符串。 */
 export function validateSnippet(snippet: Pick<SqlSnippet, 'prefix' | 'body'>): string {
   if (!/^[\p{L}_][\p{L}\p{N}_]*$/u.test(snippet.prefix.trim()))

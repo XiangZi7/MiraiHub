@@ -6,6 +6,8 @@ import { useSystemStats } from '@/composables/useSystemStats'
 import { formatRate, formatUptime, percent, splitKb } from '@/utils/format'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/useToast'
+import { requestAgentContext } from '@/composables/useAgentContextBus'
+import { serverAlerts, serverSnapshotText } from '@/utils/server-alerts'
 
 const props = defineProps<{ sessionId: string; active: boolean }>()
 const { t } = useI18n()
@@ -90,6 +92,21 @@ const metrics = computed(() => {
     },
   ]
 })
+/** 超过阈值的指标描述，为空表示一切正常 */
+const alerts = computed(() => serverAlerts(stats.value))
+// 把当前指标快照交给本会话的 AI Agent 分析异常原因。
+function analyzeAlerts(): void {
+  const snapshot = stats.value
+  if (!snapshot || !alerts.value.length) return
+  const handled = requestAgentContext({
+    sessionId: props.sessionId,
+    intent: 'explain',
+    name: t('服务器监控快照.txt'),
+    content: serverSnapshotText(snapshot, alerts.value),
+  })
+  if (!handled) toast.error(t('没有可用的 AI 助手，请先连接终端'))
+}
+// 复制系统信息与当前指标。
 async function copyInfo(): Promise<void> {
   try {
     await copyText(
@@ -143,6 +160,18 @@ async function copyInfo(): Promise<void> {
         name="lucide:chevron-down"
         :size="12"
       />
+    </button>
+    <button
+      v-if="stats && !error && alerts.length"
+      type="button"
+      class="text-danger hover:bg-hover ml-1 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[11px] whitespace-nowrap"
+      :title="[...alerts, t('让 AI 分析')].join('\n')"
+      @click="analyzeAlerts"
+    >
+      <AppIcon
+        name="lucide:sparkles"
+        :size="12"
+      />{{ t('让 AI 分析') }}
     </button>
     <div
       ref="details"

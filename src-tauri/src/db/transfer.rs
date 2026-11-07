@@ -450,12 +450,28 @@ async fn export_table_rows(
 ) -> DatabaseResult<u64> {
     let mut offset = 0u64;
     let mut total = 0u64;
+    // 有可靠主键时每批从上批末行继续，深分页耗时不随已导出行数增长。
+    let key_types = detail
+        .primary_key
+        .iter()
+        .map(|name| {
+            let column = detail.columns.iter().find(|column| &column.name == name);
+            (
+                name.clone(),
+                column
+                    .map(|column| column.data_type.clone())
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let plan = browse::keyset_plan(&key_types, None);
+    let mut anchor: Option<Vec<String>> = None;
 
     loop {
         if let Some(progress) = progress {
             progress.checkpoint().await?;
         }
-        let page = browse::fetch_rows(
+        let page = browse::run_page(
             pool,
             &RowPageRequest {
                 schema: detail.schema.clone(),
@@ -471,8 +487,14 @@ async fn export_table_rows(
                 match_any: false,
                 where_sql: None,
             },
+            plan.as_ref(),
+            anchor.as_deref(),
         )
         .await?;
+        // 取不到起点（如驱动把主键标成二进制）时退回 OFFSET，offset 仍在累加。
+        anchor = plan
+            .as_ref()
+            .and_then(|plan| browse::next_anchor(&page, plan));
 
         if page.rows.is_empty() {
             break;

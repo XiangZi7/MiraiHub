@@ -30,6 +30,7 @@ import type {
   DatabaseConnectionKind,
   DatabaseEnvironment,
   DatabaseSslMode,
+  MysqlFlavor,
 } from '@/types/database'
 import ConnectionFilePathField from './ConnectionFilePathField.vue'
 import ConnectionGroupSelect from './ConnectionGroupSelect.vue'
@@ -66,12 +67,17 @@ const testing = shallowRef(false)
 const saving = shallowRef(false)
 const loadingConnection = shallowRef(Boolean(props.connectionId))
 const savePassword = shallowRef<boolean>(settings.rememberPasswords)
+// MariaDB / TiDB 复用 mysql 驱动和 SQL 方言，这里只区分默认端口与显示名
+const mysqlFlavor = shallowRef<MysqlFlavor>('mysql')
 const databaseKinds: Array<{
   id: DatabaseConnectionKind
+  flavor?: MysqlFlavor
   label: string
   icon: string
 }> = [
-  { id: 'mysql', label: 'MySQL', icon: 'lucide:database' },
+  { id: 'mysql', flavor: 'mysql', label: 'MySQL', icon: 'lucide:database' },
+  { id: 'mysql', flavor: 'mariadb', label: 'MariaDB', icon: 'lucide:database' },
+  { id: 'mysql', flavor: 'tidb', label: 'TiDB', icon: 'lucide:database' },
   { id: 'postgresql', label: 'PostgreSQL', icon: 'lucide:cylinder' },
   { id: 'sqlite', label: 'SQLite', icon: 'lucide:file-box' },
   { id: 'redis', label: 'Redis', icon: 'lucide:layers' },
@@ -85,11 +91,16 @@ const sslModeOptions = [
 ] as const
 const certificateExtensions = ['pem', 'crt', 'cer'] as const
 const privateKeyExtensions = ['pem', 'key'] as const
-const portForKind = (value: DatabaseConnectionKind): string =>
+const portForKind = (
+  value: DatabaseConnectionKind,
+  flavor: MysqlFlavor = mysqlFlavor.value
+): string =>
   value === 'redis'
     ? '6379'
     : value === 'mysql'
-      ? '3306'
+      ? flavor === 'tidb'
+        ? '4000'
+        : '3306'
       : value === 'sqlite'
         ? '0'
         : '5432'
@@ -100,7 +111,7 @@ const databaseLabel = computed(() =>
   kind.value === 'redis'
     ? 'Redis'
     : kind.value === 'mysql'
-      ? 'MySQL'
+      ? { mysql: 'MySQL', mariadb: 'MariaDB', tidb: 'TiDB' }[mysqlFlavor.value]
       : kind.value === 'sqlite'
         ? 'SQLite'
         : 'PostgreSQL'
@@ -240,6 +251,7 @@ async function loadConnection(): Promise<void> {
 
     const settings = connection.settings
     kind.value = connection.kind
+    mysqlFlavor.value = settings.mysqlFlavor ?? 'mysql'
     Object.assign(form, {
       name: connection.name,
       group: connection.group,
@@ -268,13 +280,28 @@ async function loadConnection(): Promise<void> {
   }
 }
 
+/** 判断类型选项是否选中；MySQL 系列还要比较具体产品。 */
+function isKindActive(option: {
+  id: DatabaseConnectionKind
+  flavor?: MysqlFlavor
+}): boolean {
+  return (
+    kind.value === option.id &&
+    (!option.flavor || option.flavor === mysqlFlavor.value)
+  )
+}
+
 /** 切换数据库协议；端口仍是旧协议默认值时一并换成新默认值。 */
-function selectKind(nextKind: DatabaseConnectionKind): void {
-  if (nextKind === kind.value) return
+function selectKind(
+  nextKind: DatabaseConnectionKind,
+  nextFlavor: MysqlFlavor = 'mysql'
+): void {
+  if (nextKind === kind.value && nextFlavor === mysqlFlavor.value) return
 
   const previousDefaultPort = defaultPort.value
   const wasRedis = kind.value === 'redis'
   kind.value = nextKind
+  mysqlFlavor.value = nextFlavor
 
   if (nextKind === 'redis' || wasRedis) {
     form.database = nextKind === 'redis' ? '0' : ''
@@ -430,6 +457,7 @@ async function saveConnection(): Promise<void> {
         environment: form.environment,
         readOnly: form.readOnly,
         sshTunnel: tunnelSettings(),
+        ...(kind.value === 'mysql' ? { mysqlFlavor: mysqlFlavor.value } : {}),
       },
     }
 
@@ -497,15 +525,15 @@ async function saveConnection(): Promise<void> {
           >
             <AppButton
               v-for="option in databaseKinds"
-              :key="option.id"
+              :key="option.flavor ?? option.id"
               variant="bare"
               role="radio"
-              :aria-checked="kind === option.id"
+              :aria-checked="isKindActive(option)"
               :class="[
                 'database-kind',
-                kind === option.id && 'database-kind-active',
+                isKindActive(option) && 'database-kind-active',
               ]"
-              @click="selectKind(option.id)"
+              @click="selectKind(option.id, option.flavor)"
             >
               <AppIcon
                 :name="option.icon"

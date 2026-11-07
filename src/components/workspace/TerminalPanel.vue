@@ -24,10 +24,7 @@ import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from './TerminalSuggestions.vue'
 import TerminalActions from './TerminalActions.vue'
-import AppContextMenu from '@/components/ui/AppContextMenu.vue'
-import type { ContextMenuItem } from '@/types/context-menu'
-import { copyText } from '@/utils/clipboard'
-import { toast } from '@/composables/useToast'
+import TerminalInlineAi from './terminal-inline-ai.vue'
 
 const { t } = useI18n()
 
@@ -49,6 +46,8 @@ const props = defineProps<{
   terminalType?: string
   /** shell 就绪后自动执行，空串表示不执行 */
   startupCommand?: string
+  /** 工作区是否开启了广播输入 */
+  broadcast?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -63,7 +62,10 @@ const emit = defineEmits<{
    * 让机器面板能用它去查系统指标与目录列表。
    */
   status: [status: SshSessionStatus, sessionId: string]
-  askAgent: [content: string]
+  /** 把终端内容交给 AI，intent 区分解释与修复 */
+  askAgent: [content: string, intent?: 'explain' | 'fix']
+  /** 用户发往远端的输入，供分屏广播使用 */
+  input: [data: string]
 }>()
 
 defineSlots<{
@@ -86,6 +88,7 @@ const {
   disconnect,
   resize,
   sendInput,
+  writeRaw,
   setInputInterceptor,
   setSubmitHandler,
 } = useSshTerminal()
@@ -94,60 +97,153 @@ const {
 const state = reactive({
   // 仅保留用户主动选中的终端文本
   selectedText: '',
-  // 右键打开时冻结选区，避免菜单抢焦点后丢失
-  contextMenu: { open: false, x: 0, y: 0, text: '' },
+  // Ctrl+I 自然语言生成命令的输入条是否打开
+  inlineAiOpen: false,
+  // 是否显示“AI 修复”提示
+  fixVisible: false,
 })
-const { selectedText, contextMenu } = toRefs(state)
+const { selectedText, inlineAiOpen, fixVisible } = toRefs(state)
+
+// 命令失败检测：最后提交的命令、它所在的缓冲区行号与启发式检测截止时间
+let lastCommand = ''
+let commandLine = -1
+let watchUntil = 0
+// 远端是否发出过 shell integration 标记；有则不再使用启发式
+let shellIntegration = false
+let fixTimer: ReturnType<typeof setTimeout> | undefined
+// 启发式检测下一次扫描的起始行，避免大量输出时反复扫描整段缓冲区
+let scanFrom = -1
+// xterm 自动回应的报告序列：CPR / 焦点进出 / DA
+// eslint-disable-next-line no-control-regex
+const TERMINAL_REPORT = /^\x1b\[[\d;?>]*[RIOc]$/
+// 启发式匹配的常见失败输出
+const FAILURE_PATTERN =
+  /command not found|no such file or directory|permission denied|\berror:|fatal:|\bfailed\b|traceback \(most recent call last\)|is not recognized as|cannot access|syntax error|segmentation fault/i
+
 watch(
   term,
   (terminal, _, cleanup) => {
     state.selectedText = ''
-    const listener = terminal?.onSelectionChange(() => {
-      state.selectedText = terminal.getSelection()
-    })
-    cleanup(() => listener?.dispose())
+    if (!terminal) return
+    const disposables = [
+      terminal.onSelectionChange(() => {
+        state.selectedText = terminal.getSelection()
+      }),
+      terminal.onData(data => {
+        // 终端自动回应远端查询的报告（光标位置、焦点、设备属性）不算用户输入
+        if (!TERMINAL_REPORT.test(data)) dismissFix()
+        // 全屏程序的按键不经过补全拦截器，在这里补发给广播
+        if (
+          terminal.buffer.active.type === 'alternate' &&
+          status.value === 'connected'
+        )
+          emit('input', data)
+      }),
+      terminal.parser.registerOscHandler(133, handleShellMark),
+      terminal.parser.registerOscHandler(633, handleShellMark),
+      terminal.onWriteParsed(scanFailureOutput),
+    ]
+    cleanup(() => disposables.forEach(item => item.dispose()))
   },
   { immediate: true }
 )
 watch(status, () => {
-  state.contextMenu.open = false
   state.selectedText = ''
+  state.inlineAiOpen = false
+  dismissFix()
+  shellIntegration = false
 })
-const contextItems = computed<ContextMenuItem[]>(() => [
-  {
-    id: 'ask-agent',
-    label: t('让 AI 分析选区'),
-    icon: 'lucide:sparkles',
-    disabled: status.value !== 'connected' || !state.contextMenu.text.trim(),
-  },
-  {
-    id: 'copy',
-    label: t('复制'),
-    icon: 'lucide:copy',
-    separatorBefore: true,
-    disabled: !state.contextMenu.text,
-  },
-])
-function openContextMenu(event: MouseEvent): void {
-  state.contextMenu = {
-    open: true,
-    x: event.clientX,
-    y: event.clientY,
-    text: state.selectedText || term.value?.getSelection() || '',
+
+// 解析 shell integration 的 OSC 133/633 标记，D;<exitCode> 非 0 视为失败
+function handleShellMark(data: string): boolean {
+  shellIntegration = true
+  const [kind, code] = data.split(';')
+  if (kind === 'D' && code !== undefined && code !== '' && Number(code) !== 0)
+    showFix()
+  return false
+}
+
+// 回车提交命令时记录命令与起始行，开启 3 秒启发式检测窗口
+function trackCommand(line: string): void {
+  const terminal = term.value
+  if (!terminal) return
+  const buffer = terminal.buffer.active
+  commandLine = buffer.baseY + buffer.cursorY
+  lastCommand =
+    line.trim() ||
+    buffer.getLine(commandLine)?.translateToString(true).trim() ||
+    ''
+  watchUntil = lastCommand && !shellIntegration ? Date.now() + 3000 : 0
+  scanFrom = commandLine + 1
+}
+
+// 启发式：在检测窗口内扫描命令之后的输出是否含常见错误
+function scanFailureOutput(): void {
+  const terminal = term.value
+  if (!terminal || !watchUntil || shellIntegration) return
+  if (Date.now() > watchUntil) {
+    watchUntil = 0
+    return
+  }
+  const buffer = terminal.buffer.active
+  const end = buffer.baseY + buffer.cursorY
+  // 跳过长命令自动换行出来的续行，避免命令本身含 error 等字样被误判
+  while (scanFrom <= end && buffer.getLine(scanFrom)?.isWrapped) scanFrom++
+  const lines: string[] = []
+  // 只扫描新增输出；最后一行可能尚未写完，下次从它重新开始
+  for (let index = Math.max(scanFrom, end - 200); index <= end; index++)
+    lines.push(buffer.getLine(index)?.translateToString(true) ?? '')
+  scanFrom = Math.max(scanFrom, end)
+  if (FAILURE_PATTERN.test(lines.join('\n'))) {
+    watchUntil = 0
+    showFix()
   }
 }
-async function contextAction(id: string): Promise<void> {
-  const content = state.contextMenu.text
-  state.contextMenu.open = false
-  if (id === 'ask-agent' && status.value === 'connected' && content.trim())
-    emit('askAgent', content)
-  if (id === 'copy' && content) {
-    try {
-      await copyText(content)
-    } catch {
-      toast.error(t('复制失败，请选中文字后按 Ctrl+C'))
-    }
-  }
+
+// 显示“AI 修复”提示，8 秒后自动消失
+function showFix(): void {
+  if (status.value !== 'connected') return
+  state.fixVisible = true
+  if (fixTimer) clearTimeout(fixTimer)
+  fixTimer = setTimeout(dismissFix, 8000)
+}
+
+// 隐藏“AI 修复”提示
+function dismissFix(): void {
+  state.fixVisible = false
+  if (fixTimer) clearTimeout(fixTimer)
+  fixTimer = undefined
+}
+
+// 把最后提交的命令和其后最多 80 行输出交给 AI 修复
+function askFix(): void {
+  const terminal = term.value
+  dismissFix()
+  if (!terminal || status.value !== 'connected') return
+  const buffer = terminal.buffer.active
+  const end = buffer.baseY + buffer.cursorY
+  const start = Math.max(commandLine + 1, end - 79, 0)
+  const output: string[] = []
+  for (let index = start; index <= end; index++)
+    output.push(buffer.getLine(index)?.translateToString(true) ?? '')
+  emit(
+    'askAgent',
+    `$ ${lastCommand}\n${output.join('\n').trimEnd()}`,
+    'fix'
+  )
+}
+
+// 选区交给 AI 解释
+function askExplain(content: string): void {
+  if (status.value === 'connected' && content.trim())
+    emit('askAgent', content, 'explain')
+}
+
+// 打开自然语言生成命令输入条
+function openInlineAi(): void {
+  if (status.value !== 'connected') return
+  dismissFix()
+  state.inlineAiOpen = true
 }
 
 const completionEnabled = computed(() => status.value === 'connected')
@@ -202,14 +298,14 @@ const statusMeta = computed(() => {
   switch (status.value) {
     case 'connected':
       return {
-        text: t('Connected'),
+        text: t('已连接'),
         tone: 'text-success',
         dot: 'success' as const,
       }
     case 'connecting':
-      return { text: 'Connecting…', tone: 'text-amber', dot: 'amber' as const }
+      return { text: t('连接中…'), tone: 'text-amber', dot: 'amber' as const }
     default:
-      return { text: 'Disconnected', tone: 'text-txt-3', dot: 'txt-3' as const }
+      return { text: t('已断开'), tone: 'text-txt-3', dot: 'txt-3' as const }
   }
 })
 
@@ -344,6 +440,7 @@ onBeforeUnmount(() => {
   disposed = true
   cancelAnimationFrame(anchorFrame)
   if (reconnectTimer) clearTimeout(reconnectTimer)
+  if (fixTimer) clearTimeout(fixTimer)
 })
 
 function scheduleAutoReconnect(): void {
@@ -412,11 +509,20 @@ function acceptSuggestion(item = completion.activeSuggestion.value): void {
   const suffix =
     item.value.slice(token.length) + (item.kind === 'directory' ? '' : ' ')
   sendInput(suffix)
+  emit('input', suffix)
   completion.close()
   term.value?.focus()
 }
 
+// 终端输入拦截：先处理补全按键，未拦截的输入同时广播给其他分屏
 function interceptTerminalInput(data: string): boolean {
+  if (interceptCompletionKey(data)) return true
+  if (status.value === 'connected') emit('input', data)
+  return false
+}
+
+// 补全弹层打开时接管 Tab / 上下键 / Esc
+function interceptCompletionKey(data: string): boolean {
   if (!completion.open.value) return false
 
   if (data === '\t') {
@@ -440,9 +546,14 @@ function interceptTerminalInput(data: string): boolean {
 }
 
 setInputInterceptor(interceptTerminalInput)
-setSubmitHandler(line => void completion.trackSubmittedCommand(line))
+setSubmitHandler(line => {
+  trackCommand(line)
+  void completion.trackSubmittedCommand(line)
+})
 defineExpose({
   focus: () => term.value?.focus(),
+  // 广播输入：原样写入本面板的会话
+  write: writeRaw,
   reconnect,
   disconnect: disconnectSession,
 })
@@ -475,6 +586,17 @@ defineExpose({
       </span>
 
       <span
+        v-if="broadcast"
+        class="border-accent text-accent flex shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+        :title="t('广播输入到所有分屏')"
+      >
+        <AppIcon
+          name="lucide:radio-tower"
+          :size="11"
+        />{{ t('广播') }}
+      </span>
+
+      <span
         class="terminal-endpoint text-txt-2 max-w-36 shrink-0 truncate text-[11px]"
         :title="
           config
@@ -495,6 +617,9 @@ defineExpose({
         :split="split"
         :closable="closable"
         :available="Boolean(config)"
+        :ai="true"
+        @ask-agent="askExplain"
+        @inline-ai="openInlineAi"
         @split="emit('split')"
         @split-pointer-down="emit('splitPointerDown', $event)"
         @close="emit('close')"
@@ -540,24 +665,71 @@ defineExpose({
       v-if="config"
       ref="terminalArea"
       class="bg-terminal relative min-h-0 flex-1 overflow-hidden"
-      @contextmenu.prevent.stop="openContextMenu"
     >
       <div
         ref="terminal"
         class="absolute inset-0 p-2"
       />
-      <button
-        v-if="selectedText.trim() && status === 'connected'"
-        type="button"
-        class="terminal-ask-agent"
-        @pointerdown.prevent
-        @click="emit('askAgent', selectedText)"
+      <Transition
+        enter-active-class="transition-opacity duration-150 motion-reduce:transition-none"
+        enter-from-class="opacity-0"
+        leave-active-class="transition-opacity duration-100 motion-reduce:transition-none"
+        leave-to-class="opacity-0"
       >
-        <AppIcon
-          name="lucide:sparkles"
-          :size="14"
-        />{{ t('分析选中内容') }}
-      </button>
+        <button
+          v-if="selectedText.trim() && status === 'connected'"
+          type="button"
+          class="border-accent text-accent hover:bg-card focus-visible:outline-accent absolute top-2.5 right-4.5 z-20 flex cursor-pointer items-center gap-1.5 rounded-lg border bg-panel px-2.5 py-1.5 text-[11px] shadow-[0_3px_12px_#0003] focus-visible:outline-2 focus-visible:outline-offset-2"
+          @pointerdown.prevent
+          @click="askExplain(selectedText)"
+        >
+          <AppIcon
+            name="lucide:sparkles"
+            :size="14"
+          />{{ t('分析选中内容') }}
+        </button>
+      </Transition>
+      <Transition
+        enter-active-class="transition duration-150 ease-out motion-reduce:transition-none"
+        enter-from-class="translate-y-1 opacity-0"
+        leave-active-class="transition duration-100 ease-in motion-reduce:transition-none"
+        leave-to-class="translate-y-1 opacity-0"
+      >
+        <div
+          v-if="fixVisible && !inlineAiOpen"
+          class="border-accent absolute right-4 bottom-3 z-20 flex items-center overflow-hidden rounded-full border bg-panel text-[11px] shadow-[0_3px_12px_#0003]"
+        >
+          <button
+            type="button"
+            class="text-accent hover:bg-hover flex cursor-pointer items-center gap-1.5 py-1 pr-1.5 pl-2.5"
+            @pointerdown.prevent
+            @click="askFix"
+          >
+            <AppIcon
+              name="lucide:wand-sparkles"
+              :size="13"
+            />{{ t('AI 修复') }}
+          </button>
+          <button
+            type="button"
+            class="text-txt-3 hover:text-txt hover:bg-hover grid cursor-pointer place-items-center py-1 pr-2 pl-1"
+            :aria-label="t('关闭')"
+            @pointerdown.prevent
+            @click="dismissFix"
+          >
+            <AppIcon
+              name="lucide:x"
+              :size="12"
+            />
+          </button>
+        </div>
+      </Transition>
+      <TerminalInlineAi
+        :open="inlineAiOpen"
+        :terminal="term"
+        :session-id="sessionId"
+        @close="inlineAiOpen = false"
+      />
       <SessionErrorNotice
         v-if="showError && error && status === 'disconnected'"
         class="absolute top-2 right-2 z-10 w-[min(380px,calc(100%-1rem))]"
@@ -566,14 +738,21 @@ defineExpose({
         @retry="reconnect"
         @dismiss="showError = false"
       />
-      <p
-        v-if="status === 'connecting'"
-        class="text-txt-3 pointer-events-none absolute top-2 left-2 z-10 font-mono text-xs leading-[1.4]"
-        role="status"
-        aria-live="polite"
+      <Transition
+        enter-active-class="transition-opacity duration-200 motion-reduce:transition-none"
+        enter-from-class="opacity-0"
+        leave-active-class="transition-opacity duration-150 motion-reduce:transition-none"
+        leave-to-class="opacity-0"
       >
-        {{ connectingText }}
-      </p>
+        <p
+          v-if="status === 'connecting'"
+          class="text-txt-3 pointer-events-none absolute top-2 left-2 z-10 font-mono text-xs leading-[1.4]"
+          role="status"
+          aria-live="polite"
+        >
+          {{ connectingText }}
+        </p>
+      </Transition>
       <Transition name="terminal-completion">
         <TerminalSuggestions
           v-if="completion.open.value"
@@ -607,14 +786,6 @@ defineExpose({
         </p>
       </div>
     </div>
-    <AppContextMenu
-      :open="contextMenu.open"
-      :x="contextMenu.x"
-      :y="contextMenu.y"
-      :items="contextItems"
-      @select="contextAction"
-      @close="contextMenu.open = false"
-    />
   </section>
 </template>
 
@@ -640,30 +811,6 @@ defineExpose({
   }
 }
 
-.terminal-ask-agent {
-  position: absolute;
-  top: 10px;
-  right: 18px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
-  border: 1px solid var(--color-accent);
-  border-radius: 8px;
-  color: var(--color-accent);
-  background: var(--color-panel);
-  font-size: 11px;
-  cursor: pointer;
-  box-shadow: 0 3px 12px #0003;
-}
-.terminal-ask-agent:hover {
-  background: var(--color-card);
-}
-.terminal-ask-agent:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
 /* xterm 自带 .xterm .xterm-viewport{background-color:#000}，而终端主题的 background
    是全透明，不盖掉它的话终端永远是纯黑 —— 浅色模式下整块黑面糊在白界面中间。
    选择器必须带上 .xterm 才比它高一级：xterm 的样式表被打包成独立 chunk，

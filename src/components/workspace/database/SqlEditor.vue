@@ -28,6 +28,16 @@ import {
 import { cn } from '@/utils/cn'
 import { formatSql, statementAtCursor } from '@/utils/sql-format'
 import { formatShortcut, matchesShortcut } from '@/utils/shortcut'
+import {
+  expandSnippet,
+  matchSnippets,
+  snippetOrder,
+  snippetsFor,
+  type SnippetStop,
+  type SqlSnippet,
+} from '@/utils/sql-snippets'
+import { useSqlSnippets } from '@/composables/useSqlSnippets'
+import DatabaseSqlSnippetsDialog from './DatabaseSqlSnippetsDialog.vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
@@ -73,6 +83,20 @@ const replaceStart = shallowRef(0)
 const currentPrefix = shallowRef('')
 const replaceEnd = shallowRef(0)
 const filteredSuggestions = shallowRef<SqlSuggestion[]>([])
+const snippetsDialogOpen = shallowRef(false)
+const { customSnippets } = useSqlSnippets()
+
+/** 进行中的片段占位跳转；只驱动按键逻辑，不参与渲染。stops 按文本位置排序。 */
+interface SnippetSession {
+  stops: SnippetStop[]
+  order: number[]
+  position: number
+  /** 上次同步时的文本长度；与当前不符说明内容被外部改动，跳转作废 */
+  length: number
+}
+let snippetSession: SnippetSession | null = null
+// 跳转时替换镜像占位触发的 input 事件不算用户输入。
+let applyingSnippet = false
 // 响应式状态
 const state = reactive({
   // 补全浮层使用窗口坐标，避免编辑器和分屏容器裁剪阴影。
@@ -142,6 +166,12 @@ const contextItems = computed<ContextMenuItem[]>(() => [
     icon: 'lucide:align-left',
     shortcut: formatShortcut(shortcuts.shortcutDbFormat),
     disabled: props.disabled || !sql.value.trim(),
+  },
+  {
+    id: 'snippets',
+    label: t('SQL 片段…'),
+    icon: 'lucide:square-code',
+    separatorBefore: true,
   },
   {
     id: 'copy',
@@ -228,6 +258,10 @@ async function handleContextAction(id: string): Promise<void> {
   }
   if (id === 'format') {
     await formatEditor()
+    return
+  }
+  if (id === 'snippets') {
+    snippetsDialogOpen.value = true
     return
   }
   if (id === 'run-selection' || id === 'run-all') {
@@ -388,6 +422,35 @@ async function formatEditor(): Promise<void> {
   }
 }
 
+/**
+ * 把匹配触发词的片段并入补全候选。触发词完全匹配时排最前（输入 sel 再按 Tab 即展开），
+ * 只是前缀匹配时排在关键字和字段之后，不抢 SELECT 这类常用词的首位。
+ * 引号标识符内和 `别名.` 之后要的是对象名，不提示片段。
+ */
+function withSnippets(
+  options: SqlSuggestion[],
+  prefix: string,
+  quote: string,
+  from: number
+): SqlSuggestion[] {
+  if (quote || sql.value[from - 1] === '.') return options
+  const lower = prefix.toLowerCase()
+  const exact: SqlSuggestion[] = []
+  const partial: SqlSuggestion[] = []
+  for (const item of matchSnippets(
+    snippetsFor(props.databaseKind, customSnippets.value),
+    prefix
+  ))
+    (item.prefix.toLowerCase() === lower ? exact : partial).push({
+      label: item.prefix,
+      text: item.prefix,
+      kind: 'snippet',
+      detail: item.builtin ? t(item.label) : item.label,
+      body: item.body,
+    })
+  return [...exact, ...options, ...partial]
+}
+
 /** 输入或手动请求时更新补全；选区、禁用状态和空白行由规则统一过滤。 */
 function updateAutocomplete(forced = false): void {
   const editor = editorRef.value
@@ -415,7 +478,12 @@ function updateAutocomplete(forced = false): void {
   currentPrefix.value = completion.prefix
   replaceStart.value = completion.from
   replaceEnd.value = completion.to
-  filteredSuggestions.value = completion.options
+  filteredSuggestions.value = withSnippets(
+    completion.options,
+    completion.prefix,
+    completion.quote,
+    completion.from
+  )
   autocompleteForced.value = forced
   activeSuggestion.value = 0
   autocompleteOpen.value = filteredSuggestions.value.length > 0
@@ -423,18 +491,154 @@ function updateAutocomplete(forced = false): void {
 
 // 只刷新已经打开的候选列表，避免迟到的元数据在换行或关闭菜单后重新弹窗。
 watch(
-  [() => props.suggestions, () => props.databaseKind, () => props.disabled],
+  [
+    () => props.suggestions,
+    () => props.tableColumns,
+    () => props.databaseKind,
+    () => props.disabled,
+  ],
   () => {
     if (autocompleteOpen.value && editorRef.value === document.activeElement)
       updateAutocomplete(autocompleteForced.value)
   }
 )
 
+/** 替换编辑器一段文本并保留撤销栈（同 formatEditor）；不产生片段输入跟踪。 */
+function replaceEditorRange(from: number, to: number, text: string): void {
+  const editor = editorRef.value
+  if (!editor) return
+  applyingSnippet = true
+  editor.focus()
+  editor.setSelectionRange(from, to)
+  const done = text
+    ? document.execCommand('insertText', false, text)
+    : from === to || document.execCommand('delete')
+  if (!done) editor.setRangeText(text, from, to, 'end')
+  sql.value = editor.value
+  applyingSnippet = false
+}
+
+/** 展开片段替换 from..to 并选中第一个占位；多行正文跟随当前行缩进。无占位时光标停在末尾。 */
+function applySnippet(body: string, from: number, to: number): void {
+  const editor = editorRef.value
+  if (!editor || props.disabled) return
+  const lineStart = sql.value.lastIndexOf('\n', from - 1) + 1
+  const indent = sql.value.slice(lineStart, from).match(/^[ \t]*/u)?.[0] ?? ''
+  const { text, stops } = expandSnippet(body, indent)
+  replaceEditorRange(from, to, text)
+  autocompleteOpen.value = false
+  const absolute = stops.map(stop => ({
+    index: stop.index,
+    from: stop.from + from,
+    to: stop.to + from,
+  }))
+  if (!absolute.some(stop => stop.index === 0))
+    absolute.push({
+      index: 0,
+      from: from + text.length,
+      to: from + text.length,
+    })
+  snippetSession = {
+    stops: absolute,
+    order: snippetOrder(absolute),
+    position: 0,
+    length: editor.value.length,
+  }
+  selectSnippetStop()
+}
+
+/** 当前占位的第一处出现，用户在这里编辑，其余同号占位离开时同步。 */
+function primarySnippetStop(session: SnippetSession): SnippetStop {
+  const index = session.order[session.position]
+  return session.stops.find(stop => stop.index === index)!
+}
+
+/** 选中当前占位并滚动到可见；到达 $0 即结束跳转。 */
+function selectSnippetStop(): void {
+  const session = snippetSession
+  if (!session) return
+  const stop = primarySnippetStop(session)
+  revealRange(stop.from, stop.to)
+  if (stop.index === 0) snippetSession = null
+}
+
+/** 用户在占位内输入后更新各占位位置；光标离开当前占位或内容被整体替换则结束跳转。 */
+function trackSnippetEdit(): void {
+  const editor = editorRef.value
+  const session = snippetSession
+  if (!editor || !session || applyingSnippet) return
+  const delta = editor.value.length - session.length
+  session.length = editor.value.length
+  const primary = primarySnippetStop(session)
+  const end = primary.to + delta
+  const cursor = editor.selectionStart
+  if (end < primary.from || cursor < primary.from || cursor > end) {
+    snippetSession = null
+    return
+  }
+  primary.to = end
+  for (const stop of session.stops.slice(session.stops.indexOf(primary) + 1)) {
+    stop.from += delta
+    stop.to += delta
+  }
+}
+
+/**
+ * Tab / Shift+Tab 在占位间跳转：离开前把当前内容同步到同号占位。
+ * 返回 false 表示跳转已失效（文本被外部改动或光标已移出），调用方按普通 Tab 处理。
+ */
+function moveSnippetStop(step: 1 | -1): boolean {
+  const editor = editorRef.value
+  const session = snippetSession
+  if (!editor || !session) return false
+  const primary = primarySnippetStop(session)
+  if (
+    editor.value.length !== session.length ||
+    editor.selectionStart < primary.from ||
+    editor.selectionEnd > primary.to
+  ) {
+    snippetSession = null
+    return false
+  }
+  const text = editor.value.slice(primary.from, primary.to)
+  const stops = session.stops
+  // 从后往前替换，前面的偏移不受影响；后面的占位随长度差平移。
+  for (let i = stops.length - 1; i >= 0; i--) {
+    const mirror = stops[i]!
+    if (mirror === primary || mirror.index !== primary.index) continue
+    const delta = text.length - (mirror.to - mirror.from)
+    replaceEditorRange(mirror.from, mirror.to, text)
+    mirror.to += delta
+    for (const later of stops.slice(i + 1)) {
+      later.from += delta
+      later.to += delta
+    }
+  }
+  session.length = editor.value.length
+  session.position = Math.max(0, session.position + step)
+  selectSnippetStop()
+  return true
+}
+
+/** 从片段管理面板插入：替换当前选区，随后关闭面板并进入占位跳转。 */
+function insertSnippetFromDialog(snippet: SqlSnippet): void {
+  const editor = editorRef.value
+  snippetsDialogOpen.value = false
+  if (editor)
+    applySnippet(snippet.body, editor.selectionStart, editor.selectionEnd)
+}
+
+/** 确认补全候选：片段按占位展开，其余直接替换；在占位内补全时同步占位范围。 */
 function insertSuggestion(value: SqlSuggestion): void {
   const editor = editorRef.value
   if (!editor) return
+  if (value.body !== undefined) {
+    applySnippet(value.body, replaceStart.value, replaceEnd.value)
+    return
+  }
   editor.setRangeText(value.text, replaceStart.value, replaceEnd.value, 'end')
   sql.value = editor.value
+  trackSnippetEdit()
   autocompleteOpen.value = false
   void nextTick(() => editor.focus())
 }
@@ -514,9 +718,12 @@ function handleKeydown(event: KeyboardEvent): void {
     }
   }
 
+  if (event.key === 'Escape') snippetSession = null
+
   if (event.key !== 'Tab') return
 
   event.preventDefault()
+  if (moveSnippetStop(event.shiftKey ? -1 : 1)) return
   const editor = editorRef.value
   if (!editor) return
   const start = editor.selectionStart
@@ -528,7 +735,8 @@ function handleKeydown(event: KeyboardEvent): void {
 /** 换行只关闭补全，普通输入继续匹配；输入法组合期间不干扰候选文字。 */
 function handleInput(event: Event): void {
   const input = event as InputEvent
-  if (input.isComposing) return
+  if (input.isComposing || applyingSnippet) return
+  trackSnippetEdit()
   if (
     input.inputType === 'insertLineBreak' ||
     input.inputType === 'insertParagraph'
@@ -598,7 +806,10 @@ defineExpose({ runnableSql, revealRange })
         @blur="autocompleteOpen = false"
         @contextmenu.prevent.stop="openContextMenu"
         @pointerdown="captureContextSelection"
-        @compositionend="updateAutocomplete()"
+        @compositionend="
+          trackSnippetEdit();
+          updateAutocomplete()
+        "
       />
     </div>
     <Teleport
@@ -613,7 +824,7 @@ defineExpose({ runnableSql, revealRange })
       >
         <AppButton
           v-for="(suggestion, index) in filteredSuggestions"
-          :key="suggestion.label"
+          :key="`${suggestion.kind}:${suggestion.label}:${suggestion.detail ?? ''}`"
           variant="bare"
           :class="
             cn(
@@ -631,14 +842,22 @@ defineExpose({ runnableSql, revealRange })
             :name="
               suggestion.kind === 'keyword'
                 ? 'lucide:case-upper'
-                : 'lucide:braces'
+                : suggestion.kind === 'snippet'
+                  ? 'lucide:square-code'
+                  : 'lucide:braces'
             "
             :size="11"
-            :class="suggestion.kind === 'keyword' ? 'text-violet' : 'text-blue'"
+            :class="
+              suggestion.kind === 'keyword'
+                ? 'text-violet'
+                : suggestion.kind === 'snippet'
+                  ? 'text-amber'
+                  : 'text-blue'
+            "
           />
           <span class="min-w-0 flex-1 truncate">{{ suggestion.label }}</span>
-          <span class="text-txt-4 text-[9px]">{{
-            suggestion.kind.toUpperCase()
+          <span class="text-txt-4 max-w-24 truncate text-[9px]">{{
+            suggestion.detail ?? suggestion.kind.toUpperCase()
           }}</span>
         </AppButton>
       </div>
@@ -651,6 +870,13 @@ defineExpose({ runnableSql, revealRange })
       :label="t('SQL 编辑器')"
       @close="contextMenu.open = false"
       @select="handleContextAction"
+    />
+    <DatabaseSqlSnippetsDialog
+      v-if="snippetsDialogOpen"
+      :database-kind="databaseKind"
+      :disabled="disabled"
+      @close="snippetsDialogOpen = false"
+      @insert="insertSnippetFromDialog"
     />
   </div>
 </template>

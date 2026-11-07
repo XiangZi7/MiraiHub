@@ -159,7 +159,7 @@ watch(
     <div
       v-if="filesVisited"
       v-show="view === 'files'"
-      class="flex min-h-0 min-w-0 flex-1 flex-col"
+      class="panel-fade-in flex min-h-0 min-w-0 flex-1 flex-col"
     >
       <FilesView
         ref="filesView"
@@ -173,6 +173,7 @@ watch(
     <AiAgentPanel
       v-if="agentVisited"
       v-show="view === 'agent'"
+      class="panel-fade-in"
       :target="target"
       :context-request="fileContext || contextRequest"
       :title="connection?.name || title"

@@ -1,3 +1,4 @@
+import type { SettingKey } from '@/types/settings'
 import type {
   CommandGroup,
   CommandTarget,
@@ -59,19 +60,19 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         id: 'connect-server',
         label: 'Connect to Server',
         icon: 'lucide:server',
-        shortcut: '⌘⇧S',
+        shortcut: 'Ctrl+Shift+S',
       },
       {
         id: 'new-database',
         label: 'New Database Connection',
         icon: 'lucide:database',
-        shortcut: '⌘⇧D',
+        shortcut: 'Ctrl+Shift+D',
       },
       {
         id: 'new-terminal',
         label: 'New Terminal',
         icon: 'lucide:square-terminal',
-        shortcut: '⌘T',
+        shortcut: 'Ctrl+T',
       },
     ],
   },
@@ -83,20 +84,25 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         id: 'split-terminal',
         label: 'Split Terminal',
         icon: 'lucide:columns-2',
-        shortcut: '⌘\\',
+        shortcut: 'Ctrl+\\',
       },
       {
         id: 'open-files',
         label: 'Open Files',
         icon: 'lucide:folder-open',
-        shortcut: '⌘O',
+        shortcut: 'Ctrl+O',
       },
-      { id: 'run-sql', label: 'Run SQL', icon: 'lucide:play', shortcut: '⌘⏎' },
+      {
+        id: 'run-sql',
+        label: 'Run SQL',
+        icon: 'lucide:play',
+        shortcut: 'Ctrl+Enter',
+      },
       {
         id: 'upload-files',
         label: 'Upload Files',
         icon: 'lucide:upload',
-        shortcut: '⌘⇧U',
+        shortcut: 'Ctrl+Shift+U',
       },
     ],
   },
@@ -108,17 +114,28 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         id: 'search-servers',
         label: 'Search Servers',
         icon: 'lucide:search',
-        shortcut: '⌘F',
+        shortcut: 'Ctrl+F',
       },
       {
         id: 'global-search',
         label: 'Global Search',
         icon: 'lucide:scan-search',
-        shortcut: '⌘⇧F',
+        shortcut: 'Ctrl+Shift+F',
       },
     ],
   },
 ]
+
+/**
+ * 命令 id → 用户可配置的快捷键设置项。
+ * 命中的命令显示用户真实设置，其余回退到 COMMAND_GROUPS 里的默认串。
+ */
+export const COMMAND_SHORTCUT_SETTINGS: Partial<Record<string, SettingKey>> = {
+  'new-terminal': 'shortcutTerminal',
+  'open-files': 'shortcutFiles',
+  'run-sql': 'shortcutDbExecute',
+  'global-search': 'shortcutSearch',
+}
 
 /**
  * 命令 id → 落点。

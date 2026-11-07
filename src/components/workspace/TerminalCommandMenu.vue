@@ -102,6 +102,20 @@ const reorder = useTabReorder({
       )
   },
 })
+// 原数组中的真实位置，排序按钮按它判断边界
+const commandIndex = computed(
+  () => new Map(commands.value.map((command, index) => [command.id, index]))
+)
+// 过滤时只展示部分指令，相邻移动会跨越隐藏项，因此仅在未过滤时允许按钮排序
+const sortable = computed(() => !state.search.trim())
+/** 按原数组索引移动指令，过滤状态或已到边界时忽略。 */
+function moveCommand(command: TerminalCommand, offset: -1 | 1): void {
+  const index = commandIndex.value.get(command.id)
+  if (!sortable.value || index === undefined) return
+  const target = index + offset
+  if (target < 0 || target >= commands.value.length) return
+  update(() => store.move(command.id, offset))
+}
 const draggedCommand = computed(() =>
   commands.value.find(command => command.id === reorder.draggedId.value)
 )
@@ -238,200 +252,210 @@ useEventListener(window, 'resize', () => {
       :initial-command="batchCommand"
       @close="batchCommand = ''"
     />
-    <section
-      v-if="open"
-      ref="menu"
-      class="terminal-command-menu"
-      :style="style"
-      role="dialog"
-      :aria-labelledby="titleId"
-      tabindex="-1"
-      @keydown.esc.prevent.stop="escape"
+    <Transition
+      enter-active-class="transition duration-150 ease-out motion-reduce:transition-none"
+      enter-from-class="-translate-y-1 opacity-0"
+      leave-active-class="transition duration-100 ease-in motion-reduce:transition-none"
+      leave-to-class="-translate-y-1 opacity-0"
     >
-      <AppMenuSurface />
-      <header
-        class="border-line-soft flex shrink-0 items-center gap-2 border-b px-3 py-2"
+      <section
+        v-if="open"
+        ref="menu"
+        class="terminal-command-menu"
+        :style="style"
+        role="dialog"
+        :aria-labelledby="titleId"
+        tabindex="-1"
+        @keydown.esc.prevent.stop="escape"
       >
-        <h3
-          :id="titleId"
-          class="flex-1 text-xs font-medium"
+        <AppMenuSurface />
+        <header
+          class="border-line-soft flex shrink-0 items-center gap-2 border-b px-3 py-2"
         >
-          {{
-            editing ? (current ? t('编辑指令') : t('添加指令')) : t('常用指令')
-          }}
-        </h3>
-        <AppButton
-          v-if="!editing"
-          size="sm"
-          variant="ghost"
-          :aria-pressed="managing"
-          @click="managing = !managing"
-          >{{ managing ? t('完成') : t('管理 / 排序') }}</AppButton
-        >
-        <IconButton
-          icon="lucide:x"
-          :size="13"
-          :title="t('关闭常用指令')"
-          @click="close()"
-        />
-      </header>
-      <input
-        v-if="!editing"
-        v-model="search"
-        class="field mx-3 my-2"
-        :placeholder="t('搜索命令、分组或标签')"
-        :aria-label="t('搜索命令、分组或标签')"
-      />
-      <div
-        ref="commandList"
-        class="scroll-thin min-h-0 overflow-y-auto"
-      >
-        <TerminalCommandEditor
-          v-if="editing"
-          :key="current?.id ?? 'new'"
-          :command="current"
-          @save="save"
-          @cancel="escape"
-        />
-        <ol
-          v-else
-          class="p-1.5"
-          :aria-label="t('常用指令列表')"
-        >
-          <li
-            v-for="(command, index) in filteredCommands"
-            :key="command.id"
-            class="command-row"
-            :data-reorderable-tab-id="command.id"
-            :class="{
-              'command-dragging': reorder.draggedId.value === command.id,
-              'command-drop-before':
-                reorder.targetId.value === command.id &&
-                reorder.targetPosition.value === 'before',
-              'command-drop-after':
-                reorder.targetId.value === command.id &&
-                reorder.targetPosition.value === 'after',
-            }"
+          <h3
+            :id="titleId"
+            class="flex-1 text-xs font-medium"
           >
-            <button
-              type="button"
-              data-command-drag-handle
-              class="command-drag-handle text-txt-4 hover:text-txt flex shrink-0 items-center justify-center self-stretch rounded px-1"
-              :title="t('拖动排序（Alt + ↑/↓）')"
-              :aria-label="
-                t('排序 {value0}', { value0: terminalCommandLabel(command) })
-              "
-              @pointerdown="reorder.start($event, command.id)"
-              @click="reorder.consumeSuppressedClick(command.id)"
-              @keydown.alt.up.prevent.stop="
-                update(() => store.move(command.id, -1))
-              "
-              @keydown.alt.down.prevent.stop="
-                update(() => store.move(command.id, 1))
-              "
-            >
-              <AppIcon
-                name="lucide:grip-vertical"
-                :size="12"
-              />
-            </button>
-            <button
-              type="button"
-              class="command-insert flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-2 text-left text-[11px] select-none"
-              data-command-drag-handle
-              :disabled="!connected"
-              :title="`${terminalCommandLabel(command)}\n${command.command}`"
-              @pointerdown="reorder.start($event, command.id)"
-              @click="insert(command)"
-            >
-              <span
-                v-if="command.folder"
-                class="text-accent text-[10px]"
-                >{{ command.folder }}</span
-              >
-              <span
-                class="text-txt w-full min-w-0 wrap-anywhere whitespace-normal"
-                >{{ terminalCommandLabel(command) }}</span
-              >
-              <code class="text-txt-4 w-full min-w-0 truncate text-[10px]">{{
-                command.command
-              }}</code>
-            </button>
-            <IconButton
-              icon="lucide:send"
-              :size="12"
-              :title="t('发送到多台主机')"
-              @click="batch(command)"
-            />
-            <div
-              v-if="managing"
-              class="flex shrink-0 items-center"
-            >
-              <IconButton
-                icon="lucide:chevron-up"
-                :size="12"
-                :title="t('上移 {value0}', { value0: command.name })"
-                :disabled="index === 0"
-                @click="update(() => store.move(command.id, -1))"
-              />
-              <IconButton
-                icon="lucide:chevron-down"
-                :size="12"
-                :title="t('下移 {value0}', { value0: command.name })"
-                :disabled="index === commands.length - 1"
-                @click="update(() => store.move(command.id, 1))"
-              />
-              <IconButton
-                icon="lucide:pencil"
-                :size="12"
-                :title="t('编辑 {value0}', { value0: command.name })"
-                @click="edit(command)"
-              />
-              <IconButton
-                icon="lucide:x"
-                :size="12"
-                :title="t('删除 {value0}', { value0: command.name })"
-                @click="update(() => store.remove(command.id))"
-              />
-            </div>
-          </li>
-        </ol>
-        <p
-          v-if="!editing && !commands.length"
-          class="text-txt-4 p-4 text-center text-xs"
-        >
-          {{ t('还没有常用指令，点击下方添加。') }}
-        </p>
-      </div>
-      <p
-        v-if="error || loadError"
-        role="alert"
-        class="text-danger px-3 py-2 text-[11px]"
-      >
-        {{ error || loadError }}
-      </p>
-      <footer
-        v-if="!editing"
-        class="border-line-soft grid shrink-0 gap-2 border-t p-2"
-      >
-        <AppButton
-          size="sm"
-          @click="edit(null)"
-          ><AppIcon
-            name="lucide:plus"
+            {{
+              editing
+                ? current
+                  ? t('编辑指令')
+                  : t('添加指令')
+                : t('常用指令')
+            }}
+          </h3>
+          <AppButton
+            v-if="!editing"
+            size="sm"
+            variant="ghost"
+            :aria-pressed="managing"
+            @click="managing = !managing"
+            >{{ managing ? t('完成') : t('管理 / 排序') }}</AppButton
+          >
+          <IconButton
+            icon="lucide:x"
             :size="13"
+            :title="t('关闭常用指令')"
+            @click="close()"
           />
-          {{ t('添加命令') }}
-        </AppButton>
-        <p class="text-txt-4 text-center text-[10px]">
-          {{
-            connected
-              ? t('点击填入终端，按回车执行')
-              : t('连接 SSH 后可填入指令')
-          }}
+        </header>
+        <input
+          v-if="!editing"
+          v-model="search"
+          class="field mx-3 my-2"
+          :placeholder="t('搜索命令、分组或标签')"
+          :aria-label="t('搜索命令、分组或标签')"
+        />
+        <div
+          ref="commandList"
+          class="scroll-thin min-h-0 overflow-y-auto"
+        >
+          <TerminalCommandEditor
+            v-if="editing"
+            :key="current?.id ?? 'new'"
+            :command="current"
+            @save="save"
+            @cancel="escape"
+          />
+          <ol
+            v-else
+            class="p-1.5"
+            :aria-label="t('常用指令列表')"
+          >
+            <li
+              v-for="command in filteredCommands"
+              :key="command.id"
+              class="command-row transition-colors duration-150 motion-reduce:transition-none"
+              :data-reorderable-tab-id="command.id"
+              :class="{
+                'command-dragging': reorder.draggedId.value === command.id,
+                'command-drop-before':
+                  reorder.targetId.value === command.id &&
+                  reorder.targetPosition.value === 'before',
+                'command-drop-after':
+                  reorder.targetId.value === command.id &&
+                  reorder.targetPosition.value === 'after',
+              }"
+            >
+              <button
+                type="button"
+                data-command-drag-handle
+                class="command-drag-handle text-txt-4 hover:text-txt flex shrink-0 items-center justify-center self-stretch rounded px-1"
+                :title="t('拖动排序（Alt + ↑/↓）')"
+                :aria-label="
+                  t('排序 {value0}', { value0: terminalCommandLabel(command) })
+                "
+                @pointerdown="reorder.start($event, command.id)"
+                @click="reorder.consumeSuppressedClick(command.id)"
+                @keydown.alt.up.prevent.stop="moveCommand(command, -1)"
+                @keydown.alt.down.prevent.stop="moveCommand(command, 1)"
+              >
+                <AppIcon
+                  name="lucide:grip-vertical"
+                  :size="12"
+                />
+              </button>
+              <button
+                type="button"
+                class="command-insert flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-2 text-left text-[11px] select-none"
+                data-command-drag-handle
+                :disabled="!connected"
+                :title="`${terminalCommandLabel(command)}\n${command.command}`"
+                @pointerdown="reorder.start($event, command.id)"
+                @click="insert(command)"
+              >
+                <span
+                  v-if="command.folder"
+                  class="text-accent text-[10px]"
+                  >{{ command.folder }}</span
+                >
+                <span
+                  class="text-txt w-full min-w-0 wrap-anywhere whitespace-normal"
+                  >{{ terminalCommandLabel(command) }}</span
+                >
+                <code class="text-txt-4 w-full min-w-0 truncate text-[10px]">{{
+                  command.command
+                }}</code>
+              </button>
+              <IconButton
+                icon="lucide:send"
+                :size="12"
+                :title="t('发送到多台主机')"
+                @click="batch(command)"
+              />
+              <div
+                v-if="managing"
+                class="flex shrink-0 items-center"
+              >
+                <IconButton
+                  icon="lucide:chevron-up"
+                  :size="12"
+                  :title="t('上移 {value0}', { value0: command.name })"
+                  :disabled="!sortable || commandIndex.get(command.id) === 0"
+                  @click="moveCommand(command, -1)"
+                />
+                <IconButton
+                  icon="lucide:chevron-down"
+                  :size="12"
+                  :title="t('下移 {value0}', { value0: command.name })"
+                  :disabled="
+                    !sortable ||
+                    commandIndex.get(command.id) === commands.length - 1
+                  "
+                  @click="moveCommand(command, 1)"
+                />
+                <IconButton
+                  icon="lucide:pencil"
+                  :size="12"
+                  :title="t('编辑 {value0}', { value0: command.name })"
+                  @click="edit(command)"
+                />
+                <IconButton
+                  icon="lucide:x"
+                  :size="12"
+                  :title="t('删除 {value0}', { value0: command.name })"
+                  @click="update(() => store.remove(command.id))"
+                />
+              </div>
+            </li>
+          </ol>
+          <p
+            v-if="!editing && !commands.length"
+            class="text-txt-4 p-4 text-center text-xs"
+          >
+            {{ t('还没有常用指令，点击下方添加。') }}
+          </p>
+        </div>
+        <p
+          v-if="error || loadError"
+          role="alert"
+          class="text-danger px-3 py-2 text-[11px]"
+        >
+          {{ error || loadError }}
         </p>
-      </footer>
-    </section>
+        <footer
+          v-if="!editing"
+          class="border-line-soft grid shrink-0 gap-2 border-t p-2"
+        >
+          <AppButton
+            size="sm"
+            @click="edit(null)"
+            ><AppIcon
+              name="lucide:plus"
+              :size="13"
+            />
+            {{ t('添加命令') }}
+          </AppButton>
+          <p class="text-txt-4 text-center text-[10px]">
+            {{
+              connected
+                ? t('点击填入终端，按回车执行')
+                : t('连接 SSH 后可填入指令')
+            }}
+          </p>
+        </footer>
+      </section>
+    </Transition>
     <div
       v-if="open && reorder.dragging.value && draggedCommand"
       class="command-drag-preview text-txt fixed z-200 flex max-w-64 items-center gap-2 rounded-md border px-3 py-2 text-xs shadow-lg"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, toRefs, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useStorage } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import RedisCommandGuide from './RedisCommandGuide.vue'
@@ -75,7 +76,22 @@ function run() {
             :size="12"
           />
           <span class="text-txt-3">{{ t('Redis 命令') }}</span>
-          <span class="ml-auto">Ctrl + Enter</span>
+          <select
+            v-if="history.length"
+            class="border-line-soft bg-raised text-txt-3 ml-auto h-6 max-w-48 rounded border px-1 text-[10px] outline-none"
+            :aria-label="t('命令历史')"
+            @change="pickHistory"
+          >
+            <option value="">{{ t('命令历史') }}</option>
+            <option
+              v-for="item in history"
+              :key="item"
+              :value="item"
+            >
+              {{ item.length > 80 ? item.slice(0, 80) + '…' : item }}
+            </option>
+          </select>
+          <span :class="!history.length && 'ml-auto'">Ctrl + Enter</span>
           <AppButton
             size="sm"
             variant="primary"
@@ -116,10 +132,29 @@ function run() {
             @scroll="syncScroll"
             @keydown.ctrl.enter.stop.prevent="run"
             @keydown.meta.enter.stop.prevent="run"
+            @keydown.tab="onTab"
+            @keydown.up.exact="onHistoryKey($event, 1)"
+            @keydown.down.exact="onHistoryKey($event, -1)"
           />
+        </div>
+        <div
+          v-if="suggestions.length"
+          class="border-line-soft flex shrink-0 flex-wrap gap-1 border-t px-3 py-1"
+          :aria-label="t('命令补全')"
+        >
+          <button
+            v-for="name in suggestions"
+            :key="name"
+            type="button"
+            class="bg-raised text-txt-2 hover:text-txt rounded px-1.5 py-0.5 font-mono text-[10px] motion-safe:transition-colors"
+            @click="applySuggestion(name)"
+          >
+            {{ name }}
+          </button>
         </div>
         <p class="text-txt-4 shrink-0 px-3 py-1.5 text-[10px] leading-relaxed">
           {{ t('每次执行一条命令，支持引号和转义；写入命令会立即生效') }}
+          {{ t('Tab 补全命令，↑/↓ 切换历史') }}
         </p>
       </div>
       <DatabaseQueryResizeHandle

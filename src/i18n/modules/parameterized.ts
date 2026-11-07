@@ -1,5 +1,9 @@
 /** Full sentences keep variable content independent of each language's word order. */
 const entries = {
+  'sql.snippetPlaceholderHelp': [
+    '占位写法：{full}、{mirror}；{end} 是最后的光标位置；字面量 $ 写作 {literal}',
+    'Placeholders: {full}, {mirror}; {end} is the final cursor position; write a literal $ as {literal}',
+  ],
   'agent.retryCountdown': [
     '第 {attempt}/{max} 次重试 · {seconds} 秒后重新请求',
     'Retry {attempt}/{max} · Requesting again in {seconds}s',

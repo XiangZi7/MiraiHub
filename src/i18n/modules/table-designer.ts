@@ -30,6 +30,17 @@ export const en: Record<string, string> = {
     'Spatial index “{value0}” can only use spatial columns',
   '索引“{value0}”的字段“{value1}”需要前缀长度':
     'Column “{value1}” in index “{value0}” needs a prefix length',
+  '字段“{value0}”的长度必须大于 0':
+    'The length of column “{value0}” must be greater than 0',
+  '字段“{value0}”的小数位不能大于精度':
+    'The scale of column “{value0}” cannot exceed its precision',
+  '字段“{value0}”只有日期时间类型才能默认当前时间':
+    'Only date/time columns can default to the current time (“{value0}”)',
+  '索引名不能使用保留名 PRIMARY': 'Index name cannot be the reserved PRIMARY',
+  '索引“{value0}”包含重复的字段':
+    'Index “{value0}” contains duplicate columns',
+  '索引“{value0}”的前缀长度超过字段“{value1}”的长度':
+    'The prefix length in index “{value0}” exceeds the length of column “{value1}”',
 
   // 类型分组
   整数: 'Integer',

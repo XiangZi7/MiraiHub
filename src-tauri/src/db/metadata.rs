@@ -356,7 +356,8 @@ async fn describe_mysql_object(
                CAST(ORDINAL_POSITION AS SIGNED) AS ORDINAL_POSITION,
                COLUMN_KEY, EXTRA, NULLIF(COLUMN_COMMENT, '') AS COLUMN_COMMENT,
                CHARACTER_SET_NAME, COLLATION_NAME,
-               NULLIF(GENERATION_EXPRESSION, '') AS GENERATION_EXPRESSION
+               NULLIF(GENERATION_EXPRESSION, '') AS GENERATION_EXPRESSION,
+               VERSION() AS SERVER_VERSION
         FROM information_schema.columns
         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
         ORDER BY ORDINAL_POSITION
@@ -373,11 +374,19 @@ async fn describe_mysql_object(
             let nullable = mysql_metadata_text(&row, "IS_NULLABLE")?;
             let key = mysql_metadata_text(&row, "COLUMN_KEY")?;
             let extra = mysql_metadata_text(&row, "EXTRA")?.to_ascii_lowercase();
+            let raw_default = mysql_optional_metadata_text(&row, "COLUMN_DEFAULT")?;
+            let version = mysql_optional_metadata_text(&row, "SERVER_VERSION")?;
+            let (default_value, mariadb_expression) =
+                if version.as_deref().is_some_and(super::sql::is_mariadb_version) {
+                    super::sql::normalize_mariadb_default(raw_default)
+                } else {
+                    (raw_default, false)
+                };
             Ok(DatabaseColumn {
                 name: mysql_metadata_text(&row, "COLUMN_NAME")?,
                 data_type: mysql_metadata_text(&row, "COLUMN_TYPE")?,
                 nullable: nullable.eq_ignore_ascii_case("YES"),
-                default_value: mysql_optional_metadata_text(&row, "COLUMN_DEFAULT")?,
+                default_value,
                 ordinal: row
                     .try_get::<i64, _>("ORDINAL_POSITION")
                     .map_err(DatabaseError::Query)? as i32,
@@ -387,7 +396,8 @@ async fn describe_mysql_object(
                 charset: mysql_optional_metadata_text(&row, "CHARACTER_SET_NAME")?,
                 collation: mysql_optional_metadata_text(&row, "COLLATION_NAME")?,
                 on_update_current_timestamp: extra.contains("on update"),
-                default_is_expression: extra.contains("default_generated"),
+                default_is_expression: mariadb_expression
+                    || extra.contains("default_generated"),
                 generated_expression: mysql_optional_metadata_text(&row, "GENERATION_EXPRESSION")?,
                 generated_stored: extra.contains("stored generated"),
             })
@@ -471,6 +481,39 @@ async fn describe_postgresql_object(
             })
         })
         .collect()
+}
+
+/// 主键列及其类型，按键内顺序；视图或无主键表返回空。键集分页用它决定排序。
+pub(super) async fn primary_key_columns(
+    pool: &DatabasePool,
+    schema: &str,
+    name: &str,
+) -> DatabaseResult<Vec<(String, String)>> {
+    let columns = describe_object(pool, schema, name).await?;
+    let ordered = list_indexes(pool, schema, name)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|index| index.primary)
+        .map(|index| index.columns)
+        .unwrap_or_else(|| {
+            columns
+                .iter()
+                .filter(|column| column.primary_key)
+                .map(|column| column.name.clone())
+                .collect()
+        });
+    // 任一列对不上就视为没有可用主键，不拼出不完整的排序。
+    Ok(ordered
+        .iter()
+        .map(|key| {
+            columns
+                .iter()
+                .find(|column| &column.name == key)
+                .map(|column| (key.clone(), column.data_type.clone()))
+        })
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default())
 }
 
 /// 表的完整结构。数据网格靠 `primary_key` 判断能不能编辑。

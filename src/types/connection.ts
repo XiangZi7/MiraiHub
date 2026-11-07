@@ -12,6 +12,7 @@ import type {
   DatabaseConnectionKind,
   DatabaseEnvironment,
   DatabaseKind,
+  MysqlFlavor,
   DatabaseSslMode,
 } from '@/types/database'
 import { settingNumber, settingsSnapshot } from '@/composables/useSettings'
@@ -104,6 +105,8 @@ export interface DatabaseConnectionSettings {
   caCertificate?: string
   clientCertificate?: string
   clientKey?: string
+  /** MySQL 协议的具体产品；旧连接没有该字段，等同 MySQL。 */
+  mysqlFlavor?: MysqlFlavor
   /** 以下均可选：旧连接没有这些字段，等同开发环境、可写、直连。 */
   environment?: DatabaseEnvironment
   readOnly?: boolean

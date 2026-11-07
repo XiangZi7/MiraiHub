@@ -11,13 +11,23 @@ import {
 } from 'vue'
 import { useStorage } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import { COMMAND_GROUPS } from '@/constants/workspace'
+import {
+  COMMAND_GROUPS,
+  COMMAND_SHORTCUT_SETTINGS,
+} from '@/constants/workspace'
+import { terminalCommandLabel } from '@/constants/terminal-commands'
 import type { CommandItem } from '@/types'
 import { cn } from '@/utils/cn'
 import { translateLabel } from '@/i18n'
 import { useConnectionsStore } from '@/stores/connections'
 import { useDatabaseCommandSource } from '@/composables/useDatabaseCommandSource'
 import { fuzzyScore } from '@/utils/fuzzy'
+import { useSettings } from '@/composables/useSettings'
+import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
+import { toast } from '@/composables/useToast'
+import { useTerminalCommandsStore } from '@/stores/terminal-commands'
+import { formatShortcutForPlatform } from '@/utils/shortcut'
+import { copyText } from '@/utils/clipboard'
 
 const { t } = useI18n()
 
@@ -51,7 +61,11 @@ interface PaletteGroup {
 type Mode = 'all' | 'object' | 'query' | 'action'
 
 /** 前缀 → 模式 */
-const PREFIXES: Record<string, Mode> = { '#': 'object', '@': 'query', '>': 'action' }
+const PREFIXES: Record<string, Mode> = {
+  '#': 'object',
+  '@': 'query',
+  '>': 'action',
+}
 const MAX_RECENT = 20
 const MAX_OBJECTS = 80
 
@@ -59,6 +73,9 @@ const inputRef = ref<HTMLInputElement>()
 const listRef = ref<HTMLElement>()
 const source = useDatabaseCommandSource()
 const connections = useConnectionsStore()
+const terminalCommands = useTerminalCommandsStore()
+const { settings } = useSettings()
+const { openConnection } = useWorkspaceNavigation()
 // 最近使用的条目 key，越靠前越新
 const recent = useStorage<string[]>('miraihub:palette-recent', [])
 
@@ -76,11 +93,21 @@ const query = computed(() =>
   (mode.value === 'all' ? state.keyword : state.keyword.slice(1)).trim()
 )
 
+/** 进入挑表模式（切到 "#" 前缀），按意图决定选中后打开数据还是表设计，面板保持打开 */
 function pickObjects(intent: 'open' | 'design'): boolean {
   state.objectIntent = intent
   state.keyword = '#'
   void nextTick(() => inputRef.value?.focus())
   return true
+}
+
+/** 取命令的快捷键：优先读用户设置，再按平台格式化显示 */
+function commandShortcut(item: CommandItem): string {
+  const key = COMMAND_SHORTCUT_SETTINGS[item.id]
+  const value = key ? settings[key] : item.shortcut
+  return typeof value === 'string' && value
+    ? formatShortcutForPlatform(value)
+    : ''
 }
 
 const globalEntries = computed<PaletteGroup[]>(() =>
@@ -91,7 +118,7 @@ const globalEntries = computed<PaletteGroup[]>(() =>
       key: `cmd:${item.id}`,
       label: translateLabel(item.label),
       icon: item.icon,
-      shortcut: item.shortcut,
+      shortcut: commandShortcut(item) || undefined,
       exec: () => emit('run', item),
     })),
   }))
@@ -124,6 +151,45 @@ const connectionEntries = computed<PaletteEntry[]>(() =>
       hint: item.kind,
       exec: () => emit('openConnection', item.id),
     }))
+)
+
+/** SSH 主机：选择后复用侧栏的打开连接逻辑 */
+const sshEntries = computed<PaletteEntry[]>(() =>
+  connections.sshConnections
+    .filter(item => item.kind === 'ssh')
+    .map(item => ({
+      key: `ssh:${item.id}`,
+      label: item.name,
+      icon: 'lucide:server',
+      hint: item.username ? `${item.username}@${item.host}` : item.host,
+      exec: () => {
+        void openConnection(item)
+      },
+    }))
+)
+
+/** 把命令片段复制到剪贴板并提示（面板无法直接写入活动终端） */
+async function copySnippet(command: string): Promise<void> {
+  try {
+    await copyText(command)
+    toast.success(t('命令片段已复制，可粘贴到终端'))
+  } catch (error) {
+    console.warn('复制命令片段失败：', error)
+    toast.error(t('复制失败'))
+  }
+}
+
+/** 常用命令片段，与终端“常用指令”菜单共用一份数据 */
+const snippetEntries = computed<PaletteEntry[]>(() =>
+  terminalCommands.commands.map(item => ({
+    key: `snippet:${item.id}`,
+    label: terminalCommandLabel(item),
+    icon: 'lucide:code-xml',
+    hint: item.command,
+    exec: () => {
+      void copySnippet(item.command)
+    },
+  }))
 )
 
 const objectEntries = computed<PaletteEntry[]>(() => {
@@ -209,6 +275,8 @@ const filteredGroups = computed<PaletteGroup[]>(() => {
     const all = [
       ...actionEntries.value,
       ...globalEntries.value.flatMap(group => group.items),
+      ...sshEntries.value,
+      ...snippetEntries.value,
     ]
     // 无关键词时单独列出最近使用
     if (!query.value) {
@@ -225,7 +293,9 @@ const filteredGroups = computed<PaletteGroup[]>(() => {
       push('db-actions', name || t('数据库'), rank(actionEntries.value))
       for (const group of globalEntries.value)
         push(group.id, group.label, rank(group.items))
+      push('ssh-hosts', t('SSH 主机'), rank(sshEntries.value, 6))
       push('db-connections', t('切换连接'), rank(connectionEntries.value, 6))
+      push('snippets', t('命令片段'), rank(snippetEntries.value, 6))
       // 普通模式也顺带搜表，少打一个前缀
       push('objects', t('表与视图'), rank(objectEntries.value, 8))
     }
@@ -262,10 +332,12 @@ const placeholder = computed(() => {
   return t('输入命令…（# 表 · @ 已保存查询 · > 数据库动作）')
 })
 
+// 打开时聚焦搜索框
 onMounted(() => {
   void nextTick(() => inputRef.value?.focus())
 })
 
+/** 记录最近使用的条目，置顶并截断到上限 */
 function remember(key: string): void {
   recent.value = [key, ...recent.value.filter(item => item !== key)].slice(
     0,
@@ -273,6 +345,7 @@ function remember(key: string): void {
   )
 }
 
+/** 执行选中条目；exec 返回 true 时保持面板打开 */
 function run(item: PaletteEntry): void {
   if (item.disabled) return
   remember(item.key)
@@ -280,12 +353,14 @@ function run(item: PaletteEntry): void {
   emit('close')
 }
 
+/** 上下移动高亮光标，首尾循环 */
 function move(step: number): void {
   const total = flatItems.value.length
   if (!total) return
   state.cursor = (state.cursor + step + total) % total
 }
 
+/** 面板键盘处理：上下切换、回车执行、退格删前缀回到普通模式 */
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'ArrowDown') {
     event.preventDefault()
@@ -307,6 +382,7 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+/** 条目在扁平列表中的序号，用于高亮与 data-index 定位 */
 function indexOf(item: PaletteEntry): number {
   return flatItems.value.indexOf(item)
 }
@@ -317,131 +393,150 @@ function indexOf(item: PaletteEntry): number {
     class="overlay-surface flex h-fit max-h-full w-130 max-w-full flex-col overflow-hidden"
     @keydown="onKeydown"
   >
-    <!-- 搜索框 -->
-    <label
-      class="border-line flex h-12 shrink-0 items-center gap-2.5 border-b px-4"
+    <Transition
+      appear
+      enter-active-class="transition-[opacity,translate] duration-150 ease-out motion-reduce:transition-none"
+      enter-from-class="opacity-0 -translate-y-1"
     >
-      <AppIcon
-        name="lucide:search"
-        :size="15"
-        class="text-txt-4"
-      />
-      <input
-        ref="inputRef"
-        v-model="keyword"
-        type="text"
-        role="combobox"
-        aria-autocomplete="list"
-        aria-controls="command-palette-list"
-        :aria-expanded="true"
-        :placeholder="placeholder"
-        class="text-txt placeholder:text-txt-4 w-full bg-transparent text-[13px] outline-none"
-      />
-      <button
-        type="button"
-        class="icon-btn size-6"
-        :title="t('关闭 (Esc)')"
-        @click="emit('close')"
-      >
-        <AppIcon
-          name="lucide:x"
-          :size="13"
-        />
-      </button>
-    </label>
-
-    <!-- 命令列表 -->
-    <div
-      id="command-palette-list"
-      ref="listRef"
-      role="listbox"
-      class="scroll-thin max-h-100 min-h-0 overflow-y-auto p-1.5"
-    >
-      <div
-        v-for="group in filteredGroups"
-        :key="group.id"
-        class="mb-1 last:mb-0"
-      >
-        <p class="group-label py-1.5">
-          {{ group.label }}
-        </p>
-
-        <button
-          v-for="item in group.items"
-          :key="`${group.id}-${item.key}`"
-          type="button"
-          role="option"
-          :data-index="indexOf(item)"
-          :aria-selected="indexOf(item) === cursor"
-          :aria-disabled="item.disabled"
-          :class="
-            cn(
-              'row-item w-full motion-safe:transition-colors',
-              indexOf(item) === cursor && 'bg-raised',
-              item.disabled && 'opacity-45'
-            )
-          "
-          @click="run(item)"
-          @mouseenter="cursor = indexOf(item)"
+      <div class="flex min-h-0 flex-col">
+        <!-- 搜索框 -->
+        <label
+          class="border-line flex h-12 shrink-0 items-center gap-2.5 border-b px-4"
         >
           <AppIcon
-            :name="item.icon"
-            :size="14"
-            class="text-txt-3 shrink-0"
+            name="lucide:search"
+            :size="15"
+            class="text-txt-4"
           />
-          <span class="text-txt-2 min-w-0 flex-1 truncate text-left text-xs">{{
-            item.label
-          }}</span>
-          <span
-            v-if="item.hint"
-            class="text-txt-4 max-w-40 shrink-0 truncate text-[10.5px]"
-            >{{ item.hint }}</span
+          <input
+            ref="inputRef"
+            v-model="keyword"
+            type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="command-palette-list"
+            :aria-expanded="true"
+            :placeholder="placeholder"
+            class="text-txt placeholder:text-txt-4 w-full bg-transparent text-[13px] outline-none"
+          />
+          <button
+            type="button"
+            class="icon-btn size-6"
+            :title="t('关闭 (Esc)')"
+            @click="emit('close')"
           >
-          <span
-            v-if="item.shortcut"
-            class="kbd"
-            >{{ item.shortcut }}</span
+            <AppIcon
+              name="lucide:x"
+              :size="13"
+            />
+          </button>
+        </label>
+
+        <!-- 命令列表 -->
+        <div
+          id="command-palette-list"
+          ref="listRef"
+          role="listbox"
+          class="scroll-thin max-h-100 min-h-0 overflow-y-auto p-1.5"
+        >
+          <div
+            v-for="group in filteredGroups"
+            :key="group.id"
+            class="mb-1 last:mb-0"
           >
-        </button>
+            <p class="group-label py-1.5">
+              {{ group.label }}
+            </p>
+
+            <button
+              v-for="item in group.items"
+              :key="`${group.id}-${item.key}`"
+              type="button"
+              role="option"
+              :data-index="indexOf(item)"
+              :aria-selected="indexOf(item) === cursor"
+              :aria-disabled="item.disabled"
+              :class="
+                cn(
+                  'row-item relative w-full transition-colors duration-100 motion-reduce:transition-none',
+                  indexOf(item) === cursor && 'bg-raised',
+                  item.disabled && 'opacity-45'
+                )
+              "
+              @click="run(item)"
+              @mouseenter="cursor = indexOf(item)"
+            >
+              <span
+                aria-hidden="true"
+                :class="
+                  cn(
+                    'bg-accent absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full transition-[opacity,scale] duration-150 motion-reduce:transition-none',
+                    indexOf(item) === cursor
+                      ? 'scale-y-100 opacity-100'
+                      : 'scale-y-50 opacity-0'
+                  )
+                "
+              />
+              <AppIcon
+                :name="item.icon"
+                :size="14"
+                class="text-txt-3 shrink-0"
+              />
+              <span
+                class="text-txt-2 min-w-0 flex-1 truncate text-left text-xs"
+                >{{ item.label }}</span
+              >
+              <span
+                v-if="item.hint"
+                class="text-txt-4 max-w-40 shrink-0 truncate text-[10.5px]"
+                >{{ item.hint }}</span
+              >
+              <span
+                v-if="item.shortcut"
+                class="kbd"
+                >{{ item.shortcut }}</span
+              >
+            </button>
+          </div>
+
+          <p
+            v-if="!flatItems.length"
+            class="text-txt-4 py-8 text-center text-xs"
+          >
+            {{
+              mode !== 'all' && !source
+                ? t('请先打开并连接一个数据库')
+                : t('没有匹配的命令')
+            }}
+          </p>
+        </div>
+
+        <!-- 底部提示 -->
+        <footer
+          class="border-line text-txt-4 flex shrink-0 items-center gap-3 border-t px-4 py-2 text-[10.5px]"
+        >
+          <span class="flex items-center gap-1">
+            <AppIcon
+              name="lucide:corner-down-left"
+              :size="11"
+            />
+            {{ t('执行') }}
+          </span>
+          <span class="flex items-center gap-1">
+            <AppIcon
+              name="lucide:arrow-up-down"
+              :size="11"
+            />
+            {{ t('切换') }}
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="kbd">#</span>{{ t('表') }} <span class="kbd">@</span
+            >{{ t('查询') }} <span class="kbd">&gt;</span>{{ t('动作') }}
+          </span>
+          <div class="flex-1" />
+          <span>{{ t('Esc 关闭') }}</span>
+        </footer>
       </div>
-
-      <p
-        v-if="!flatItems.length"
-        class="text-txt-4 py-8 text-center text-xs"
-      >
-        {{
-          mode !== 'all' && !source
-            ? t('请先打开并连接一个数据库')
-            : t('没有匹配的命令')
-        }}
-      </p>
-    </div>
-
-    <!-- 底部提示 -->
-    <footer
-      class="border-line text-txt-4 flex shrink-0 items-center gap-3 border-t px-4 py-2 text-[10.5px]"
-    >
-      <span class="flex items-center gap-1">
-        <AppIcon
-          name="lucide:corner-down-left"
-          :size="11"
-        />
-        {{ t('执行') }}
-      </span>
-      <span class="flex items-center gap-1">
-        <AppIcon
-          name="lucide:arrow-up-down"
-          :size="11"
-        />
-        {{ t('切换') }}
-      </span>
-      <span class="flex items-center gap-1.5">
-        <span class="kbd">#</span>{{ t('表') }}
-        <span class="kbd">@</span>{{ t('查询') }}
-        <span class="kbd">&gt;</span>{{ t('动作') }}
-      </span>
-      <div class="flex-1" />
-      <span>{{ t('Esc 关闭') }}</span>
-    </footer>
+    </Transition>
   </div>
 </template>

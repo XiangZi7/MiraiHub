@@ -271,7 +271,8 @@
     }
   }
 
-  html.material-solid .database-glass-header > tr > th {
+  html.material-solid .database-glass-header > tr > th,
+  html.reduce-motion .database-glass-header > tr > th {
     background-color: var(--database-header-surface);
     background-color: oklch(from var(--database-header-surface) l c h);
     -webkit-backdrop-filter: none;
@@ -281,12 +282,15 @@
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     .overlay-surface {
       background-color: oklch(from var(--color-pane) l c h / 0.9);
-      -webkit-backdrop-filter: blur(36px) saturate(140%);
-      backdrop-filter: blur(36px) saturate(140%);
+      /* 90% 不透明底色下 20px 与原 36px 观感几乎一致，采样面积约降至三分之一 */
+      -webkit-backdrop-filter: blur(20px) saturate(140%);
+      backdrop-filter: blur(20px) saturate(140%);
     }
   }
 
-  html.material-solid .overlay-surface {
+  /* 实色材质或开启减少动效（多用于低性能设备）时关闭浮层与表头的实时模糊 */
+  html.material-solid .overlay-surface,
+  html.reduce-motion .overlay-surface {
     background-color: var(--color-canvas);
     background-color: oklch(from var(--color-pane) l c h);
     -webkit-backdrop-filter: none;
@@ -592,10 +596,16 @@
   );
 }
 
-/* 浮层玻璃 —— 命令面板一类脱离窗口壳的元素自己承担模糊 */
+/* 浮层玻璃 —— 命令面板一类脱离窗口壳的元素自己承担模糊；
+   半径从 32px 降到 24px 减少采样开销，减少动效/实色材质下直接关闭 */
 @utility glass {
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
-  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  html.reduce-motion &,
+  html.material-solid & {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* CSS zoom 不会重算 vh/vw，浏览器预览时补偿窗口尺寸以保留底部操作栏。 */
@@ -939,6 +949,41 @@ html.reduce-motion::view-transition-new(root) {
   }
 }
 
+/* 表数据编辑反馈：背景从高亮淡回元素自身颜色，只用 motion-safe: 变体挂载 */
+@keyframes grid-cell-edited {
+  from {
+    background-color: color-mix(in oklch, var(--color-amber) 45%, transparent);
+  }
+}
+@utility grid-cell-edited {
+  animation: grid-cell-edited 600ms ease-out;
+}
+@keyframes grid-row-added {
+  from {
+    opacity: 0;
+    background-color: color-mix(in oklch, var(--color-success) 35%, transparent);
+  }
+}
+@utility grid-row-added {
+  animation: grid-row-added 320ms ease-out;
+}
+@keyframes grid-row-removed {
+  from {
+    background-color: color-mix(in oklch, var(--color-danger) 35%, transparent);
+  }
+}
+@utility grid-row-removed {
+  animation: grid-row-removed 320ms ease-out;
+}
+@keyframes grid-commit-flash {
+  from {
+    background-color: color-mix(in oklch, var(--color-success) 28%, transparent);
+  }
+}
+@utility grid-commit-flash {
+  animation: grid-commit-flash 800ms ease-out;
+}
+
 /* 数据库标签内容切换的淡入：v-show 由隐藏变为显示时动画重新播放，不重建编辑器 */
 @keyframes panel-fade-in {
   from {
@@ -949,6 +994,28 @@ html.reduce-motion::view-transition-new(root) {
 @utility panel-fade-in {
   animation: panel-fade-in 160ms ease-out;
   @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+  html.reduce-motion & {
+    animation: none;
+  }
+}
+
+/* 通用浮层弹出：透明度 + 0.98 → 1 缩放，120ms；终端补全、提示等小浮层统一使用。
+   只动 opacity/transform，走合成层不触发重排；减少动效时关闭 */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+@utility pop-in {
+  animation: pop-in 120ms ease-out;
+  transform-origin: top left;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+  html.reduce-motion & {
     animation: none;
   }
 }

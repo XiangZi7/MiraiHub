@@ -55,6 +55,7 @@ import type {
   DatabaseExecution,
   DatabaseKind,
   DatabaseObject,
+  RowFilter,
   DatabaseObjectKind,
 } from '@/types/database'
 import type {
@@ -115,6 +116,9 @@ interface ObjectTab extends TabItem {
   object: DatabaseObject
   panel: 'data' | 'columns'
   panelNonce: number
+  /** 外键跳转带来的筛选条件，filterNonce 递增时生效。 */
+  presetFilters?: RowFilter[]
+  filterNonce?: number
 }
 
 interface TableDesignerTab extends TabItem {
@@ -1198,6 +1202,37 @@ function openObject(
   queryState.activeId = id
 }
 
+/**
+ * 表格外键跳转：打开目标表并带上筛选条件。
+ * 目标不在已加载的对象列表（如其他 schema）时按表名构造一个对象。
+ */
+function openRelatedObject(target: {
+  schema: string
+  name: string
+  filters: RowFilter[]
+}): void {
+  const object: DatabaseObject = objects.value.find(
+    item =>
+      item.schema === target.schema &&
+      item.name === target.name &&
+      item.kind === 'table'
+  ) ?? {
+    schema: target.schema,
+    name: target.name,
+    kind: 'table',
+    identity: '',
+    rowEstimate: null,
+    comment: null,
+    createdAt: null,
+    updatedAt: null,
+  }
+  openObject(object)
+  const tab = queryState.tabs.find(item => item.id === objectTabId(object))
+  if (tab?.kind !== 'object') return
+  tab.presetFilters = target.filters
+  tab.filterNonce = (tab.filterNonce ?? 0) + 1
+}
+
 async function copyObjectName(object: DatabaseObject): Promise<void> {
   await copyText(qualifiedName(object))
   toast.success(t('已复制限定名称'))
@@ -1751,6 +1786,14 @@ registerDatabaseCommandSource(
           run: () => void openDatabaseTransfer(currentDatabase(), 'import'),
         },
         {
+          // 备份走导出对话框（结构 + 数据转储）
+          id: 'backup-database',
+          label: '备份数据库',
+          icon: 'lucide:database-backup',
+          enabled: () => ready() && !!currentDatabase(),
+          run: () => void openDatabaseTransfer(currentDatabase(), 'export'),
+        },
+        {
           id: 'schema-diff',
           label: '结构对比',
           icon: 'lucide:git-compare-arrows',
@@ -2180,6 +2223,9 @@ registerDatabaseCommandSource(
                 :object="tab.object"
                 :initial-panel="tab.panel"
                 :panel-nonce="tab.panelNonce"
+                :preset-filters="tab.presetFilters"
+                :filter-nonce="tab.filterNonce"
+                @open-related="openRelatedObject"
                 @query="openQuery"
                 @dirty="value => setObjectDirty(tab.id, value)"
               >

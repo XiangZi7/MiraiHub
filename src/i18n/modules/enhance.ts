@@ -1,5 +1,82 @@
 /** 体验增强（SQLite、执行计划、ER 图、结构对比、SSH 与 Agent 增强）新增的文案。中文为键。 */
 export const en: Record<string, string> = {
+  // SQL 片段
+  'SQL 片段…':
+    'SQL snippets…',
+  'SQL 片段':
+    'SQL snippets',
+  '输入触发词后从补全列表选择，Tab 在占位间跳转。自定义片段保存在本机。':
+    'Type a trigger and pick it from the completion list; Tab moves between placeholders. Custom snippets are stored on this device.',
+  '新建片段':
+    'New snippet',
+  '编辑片段':
+    'Edit snippet',
+  '暂无片段':
+    'No snippets',
+  '搜索片段':
+    'Search snippets',
+  '触发词':
+    'Trigger',
+  '片段说明':
+    'Description',
+  '片段内容':
+    'Snippet body',
+  '触发词只能包含字母、数字和下划线，且不能以数字开头':
+    'Triggers may contain only letters, digits and underscores, and cannot start with a digit',
+  '片段内容不能为空':
+    'Snippet body cannot be empty',
+  '片段已保存':
+    'Snippet saved',
+  '片段已删除':
+    'Snippet deleted',
+  '内置':
+    'Built-in',
+  '复制为自定义':
+    'Copy as custom',
+  '插入片段':
+    'Insert snippet',
+  '删除片段':
+    'Delete snippet',
+  '查询前 N 行':
+    'Select top N rows',
+  '统计行数':
+    'Count rows',
+  '内连接':
+    'Inner join',
+  '左连接':
+    'Left join',
+  '分组统计':
+    'Group and count',
+  '公用表表达式（CTE）':
+    'Common table expression (CTE)',
+  '递归 CTE':
+    'Recursive CTE',
+  '窗口函数排名':
+    'Window function ranking',
+  '每组取前 N 条':
+    'Top N per group',
+  '累计求和':
+    'Running total',
+  'CASE 表达式':
+    'CASE expression',
+  'EXISTS 子查询':
+    'EXISTS subquery',
+  '建表':
+    'Create table',
+  '创建索引':
+    'Create index',
+  '添加字段':
+    'Add column',
+  '插入或更新':
+    'Upsert',
+  '查询':
+    'Select',
+  '插入':
+    'Insert',
+  '更新':
+    'Update',
+  '删除':
+    'Delete',
   // SQLite 连接
   请填写连接名称并选择数据库文件:
     'Enter a connection name and choose a database file',

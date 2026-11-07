@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import { tagColorCss, tagLabel } from '@/composables/useDatabaseColumnTags'
 import type {
   ColumnTagConfig,
@@ -19,6 +21,8 @@ import DatabaseCellTag from './DatabaseCellTag.vue'
  * 几百行 × 十几列的 JSON / 日志不会把 DOM 撑得很重。
  */
 const PREVIEW_LENGTH = 160
+
+const { t } = useI18n()
 
 const props = defineProps<{
   row: ReadonlyArray<string | null>
@@ -42,6 +46,8 @@ const props = defineProps<{
   activeColumn?: number | null
   /** 每列是否数值列，数值右对齐。 */
   numeric: ReadonlyArray<boolean>
+  /** 每列是否属于外键，非空值显示跳转图标。 */
+  foreignKeys?: ReadonlyArray<boolean>
   /** 单元格高度类，随网格密度变化。 */
   heightClass: string
 }>()
@@ -54,6 +60,8 @@ const emit = defineEmits<{
   context: [event: MouseEvent]
   /** 双击单元格；可编辑时进入编辑，否则由父组件打开值查看器。 */
   open: [columnIndex: number]
+  /** 点击外键单元格的跳转图标。 */
+  follow: [columnIndex: number]
 }>()
 
 function selected(columnIndex: number): boolean {
@@ -112,8 +120,10 @@ const cells = computed<CellView[]>(() =>
   <tr
     :class="
       cn(
-        'text-txt-2 hover:bg-hover',
-        deleted && 'bg-danger/7 line-through opacity-55'
+        'hover:bg-hover',
+        deleted
+          ? 'bg-danger/10 text-danger decoration-danger motion-safe:grid-row-removed line-through opacity-70'
+          : 'text-txt-2'
       )
     "
     :data-row-index="rowIndex"
@@ -138,7 +148,7 @@ const cells = computed<CellView[]>(() =>
       :class="
         cn(
           'border-line-soft relative scroll-mt-8 scroll-ml-12 overflow-hidden border-r border-b p-0 last:border-r-0',
-          cell.edited && 'bg-violet/8',
+          cell.edited && 'bg-amber/12 motion-safe:grid-cell-edited',
           selected(columnIndex) && 'bg-violet/15',
           activeColumn === columnIndex &&
             editingColumn !== columnIndex &&
@@ -185,6 +195,22 @@ const cells = computed<CellView[]>(() =>
           class="truncate"
           >{{ cell.text }}</span
         >
+        <button
+          v-if="foreignKeys?.[columnIndex] && cell.value !== null"
+          type="button"
+          tabindex="-1"
+          class="text-txt-4 hover:text-violet ml-1 shrink-0 cursor-pointer"
+          :title="t('打开被引用的记录')"
+          :aria-label="t('打开被引用的记录')"
+          @pointerdown.stop
+          @dblclick.stop
+          @click.stop="emit('follow', columnIndex)"
+        >
+          <AppIcon
+            name="lucide:link"
+            :size="10"
+          />
+        </button>
       </div>
     </td>
   </tr>

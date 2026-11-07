@@ -18,7 +18,11 @@ export interface SqlToken {
 export interface SqlSuggestion {
   label: string
   text: string
-  kind: 'keyword' | 'function' | 'object'
+  kind: 'keyword' | 'function' | 'object' | 'snippet'
+  /** 片段候选的说明文字 */
+  detail?: string
+  /** 片段候选的正文；选中后按占位展开，而不是直接插入 text */
+  body?: string
 }
 
 // 方言完整关键字/类型由 CodeMirror 维护；常用函数和短语用于提高排序及整段插入体验。

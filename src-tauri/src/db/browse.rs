@@ -2,8 +2,14 @@
 //!
 //! 数据网格不走用户的 SQL，而是由这里按结构化请求拼语句：列名与表名统一
 //! 转义，筛选值一律走绑定参数。多取一行判断"后面还有没有"，省掉一次 COUNT。
+//!
+//! 深分页的 OFFSET 会扫描并丢弃前面所有行，所以有主键时改走键集分页。前端接口
+//! 仍只传 offset：后端按会话记住每个已访问页起点的主键，翻到记过的页用键集，
+//! 跳到没记过的页才用 OFFSET。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use super::error::{DatabaseError, DatabaseResult};
 use super::manager::DatabasePool;
@@ -16,6 +22,38 @@ use super::sql;
 
 /// 单页上限。再多前端表格也渲染不动，翻页更合适。
 const MAX_PAGE_SIZE: u32 = 5_000;
+/// 主键信息的缓存时长，表结构被改后最多这么久生效。
+const CURSOR_PLAN_TTL: Duration = Duration::from_secs(30);
+/// 同时记住的浏览视图数，超出时淘汰最久未用的。
+const MAX_CURSOR_ENTRIES: usize = 64;
+/// 单个视图记住的页起点数。
+const MAX_CURSOR_ANCHORS: usize = 512;
+
+/// 键集分页方案：按完整主键排序，方向统一。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct KeysetPlan {
+    pub columns: Vec<String>,
+    pub descending: bool,
+}
+
+/// 一个浏览视图（表 + 筛选 + 排序）的翻页状态。
+struct CursorEntry {
+    plan: Option<KeysetPlan>,
+    /// 页起点 offset → 该页前一行的主键值。
+    anchors: BTreeMap<u64, Vec<String>>,
+    resolved_at: Instant,
+    touched_at: Instant,
+}
+
+static CURSORS: OnceLock<Mutex<HashMap<String, CursorEntry>>> = OnceLock::new();
+
+/// 取翻页状态表；锁中毒时状态仍可用，继续使用内部数据。
+fn cursors() -> std::sync::MutexGuard<'static, HashMap<String, CursorEntry>> {
+    CURSORS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// 逐个累积绑定参数，并按方言产出对应的占位符。
 struct Binder {
@@ -41,9 +79,258 @@ impl Binder {
     }
 }
 
+/// 不带翻页状态的普通查询，始终使用 OFFSET。
 pub async fn fetch_rows(
     pool: &DatabasePool,
     request: &RowPageRequest,
+) -> DatabaseResult<DatabaseRowPage> {
+    run_page(pool, request, None, None).await
+}
+
+/// 数据网格入口：同一会话连续翻页时自动走键集分页，接口与 OFFSET 分页一致。
+pub async fn fetch_rows_in_session(
+    session_id: &str,
+    pool: &DatabasePool,
+    request: &RowPageRequest,
+) -> DatabaseResult<DatabaseRowPage> {
+    // 空 schema 依赖会话活动库，切库后同名表会串，这种情况不记状态。
+    if request.schema.trim().is_empty() {
+        return fetch_rows(pool, request).await;
+    }
+
+    let key = cursor_key(session_id, request);
+    let plan = resolve_plan(&key, pool, request).await;
+    let anchor = cursors()
+        .get(&key)
+        .and_then(|entry| entry.anchors.get(&request.offset).cloned())
+        .filter(|_| plan.is_some() && request.offset > 0);
+
+    let page = match run_page(pool, request, plan.as_ref(), anchor.as_deref()).await {
+        Ok(page) => page,
+        // 键集条件失败（如类型转换报错）不该挡住浏览，退回 OFFSET 重试一次。
+        Err(error) if anchor.is_none() => return Err(error),
+        Err(error) => {
+            log::debug!("键集分页失败，退回 OFFSET：{error}");
+            if let Some(entry) = cursors().get_mut(&key) {
+                entry.anchors.clear();
+            }
+            run_page(pool, request, plan.as_ref(), None).await?
+        }
+    };
+
+    if let Some(plan) = plan.as_ref() {
+        if let Some(next) = next_anchor(&page, plan) {
+            if let Some(entry) = cursors().get_mut(&key) {
+                entry
+                    .anchors
+                    .insert(request.offset + page.rows.len() as u64, next);
+                while entry.anchors.len() > MAX_CURSOR_ANCHORS {
+                    entry.anchors.pop_first();
+                }
+            }
+        }
+    }
+
+    Ok(page)
+}
+
+/// 视图指纹：筛选或排序一变就是另一个视图，旧页起点不再适用。
+fn cursor_key(session_id: &str, request: &RowPageRequest) -> String {
+    format!(
+        "{session_id}\0{}\0{}\0{:?}\0{}\0{:?}\0{:?}",
+        request.schema.trim(),
+        request.table.trim(),
+        request.filters,
+        request.match_any,
+        request.where_sql,
+        request
+            .sort
+            .as_ref()
+            .map(|sort| (sort.column.trim().to_owned(), sort.descending)),
+    )
+}
+
+/// 取视图的键集方案，过期才重查元数据；主键变化时作废已记录的页起点。
+async fn resolve_plan(
+    key: &str,
+    pool: &DatabasePool,
+    request: &RowPageRequest,
+) -> Option<KeysetPlan> {
+    {
+        let mut cursors = cursors();
+        if let Some(entry) = cursors.get_mut(key) {
+            entry.touched_at = Instant::now();
+            if entry.resolved_at.elapsed() < CURSOR_PLAN_TTL {
+                return entry.plan.clone();
+            }
+        }
+    }
+
+    let plan =
+        match metadata::primary_key_columns(pool, request.schema.trim(), request.table.trim())
+            .await
+        {
+            Ok(columns) => keyset_plan(&columns, request.sort.as_ref()),
+            Err(error) => {
+                log::debug!("读取主键失败，本页使用 OFFSET：{error}");
+                None
+            }
+        };
+
+    let now = Instant::now();
+    let mut cursors = cursors();
+    let entry = cursors.entry(key.to_owned()).or_insert_with(|| CursorEntry {
+        plan: None,
+        anchors: BTreeMap::new(),
+        resolved_at: now,
+        touched_at: now,
+    });
+    if entry.plan != plan {
+        entry.anchors.clear();
+    }
+    entry.plan = plan.clone();
+    entry.resolved_at = now;
+    entry.touched_at = now;
+
+    while cursors.len() > MAX_CURSOR_ENTRIES {
+        let oldest = cursors
+            .iter()
+            .min_by_key(|(_, entry)| entry.touched_at)
+            .map(|(key, _)| key.clone());
+        match oldest {
+            Some(oldest) => cursors.remove(&oldest),
+            None => break,
+        };
+    }
+
+    plan
+}
+
+/// 判断能否走键集：主键类型可靠比较，且排序为默认或以主键首列为准。
+/// 按其他列排序时该列可能重复或为 NULL，各方言 NULL 顺序也不同，保持 OFFSET。
+pub(super) fn keyset_plan(
+    primary_key: &[(String, String)],
+    sort: Option<&RowSort>,
+) -> Option<KeysetPlan> {
+    let first = primary_key.first()?;
+    if !primary_key
+        .iter()
+        .all(|(_, data_type)| is_keyset_type(data_type))
+    {
+        return None;
+    }
+    let descending = match sort.filter(|sort| !sort.column.trim().is_empty()) {
+        None => false,
+        Some(sort) if sort.column.trim() == first.0 => sort.descending,
+        Some(_) => return None,
+    };
+
+    Some(KeysetPlan {
+        columns: primary_key.iter().map(|(name, _)| name.clone()).collect(),
+        descending,
+    })
+}
+
+/// 只接受文本化后能原样比较的类型；浮点、时间、二进制的展示值可能和存储值不同。
+fn is_keyset_type(data_type: &str) -> bool {
+    let lower = data_type.trim().to_ascii_lowercase();
+    if lower.contains("binary") || lower.contains("blob") {
+        return false;
+    }
+    let word = lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .next()
+        .unwrap_or("");
+    matches!(
+        word,
+        "tinyint"
+            | "smallint"
+            | "mediumint"
+            | "int"
+            | "integer"
+            | "bigint"
+            | "int2"
+            | "int4"
+            | "int8"
+            | "serial"
+            | "smallserial"
+            | "bigserial"
+            | "char"
+            | "varchar"
+            | "character"
+            | "text"
+            | "uuid"
+    )
+}
+
+/// 从本页末行取下一页的起点；没有下一页或主键值不可用时返回 None。
+pub(super) fn next_anchor(page: &DatabaseRowPage, plan: &KeysetPlan) -> Option<Vec<String>> {
+    if !page.has_more {
+        return None;
+    }
+    let last = page.rows.last()?;
+    plan.columns
+        .iter()
+        .map(|name| {
+            let index = page
+                .columns
+                .iter()
+                .position(|column| &column.name == name)?;
+            // 驱动把列标成二进制时，解码结果是展示形式，不能拿回去比较。
+            let data_type = page.columns[index].data_type.to_ascii_uppercase();
+            if data_type.contains("BINARY") || data_type.contains("BLOB") {
+                return None;
+            }
+            last.get(index)?.clone()
+        })
+        .collect()
+}
+
+/// 拼键集条件：单列直接比较，复合主键用行值比较。
+fn keyset_condition(
+    plan: &KeysetPlan,
+    anchor: &[String],
+    kind: DatabaseKind,
+    casts: &BTreeMap<String, String>,
+    binder: &mut Binder,
+) -> String {
+    let mut columns = Vec::with_capacity(plan.columns.len());
+    let mut placeholders = Vec::with_capacity(plan.columns.len());
+    for (column, value) in plan.columns.iter().zip(anchor) {
+        columns.push(sql::quote_identifier(column, kind));
+        let placeholder = binder.push(Some(value.clone()));
+        placeholders.push(cast_placeholder(&placeholder, column, kind, casts));
+    }
+    let operator = if plan.descending { "<" } else { ">" };
+    if columns.len() == 1 {
+        format!("{} {operator} {}", columns[0], placeholders[0])
+    } else {
+        format!(
+            "({}) {operator} ({})",
+            columns.join(", "),
+            placeholders.join(", ")
+        )
+    }
+}
+
+/// 按完整主键排序，保证键集翻页顺序唯一。
+fn keyset_order(plan: &KeysetPlan, kind: DatabaseKind) -> String {
+    let direction = if plan.descending { "DESC" } else { "ASC" };
+    let columns = plan
+        .columns
+        .iter()
+        .map(|column| format!("{} {direction}", sql::quote_identifier(column, kind)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(" ORDER BY {columns}")
+}
+
+/// 执行一页查询。plan 决定排序，anchor 存在时用键集定位，否则用 OFFSET。
+pub(super) async fn run_page(
+    pool: &DatabasePool,
+    request: &RowPageRequest,
+    plan: Option<&KeysetPlan>,
+    anchor: Option<&[String]>,
 ) -> DatabaseResult<DatabaseRowPage> {
     let schema = request.schema.trim();
     let table = request.table.trim();
@@ -55,7 +342,7 @@ pub async fn fetch_rows(
     let limit = request.limit.clamp(1, MAX_PAGE_SIZE);
     // PostgreSQL 的绑定参数默认是 text，与 int/timestamp 列比较会直接报类型错，
     // 所以要按列的真实类型给占位符加转型。MySQL 会隐式转换，拿到的是空表。
-    let casts = if request.filters.is_empty() {
+    let casts = if request.filters.is_empty() && anchor.is_none() {
         BTreeMap::new()
     } else {
         metadata::column_cast_types(pool, schema, table)
@@ -89,14 +376,33 @@ pub async fn fetch_rows(
             format!(" WHERE ({}) AND ({raw})", &where_clause[" WHERE ".len()..])
         };
     }
-    let order_clause = build_order(request.sort.as_ref(), kind)?;
+    let order_clause = match plan {
+        Some(plan) => keyset_order(plan, kind),
+        None => build_order(request.sort.as_ref(), kind)?,
+    };
+    let keyset = plan.zip(anchor);
+    if let Some((plan, anchor)) = keyset {
+        let condition = keyset_condition(plan, anchor, kind, &casts, &mut binder);
+        where_clause = if where_clause.is_empty() {
+            format!(" WHERE {condition}")
+        } else {
+            format!(
+                " WHERE ({}) AND {condition}",
+                &where_clause[" WHERE ".len()..]
+            )
+        };
+    }
+    let offset_clause = if keyset.is_some() {
+        String::new()
+    } else {
+        format!(" OFFSET {}", request.offset)
+    };
 
     // 多查一行用来判断还有没有下一页。
     let statement = format!(
-        "SELECT * FROM {}{where_clause}{order_clause} LIMIT {} OFFSET {}",
+        "SELECT * FROM {}{where_clause}{order_clause} LIMIT {}{offset_clause}",
         sql::qualified_name(schema, table, kind),
         limit as u64 + 1,
-        request.offset
     );
 
     let started = std::time::Instant::now();
@@ -369,6 +675,109 @@ pub(super) fn display_sql(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 连续翻页走键集，回到记过的页和跳页得到的行都与 OFFSET 语义一致。
+    #[tokio::test]
+    async fn session_paging_switches_to_keyset_and_matches_offset() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for id in 1..=5 {
+            sqlx::query("INSERT INTO t VALUES (?, 'x')")
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let pool = DatabasePool::Sqlite(pool);
+        let request = |offset| RowPageRequest {
+            schema: "main".to_owned(),
+            table: "t".to_owned(),
+            offset,
+            limit: 2,
+            sort: None,
+            filters: Vec::new(),
+            match_any: false,
+            where_sql: None,
+        };
+        let session = format!("keyset-test-{}", rand::random::<u64>());
+        let first_id = |page: &DatabaseRowPage| page.rows[0][0].clone().unwrap();
+
+        let first = fetch_rows_in_session(&session, &pool, &request(0)).await.unwrap();
+        assert!(first.sql.contains("OFFSET 0"));
+        assert_eq!(first_id(&first), "1");
+
+        let second = fetch_rows_in_session(&session, &pool, &request(2)).await.unwrap();
+        assert!(!second.sql.contains("OFFSET"), "{}", second.sql);
+        assert_eq!(first_id(&second), "3");
+
+        let third = fetch_rows_in_session(&session, &pool, &request(4)).await.unwrap();
+        assert_eq!(first_id(&third), "5");
+        assert!(!third.has_more);
+
+        // 回到上一页复用已记录的起点；没记过的 offset 退回 OFFSET。
+        let back = fetch_rows_in_session(&session, &pool, &request(2)).await.unwrap();
+        assert_eq!(first_id(&back), "3");
+        let jump = fetch_rows_in_session(&session, &pool, &request(1)).await.unwrap();
+        assert!(jump.sql.contains("OFFSET 1"));
+        assert_eq!(first_id(&jump), "2");
+    }
+
+    /// 构造测试用主键列。
+    fn key(name: &str, data_type: &str) -> (String, String) {
+        (name.to_owned(), data_type.to_owned())
+    }
+
+    #[test]
+    fn keyset_applies_only_to_primary_key_order() {
+        let primary = [key("id", "bigint(20) unsigned")];
+        assert!(!keyset_plan(&primary, None).unwrap().descending);
+        let sort = |column: &str| RowSort {
+            column: column.to_owned(),
+            descending: true,
+        };
+        assert!(keyset_plan(&primary, Some(&sort("id"))).unwrap().descending);
+        assert!(keyset_plan(&primary, Some(&sort("name"))).is_none());
+        assert!(keyset_plan(&[], None).is_none());
+    }
+
+    #[test]
+    fn keyset_rejects_unreliable_types() {
+        for data_type in ["float", "datetime", "varbinary(16)", "interval", "char(36) binary"] {
+            assert!(
+                keyset_plan(&[key("id", data_type)], None).is_none(),
+                "{data_type}"
+            );
+        }
+        assert!(keyset_plan(&[key("id", "character varying(20)")], None).is_some());
+    }
+
+    #[test]
+    fn keyset_condition_uses_row_values_for_composite_keys() {
+        let plan = KeysetPlan {
+            columns: vec!["a".to_owned(), "b".to_owned()],
+            descending: false,
+        };
+        let mut binder = Binder::new(DatabaseKind::Mysql);
+        let condition = keyset_condition(
+            &plan,
+            &["1".to_owned(), "x".to_owned()],
+            DatabaseKind::Mysql,
+            &BTreeMap::new(),
+            &mut binder,
+        );
+        assert_eq!(condition, "(`a`, `b`) > (?, ?)");
+        assert_eq!(
+            keyset_order(&plan, DatabaseKind::Mysql),
+            " ORDER BY `a` ASC, `b` ASC"
+        );
+    }
 
     #[test]
     fn escapes_like_wildcards() {

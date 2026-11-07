@@ -442,7 +442,7 @@ pub async fn db_fetch_rows(
     request: RowPageRequest,
 ) -> AppResult<DatabaseRowPage> {
     let pool = manager.pool(&session_id).await?;
-    Ok(browse::fetch_rows(&pool, &request).await?)
+    Ok(browse::fetch_rows_in_session(&session_id, &pool, &request).await?)
 }
 
 #[tauri::command]

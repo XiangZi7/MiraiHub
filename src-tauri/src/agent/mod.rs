@@ -6,6 +6,7 @@ mod compaction;
 mod config;
 mod context;
 pub mod data_assist;
+pub mod sql_assist;
 mod execution;
 mod files;
 pub mod history;

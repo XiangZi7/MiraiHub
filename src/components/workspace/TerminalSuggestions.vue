@@ -68,7 +68,8 @@ function kindLabel(item: ShellSuggestion): string {
 <template>
   <div
     ref="menu"
-    class="terminal-suggestions"
+    class="terminal-suggestions pop-in"
+    :class="anchor.bottom !== undefined && 'origin-bottom-left!'"
     role="listbox"
     :aria-label="t('终端输入建议')"
     :style="menuStyle"
@@ -128,10 +129,12 @@ function kindLabel(item: ShellSuggestion): string {
   overflow: hidden;
   border: 1px solid var(--color-line-strong);
   border-radius: 8px;
-  background: color-mix(in oklch, var(--color-panel) 94%, transparent);
+  /* 补全随输入高频更新、列表可滚动，不再做实时 backdrop-filter；
+     用接近不透明的面板色保留层次，避免每次输入/滚动重采样背后的终端画面 */
+  background: color-mix(in oklch, var(--color-panel) 97%, var(--color-canvas));
   box-shadow: var(--shadow-pop);
   padding: 5px;
-  backdrop-filter: blur(22px) saturate(155%);
+  contain: layout paint;
 }
 
 .terminal-suggestions-list {

@@ -149,3 +149,40 @@ export function formatShortcut(value: string): string {
     key: display[parsed.key] ?? parsed.key,
   })
 }
+
+/** 判断当前是否运行在 macOS 上，用于决定快捷键显示符号。 */
+export function isMacPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } }
+  const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent
+  return /mac|iphone|ipad/i.test(platform)
+}
+
+/** 按平台格式化快捷键：macOS 用 ⌃ ⌥ ⇧ ⌘ 符号，其他平台用 Ctrl+Alt+Shift+Win 文本。 */
+export function formatShortcutForPlatform(
+  value: string,
+  mac = isMacPlatform()
+): string {
+  const parsed = parseShortcut(value)
+  if (!parsed) return value
+  const key = formatShortcut(parsed.key)
+  if (mac)
+    return [
+      parsed.ctrl && '⌃',
+      parsed.alt && '⌥',
+      parsed.shift && '⇧',
+      parsed.meta && '⌘',
+      key,
+    ]
+      .filter(Boolean)
+      .join('')
+  return [
+    parsed.ctrl && 'Ctrl',
+    parsed.alt && 'Alt',
+    parsed.shift && 'Shift',
+    parsed.meta && 'Win',
+    key,
+  ]
+    .filter(Boolean)
+    .join('+')
+}

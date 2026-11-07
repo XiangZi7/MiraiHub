@@ -37,16 +37,17 @@ const shellLabel = computed(
     })[props.settings.shell]
 )
 
+// 工具条上的状态文案与配色
 const statusMeta = computed(() => {
   if (status.value === 'connected')
     return {
-      text: t('Connected'),
+      text: t('已连接'),
       tone: 'text-success',
       dot: 'success' as const,
     }
   if (status.value === 'connecting')
-    return { text: 'Starting…', tone: 'text-amber', dot: 'amber' as const }
-  return { text: 'Disconnected', tone: 'text-txt-3', dot: 'txt-3' as const }
+    return { text: t('启动中…'), tone: 'text-amber', dot: 'amber' as const }
+  return { text: t('已断开'), tone: 'text-txt-3', dot: 'txt-3' as const }
 })
 
 watch(status, value => emit('status', value, sessionId.value), {

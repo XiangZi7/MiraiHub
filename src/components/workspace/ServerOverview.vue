@@ -13,6 +13,8 @@ import { QUICK_ACTIONS } from '@/constants/workspace'
 import type { SavedConnection } from '@/types/connection'
 import { scheduleClipboardClear } from '@/utils/clipboard'
 import { formatRate, formatUptime, percent, splitKb } from '@/utils/format'
+import { requestAgentContext } from '@/composables/useAgentContextBus'
+import { serverAlerts, serverSnapshotText } from '@/utils/server-alerts'
 
 const { t } = useI18n()
 
@@ -148,6 +150,21 @@ const facts = computed(() => {
     { label: t('Online users'), value: String(snapshot.onlineUsers) },
   ]
 })
+/** 超过阈值的指标描述，为空表示一切正常 */
+const alerts = computed(() => serverAlerts(stats.value))
+// 把当前指标快照交给本会话的 AI Agent 分析异常原因。
+function analyzeAlerts(): void {
+  const snapshot = stats.value
+  if (!snapshot || !alerts.value.length) return
+  const handled = requestAgentContext({
+    sessionId: props.sessionId,
+    intent: 'explain',
+    name: t('服务器监控快照.txt'),
+    content: serverSnapshotText(snapshot, alerts.value),
+  })
+  if (!handled) toast.error(t('没有可用的 AI 助手，请先连接终端'))
+}
+// 执行快捷操作：刷新与复制在本组件内完成，其余交给父组件。
 async function runAction(id: string): Promise<void> {
   if (id === 'refresh') {
     await refresh()
@@ -227,6 +244,20 @@ async function runAction(id: string): Promise<void> {
     </header>
 
     <div class="text-txt-3 mb-3 flex items-center justify-end gap-2 text-xs">
+      <button
+        v-if="connected && alerts.length"
+        type="button"
+        class="text-danger hover:bg-hover mr-auto inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1"
+        :title="alerts.join('\n')"
+        @click="analyzeAlerts"
+      >
+        <AppIcon
+          name="lucide:sparkles"
+          :size="13"
+        />
+        <span class="truncate">{{ alerts.join(' · ') }}</span>
+        <span class="text-txt-2 shrink-0">{{ t('让 AI 分析') }}</span>
+      </button>
       <span aria-hidden="true">{{ t('趋势时间范围') }}</span>
       <AppSelect
         v-model="historyMinutesValue"

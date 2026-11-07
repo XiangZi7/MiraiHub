@@ -18,6 +18,9 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import { copyText } from '@/utils/clipboard'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import { requestAgentContext } from '@/composables/useAgentContextBus'
+import { toast } from '@/composables/useToast'
 
 const { t } = useI18n()
 const props = defineProps<{ initialCommand?: string }>()
@@ -156,6 +159,29 @@ async function confirmClose(): Promise<void> {
 onBeforeUnmount(() => {
   if (state.plan) void api.forgetBatch(state.plan.id).catch(() => {})
 })
+// 把失败主机的命令、退出码与输出交给该主机（或当前活动）会话的 AI Agent 分析原因。
+function analyzeFailure(row: api.BatchPlan['targets'][number]): void {
+  if (!state.plan) return
+  const content = [
+    `host: ${row.endpoint}`,
+    `command: ${state.plan.command}`,
+    `exit code: ${row.output?.exitCode ?? 'unknown'}`,
+    row.output?.stdout ? `stdout:\n${row.output.stdout}` : '',
+    row.output?.stderr ? `stderr:\n${row.output.stderr}` : '',
+    row.error ? `error: ${row.error}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+    .slice(0, 60000)
+  const handled = requestAgentContext({
+    sessionId: row.sessionId,
+    intent: 'fix',
+    name: t('批量执行失败-{value0}.txt', { value0: row.endpoint }),
+    content,
+  })
+  if (handled) toast.success(t('已添加到 AI 助手，关闭此窗口即可查看'))
+  else toast.error(t('没有可用的 AI 助手，请先连接终端'))
+}
 async function copyResults(): Promise<void> {
   if (!state.plan) return
   try {
@@ -349,6 +375,17 @@ async function copyResults(): Promise<void> {
           >
             {{ row.error || t('尚无输出') }}
           </p>
+          <button
+            v-if="row.status === 'failed'"
+            type="button"
+            class="text-accent hover:bg-hover mt-2 inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-[11px]"
+            @click="analyzeFailure(row)"
+          >
+            <AppIcon
+              name="lucide:sparkles"
+              :size="12"
+            />{{ t('AI 分析失败原因') }}
+          </button>
         </details>
       </div></template
     >

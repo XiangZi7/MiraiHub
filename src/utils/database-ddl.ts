@@ -1,7 +1,10 @@
 import { i18n } from '@/i18n'
 import type {
+  TableDesignerChange,
+  TableDesignerCheck,
   TableDesignerColumn,
   TableDesignerDraft,
+  TableDesignerTrigger,
   TableDesignerForeignKey,
   TableDesignerIndex,
   TableIndexMethod,
@@ -15,6 +18,7 @@ import type {
   DatabaseKind,
   DatabaseTableDetail,
   DatabaseTableOptions,
+  DatabaseTrigger,
 } from '@/types/database'
 
 interface ColumnTypeGroup {
@@ -313,6 +317,25 @@ export function validateTableDraft({
       /^(?:VARCHAR|VARBINARY)$/u.test(column.dataType)
     )
       fail(i18n.global.t('字段“{value0}”必须指定长度', { value0: label }))
+    // 精度 / 小数位的取值关系：长度不能为 0，小数位不能超过精度。
+    const lengthMatch = !traits.enumerated
+      ? /^(\d+)(?:\s*,\s*(\d+))?$/u.exec(column.length.trim())
+      : null
+    if (lengthMatch && Number(lengthMatch[1]) === 0 && traits.length)
+      fail(i18n.global.t('字段“{value0}”的长度必须大于 0', { value0: label }))
+    if (lengthMatch?.[2] && Number(lengthMatch[2]) > Number(lengthMatch[1]))
+      fail(
+        i18n.global.t('字段“{value0}”的小数位不能大于精度', { value0: label })
+      )
+    if (
+      /^current_timestamp(?:\(\d*\))?$/iu.test(column.defaultValue.trim()) &&
+      !/DATE|TIME/u.test(column.dataType.toUpperCase())
+    )
+      fail(
+        i18n.global.t('字段“{value0}”只有日期时间类型才能默认当前时间', {
+          value0: label,
+        })
+      )
     if (
       column.defaultValue &&
       !SQL_STRING_LITERAL.test(column.defaultValue.trim()) &&
@@ -401,6 +424,13 @@ export function validateTableDraft({
     else indexNames.add(normalized)
     if (!item.columns.length)
       fail(i18n.global.t('索引“{value0}”至少需要一个字段', { value0: label }))
+    if (kind === 'mysql' && normalized === 'primary')
+      fail(i18n.global.t('索引名不能使用保留名 PRIMARY'))
+    if (
+      new Set(item.columns.map(column => column.trim().toLowerCase())).size !==
+      item.columns.length
+    )
+      fail(i18n.global.t('索引“{value0}”包含重复的字段', { value0: label }))
     const plainColumns = item.columns.filter(
       column => !item.columnOptions?.[column]?.expression
     )
@@ -460,54 +490,308 @@ export function validateTableDraft({
             value1: column,
           })
         )
+      if (
+        options?.prefix &&
+        /^\d+$/u.test(stored.length.trim()) &&
+        Number(options.prefix) > Number(stored.length.trim())
+      )
+        fail(
+          i18n.global.t('索引“{value0}”的前缀长度超过字段“{value1}”的长度', {
+            value0: label,
+            value1: column,
+          })
+        )
     }
   }
 
+  const foreignKeyErrors: Record<string, string[]> = {}
   const foreignKeyNames = new Set<string>()
   for (const [index, foreignKey] of draft.foreignKeys.entries()) {
+    const fail = (message: string): void => {
+      errors.push(message)
+      ;(foreignKeyErrors[foreignKey.id] ??= []).push(message)
+    }
     const label =
       foreignKey.name.trim() ||
       i18n.global.t('第 {value0} 个外键', { value0: index + 1 })
     const normalized = foreignKey.name.trim().toLocaleLowerCase()
     if (!foreignKey.name.trim())
-      errors.push(
-        i18n.global.t('第 {value0} 个外键缺少名称', { value0: index + 1 })
-      )
+      fail(i18n.global.t('第 {value0} 个外键缺少名称', { value0: index + 1 }))
     else if (foreignKeyNames.has(normalized))
-      errors.push(
-        i18n.global.t('外键“{value0}”重复', { value0: foreignKey.name })
-      )
+      fail(i18n.global.t('外键“{value0}”重复', { value0: foreignKey.name }))
     else foreignKeyNames.add(normalized)
-    if (!foreignKey.column || !columnNames.has(foreignKey.column))
-      errors.push(
-        i18n.global.t('外键“{value0}”缺少有效的本地字段', { value0: label })
-      )
+    if (
+      !foreignKey.columns.length ||
+      foreignKey.columns.some(column => !column || !columnNames.has(column))
+    )
+      fail(i18n.global.t('外键“{value0}”缺少有效的本地字段', { value0: label }))
     if (
       !foreignKey.referencedSchema.trim() ||
       !foreignKey.referencedTable.trim() ||
-      !foreignKey.referencedColumn.trim()
+      !foreignKey.referencedColumns.length ||
+      foreignKey.referencedColumns.some(column => !column.trim())
     )
-      errors.push(
-        i18n.global.t('外键“{value0}”的引用目标不完整', { value0: label })
+      fail(i18n.global.t('外键“{value0}”的引用目标不完整', { value0: label }))
+    else if (foreignKey.referencedColumns.length !== foreignKey.columns.length)
+      fail(
+        i18n.global.t('外键“{value0}”的本地字段与引用字段数量不一致', {
+          value0: label,
+        })
       )
+    if (new Set(foreignKey.columns).size !== foreignKey.columns.length)
+      fail(i18n.global.t('外键“{value0}”包含重复的字段', { value0: label }))
     if (
       foreignKey.onDelete === 'SET NULL' &&
-      !draft.columns.find(column => column.name === foreignKey.column)?.nullable
+      foreignKey.columns.some(
+        name => !draft.columns.find(column => column.name === name)?.nullable
+      )
     )
-      errors.push(
+      fail(
         i18n.global.t('外键“{value0}”使用 SET NULL 时本地字段必须允许 NULL', {
           value0: label,
         })
       )
   }
 
-  return { valid: errors.length === 0, errors, columnErrors, indexErrors }
+  const checkErrors: Record<string, string[]> = {}
+  const checkNames = new Set<string>()
+  for (const [index, check] of (draft.checks ?? []).entries()) {
+    const fail = (message: string): void => {
+      errors.push(message)
+      ;(checkErrors[check.id] ??= []).push(message)
+    }
+    const label =
+      check.name.trim() ||
+      i18n.global.t('第 {value0} 个检查约束', { value0: index + 1 })
+    const normalized = check.name.trim().toLocaleLowerCase()
+    if (!check.name.trim())
+      fail(
+        i18n.global.t('第 {value0} 个检查约束缺少名称', { value0: index + 1 })
+      )
+    else if (checkNames.has(normalized) || foreignKeyNames.has(normalized))
+      fail(i18n.global.t('约束名“{value0}”重复', { value0: check.name }))
+    else checkNames.add(normalized)
+    if (!check.expression.trim())
+      fail(i18n.global.t('检查约束“{value0}”缺少表达式', { value0: label }))
+    else if (UNSAFE_SQL_TOKEN.test(check.expression))
+      fail(
+        i18n.global.t('检查约束“{value0}”不能包含语句分隔符或注释', {
+          value0: label,
+        })
+      )
+  }
+
+  const triggerErrors: Record<string, string[]> = {}
+  const triggerNames = new Set<string>()
+  for (const [index, trigger] of (draft.triggers ?? []).entries()) {
+    const fail = (message: string): void => {
+      errors.push(message)
+      ;(triggerErrors[trigger.id] ??= []).push(message)
+    }
+    const label =
+      trigger.name.trim() ||
+      i18n.global.t('第 {value0} 个触发器', { value0: index + 1 })
+    const normalized = trigger.name.trim().toLocaleLowerCase()
+    if (!trigger.name.trim())
+      fail(i18n.global.t('第 {value0} 个触发器缺少名称', { value0: index + 1 }))
+    else if (triggerNames.has(normalized))
+      fail(i18n.global.t('触发器“{value0}”重复', { value0: trigger.name }))
+    else triggerNames.add(normalized)
+    if (!trigger.events.length)
+      fail(i18n.global.t('触发器“{value0}”至少需要一个事件', { value0: label }))
+    if (kind !== 'postgresql' && trigger.events.length > 1)
+      fail(
+        i18n.global.t('触发器“{value0}”在当前数据库只能选择一个事件', {
+          value0: label,
+        })
+      )
+    if (
+      trigger.events.includes('TRUNCATE') &&
+      (kind !== 'postgresql' || trigger.level !== 'STATEMENT')
+    )
+      fail(
+        i18n.global.t('触发器“{value0}”的 TRUNCATE 事件只支持 PostgreSQL 语句级触发器', {
+          value0: label,
+        })
+      )
+    if (!trigger.body.trim())
+      fail(i18n.global.t('触发器“{value0}”缺少语句体', { value0: label }))
+    if (kind === 'postgresql' && trigger.body.includes(TRIGGER_BODY_TAG))
+      fail(
+        i18n.global.t('触发器“{value0}”的函数体不能包含 {value1}', {
+          value0: label,
+          value1: TRIGGER_BODY_TAG,
+        })
+      )
+    if (
+      trigger.functionName?.trim() &&
+      !/^[\w."$]+$/u.test(trigger.functionName.trim())
+    )
+      fail(
+        i18n.global.t('触发器“{value0}”的函数名不合法', { value0: label })
+      )
+  }
+
+  const partition = draft.partition
+  if (partition?.method) {
+    if (kind !== 'mysql') errors.push(i18n.global.t('表分区当前只支持 MySQL'))
+    if (!partition.expression.trim())
+      errors.push(i18n.global.t('分区表达式不能为空'))
+    else if (UNSAFE_SQL_TOKEN.test(partition.expression))
+      errors.push(i18n.global.t('分区表达式不能包含语句分隔符或注释'))
+    if (partition.method === 'HASH' || partition.method === 'KEY') {
+      if (!/^[1-9]\d*$/u.test(partition.count.trim()))
+        errors.push(i18n.global.t('分区数必须是正整数'))
+    } else {
+      if (!partition.items.length)
+        errors.push(i18n.global.t('RANGE / LIST 分区至少需要一个分区'))
+      const partitionNames = new Set<string>()
+      for (const item of partition.items) {
+        const name = item.name.trim().toLowerCase()
+        if (!name || !/^\w+$/u.test(name) || partitionNames.has(name))
+          errors.push(
+            i18n.global.t('分区名“{value0}”为空、不合法或重复', {
+              value0: item.name,
+            })
+          )
+        partitionNames.add(name)
+        if (!item.value.trim() || UNSAFE_SQL_TOKEN.test(item.value))
+          errors.push(
+            i18n.global.t('分区“{value0}”的取值不合法', { value0: item.name })
+          )
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    columnErrors,
+    indexErrors,
+    foreignKeyErrors,
+    checkErrors,
+    triggerErrors,
+  }
 }
 
-export function buildCreateTableSql({
+/** PostgreSQL 触发函数体的美元引号标记。 */
+const TRIGGER_BODY_TAG = '$mh_trigger$'
+
+/** 外键约束子句：多列外键按位置一一对应；SQLite 的 REFERENCES 不能带库名。 */
+function renderForeignKey(
+  foreignKey: TableDesignerForeignKey,
+  kind: DatabaseKind
+): string {
+  const local = foreignKey.columns
+    .map(column => quoteIdentifier(column, kind))
+    .join(', ')
+  const referenced = foreignKey.referencedColumns
+    .map(column => quoteIdentifier(column, kind))
+    .join(', ')
+  const table =
+    kind === 'sqlite'
+      ? quoteIdentifier(foreignKey.referencedTable, kind)
+      : qualifiedName(
+          foreignKey.referencedSchema,
+          foreignKey.referencedTable,
+          kind
+        )
+  return `CONSTRAINT ${quoteIdentifier(foreignKey.name, kind)} FOREIGN KEY (${local}) REFERENCES ${table} (${referenced}) ON DELETE ${foreignKey.onDelete} ON UPDATE ${foreignKey.onUpdate}`
+}
+
+/** 检查约束子句，建表内联与 ALTER ADD 共用。 */
+function renderCheck(check: TableDesignerCheck, kind: DatabaseKind): string {
+  return `CONSTRAINT ${quoteIdentifier(check.name, kind)} CHECK (${check.expression.trim()})`
+}
+
+/** PostgreSQL 触发器默认的函数名：表名_触发器名_fn，放在表所在 schema。 */
+function triggerFunctionName(
+  trigger: TableDesignerTrigger,
+  schema: string,
+  table: string
+): string {
+  return (
+    trigger.functionName?.trim() ||
+    qualifiedName(schema, `${table}_${trigger.name}_fn`, 'postgresql')
+  )
+}
+
+/**
+ * 生成创建触发器的语句（每项一条，语句体里的分号不再切分）。
+ * MySQL 多条语句自动包 BEGIN…END；PostgreSQL 先建触发函数再挂触发器。
+ */
+function triggerCreateStatements(
+  trigger: TableDesignerTrigger,
+  kind: DatabaseKind,
+  schema: string,
+  table: string
+): string[] {
+  const target = qualifiedName(schema, table, kind)
+  const name = quoteIdentifier(trigger.name, kind)
+  const body = trigger.body.trim().replace(/;\s*$/u, '')
+  if (kind === 'mysql') {
+    const wrapped =
+      /^begin\b/iu.test(body) || !body.includes(';')
+        ? body
+        : `BEGIN\n  ${body};\nEND`
+    return [
+      `CREATE TRIGGER ${name} ${trigger.timing} ${trigger.events[0]} ON ${target} FOR EACH ROW ${wrapped}`,
+    ]
+  }
+  if (kind === 'sqlite') {
+    return [
+      `CREATE TRIGGER ${name} ${trigger.timing} ${trigger.events[0]} ON ${quoteIdentifier(table, kind)} FOR EACH ROW BEGIN\n  ${body};\nEND`,
+    ]
+  }
+  const fn = triggerFunctionName(trigger, schema, table)
+  return [
+    `CREATE OR REPLACE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS ${TRIGGER_BODY_TAG}\n${trigger.body.trim()}\n${TRIGGER_BODY_TAG}`,
+    `CREATE TRIGGER ${name} ${trigger.timing} ${trigger.events.join(' OR ')} ON ${target} FOR EACH ${trigger.level} EXECUTE FUNCTION ${fn}()`,
+  ]
+}
+
+/** 删除触发器语句；PostgreSQL 的触发函数可能被共用，保留不删。 */
+function triggerDropStatement(
+  name: string,
+  kind: DatabaseKind,
+  schema: string,
+  table: string
+): string {
+  if (kind === 'postgresql')
+    return `DROP TRIGGER ${quoteIdentifier(name, kind)} ON ${qualifiedName(schema, table, kind)}`
+  if (kind === 'sqlite') return `DROP TRIGGER ${quoteIdentifier(name, kind)}`
+  return `DROP TRIGGER ${qualifiedName(schema, name, kind)}`
+}
+
+/** MySQL 建表的 PARTITION BY 子句；未配置分区时返回空串。 */
+function renderPartition(draft: TableDesignerDraft): string {
+  const partition = draft.partition
+  if (!partition?.method) return ''
+  const expression = partition.expression.trim()
+  if (partition.method === 'HASH' || partition.method === 'KEY')
+    return `\nPARTITION BY ${partition.method} (${expression}) PARTITIONS ${partition.count.trim()}`
+  const items = partition.items.map(item => {
+    const value = item.value.trim()
+    const name = quoteIdentifier(item.name.trim(), 'mysql')
+    if (partition.method === 'LIST') return `  PARTITION ${name} VALUES IN (${value})`
+    return /^maxvalue$/iu.test(value)
+      ? `  PARTITION ${name} VALUES LESS THAN MAXVALUE`
+      : `  PARTITION ${name} VALUES LESS THAN (${value})`
+  })
+  return `\nPARTITION BY ${partition.method} (${expression}) (\n${items.join(',\n')}\n)`
+}
+
+export function buildCreateTableSql(options: TableDesignerOptions): string {
+  return buildCreateTableStatements(options)
+    .map(statement => `${statement};`)
+    .join('\n\n')
+}
+
+/** 建表语句逐条返回（不带结尾分号），设计器按条执行，触发器体不会被误切。 */
+export function buildCreateTableStatements({
   kind,
   draft,
-}: TableDesignerOptions): string {
+}: TableDesignerOptions): string[] {
   const validation = validateTableDraft({ kind, draft })
   if (!validation.valid) throw new Error(validation.errors[0])
 
@@ -524,48 +808,47 @@ export function buildCreateTableSql({
       definitions.push(`  ${mysqlIndexDefinition(index, 'KEY')}`)
   }
 
-  for (const foreignKey of draft.foreignKeys) {
-    definitions.push(
-      `  CONSTRAINT ${quoteIdentifier(foreignKey.name, kind)} FOREIGN KEY (${quoteIdentifier(foreignKey.column, kind)}) REFERENCES ${qualifiedName(foreignKey.referencedSchema, foreignKey.referencedTable, kind)} (${quoteIdentifier(foreignKey.referencedColumn, kind)}) ON DELETE ${foreignKey.onDelete} ON UPDATE ${foreignKey.onUpdate}`
-    )
-  }
+  for (const foreignKey of draft.foreignKeys)
+    definitions.push(`  ${renderForeignKey(foreignKey, kind)}`)
+  for (const check of draft.checks ?? [])
+    definitions.push(`  ${renderCheck(check, kind)}`)
 
   const suffix =
     kind === 'mysql'
-      ? ` ENGINE=${safeOption(draft.engine || 'InnoDB')} DEFAULT CHARSET=${safeOption(draft.charset || 'utf8mb4')}${draft.collation ? ` COLLATE=${safeOption(draft.collation)}` : ''}${draft.rowFormat ? ` ROW_FORMAT=${safeOption(draft.rowFormat)}` : ''}${draft.autoIncrement != null ? ` AUTO_INCREMENT=${draft.autoIncrement}` : ''}${draft.comment ? ` COMMENT=${quoteLiteral(draft.comment, kind)}` : ''}`
+      ? ` ENGINE=${safeOption(draft.engine || 'InnoDB')} DEFAULT CHARSET=${safeOption(draft.charset || 'utf8mb4')}${draft.collation ? ` COLLATE=${safeOption(draft.collation)}` : ''}${draft.rowFormat ? ` ROW_FORMAT=${safeOption(draft.rowFormat)}` : ''}${draft.autoIncrement != null ? ` AUTO_INCREMENT=${draft.autoIncrement}` : ''}${draft.comment ? ` COMMENT=${quoteLiteral(draft.comment, kind)}` : ''}${renderPartition(draft)}`
       : ''
   const statements = [
-    `CREATE TABLE ${table} (\n${definitions.join(',\n')}\n)${suffix};`,
+    `CREATE TABLE ${table} (\n${definitions.join(',\n')}\n)${suffix}`,
   ]
 
   if (kind === 'postgresql') {
     if (draft.autoIncrement != null) {
       const column = draft.columns.find(column => column.autoIncrement)!
       statements.push(
-        `ALTER TABLE ${table} ALTER COLUMN ${quoteIdentifier(column.name, kind)} RESTART WITH ${draft.autoIncrement};`
+        `ALTER TABLE ${table} ALTER COLUMN ${quoteIdentifier(column.name, kind)} RESTART WITH ${draft.autoIncrement}`
       )
     }
     for (const index of draft.indexes)
       statements.push(
-        ...postgresqlIndexStatements(
-          index,
-          table,
-          draft.schema
-        ).map(statement => `${statement};`)
+        ...postgresqlIndexStatements(index, table, draft.schema)
       )
     if (draft.comment)
       statements.push(
-        `COMMENT ON TABLE ${table} IS ${quoteLiteral(draft.comment, kind)};`
+        `COMMENT ON TABLE ${table} IS ${quoteLiteral(draft.comment, kind)}`
       )
     for (const column of draft.columns) {
       if (column.comment)
         statements.push(
-          `COMMENT ON COLUMN ${table}.${quoteIdentifier(column.name, kind)} IS ${quoteLiteral(column.comment, kind)};`
+          `COMMENT ON COLUMN ${table}.${quoteIdentifier(column.name, kind)} IS ${quoteLiteral(column.comment, kind)}`
         )
     }
   }
+  for (const trigger of draft.triggers ?? [])
+    statements.push(
+      ...triggerCreateStatements(trigger, kind, draft.schema, draft.name)
+    )
 
-  return statements.join('\n\n')
+  return statements
 }
 
 function lengthSuffix(column: TableDesignerColumn, kind: DatabaseKind): string {
@@ -1047,20 +1330,28 @@ function stableColumnIndexes(positions: readonly number[]): Set<number> {
   return stable
 }
 
+/** 外键定义是否变化（含多列顺序）；本地字段先按改名表映射成新名再比。 */
 function foreignKeyChanged(
   current: DatabaseForeignKey,
-  draft: TableDesignerForeignKey
+  draft: TableDesignerForeignKey,
+  renames: ReadonlyMap<string, string> = new Map()
 ): boolean {
+  const localColumns = current.columns.map(
+    column => renames.get(column.toLowerCase()) ?? column
+  )
+  const sameList = (left: readonly string[], right: readonly string[]) =>
+    left.length === right.length &&
+    left.every(
+      (value, index) =>
+        value.trim().toLowerCase() === (right[index] ?? '').trim().toLowerCase()
+    )
   return (
-    current.columns.length !== 1 ||
-    (current.columns[0] ?? '').toLowerCase() !==
-      draft.column.trim().toLowerCase() ||
+    !sameList(localColumns, draft.columns) ||
     current.referencedSchema.trim().toLowerCase() !==
       draft.referencedSchema.trim().toLowerCase() ||
     current.referencedTable.trim().toLowerCase() !==
       draft.referencedTable.trim().toLowerCase() ||
-    (current.referencedColumns[0] ?? '').trim().toLowerCase() !==
-      draft.referencedColumn.trim().toLowerCase() ||
+    !sameList(current.referencedColumns, draft.referencedColumns) ||
     (current.deleteRule || 'NO ACTION') !== draft.onDelete ||
     (current.updateRule || 'NO ACTION') !== draft.onUpdate
   )
@@ -1072,12 +1363,17 @@ function foreignKeyChanged(
  * 所有结构改动都作用于旧限定名，改名/换 schema 的语句放在最后；
  * 没有任何差异时返回空字符串，由调用方决定提示。
  */
-export function buildAlterTableSql({
+export function buildAlterTableSql(spec: TableAlterSpec): string {
+  return buildAlterTableStatements(spec).join('\n\n')
+}
+
+/** 同 buildAlterTableSql，但逐条返回语句，供设计器在事务里按条执行。 */
+export function buildAlterTableStatements({
   kind,
   current,
   draft,
   extraTypes,
-}: TableAlterSpec): string {
+}: TableAlterSpec): string[] {
   const validation = validateTableDraft({ kind, draft, extraTypes })
   if (!validation.valid) throw new Error(validation.errors[0])
 
@@ -1127,10 +1423,7 @@ export function buildAlterTableSql({
       item => item.name.toLowerCase() === foreignKey.name.toLowerCase()
     )
     if (draftForeignKey) {
-      if (!foreignKeyChanged(foreignKey, draftForeignKey)) continue
-    } else if (foreignKey.columns.length > 1) {
-      // 复合外键在编辑器里无法表示，保持原样不删。
-      continue
+      if (!foreignKeyChanged(foreignKey, draftForeignKey, renames)) continue
     } else if (
       !foreignKey.columns.every(column =>
         realColumnNames.has(column.toLowerCase())
@@ -1319,9 +1612,62 @@ export function buildAlterTableSql({
       )
     )
       continue
-    const constraint = `CONSTRAINT ${quoteIdentifier(foreignKey.name, kind)} FOREIGN KEY (${quoteIdentifier(foreignKey.column, kind)}) REFERENCES ${qualifiedName(foreignKey.referencedSchema, foreignKey.referencedTable, kind)} (${quoteIdentifier(foreignKey.referencedColumn, kind)}) ON DELETE ${foreignKey.onDelete} ON UPDATE ${foreignKey.onUpdate}`
+    const constraint = renderForeignKey(foreignKey, kind)
     if (kind === 'mysql') mainClauses.push(`ADD ${constraint}`)
     else pgStatements.push(`ALTER TABLE ${target} ADD ${constraint}`)
+  }
+
+  // 检查约束与触发器：删除放在主 ALTER 之前（解除对字段的引用），新增放在之后。
+  // 草稿没带 checks / triggers（旧调用方）时不碰库里已有的对象。
+  const preStatements: string[] = []
+  const postStatements: string[] = []
+  if (draft.checks && current.checks) {
+    const draftChecks = new Map(
+      draft.checks.map(check => [check.name.trim().toLowerCase(), check])
+    )
+    const storedChecks = new Map(
+      current.checks.map(check => [check.name.toLowerCase(), check])
+    )
+    const sameExpression = (left: string, right: string) =>
+      left.replace(/\s+/gu, ' ').trim() === right.replace(/\s+/gu, ' ').trim()
+    for (const [key, stored] of storedChecks) {
+      const next = draftChecks.get(key)
+      if (next && sameExpression(next.expression, stored.expression)) continue
+      if (kind === 'sqlite')
+        throw new Error(i18n.global.t('SQLite 不支持修改已有表的检查约束'))
+      preStatements.push(
+        `ALTER TABLE ${target} ${kind === 'mysql' ? 'DROP CHECK' : 'DROP CONSTRAINT'} ${quoteIdentifier(stored.name, kind)}`
+      )
+    }
+    for (const [key, check] of draftChecks) {
+      const stored = storedChecks.get(key)
+      if (stored && sameExpression(check.expression, stored.expression))
+        continue
+      if (kind === 'sqlite')
+        throw new Error(i18n.global.t('SQLite 不支持修改已有表的检查约束'))
+      postStatements.push(`ALTER TABLE ${target} ADD ${renderCheck(check, kind)}`)
+    }
+  }
+  if (draft.triggers && current.triggers) {
+    const storedTriggers = new Map(
+      current.triggers.map(trigger => [trigger.name.toLowerCase(), trigger])
+    )
+    for (const [key, stored] of storedTriggers) {
+      const next = draft.triggers.find(
+        trigger => trigger.name.trim().toLowerCase() === key
+      )
+      if (next && !triggerChanged(stored, next)) continue
+      preStatements.push(
+        triggerDropStatement(stored.name, kind, current.schema, current.name)
+      )
+    }
+    for (const trigger of draft.triggers) {
+      const stored = storedTriggers.get(trigger.name.trim().toLowerCase())
+      if (stored && !triggerChanged(stored, trigger)) continue
+      postStatements.push(
+        ...triggerCreateStatements(trigger, kind, current.schema, current.name)
+      )
+    }
   }
 
   // 表选项（MySQL 合并进主 ALTER；PostgreSQL 走 COMMENT ON）。
@@ -1385,6 +1731,8 @@ export function buildAlterTableSql({
   } else {
     statements.push(...pgStatements)
   }
+  statements.unshift(...preStatements)
+  statements.push(...postStatements)
 
   // 改名 / 换 schema 放在最后。
   const schemaChanged = draft.schema.trim() !== current.schema
@@ -1408,7 +1756,163 @@ export function buildAlterTableSql({
       )
   }
 
-  return statements.join('\n\n')
+  return statements
+}
+
+/** 判断库中触发器与草稿是否不同（时机、事件、级别、语句体、函数名），不同则需删除重建。 */
+function triggerChanged(
+  stored: DatabaseTrigger,
+  draft: TableDesignerTrigger
+): boolean {
+  const squash = (value: string) => value.replace(/\s+/gu, ' ').trim()
+  const events = (list: readonly string[]) =>
+    [...list].map(item => item.toUpperCase()).sort().join(',')
+  return (
+    stored.timing.toUpperCase() !== draft.timing ||
+    events(stored.events) !== events(draft.events) ||
+    (stored.level ?? 'ROW').toUpperCase() !== draft.level ||
+    squash(stored.body).replace(/;$/u, '') !==
+      squash(draft.body).replace(/;$/u, '') ||
+    ((draft.functionName ?? '').trim() !== '' &&
+      (draft.functionName ?? '').trim() !== (stored.function ?? ''))
+  )
+}
+
+/** 生成保存前的变更摘要：列出新增 / 修改 / 删除 / 重命名的字段、索引、外键、检查约束、触发器与表选项。 */
+export function summarizeTableChanges(
+  kind: DatabaseKind,
+  current: DatabaseTableDetail | null,
+  draft: TableDesignerDraft
+): TableDesignerChange[] {
+  const changes: TableDesignerChange[] = []
+  const lower = (value: string) => value.trim().toLowerCase()
+  if (!current) {
+    changes.push({ action: 'add', target: '表', name: draft.name.trim() })
+    for (const column of draft.columns)
+      changes.push({ action: 'add', target: '字段', name: column.name })
+    for (const index of draft.indexes)
+      changes.push({ action: 'add', target: '索引', name: index.name })
+    for (const foreignKey of draft.foreignKeys)
+      changes.push({ action: 'add', target: '外键', name: foreignKey.name })
+    for (const check of draft.checks ?? [])
+      changes.push({ action: 'add', target: '检查约束', name: check.name })
+    for (const trigger of draft.triggers ?? [])
+      changes.push({ action: 'add', target: '触发器', name: trigger.name })
+    return changes
+  }
+
+  // 字段：按 originalName 关联，识别改名与定义变化。
+  const matched = new Set<string>()
+  for (const column of draft.columns) {
+    const origin = column.originalName
+      ? current.columns.find(item => item.name === column.originalName)
+      : undefined
+    if (!origin) {
+      changes.push({ action: 'add', target: '字段', name: column.name })
+      continue
+    }
+    matched.add(origin.name)
+    if (origin.name !== column.name.trim())
+      changes.push({
+        action: 'rename',
+        target: '字段',
+        name: column.name,
+        detail: origin.name,
+      })
+    if (columnChanged(origin, column, kind, current))
+      changes.push({ action: 'modify', target: '字段', name: column.name })
+  }
+  for (const column of current.columns)
+    if (!matched.has(column.name))
+      changes.push({ action: 'remove', target: '字段', name: column.name })
+
+  // 索引 / 外键 / 检查约束 / 触发器：按名称对比。
+  const diffNamed = <T extends { name: string }, S extends { name: string }>(
+    target: string,
+    drafts: readonly T[],
+    stored: readonly S[],
+    changed: (stored: S, draft: T) => boolean
+  ) => {
+    const storedMap = new Map(stored.map(item => [lower(item.name), item]))
+    const draftKeys = new Set(drafts.map(item => lower(item.name)))
+    for (const item of drafts) {
+      const origin = storedMap.get(lower(item.name))
+      if (!origin) changes.push({ action: 'add', target, name: item.name })
+      else if (changed(origin, item))
+        changes.push({ action: 'modify', target, name: item.name })
+    }
+    for (const item of stored)
+      if (!draftKeys.has(lower(item.name)))
+        changes.push({ action: 'remove', target, name: item.name })
+  }
+  const storedIndexes = current.indexes.filter(
+    index =>
+      !index.primary && representableIndex(index, current.columns, kind)
+  )
+  diffNamed('索引', draft.indexes, storedIndexes, (stored, item) => {
+    const origin = designerIndexFromStored(stored, current.columns, kind, '')
+    return (
+      JSON.stringify({ ...origin, id: '' }) !==
+      JSON.stringify({ ...item, id: '' })
+    )
+  })
+  diffNamed(
+    '外键',
+    draft.foreignKeys,
+    current.foreignKeys,
+    (stored, item) => foreignKeyChanged(stored, item)
+  )
+  if (draft.checks && current.checks)
+    diffNamed(
+      '检查约束',
+      draft.checks,
+      current.checks,
+      (stored, item) =>
+        stored.expression.replace(/\s+/gu, ' ').trim() !==
+        item.expression.replace(/\s+/gu, ' ').trim()
+    )
+  if (draft.triggers && current.triggers)
+    diffNamed('触发器', draft.triggers, current.triggers, triggerChanged)
+
+  // 表级：改名与选项。
+  if (
+    draft.name.trim() !== current.name ||
+    draft.schema.trim() !== current.schema
+  )
+    changes.push({
+      action: 'rename',
+      target: '表',
+      name: draft.name.trim(),
+      detail: current.name,
+    })
+  const options = current.options
+  const optionDiffs: string[] = []
+  if ((draft.comment ?? '') !== (options?.comment ?? '')) optionDiffs.push('COMMENT')
+  if (kind === 'mysql') {
+    if (draft.engine && draft.engine !== options?.engine) optionDiffs.push('ENGINE')
+    if (draft.charset && draft.charset !== options?.charset)
+      optionDiffs.push('CHARSET')
+    if (draft.collation && draft.collation !== options?.collation)
+      optionDiffs.push('COLLATE')
+    if (
+      draft.rowFormat &&
+      draft.rowFormat.toUpperCase() !== options?.rowFormat?.toUpperCase()
+    )
+      optionDiffs.push('ROW_FORMAT')
+  }
+  if (
+    draft.autoIncrement != null &&
+    String(draft.autoIncrement) !== String(options?.autoIncrement)
+  )
+    optionDiffs.push('AUTO_INCREMENT')
+  if (optionDiffs.length)
+    changes.push({
+      action: 'modify',
+      target: '表',
+      name: draft.name.trim(),
+      detail: optionDiffs.join(', '),
+    })
+  return changes
 }
 
 /** 比较的都是「设计器看到的形态」，未修改的字段才不会被误判。 */

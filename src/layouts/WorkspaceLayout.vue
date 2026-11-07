@@ -212,6 +212,11 @@ async function newDatabaseQuery(connection: SavedConnection): Promise<void> {
     .get('databases')
     ?.newQuery?.(connection.id, connection.settings.database)
 }
+/** 命令面板“切换连接”：按 id 找到已保存的数据库连接并打开 */
+function openPaletteConnection(id: string): void {
+  const connection = connections.items.find(item => item.id === id)
+  if (connection) void openConnection(connection)
+}
 function refreshImportedDatabase(id: string): void {
   controllers.get('databases')?.refreshDatabase?.(id)
 }
@@ -428,6 +433,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         <CommandPalette
           @close="paletteOpen = false"
           @run="runCommand"
+          @open-connection="openPaletteConnection"
         />
       </div>
     </Transition>

@@ -29,6 +29,7 @@ import {
   useAgentErrorToasts,
   notifyAgentError,
 } from '@/composables/useAgentErrorToasts'
+import { provideAgentTerminalSession } from '@/composables/useAgentContextBus'
 
 const { t } = useI18n()
 
@@ -42,6 +43,10 @@ const props = withDefaults(
     contextRequest?: AgentContextRequest | null
   }>(),
   { active: true, split: false }
+)
+// SSH 目标的会话即回复中 shell 代码块“插入终端”的去处，未连接时为空串
+provideAgentTerminalSession(
+  computed(() => (props.target.kind === 'ssh' ? props.target.sessionId : ''))
 )
 const emit = defineEmits<{
   split: []

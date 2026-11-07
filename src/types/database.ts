@@ -6,6 +6,8 @@ import type { SshConfig } from './ssh'
 export type DatabaseKind = 'mysql' | 'postgresql' | 'sqlite'
 /** 工作台连接协议；SQL 方言仍限定为 DatabaseKind。 */
 export type DatabaseConnectionKind = DatabaseKind | 'redis'
+/** MySQL 协议下的具体产品，只影响表单默认值和显示，后端按 VERSION() 处理差异。 */
+export type MysqlFlavor = 'mysql' | 'mariadb' | 'tidb'
 export type DatabaseSslMode =
   'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full'
 

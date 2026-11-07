@@ -46,7 +46,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"
 russh = { version = "0.55", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "2.3"
 
-# 终端输出以 base64 过 IPC（远端字节流不保证是完整 UTF-8，见 ssh/events.rs）
+# 二进制数据（附件、备份、代理认证、数据库/Redis 二进制值）的文本编码；终端输出已改走原始字节 Channel
 base64 = "0.22"
 # 生成密钥时的随机源。版本需与 russh 内部 ssh-key 所用的 rand 主版本一致，
 # 否则 PrivateKey::random 的 RNG trait 对不上。

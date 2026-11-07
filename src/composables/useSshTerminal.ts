@@ -157,6 +157,9 @@ export function useSshTerminal() {
       }
 
       state.status = 'connected'
+      syncedSize = `${id}:${terminal.cols}x${terminal.rows}`
+      // 连接期间容器可能已变化，补一次适配
+      resize()
 
       const startupCommand = options.startupCommand?.trim()
       if (startupCommand) await ssh.writeToShell(id, `${startupCommand}\r`)
@@ -191,24 +194,45 @@ export function useSshTerminal() {
    * 防抖是因为拖拽窗口或面板会连续触发几十次，
    * 每次都往远端发 window_change 既浪费，也会让 vim/top 这类程序反复重绘闪烁。
    */
-  const resize = useDebounceFn(() => {
-    const fit = fitAddon.value
+  // 本地 fit 用 rAF 合并到下一帧；远端同步单独防抖，并记住上次发送的尺寸
+  let fitFrame = 0
+  let syncedSize = ''
+
+  // 容器尺寸变化：下一帧立即本地适配，再防抖把新尺寸同步给远端
+  function resize(): void {
+    cancelAnimationFrame(fitFrame)
+    fitFrame = requestAnimationFrame(() => {
+      fitFrame = 0
+      const fit = fitAddon.value
+      const terminal = term.value
+      if (!fit || !terminal) return
+      if (!terminal.element?.clientWidth || !terminal.element?.clientHeight)
+        return
+      fit.fit()
+      syncRemoteSize()
+    })
+  }
+
+  // 仅在 cols/rows 与上次发送不同时才通知远端
+  const syncRemoteSize = useDebounceFn(() => {
     const terminal = term.value
-    if (!fit || !terminal) return
-
-    if (!terminal.element?.clientWidth || !terminal.element?.clientHeight)
-      return
-    const cols = terminal.cols,
-      rows = terminal.rows
-    fit.fit()
-    if (terminal.cols === cols && terminal.rows === rows) return
-
-    if (state.status === 'connected' && state.sessionId) {
-      void ssh
-        .resizeShell(state.sessionId, terminal.cols, terminal.rows)
-        .catch(err => console.warn('同步终端尺寸失败：', ssh.errorMessage(err)))
-    }
+    if (!terminal || state.status !== 'connected' || !state.sessionId) return
+    const size = `${state.sessionId}:${terminal.cols}x${terminal.rows}`
+    if (size === syncedSize) return
+    syncedSize = size
+    void ssh
+      .resizeShell(state.sessionId, terminal.cols, terminal.rows)
+      .catch(err => {
+        syncedSize = ''
+        console.warn('同步终端尺寸失败：', ssh.errorMessage(err))
+      })
   }, 120)
+
+  // 广播输入使用：原样写入远端，不参与补全的输入镜像
+  function writeRaw(data: string): void {
+    if (state.status !== 'connected' || !state.sessionId) return
+    void ssh.writeToShell(state.sessionId, data).catch(handleWriteError)
+  }
 
   /** 主动断开 */
   async function disconnect(): Promise<void> {
@@ -301,6 +325,7 @@ export function useSshTerminal() {
   // 漏掉任何一个都会在反复开关标签页时累积泄漏
   onBeforeUnmount(() => {
     stopSettingsWatch()
+    cancelAnimationFrame(fitFrame)
     disposed = true
     void disconnect()
     term.value?.dispose()
@@ -318,6 +343,7 @@ export function useSshTerminal() {
     disconnect,
     resize,
     sendInput,
+    writeRaw,
     setInputInterceptor,
     setSubmitHandler,
   }

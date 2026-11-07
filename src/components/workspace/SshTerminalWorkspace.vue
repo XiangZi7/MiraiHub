@@ -15,6 +15,7 @@ import { useWorkspaceLayoutStore } from '@/stores/workspace-layout'
 import { useMachinePaneWidth } from '@/composables/useMachinePaneWidth'
 import { useSplitPanes, type SplitDirection } from '@/composables/useSplitPanes'
 import { useSplitDropZone } from '@/composables/useSplitDropZone'
+import { onAgentContextRequest } from '@/composables/useAgentContextBus'
 import TerminalPanel from './TerminalPanel.vue'
 import MachinePanel from './MachinePanel.vue'
 import ServerStatusBar from './ServerStatusBar.vue'
@@ -70,8 +71,10 @@ const state = reactive({
   machineVisited: false,
   // 从终端显式选择、待加入 AI 草稿的上下文
   contextRequest: null as AgentContextRequest | null,
+  // 是否把任一分屏的输入广播到同工作区的其他分屏
+  broadcast: false,
 })
-const { sessionId, machineVisited, contextRequest } = toRefs(state)
+const { sessionId, machineVisited, contextRequest, broadcast } = toRefs(state)
 
 const {
   panes,
@@ -90,6 +93,9 @@ const {
 type TerminalPanelInstance = InstanceType<typeof TerminalPanel>
 // 面板实例按 pane id 存取。只用于命令式调用（聚焦 / 重连），无需响应式
 const panels = new Map<string, TerminalPanelInstance>()
+// 各分屏当前已连接的会话 id，主面板未连接时副面板可借此调用 AI
+const paneSessions = new Map<string, string>()
+// 记录面板实例，供聚焦、重连与广播输入使用
 function setPanelRef(id: string, el: unknown): void {
   if (el) panels.set(id, el as TerminalPanelInstance)
   else panels.delete(id)
@@ -113,6 +119,8 @@ function statusChanged(
   status: SshSessionStatus,
   session: string
 ): void {
+  if (status === 'connected') paneSessions.set(paneId, session)
+  else paneSessions.delete(paneId)
   if (paneId !== ROOT_PANE_ID) return
 
   state.sessionId = status === 'connected' ? session : ''
@@ -134,13 +142,19 @@ function toggleAgent(): void {
     machineOpen.value = true
   }
 }
-function askAgent(content: string): void {
-  if (!state.sessionId) return
+// 把终端内容交给 AI 面板；主会话优先，未连接时退回发起请求的分屏会话
+function askAgent(
+  paneId: string,
+  content: string,
+  intent: 'explain' | 'fix' = 'explain'
+): void {
+  const session = state.sessionId || paneSessions.get(paneId)
+  if (!session) return
   state.contextRequest = {
     id: crypto.randomUUID(),
-    target: { kind: 'ssh', sessionId: state.sessionId, database: '' },
+    target: { kind: 'ssh', sessionId: session, database: '' },
     source: 'terminal',
-    intent: 'explain',
+    intent,
     content,
   }
   machineView.value = 'agent'
@@ -152,6 +166,33 @@ watch(
     state.contextRequest = null
   }
 )
+// 接收监控栏、批量执行结果等跨层入口投递的上下文：会话匹配或未指定会话时由活动工作区接收
+onAgentContextRequest(ask => {
+  if (!state.sessionId) return false
+  if (ask.sessionId ? ask.sessionId !== state.sessionId : !props.active)
+    return false
+  state.contextRequest = {
+    id: crypto.randomUUID(),
+    target: { kind: 'ssh', sessionId: state.sessionId, database: '' },
+    source: 'terminal',
+    intent: ask.intent,
+    name: ask.name,
+    content: ask.content,
+  }
+  machineView.value = 'agent'
+  machineOpen.value = true
+  return true
+})
+
+// 广播输入：把某个分屏的输入写到其他所有分屏的会话
+function broadcastInput(fromId: string, data: string): void {
+  if (!state.broadcast || !split.value) return
+  for (const [id, panel] of panels) if (id !== fromId) panel.write(data)
+}
+// 退出分屏后自动关闭广播，避免下次分屏时意外广播
+watch(split, value => {
+  if (!value) state.broadcast = false
+})
 
 /** 新开一块分屏，并把焦点交给它 */
 async function openPane(direction: SplitDirection = 'down'): Promise<void> {
@@ -245,6 +286,7 @@ defineExpose({
               pane.id === ROOT_PANE_ID ? startupCommand : undefined
             "
             :split="split"
+            :broadcast="broadcast && split"
             :closable="pane.id !== ROOT_PANE_ID"
             @pointerdown.capture="focusPane(pane.id)"
             @split="splitClicked"
@@ -253,7 +295,10 @@ defineExpose({
             @status="
               (status, session) => statusChanged(pane.id, status, session)
             "
-            @ask-agent="askAgent"
+            @ask-agent="
+              (content, intent) => askAgent(pane.id, content, intent)
+            "
+            @input="broadcastInput(pane.id, $event)"
           >
             <template
               v-if="pane.id === ROOT_PANE_ID"
@@ -282,6 +327,15 @@ defineExpose({
                     : t('改为上下分屏')
                 "
                 @click="toggleOrientation"
+              />
+              <IconButton
+                v-if="split"
+                icon="lucide:radio-tower"
+                :size="14"
+                :title="t('广播输入到所有分屏')"
+                :class="broadcast && 'text-accent'"
+                :aria-pressed="broadcast"
+                @click="broadcast = !broadcast"
               />
               <IconButton
                 icon="lucide:folder-open"

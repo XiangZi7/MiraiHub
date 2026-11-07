@@ -25,9 +25,7 @@ import { invalidateCompletionCache } from '@/composables/useDatabaseCompletions'
 
 /** 会改变对象结构的语句；执行成功后补全元数据缓存需要失效。 */
 const DDL_PATTERN =
-  /^\s*(?:--[^
-]*
-\s*|\/\*[\s\S]*?\*\/\s*)*(?:CREATE|ALTER|DROP|RENAME|TRUNCATE|COMMENT)/iu
+  /^\s*(?:--[^\n]*\n\s*|\/\*[\s\S]*?\*\/\s*)*(?:CREATE|ALTER|DROP|RENAME|TRUNCATE|COMMENT)/iu
 
 interface UseDatabaseSessionOptions {
   onStatus?: (status: SshSessionStatus, sessionId: string) => void
@@ -94,6 +92,8 @@ export function useDatabaseSession(
 
   async function release(sessionId: string): Promise<void> {
     if (!sessionId) return
+    // 会话 ID 不再复用，其元数据缓存不必等 LRU 淘汰。
+    invalidateCompletionCache(sessionId)
 
     try {
       await database.disconnect(sessionId)
@@ -362,6 +362,13 @@ export function useDatabaseSession(
 
       // 结果集只整体替换、从不原地修改；跳过深层代理，大结果集不必逐行建响应式。
       state.queryExecution = markRaw(result)
+      // DDL 可能跨库（如 DROP TABLE other.t），清空整个会话的补全缓存，而不只是当前库。
+      if (
+        result.statements.some(
+          statement => !statement.error && DDL_PATTERN.test(statement.statement)
+        )
+      )
+        invalidateCompletionCache(sessionId)
       // DDL/DML 可能改变对象结构；异步刷新，不阻塞结果展示。
       if (
         result.statements.some(

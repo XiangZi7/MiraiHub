@@ -260,6 +260,32 @@ pub fn quote_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
+/// 服务端是 MariaDB。它走 MySQL 协议，VERSION() 形如 `10.11.6-MariaDB`。
+pub fn is_mariadb_version(version: &str) -> bool {
+    version.to_ascii_lowercase().contains("mariadb")
+}
+
+/// 服务端是 TiDB。VERSION() 形如 `8.0.11-TiDB-v7.5.0`。
+pub fn is_tidb_version(version: &str) -> bool {
+    version.to_ascii_lowercase().contains("tidb")
+}
+
+/// MariaDB 的 COLUMN_DEFAULT 与 MySQL 写法不同：无默认值是字符串 `NULL`，文本带引号，
+/// 表达式不带引号。转成 MySQL 的形式，返回（默认值，是否表达式）。
+pub fn normalize_mariadb_default(raw: Option<String>) -> (Option<String>, bool) {
+    let Some(raw) = raw else {
+        return (None, false);
+    };
+    if raw.eq_ignore_ascii_case("NULL") {
+        return (None, false);
+    }
+    if raw.len() >= 2 && raw.starts_with('\'') && raw.ends_with('\'') {
+        return (Some(raw[1..raw.len() - 1].replace("''", "'")), false);
+    }
+    let expression = raw.parse::<f64>().is_err();
+    (Some(raw), expression)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

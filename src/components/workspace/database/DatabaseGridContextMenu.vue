@@ -14,6 +14,10 @@ const props = defineProps<{
   canFilter?: boolean
   canEdit?: boolean
   canInsert?: boolean
+  /** 活动单元格属于外键，可跳到被引用的记录。 */
+  canFollow?: boolean
+  /** 引用当前表的外键，作为“查看引用此行的记录”的子菜单。 */
+  referencing?: ReadonlyArray<{ id: string; label: string }>
   /** 点击的行已标记删除，删除项变为撤销。 */
   deleted?: boolean
 }>()
@@ -59,6 +63,27 @@ const items = computed<ContextMenuItem[]>(() => [
     icon: 'lucide:filter-x',
     disabled: !props.canFilter,
   },
+  ...(props.canFollow
+    ? [
+        {
+          id: 'follow-key',
+          label: t('打开被引用的记录'),
+          icon: 'lucide:link',
+          separatorBefore: true,
+        },
+      ]
+    : []),
+  ...(props.referencing?.length
+    ? [
+        {
+          id: 'referencing',
+          label: t('查看引用此行的记录'),
+          icon: 'lucide:corner-down-right',
+          separatorBefore: !props.canFollow,
+          children: [...props.referencing],
+        },
+      ]
+    : []),
   {
     id: 'set-null',
     label: t('设为 NULL'),

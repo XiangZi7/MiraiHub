@@ -6,7 +6,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
-import type { DatabaseObject } from '@/types/database'
+import type { DatabaseKind, DatabaseObject } from '@/types/database'
 import type {
   ReferentialAction,
   TableDesignerColumn,
@@ -22,6 +22,9 @@ const props = defineProps<{
   tables: readonly DatabaseObject[]
   referencedColumns: Readonly<Record<string, string[]>>
   loadingReference: string
+  databaseKind?: DatabaseKind
+  /** 按外键 id 归档的校验错误。 */
+  errors?: Readonly<Record<string, string[]>>
 }>()
 
 const emit = defineEmits<{
@@ -39,12 +42,17 @@ const tableOptions = computed(() =>
     }))
 )
 
-const referentialActions: readonly ReferentialAction[] = [
-  'NO ACTION',
-  'RESTRICT',
-  'CASCADE',
-  'SET NULL',
-]
+const actionOptions = computed(() =>
+  (
+    [
+      'NO ACTION',
+      'RESTRICT',
+      'CASCADE',
+      'SET NULL',
+      ...(props.databaseKind === 'mysql' ? [] : ['SET DEFAULT']),
+    ] as ReferentialAction[]
+  ).map(value => ({ value, label: value }))
+)
 const localColumnOptions = computed(() =>
   props.columns.map(column => ({
     value: column.name,
@@ -54,8 +62,8 @@ const localColumnOptions = computed(() =>
 const tableSelectOptions = computed(() =>
   tableOptions.value.map(table => ({ value: table.key, label: table.key }))
 )
-const actionOptions = referentialActions.map(value => ({ value, label: value }))
 
+/** 引用表已读取到的字段，作为引用字段下拉选项。 */
 function referencedColumnOptions(
   foreignKey: TableDesignerForeignKey
 ): Array<{ value: string; label: string }> {
@@ -64,19 +72,21 @@ function referencedColumnOptions(
   )
 }
 
+/** 生成外键草稿 id。 */
 function newId(): string {
   return `foreign-key-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+/** 新增一个外键，默认引用第一张表并读取其字段。 */
 function addForeignKey(): void {
   const firstTable = tableOptions.value[0]
   const foreignKey: TableDesignerForeignKey = {
     id: newId(),
     name: `fk_${props.modelValue.length + 1}`,
-    column: props.columns[0]?.name ?? '',
+    columns: [props.columns[0]?.name ?? ''],
     referencedSchema: firstTable?.schema ?? props.schema,
     referencedTable: firstTable?.name ?? '',
-    referencedColumn: '',
+    referencedColumns: [''],
     onDelete: 'NO ACTION',
     onUpdate: 'NO ACTION',
   }
@@ -89,6 +99,7 @@ function addForeignKey(): void {
     )
 }
 
+/** 按 id 合并修改一个外键。 */
 function updateForeignKey(
   id: string,
   patch: Partial<TableDesignerForeignKey>
@@ -101,27 +112,62 @@ function updateForeignKey(
   )
 }
 
+/** 切换引用表：清空引用字段（保持列对数量）并联动读取新表字段。 */
 function selectTable(foreignKey: TableDesignerForeignKey, value: string): void {
+  const cleared = foreignKey.referencedColumns.map(() => '')
   const table = tableOptions.value.find(item => item.key === value)
   if (!table) {
     updateForeignKey(foreignKey.id, {
       referencedTable: value,
-      referencedColumn: '',
+      referencedColumns: cleared,
     })
     return
   }
   updateForeignKey(foreignKey.id, {
     referencedSchema: table.schema,
     referencedTable: table.name,
-    referencedColumn: '',
+    referencedColumns: cleared,
   })
   emit('inspect-table', table.schema, table.name)
 }
 
+/** 修改第 index 对列映射中的本地字段或引用字段。 */
+function updatePair(
+  foreignKey: TableDesignerForeignKey,
+  index: number,
+  side: 'columns' | 'referencedColumns',
+  value: string
+): void {
+  const list = [...foreignKey[side]]
+  list[index] = value
+  updateForeignKey(foreignKey.id, { [side]: list })
+}
+
+/** 追加一对列映射，组成多列外键。 */
+function addPair(foreignKey: TableDesignerForeignKey): void {
+  updateForeignKey(foreignKey.id, {
+    columns: [...foreignKey.columns, ''],
+    referencedColumns: [...foreignKey.referencedColumns, ''],
+  })
+}
+
+/** 删除一对列映射，至少保留一对。 */
+function removePair(foreignKey: TableDesignerForeignKey, index: number): void {
+  if (foreignKey.columns.length <= 1) return
+  updateForeignKey(foreignKey.id, {
+    columns: foreignKey.columns.filter((_, i) => i !== index),
+    referencedColumns: foreignKey.referencedColumns.filter(
+      (_, i) => i !== index
+    ),
+  })
+}
+
+/** 引用表在字段缓存中的键。 */
 function referenceKey(foreignKey: TableDesignerForeignKey): string {
   return `${foreignKey.referencedSchema}.${foreignKey.referencedTable}`
 }
 
+/** 删除外键。 */
 function removeForeignKey(id: string): void {
   emit(
     'update:modelValue',
@@ -134,20 +180,22 @@ defineExpose({ add: addForeignKey })
 </script>
 
 <template>
-  <section class="designer-section">
-    <div class="foreign-key-list scroll-thin">
+  <section class="flex min-h-0 flex-1 flex-col">
+    <div class="scroll-thin min-h-0 overflow-y-auto p-3">
       <article
         v-for="foreignKey in modelValue"
         :key="foreignKey.id"
-        class="foreign-key-card"
+        class="border-line-soft bg-card/70 mb-2.5 rounded-[9px] border p-3"
+        :class="errors?.[foreignKey.id]?.length ? 'border-danger/50' : ''"
       >
-        <div class="foreign-key-heading">
-          <span class="foreign-key-icon"
+        <div class="grid grid-cols-[32px_minmax(180px,360px)_28px] items-end gap-2">
+          <span
+            class="border-blue/30 bg-blue/10 text-blue grid size-[30px] place-items-center rounded-[7px] border"
             ><AppIcon
               name="lucide:link-2"
               :size="14"
           /></span>
-          <label class="field-label">
+          <label class="text-txt-4 grid gap-1 text-[9.5px]">
             {{ t('约束名') }}
             <AppInput
               :model-value="foreignKey.name"
@@ -165,29 +213,10 @@ defineExpose({ add: addForeignKey })
           />
         </div>
 
-        <div class="reference-flow">
-          <div class="field-label">
-            <span> {{ t('本地字段') }} </span
-            ><AppSelect
-              :model-value="foreignKey.column"
-              :label="t('本地字段')"
-              :options="localColumnOptions"
-              :placeholder="t('请选择字段')"
-              hide-label
-              compact
-              @update:model-value="
-                updateForeignKey(foreignKey.id, { column: $event })
-              "
-            />
-          </div>
-          <span class="flow-arrow"
-            ><AppIcon
-              name="lucide:arrow-right"
-              :size="14"
-          /></span>
-          <div class="field-label">
-            <span> {{ t('引用表') }} </span
-            ><AppSelect
+        <div class="text-txt-4 mt-3 grid gap-1 text-[9.5px]">
+          <span>{{ t('引用表') }}</span>
+          <div class="max-w-[420px]">
+            <AppSelect
               :model-value="referenceKey(foreignKey)"
               :label="t('引用表')"
               :options="tableSelectOptions"
@@ -198,15 +227,40 @@ defineExpose({ add: addForeignKey })
               @update:model-value="selectTable(foreignKey, $event)"
             />
           </div>
-          <span class="flow-arrow"
-            ><AppIcon
-              name="lucide:arrow-right"
-              :size="14"
-          /></span>
-          <div class="field-label">
-            <span> {{ t('引用字段') }} </span
-            ><AppSelect
-              :model-value="foreignKey.referencedColumn"
+        </div>
+
+        <div class="mt-2.5 grid gap-1.5">
+          <div
+            class="text-txt-4 grid grid-cols-[minmax(140px,1fr)_24px_minmax(140px,1fr)_28px] gap-1.5 text-[9.5px]"
+          >
+            <span>{{ t('本地字段') }}</span>
+            <span />
+            <span>{{ t('引用字段') }}</span>
+            <span />
+          </div>
+          <div
+            v-for="(column, index) in foreignKey.columns"
+            :key="index"
+            class="grid grid-cols-[minmax(140px,1fr)_24px_minmax(140px,1fr)_28px] items-center gap-1.5"
+          >
+            <AppSelect
+              :model-value="column"
+              :label="t('本地字段')"
+              :options="localColumnOptions"
+              :placeholder="t('请选择字段')"
+              hide-label
+              compact
+              @update:model-value="
+                updatePair(foreignKey, index, 'columns', $event)
+              "
+            />
+            <span class="text-txt-4 grid place-items-center"
+              ><AppIcon
+                name="lucide:arrow-right"
+                :size="14"
+            /></span>
+            <AppSelect
+              :model-value="foreignKey.referencedColumns[index] ?? ''"
               :label="t('引用字段')"
               :options="referencedColumnOptions(foreignKey)"
               :placeholder="
@@ -221,14 +275,33 @@ defineExpose({ add: addForeignKey })
                 loadingReference === referenceKey(foreignKey)
               "
               @update:model-value="
-                updateForeignKey(foreignKey.id, { referencedColumn: $event })
+                updatePair(foreignKey, index, 'referencedColumns', $event)
               "
             />
+            <IconButton
+              icon="lucide:minus"
+              :size="12"
+              class="size-7"
+              :title="t('移除字段对')"
+              :disabled="foreignKey.columns.length <= 1"
+              @click="removePair(foreignKey, index)"
+            />
           </div>
+          <button
+            type="button"
+            class="text-blue hover:bg-blue/10 flex w-fit items-center gap-1 rounded px-1.5 py-1 text-[10px] motion-safe:transition-colors"
+            @click="addPair(foreignKey)"
+          >
+            <AppIcon
+              name="lucide:plus"
+              :size="11"
+            />
+            {{ t('添加字段对（多列外键）') }}
+          </button>
         </div>
 
-        <div class="action-grid">
-          <div class="field-label">
+        <div class="mt-2.5 grid grid-cols-[150px_150px_1fr] items-end gap-2 max-[900px]:grid-cols-2">
+          <div class="text-txt-4 grid gap-1 text-[9.5px]">
             <span> {{ t('删除时') }} </span
             ><AppSelect
               :model-value="foreignKey.onDelete"
@@ -243,7 +316,7 @@ defineExpose({ add: addForeignKey })
               "
             />
           </div>
-          <div class="field-label">
+          <div class="text-txt-4 grid gap-1 text-[9.5px]">
             <span> {{ t('更新时') }} </span
             ><AppSelect
               :model-value="foreignKey.onUpdate"
@@ -258,7 +331,9 @@ defineExpose({ add: addForeignKey })
               "
             />
           </div>
-          <p class="action-hint">
+          <p
+            class="text-txt-4 flex min-h-8 items-center gap-1.5 text-[9px] max-[900px]:col-span-full"
+          >
             <AppIcon
               name="lucide:info"
               :size="11"
@@ -268,126 +343,32 @@ defineExpose({ add: addForeignKey })
             }}
           </p>
         </div>
+        <ul
+          v-if="errors?.[foreignKey.id]?.length"
+          class="text-danger mt-2 grid gap-0.5 text-[10px]"
+        >
+          <li
+            v-for="message in errors[foreignKey.id]"
+            :key="message"
+          >
+            {{ message }}
+          </li>
+        </ul>
       </article>
 
       <div
         v-if="!modelValue.length"
-        class="empty-state"
+        class="text-txt-4 grid min-h-[230px] place-items-center content-center gap-2 text-center text-[11px]"
       >
         <AppIcon
           name="lucide:link-2"
           :size="24"
         />
         <p>{{ t('尚未配置外键') }}</p>
-        <span> {{ t('添加后可从当前数据库的已有表中选择引用字段。') }} </span>
+        <span class="text-[9.5px]">
+          {{ t('添加后可从当前数据库的已有表中选择引用字段。') }}
+        </span>
       </div>
     </div>
   </section>
 </template>
-
-<style scoped>
-.designer-section {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-}
-.field-label {
-  margin-top: 2px;
-  color: var(--color-txt-4);
-  font-size: 9.5px;
-}
-.foreign-key-list {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px;
-}
-.foreign-key-card {
-  margin-bottom: 9px;
-  border: 1px solid var(--color-line-soft);
-  border-radius: 9px;
-  background:
-    linear-gradient(145deg, var(--glass-highlight), transparent),
-    color-mix(in oklch, var(--color-card) 72%, transparent);
-  padding: 11px;
-  box-shadow: inset 0 1px var(--glass-highlight);
-}
-.foreign-key-heading {
-  display: grid;
-  grid-template-columns: 32px minmax(180px, 360px) 28px;
-  align-items: end;
-  gap: 8px;
-}
-.foreign-key-icon {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid
-    color-mix(in oklch, var(--color-blue) 28%, var(--color-line));
-  border-radius: 7px;
-  background: color-mix(in oklch, var(--color-blue) 9%, transparent);
-  color: var(--color-blue);
-}
-.field-label {
-  display: grid;
-  gap: 4px;
-}
-.reference-flow {
-  display: grid;
-  grid-template-columns:
-    minmax(140px, 1fr) 24px minmax(180px, 1.3fr)
-    24px minmax(140px, 1fr);
-  align-items: end;
-  gap: 7px;
-  margin-top: 12px;
-}
-.flow-arrow {
-  display: grid;
-  height: 32px;
-  place-items: center;
-  color: var(--color-txt-4);
-}
-.action-grid {
-  display: grid;
-  grid-template-columns: 150px 150px 1fr;
-  align-items: end;
-  gap: 8px;
-  margin-top: 10px;
-}
-.action-hint {
-  display: flex;
-  min-height: 32px;
-  align-items: center;
-  gap: 5px;
-  color: var(--color-txt-4);
-  font-size: 9px;
-}
-.empty-state {
-  display: grid;
-  min-height: 230px;
-  place-items: center;
-  align-content: center;
-  gap: 7px;
-  color: var(--color-txt-4);
-  font-size: 11px;
-  text-align: center;
-}
-.empty-state span {
-  font-size: 9.5px;
-}
-@media (max-width: 900px) {
-  .reference-flow {
-    grid-template-columns: 1fr;
-  }
-  .flow-arrow {
-    display: none;
-  }
-  .action-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-  .action-hint {
-    grid-column: 1 / -1;
-  }
-}
-</style>

@@ -146,13 +146,16 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
     class="scroll-none flex h-full min-w-0 items-center gap-0.5 overflow-x-auto"
   >
     <!-- 关闭按钮嵌在标签里，所以外层用 div 而不是 button：button 不能嵌套 -->
-    <!-- 增删与排序带位移过渡；减少动画时全部瞬时完成 -->
+    <!-- 增删与排序带位移过渡：新增从窄到宽淡入，关闭宽度收缩淡出，相邻标签随之平移；
+         减少动画时全部瞬时完成 -->
     <TransitionGroup
-      enter-active-class="motion-safe:transition-[opacity,translate,background-color,color] motion-safe:duration-150 motion-safe:ease-out"
-      enter-from-class="opacity-0 translate-y-1"
-      leave-active-class="motion-safe:transition-opacity motion-safe:duration-100"
-      leave-to-class="opacity-0"
-      move-class="motion-safe:transition-[translate,transform] motion-safe:duration-200 motion-safe:ease-out"
+      enter-active-class="overflow-hidden motion-safe:transition-[opacity,max-width,padding,translate] motion-safe:duration-180 motion-safe:ease-out motion-reduce:transition-none"
+      enter-from-class="max-w-0 px-0! opacity-0 translate-y-1"
+      enter-to-class="max-w-96"
+      leave-active-class="overflow-hidden motion-safe:transition-[opacity,max-width,padding] motion-safe:duration-150 motion-safe:ease-in motion-reduce:transition-none"
+      leave-from-class="max-w-96"
+      leave-to-class="max-w-0 px-0! opacity-0"
+      move-class="motion-safe:transition-[translate,transform] motion-safe:duration-200 motion-safe:ease-out motion-reduce:transition-none"
     >
     <div
       v-for="(tab, index) in tabs"
@@ -329,9 +332,9 @@ function handleTabKeydown(event: KeyboardEvent, id: string): void {
     color-mix(in oklch, var(--color-violet) 48%, var(--color-line));
   border-radius: 7px;
   background: var(--color-panel);
-  /* 浮层玻璃与其余 popover 统一：模糊 + 提饱和透出背景 */
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
-  backdrop-filter: blur(24px) saturate(165%);
+  /* 浮层玻璃与其余 popover 统一；拖动时每帧移动，模糊半径压低以减少重绘开销 */
+  -webkit-backdrop-filter: blur(12px) saturate(165%);
+  backdrop-filter: blur(12px) saturate(165%);
   box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
   padding: 7px 10px;
   color: var(--color-txt);

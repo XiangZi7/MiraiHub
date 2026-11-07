@@ -11,9 +11,13 @@ import {
 } from 'vue'
 import { useThrottleFn } from '@vueuse/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { ask } from '@tauri-apps/plugin-dialog'
 import { copyText } from '@/utils/clipboard'
 import { IS_TAURI } from '@/utils/window'
 import { isAgentWebLink, renderAgentMarkdown } from '@/utils/agent-markdown'
+import { writeToShell } from '@/api/ssh'
+import { useAgentTerminalSession } from '@/composables/useAgentContextBus'
+import { toast } from '@/composables/useToast'
 
 const { t } = useI18n()
 
@@ -46,9 +50,51 @@ watch(
     if (!streaming) source.value = props.content
   }
 )
-const html = computed(() =>
-  renderAgentMarkdown(source.value, props.canApplySql)
-)
+const terminalSession = useAgentTerminalSession()
+const SHELL_LANGUAGE = /^(bash|sh|shell|zsh|console|shellsession|powershell|pwsh|ps1)$/i
+const COMMAND_START =
+  /^(\$ |sudo |cd |ls|cat |grep |tail |head |systemctl |journalctl |docker |kubectl |git |apt(-get)? |yum |dnf |npm |pnpm |ps |top|df |du |free|chmod |chown |mkdir |rm |cp |mv |curl |wget |echo |export |find |ss |netstat |ip |ping |kill )/
+const TERMINAL_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>'
+// 判断无语言标注的代码块是否像一段 shell 命令：首个非空行以常见命令开头。
+function looksLikeCommand(code: string): boolean {
+  const first = code.split('\n').find(line => line.trim())?.trim() ?? ''
+  return COMMAND_START.test(first)
+}
+// 给 shell 代码块的标题栏追加“插入终端”按钮；只在受限渲染结果上增加本组件自己的按钮。
+function withTerminalButtons(rendered: string, sessionId: string): string {
+  if (!rendered.includes('md-code')) return rendered
+  const template = document.createElement('template')
+  template.innerHTML = rendered
+  const plain = t('代码')
+  for (const block of template.content.querySelectorAll('.md-code')) {
+    const language = block.querySelector('.md-code-header > span')?.textContent ?? ''
+    const code = block.querySelector('code')?.textContent ?? ''
+    const shell =
+      SHELL_LANGUAGE.test(language) ||
+      (language === plain && looksLikeCommand(code))
+    if (!shell || !code.trim()) continue
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.dataset.insertTerminal = ''
+    button.className =
+      'ml-auto inline-flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-40'
+    button.disabled = !sessionId
+    button.title = sessionId
+      ? t('插入到终端（不会自动执行）')
+      : t('终端未连接，无法插入')
+    button.innerHTML = `${TERMINAL_ICON}<span></span>`
+    button.lastElementChild!.textContent = t('插入终端')
+    block.querySelector('button[data-copy-code]')?.before(button)
+  }
+  return template.innerHTML
+}
+const html = computed(() => {
+  const rendered = renderAgentMarkdown(source.value, props.canApplySql)
+  return terminalSession
+    ? withTerminalButtons(rendered, terminalSession.value)
+    : rendered
+})
 const state = reactive({ feedback: '', failed: false })
 const { feedback, failed } = toRefs(state)
 let feedbackTimer: ReturnType<typeof setTimeout> | undefined
@@ -60,9 +106,48 @@ function notify(message: string, failed = false): void {
     state.feedback = ''
   }, 2500)
 }
-// 响应代码块的复制或 SQL 应用按钮，应用只填入编辑器，不触发查询执行。
+// 把代码块文本粘贴到活动终端但不执行；多行先确认，并用括号粘贴模式避免 shell 逐行执行。
+async function insertToTerminal(code: string): Promise<void> {
+  const sessionId = terminalSession?.value
+  if (!sessionId) {
+    notify(t('终端未连接，无法插入'), true)
+    return
+  }
+  const text = code.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
+  if (!text.trim()) return
+  const lines = text.split('\n').length
+  if (lines > 1) {
+    const message = t(
+      '将插入 {value0} 行命令。支持括号粘贴的 shell 会等待你按回车，否则可能逐行执行，确定插入？',
+      { value0: lines }
+    )
+    const confirmed = IS_TAURI
+      ? await ask(message, { title: t('插入终端'), kind: 'warning' })
+      : window.confirm(message)
+    if (!confirmed) return
+  }
+  try {
+    await writeToShell(
+      sessionId,
+      lines > 1 ? `\x1b[200~${text.replace(/\n/g, '\r')}\x1b[201~` : text
+    )
+    notify(t('已插入终端，确认后按回车执行'))
+  } catch (error) {
+    toast.error({ title: t('插入终端失败'), description: String(error) })
+  }
+}
+// 响应代码块的复制、插入终端或 SQL 应用按钮，应用只填入编辑器，不触发查询执行。
 async function activate(event: MouseEvent): Promise<void> {
   if (!(event.target instanceof Element)) return
+  const insert = event.target.closest<HTMLButtonElement>(
+    'button[data-insert-terminal]'
+  )
+  if (insert) {
+    if (event.button !== 0 || insert.disabled) return
+    const code = insert.closest('.md-code')?.querySelector('code')?.textContent
+    if (code) await insertToTerminal(code)
+    return
+  }
   const apply = event.target.closest<HTMLButtonElement>(
     'button[data-apply-sql]'
   )

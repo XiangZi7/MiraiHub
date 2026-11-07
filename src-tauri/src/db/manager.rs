@@ -107,10 +107,22 @@ impl DatabasePool {
     async fn cancel_backend(&self, backend_id: i64) -> DatabaseResult<()> {
         match self {
             // MySQL 的 KILL 不接受占位符；id 来自服务端自身的 CONNECTION_ID()，拼接安全。
-            Self::Mysql(pool) => sqlx::query(&format!("KILL QUERY {backend_id}"))
-                .execute(pool)
-                .await
-                .map(|_| ()),
+            Self::Mysql(pool) => {
+                // TiDB 旧版的普通 KILL 是空操作，必须显式写 KILL TIDB。
+                let version: String = sqlx::query_scalar("SELECT VERSION()")
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or_default();
+                let command = if super::sql::is_tidb_version(&version) {
+                    "KILL TIDB QUERY"
+                } else {
+                    "KILL QUERY"
+                };
+                sqlx::query(&format!("{command} {backend_id}"))
+                    .execute(pool)
+                    .await
+                    .map(|_| ())
+            }
             Self::Postgresql(pool) => sqlx::query("SELECT pg_cancel_backend($1)")
                 .bind(backend_id as i32)
                 .execute(pool)
@@ -217,9 +229,15 @@ async fn connect_mysql(config: &DatabaseConfig) -> Result<MySqlPool, sqlx::Error
         .after_connect(move |conn, _meta| {
             Box::pin(async move {
                 if read_only {
-                    sqlx::query("SET SESSION TRANSACTION READ ONLY")
-                        .execute(&mut *conn)
+                    // TiDB 默认把这条语句当 noop 函数报错，只能依靠应用层的 guard 拦截。
+                    let version: String = sqlx::query_scalar("SELECT VERSION()")
+                        .fetch_one(&mut *conn)
                         .await?;
+                    if !super::sql::is_tidb_version(&version) {
+                        sqlx::query("SET SESSION TRANSACTION READ ONLY")
+                            .execute(&mut *conn)
+                            .await?;
+                    }
                 }
                 Ok(())
             })

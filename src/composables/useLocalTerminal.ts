@@ -120,22 +120,38 @@ export function useLocalTerminal() {
     )
   }
 
-  const resize = useDebounceFn(() => {
-    const terminal = term.value
-    const fit = fitAddon.value
-    if (!terminal || !fit) return
+  // 本地 fit 用 rAF 合并到下一帧；PTY 尺寸同步单独防抖，并记住上次发送的尺寸
+  let fitFrame = 0
+  let syncedSize = ''
 
-    if (!terminal.element?.clientWidth || !terminal.element?.clientHeight)
-      return
-    const cols = terminal.cols,
-      rows = terminal.rows
-    fit.fit()
-    if (terminal.cols === cols && terminal.rows === rows) return
-    if (state.status === 'connected' && state.sessionId) {
-      void localTerminal
-        .resize(state.sessionId, terminal.cols, terminal.rows)
-        .catch(err => console.warn('同步本地终端尺寸失败：', errorMessage(err)))
-    }
+  // 容器尺寸变化：下一帧立即本地适配，再防抖同步给 PTY
+  function resize(): void {
+    cancelAnimationFrame(fitFrame)
+    fitFrame = requestAnimationFrame(() => {
+      fitFrame = 0
+      const terminal = term.value
+      const fit = fitAddon.value
+      if (!terminal || !fit) return
+      if (!terminal.element?.clientWidth || !terminal.element?.clientHeight)
+        return
+      fit.fit()
+      syncRemoteSize()
+    })
+  }
+
+  // 仅在 cols/rows 与上次发送不同时才通知 PTY
+  const syncRemoteSize = useDebounceFn(() => {
+    const terminal = term.value
+    if (!terminal || state.status !== 'connected' || !state.sessionId) return
+    const size = `${state.sessionId}:${terminal.cols}x${terminal.rows}`
+    if (size === syncedSize) return
+    syncedSize = size
+    void localTerminal
+      .resize(state.sessionId, terminal.cols, terminal.rows)
+      .catch(err => {
+        syncedSize = ''
+        console.warn('同步本地终端尺寸失败：', errorMessage(err))
+      })
   }, 120)
 
   async function disconnect(): Promise<void> {
@@ -163,6 +179,7 @@ export function useLocalTerminal() {
 
   onBeforeUnmount(() => {
     stopSettingsWatch()
+    cancelAnimationFrame(fitFrame)
     disposed = true
     void disconnect()
     term.value?.dispose()
