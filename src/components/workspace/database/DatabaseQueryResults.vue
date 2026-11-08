@@ -2,7 +2,14 @@
 import { useI18n } from 'vue-i18n'
 import { useIntervalFn, useStorage } from '@vueuse/core'
 
-import { computed, reactive, shallowRef, useId, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  reactive,
+  shallowRef,
+  useId,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppColumnResizeHandle from '@/components/ui/AppColumnResizeHandle.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -22,9 +29,9 @@ import {
   extractErrorCode,
   type QueryResultEntry,
 } from '@/utils/query-result-history'
-import DatabaseExportMenu from './DatabaseExportMenu.vue'
-import DatabaseGridContextMenu from './DatabaseGridContextMenu.vue'
-import DatabaseValueViewer from './DatabaseValueViewer.vue'
+import DatabaseExportMenu from '@/components/workspace/database/DatabaseExportMenu.vue'
+import DatabaseGridContextMenu from '@/components/workspace/database/DatabaseGridContextMenu.vue'
+import DatabaseValueViewer from '@/components/workspace/database/DatabaseValueViewer.vue'
 import {
   formatGridNumber,
   useGridDensity,
@@ -39,8 +46,8 @@ import {
   isNumericType,
   type GridCopyFormat,
 } from '@/utils/database-grid'
-import ExplainPlanView from './ExplainPlanView.vue'
-import SqlAiResultAsk from './ai/SqlAiResultAsk.vue'
+import ExplainPlanView from '@/components/workspace/database/ExplainPlanView.vue'
+import SqlAiResultAsk from '@/components/workspace/database/ai/SqlAiResultAsk.vue'
 import type { PlanNode } from '@/utils/explain-plan'
 import { copyText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
@@ -173,8 +180,7 @@ const { resized, widthOf, beginResize, autoFit, keyboardResize, resetWidths } =
 
 watch(shownExecution, execution => {
   const failed =
-    execution?.statements.findIndex(statement => Boolean(statement.error)) ??
-    -1
+    execution?.statements.findIndex(statement => Boolean(statement.error)) ?? -1
   activeStatement.value = failed >= 0 ? failed : 0
 })
 watch(
@@ -193,8 +199,7 @@ watch(
 )
 
 function selectHistory(entry: QueryResultEntry): void {
-  viewingId.value =
-    entry === props.history[latestIndex.value] ? '' : entry.id
+  viewingId.value = entry === props.history[latestIndex.value] ? '' : entry.id
 }
 
 // 实时计时：超过 300ms 才显示，避免快查询时数字一闪而过。
@@ -703,8 +708,7 @@ async function copyResult(): Promise<void> {
             <pre
               v-if="failedStatement"
               class="bg-terminal text-txt-3 max-h-24 overflow-auto rounded px-2 py-1.5 font-mono text-[10.5px] whitespace-pre-wrap"
-              >{{ failedStatement.statement }}</pre
-            >
+                >{{ failedStatement.statement }}</pre>
             <div class="flex flex-wrap items-center gap-1.5">
               <AppButton
                 size="sm"
@@ -863,7 +867,8 @@ async function copyResult(): Promise<void> {
                   cn(
                     'border-line-soft text-txt-4 cursor-default border-r border-b px-2 text-right select-none',
                     DENSITY_PADDING[density],
-                    selection.rowSelection(rowIndex) && 'bg-violet/10 text-txt-2'
+                      selection.rowSelection(rowIndex) &&
+                        'bg-violet/10 text-txt-2'
                   )
                 "
               >
@@ -969,7 +974,11 @@ async function copyResult(): Promise<void> {
           {{ formatGridNumber(selection.stats.value.average) }}
         </template>
       </span>
-      <div class="flex-1" />
+      <slot name="status" />
+      <div
+        v-if="!$slots.status"
+        class="flex-1"
+      />
       <div
         v-if="pageCount > 1"
         class="mx-2 flex items-center gap-1"

@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 
 import { computed, shallowRef, watch } from 'vue'
 import { useDocumentVisibility, useIntervalFn } from '@vueuse/core'
-import * as database from '@/api/database'
+import * as databaseApi from '@/api/database'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type { DatabaseSelectionStats } from '@/composables/useDatabaseStatusBar'
 import type { DatabaseSession } from '@/types/database'
@@ -21,6 +21,8 @@ const props = defineProps<{
   database?: string
   runningQueries: number
   selection?: DatabaseSelectionStats | null
+  /** 嵌入表格分页栏时省去独立底栏的边框和留白。 */
+  embedded?: boolean
 }>()
 
 const { t } = useI18n()
@@ -33,13 +35,14 @@ const pingFailed = shallowRef(false)
 const visibility = useDocumentVisibility()
 let pinging = false
 
+/** 仅为可见且已连接的会话探测延迟，忽略会话切换后的旧响应。 */
 async function ping(): Promise<void> {
   const id = props.session?.sessionId
   if (!props.connected || !id || pinging || visibility.value === 'hidden')
     return
   pinging = true
   try {
-    const value = await database.ping(id)
+    const value = await databaseApi.ping(id)
     if (props.session?.sessionId !== id) return
     latency.value = value
     pingFailed.value = false
@@ -54,9 +57,9 @@ const { pause, resume } = useIntervalFn(ping, PING_INTERVAL, {
   immediate: false,
 })
 
+// 连接、活动标签或窗口可见性变化时同步暂停和恢复探活。
 watch(
-  () =>
-    [props.connected, props.session?.sessionId, visibility.value] as const,
+  () => [props.connected, props.session?.sessionId, visibility.value] as const,
   ([connected, id, visible]) => {
     if (!connected || !id) {
       pause()
@@ -95,19 +98,27 @@ const latencyClass = computed(() => {
   return value < 300 ? 'text-amber' : 'text-danger'
 })
 
+/** 格式化选区合计和平均值，限制小数位以免挤占状态栏。 */
 function formatNumber(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 4 })
 }
 </script>
 
 <template>
-  <footer
-    class="border-line-soft bg-panel text-txt-3 flex h-6 shrink-0 items-center gap-3 overflow-hidden border-t px-2.5 text-[10.5px] select-none"
+  <div
+    :class="
+      cn(
+        'text-txt-3 flex min-w-0 items-center gap-2.5 overflow-hidden text-[10.5px] whitespace-nowrap select-none',
+        embedded
+          ? 'ml-auto justify-end'
+          : 'border-line-soft bg-panel h-8 shrink-0 border-t px-2.5'
+      )
+    "
     role="status"
     :aria-label="t('数据库状态栏')"
   >
     <span
-      class="flex min-w-0 items-center gap-1.5"
+      class="flex min-w-0 shrink-0 items-center gap-1.5"
       :title="session?.endpoint"
     >
       <span
@@ -125,7 +136,10 @@ function formatNumber(value: number): string {
     <span
       v-if="environment"
       :class="
-        cn('shrink-0 rounded px-1.5 py-px text-[10px] leading-4', environment.class)
+        cn(
+          'shrink-0 rounded px-1.5 py-px text-[10px] leading-4',
+          environment.class
+        )
       "
     >
       {{ environment.label }}
@@ -156,13 +170,16 @@ function formatNumber(value: number): string {
 
     <span
       v-if="session?.serverVersion"
-      class="text-txt-4 hidden max-w-48 truncate font-mono @min-[640px]:inline md:inline"
+      class="text-txt-4 max-w-28 truncate font-mono"
       :title="t('服务器版本')"
     >
       {{ session.serverVersion }}
     </span>
 
-    <span class="min-w-0 flex-1" />
+    <span
+      v-if="!embedded"
+      class="min-w-0 flex-1"
+    />
 
     <span
       v-if="selection && selection.cells > 0"
@@ -204,5 +221,5 @@ function formatNumber(value: number): string {
       />
       {{ latencyText }}
     </span>
-  </footer>
+  </div>
 </template>

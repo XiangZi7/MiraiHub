@@ -43,7 +43,7 @@ src-tauri/resources/
 .claude/settings.local.json
 # Claude Code 子代理的临时 git worktree
 .claude/worktrees/
-
+.claude/tmp-typecheck/
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

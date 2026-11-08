@@ -42,7 +42,7 @@ import {
 import { useDatabaseTabActions } from '@/composables/useDatabaseTabActions'
 import { useDatabaseCompletions } from '@/composables/useDatabaseCompletions'
 import { useSqlParamsPrompt } from '@/composables/useSqlParamsPrompt'
-import DatabaseQueryParamsDialog from './database/DatabaseQueryParamsDialog.vue'
+import DatabaseQueryParamsDialog from '@/components/workspace/database/DatabaseQueryParamsDialog.vue'
 import { useDatabaseSidebarWidth } from '@/composables/useDatabaseSidebarWidth'
 import { activeAfterTabClose } from '@/utils/tab-actions'
 import { useSavedDatabaseQueries } from '@/composables/useSavedDatabaseQueries'
@@ -69,29 +69,29 @@ import {
 import type { SshSessionStatus } from '@/types/ssh'
 import { copyText } from '@/utils/clipboard'
 import { openConnectionWindow } from '@/utils/window'
-import DatabaseConnectionState from './database/DatabaseConnectionState.vue'
-import DatabaseObjectNameDialog from './database/DatabaseObjectNameDialog.vue'
-import DatabaseObjectTree from './database/DatabaseObjectTree.vue'
-import DatabaseQueryPane from './database/DatabaseQueryPane.vue'
+import DatabaseConnectionState from '@/components/workspace/database/DatabaseConnectionState.vue'
+import DatabaseObjectNameDialog from '@/components/workspace/database/DatabaseObjectNameDialog.vue'
+import DatabaseObjectTree from '@/components/workspace/database/DatabaseObjectTree.vue'
+import DatabaseQueryPane from '@/components/workspace/database/DatabaseQueryPane.vue'
 import DatabaseTabWorkspace from '@/components/workspace/database/DatabaseTabWorkspace.vue'
 import DatabaseRoutineView from '@/components/workspace/database/DatabaseRoutineView.vue'
 import DatabaseTableDesigner from '@/components/workspace/database/DatabaseTableDesigner.vue'
-import DatabaseTableOverview from './database/DatabaseTableOverview.vue'
+import DatabaseTableOverview from '@/components/workspace/database/DatabaseTableOverview.vue'
 import DatabaseTableView from '@/components/workspace/database/DatabaseTableView.vue'
-import ErDiagramView from './database/ErDiagramView.vue'
+import ErDiagramView from '@/components/workspace/database/ErDiagramView.vue'
 import { registerDatabaseCommandSource } from '@/composables/useDatabaseCommandSource'
-import DatabaseSchemaDiffDialog from './database/DatabaseSchemaDiffDialog.vue'
-import DatabaseDocDialog from './database/DatabaseDocDialog.vue'
-import DatabaseSessionMonitor from './database/DatabaseSessionMonitor.vue'
-import DatabaseUserManager from './database/DatabaseUserManager.vue'
-import DatabaseBackupDialog from './database/DatabaseBackupDialog.vue'
-import DatabaseTestDataDialog from './database/DatabaseTestDataDialog.vue'
-import DatabaseGuardDialog from './database/DatabaseGuardDialog.vue'
+import DatabaseSchemaDiffDialog from '@/components/workspace/database/DatabaseSchemaDiffDialog.vue'
+import DatabaseDocDialog from '@/components/workspace/database/DatabaseDocDialog.vue'
+import DatabaseSessionMonitor from '@/components/workspace/database/DatabaseSessionMonitor.vue'
+import DatabaseUserManager from '@/components/workspace/database/DatabaseUserManager.vue'
+import DatabaseBackupDialog from '@/components/workspace/database/DatabaseBackupDialog.vue'
+import DatabaseTestDataDialog from '@/components/workspace/database/DatabaseTestDataDialog.vue'
+import DatabaseGuardDialog from '@/components/workspace/database/DatabaseGuardDialog.vue'
 import DatabaseTransferDialog, {
   type DatabaseTransferMode,
-} from './database/DatabaseTransferDialog.vue'
+} from '@/components/workspace/database/DatabaseTransferDialog.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
-import DatabaseStatusBar from './database/DatabaseStatusBar.vue'
+import DatabaseStatusBar from '@/components/workspace/database/DatabaseStatusBar.vue'
 import { provideDatabaseStatusSelection } from '@/composables/useDatabaseStatusBar'
 import { useSettingsStore } from '@/stores/settings'
 import { matchesShortcut } from '@/utils/shortcut'
@@ -478,6 +478,12 @@ const databaseOptions = computed(() =>
 // 各内容标签复用同一组操作，直接放进对应的功能栏，避免额外的信息栏。
 const [DefineDatabaseActions, DatabaseActions] = createReusableTemplate<{
   tab?: WorkspaceTab
+}>({ inheritAttrs: false })
+// 同一份连接信息嵌入数据分页栏，其他面板保留一行状态，分屏按各自标签显示库名。
+const [DefineDatabaseStatus, DatabaseStatus] = createReusableTemplate<{
+  tab?: WorkspaceTab
+  visible?: boolean
+  embedded?: boolean
 }>({ inheritAttrs: false })
 
 /** 从所在标签的工具栏切库；查询单独记录目标库，分屏时不会修改其他查询。 */
@@ -1868,6 +1874,17 @@ registerDatabaseCommandSource(
 </script>
 
 <template>
+  <DefineDatabaseStatus v-slot="{ tab, visible, embedded }">
+    <DatabaseStatusBar
+      :connection-name="connection?.name ?? ''"
+      :session="session ?? null"
+      :connected="connected && active !== false && visible !== false"
+      :database="tab ? tabDatabase(tab) : browsedDatabase"
+      :running-queries="runningQueryCount"
+      :selection="embedded ? null : statusSelection"
+      :embedded="embedded"
+    />
+  </DefineDatabaseStatus>
   <div
     v-if="!connection"
     class="pane flex-1 items-center justify-center"
@@ -2234,8 +2251,9 @@ registerDatabaseCommandSource(
                 @document-object="openDatabaseDoc"
                 @refresh="refreshAll"
               />
+              <DatabaseStatus />
             </template>
-            <template #default="{ tab }">
+            <template #default="{ tab, visible }">
               <div
                 v-if="tab.kind === 'query'"
                 class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center border-b px-2.5 py-1"
@@ -2277,7 +2295,15 @@ registerDatabaseCommandSource(
                 @run="sql => runQuery(sql, tab.id)"
                 @save="saveQueryTab(tab.id)"
                 @ask-agent="askAgent"
-              />
+              >
+                <template #status="{ embedded }">
+                  <DatabaseStatus
+                    :tab="tab"
+                    :visible="visible"
+                    :embedded="embedded"
+                  />
+                </template>
+              </DatabaseQueryPane>
               <DatabaseTableView
                 v-else-if="
                   tab.kind === 'object' &&
@@ -2297,6 +2323,13 @@ registerDatabaseCommandSource(
               >
                 <template #toolbar>
                   <DatabaseActions :tab="tab" />
+                </template>
+                <template #status="{ embedded }">
+                  <DatabaseStatus
+                    :tab="tab"
+                    :visible="visible"
+                    :embedded="embedded"
+                  />
                 </template>
               </DatabaseTableView>
               <DatabaseRoutineView
@@ -2330,16 +2363,19 @@ registerDatabaseCommandSource(
                   <DatabaseActions :tab="tab" />
                 </template>
               </DatabaseTableDesigner>
+              <DatabaseStatus
+                v-if="
+                  tab.kind === 'table-designer' ||
+                  (tab.kind === 'object' &&
+                    tab.object.kind !== 'table' &&
+                    tab.object.kind !== 'view')
+                "
+                :tab="tab"
+                :visible="visible"
+              />
             </template>
           </DatabaseTabWorkspace>
-          <DatabaseStatusBar
-            :connection-name="connection.name"
-            :session="session ?? null"
-            :connected="connected && active !== false"
-            :database="activeQuery?.database || browsedDatabase"
-            :running-queries="runningQueryCount"
-            :selection="statusSelection"
-          />
+          <DatabaseStatus v-if="!connected" />
         </div>
       </div>
       <AppSidePane

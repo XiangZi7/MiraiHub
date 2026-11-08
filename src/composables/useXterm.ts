@@ -32,6 +32,7 @@ const FONT_FAMILIES: Record<string, string> = {
   consolas: 'Consolas, ui-monospace, monospace',
 }
 
+/** 将终端字体设置解析为内置字体和系统等宽字体的回退顺序。 */
 export function terminalFontFamily(): string {
   return (
     FONT_FAMILIES[settingsSnapshot().terminalFont] ??
@@ -94,17 +95,56 @@ export function useXterm(onOptionsChange: () => void) {
     if (term.value) term.value.options.theme = currentTerminalTheme()
   })
 
+  /**
+   * 首次打开或切换字体时主动加载常规与粗体字形，完成后重新测量网格。
+   * xterm 会缓存字体尚未就绪时的回退字形；只刷新行内容无法修正字宽和纹理。
+   * 关闭终端或切到其他字体后忽略旧加载结果，加载失败则保留系统等宽回退。
+   */
+  async function refreshFont(terminal: Terminal): Promise<void> {
+    if (typeof document === 'undefined' || !document.fonts) return
+    const family = terminal.options.fontFamily!
+    const size = terminal.options.fontSize!
+    const regular = `400 ${size}px ${family}`
+    const bold = `700 ${size}px ${family}`
+    if (document.fonts.check(regular) && document.fonts.check(bold)) return
+    try {
+      await Promise.all([
+        document.fonts.load(regular),
+        document.fonts.load(bold),
+      ])
+    } catch {
+      return
+    }
+    if (
+      term.value !== terminal ||
+      !terminal.element?.isConnected ||
+      terminal.options.fontFamily !== family ||
+      terminal.options.fontSize !== size
+    )
+      return
+    // 用公开选项触发字宽重测；两次同步赋值由 xterm 合并到下一帧绘制。
+    terminal.options.fontFamily = 'monospace'
+    terminal.options.fontFamily = family
+    terminal.clearTextureAtlas()
+    terminal.refresh(0, terminal.rows - 1)
+    onOptionsChange()
+  }
+
   /** 创建终端并挂到容器上，立即按容器尺寸 fit 一次。 */
   function open(container: HTMLElement): Terminal {
     const terminal = new Terminal({
       fontFamily: terminalFontFamily(),
       fontSize: settingNumber('terminalFontSize', 13),
+      fontWeight: 400,
+      fontWeightBold: 700,
       lineHeight: 1.4,
       cursorStyle: settings.terminalCursor as CursorStyle,
       cursorBlink: settings.terminalCursorBlink,
       // 回滚缓冲给足：排查日志时经常要往回翻很多屏
       scrollback: settingNumber('terminalScrollback', 5000),
       theme: currentTerminalTheme(),
+      // 程序自带的浅灰、白色和真彩色在浅色皮肤下也应保持可读。
+      minimumContrastRatio: 4.5,
       allowTransparency: true,
       // 让 xterm 自己吞掉 Ctrl+C 之类的组合键交给远端，而不是被浏览器截走
       macOptionIsMeta: true,
@@ -119,7 +159,6 @@ export function useXterm(onOptionsChange: () => void) {
     loadWebLinks(terminal)
     terminal.open(container)
     fit.fit()
-    void enableWebgl(terminal)
 
     // 拖选过程中选区会连续变化，停稳后再写剪贴板。
     const copySelection = useDebounceFn(() => {
@@ -133,9 +172,12 @@ export function useXterm(onOptionsChange: () => void) {
 
     term.value = terminal
     fitAddon.value = fit
+    // 先等内置字体就绪再创建 WebGL 字形图集，避免首屏缓存系统回退字体。
+    void refreshFont(terminal).then(() => enableWebgl(terminal))
     return terminal
   }
 
+  // 字体、字号与终端选项变更后重新适配；异步字体到达时再补一次测量。
   const stopSettingsWatch = watch(
     () =>
       [
@@ -154,6 +196,7 @@ export function useXterm(onOptionsChange: () => void) {
       terminal.options.cursorBlink = settings.terminalCursorBlink
       terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
       onOptionsChange()
+      void refreshFont(terminal)
     }
   )
 

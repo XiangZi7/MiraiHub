@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 
 import {
@@ -53,10 +52,10 @@ import type {
 import { copyText as copyClipboardText } from '@/utils/clipboard'
 import { cn } from '@/utils/cn'
 import { IS_TAURI } from '@/utils/window'
-import DatabaseColumnTagDialog from './DatabaseColumnTagDialog.vue'
-import DatabaseDataRow from './DatabaseDataRow.vue'
-import DatabaseGridContextMenu from './DatabaseGridContextMenu.vue'
-import DatabaseValueViewer from './DatabaseValueViewer.vue'
+import DatabaseColumnTagDialog from '@/components/workspace/database/DatabaseColumnTagDialog.vue'
+import DatabaseDataRow from '@/components/workspace/database/DatabaseDataRow.vue'
+import DatabaseGridContextMenu from '@/components/workspace/database/DatabaseGridContextMenu.vue'
+import DatabaseValueViewer from '@/components/workspace/database/DatabaseValueViewer.vue'
 import {
   formatGridNumber,
   useGridDensity,
@@ -74,7 +73,7 @@ import {
   type GridRange,
 } from '@/utils/database-grid'
 import DatabaseValueInput from '@/components/workspace/database/database-value-input.vue'
-import DatabaseExportMenu from './DatabaseExportMenu.vue'
+import DatabaseExportMenu from '@/components/workspace/database/DatabaseExportMenu.vue'
 import type {
   DatabaseExportData,
   DatabaseExportLoader,
@@ -339,6 +338,7 @@ const densityLabel = computed(
 )
 /** 切页或清空改动时递增，值查看器里迟到的草稿不会写到新页面的同一位置。 */
 const viewerGeneration = shallowRef(0)
+const scroller = useTemplateRef<HTMLElement>('scroller')
 const selection = useGridSelection({
   container: computed(() => scroller.value ?? null),
   rowCount: () => page.value?.rows.length ?? 0,
@@ -590,7 +590,9 @@ async function loadDetailAndRows(): Promise<void> {
   // 外键跳转打开的新标签：第一次加载就带上条件，避免先读一遍全表
   const preset = props.filterNonce !== appliedFilterNonce
   appliedFilterNonce = props.filterNonce
-  state.filters = preset ? (props.presetFilters ?? []).map(item => ({ ...item })) : []
+  state.filters = preset
+    ? (props.presetFilters ?? []).map(item => ({ ...item }))
+    : []
   state.matchAny = false
   state.whereSql = ''
   whereDraft.value = ''
@@ -910,7 +912,6 @@ function restoreDiscarded(): void {
 /** 超过这个行数才启用窗口化，小页面保持整表渲染、列宽完全稳定。 */
 const VIRTUAL_THRESHOLD = 120
 const OVERSCAN = 10
-const scroller = useTemplateRef<HTMLElement>('scroller')
 const scrollTop = shallowRef(0)
 const viewportHeight = shallowRef(600)
 /** 行高按实际渲染测量，默认值对应 h-7 单元格加 1px 边框。 */
@@ -968,9 +969,7 @@ const visibleRows = computed(() => {
 watch(
   [visibleRows, density],
   () => {
-    const row = scroller.value?.querySelector<HTMLElement>(
-      'tr[data-row-index]'
-    )
+    const row = scroller.value?.querySelector<HTMLElement>('tr[data-row-index]')
     const height = row?.getBoundingClientRect().height
     if (height && Math.abs(height - rowHeight.value) > 0.5)
       rowHeight.value = height
@@ -1168,9 +1167,7 @@ function changedRowIndexes(mutations: RowMutation[]): Set<number> {
       )
       const byKey =
         keys.length > 0 && keys.every(item => item && item.value !== null)
-      const found = matching(
-        byKey ? (keys as CellValue[]) : mutation.values
-      )
+      const found = matching(byKey ? (keys as CellValue[]) : mutation.values)
       if (byKey || found.length === 1)
         found.forEach(index => indexes.add(index))
     }
@@ -1568,7 +1565,10 @@ watch(
 </script>
 
 <template>
-  <section class="bg-terminal flex min-h-0 flex-1 flex-col">
+  <section
+    class="bg-terminal relative flex min-h-0 min-w-0 flex-1 flex-col"
+    :aria-busy="state.loading || state.pageLoading"
+  >
     <header
       class="border-line-soft flex min-h-10 min-w-0 shrink-0 flex-wrap items-center gap-1 border-b px-2.5 py-1"
     >
@@ -1640,12 +1640,15 @@ watch(
       <slot name="toolbar" />
     </header>
 
-    <AppSkeleton
+    <div
+      v-if="state.loading || state.pageLoading"
+      class="progress-indeterminate"
+      role="progressbar"
+      :aria-label="state.loading ? t('读取表结构…') : t('读取表数据…')"
+    />
+    <div
       v-if="state.loading && !state.detail"
-      variant="table"
       class="min-h-0 flex-1"
-      :rows="10"
-      :aria-label="t('读取表结构…')"
     />
     <div
       v-else-if="state.error && !state.detail"
@@ -1884,12 +1887,6 @@ watch(
             @keydown="selection.handleKeydown"
           >
             <div
-              v-if="state.pageLoading"
-              class="progress-indeterminate"
-              role="progressbar"
-              :aria-label="t('读取表数据…')"
-            />
-            <div
               v-if="state.error && page && !state.pageLoading"
               role="alert"
               class="border-danger/30 bg-danger/10 sticky top-0 left-0 z-30 flex items-center gap-2 border-b px-3 py-1.5 text-[11px] backdrop-blur"
@@ -2002,12 +1999,15 @@ watch(
                         "
                         :aria-label="t('已启用标签化显示，右键可修改')"
                       />
-                      <span class="text-txt-4 ml-1.5 text-[9px] font-normal">{{
-                        column.dataType
-                      }}</span>
+                        <span
+                          class="text-txt-4 ml-1.5 text-[9px] font-normal"
+                          >{{ column.dataType }}</span
+                        >
                     </span>
                     <AppColumnResizeHandle
-                      :label="t('调整“{value0}”列宽', { value0: column.name })"
+                        :label="
+                          t('调整“{value0}”列宽', { value0: column.name })
+                        "
                       @pointerdown="beginResize(column.name, $event)"
                       @dblclick="autoFit(column.name, $event)"
                       @keydown="keyboardResize(column.name, $event)"
@@ -2043,7 +2043,9 @@ watch(
                   :resized="resized"
                   :tags="visibleTagConfigs"
                   :tag-lookups="visibleTagLookups"
-                  :selection-left="selection.rowSelection(rowIndex)?.left ?? null"
+                    :selection-left="
+                      selection.rowSelection(rowIndex)?.left ?? null
+                    "
                   :selection-right="
                     selection.rowSelection(rowIndex)?.right ?? null
                   "
@@ -2091,7 +2093,9 @@ watch(
                     class="group/cell border-line-soft relative border-r border-b p-0 last:border-r-0"
                   >
                     <DatabaseValueInput
-                      :model-value="insertedValue(rowIndex, column.name) ?? ''"
+                        :model-value="
+                          insertedValue(rowIndex, column.name) ?? ''
+                        "
                       :data-type="column.dataType"
                       :placeholder="
                         column.autoIncrement
@@ -2158,7 +2162,7 @@ watch(
           </div>
 
           <footer
-            class="border-line-soft text-txt-3 flex h-8 shrink-0 items-center gap-1.5 border-t px-2.5 text-[10.5px]"
+            class="border-line-soft text-txt-3 flex min-h-8 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-t px-2.5 py-1 text-[10.5px]"
           >
             <IconButton
               icon="lucide:chevron-left"
@@ -2213,7 +2217,9 @@ watch(
               class="text-txt-3 ml-1 truncate tabular-nums"
               aria-live="polite"
             >
-              {{ t('已选 {value0} 格', { value0: selection.stats.value.cells }) }}
+              {{
+                t('已选 {value0} 格', { value0: selection.stats.value.cells })
+              }}
               <template v-if="selection.stats.value.numbers">
                 · {{ t('求和') }}
                 {{ formatGridNumber(selection.stats.value.sum) }} ·
@@ -2221,7 +2227,14 @@ watch(
                 {{ formatGridNumber(selection.stats.value.average) }}
               </template>
             </span>
-            <div class="flex-1" />
+            <slot
+              name="status"
+              :embedded="true"
+            />
+            <div
+              v-if="!$slots.status"
+              class="flex-1"
+            />
             <IconButton
               :icon="densityIcon"
               :size="12"
@@ -2477,6 +2490,12 @@ watch(
         </div>
       </aside>
     </div>
+
+    <slot
+      v-if="state.activePanel !== 'data' || !state.detail"
+      name="status"
+      :embedded="false"
+    />
 
     <AppConfirmDialog
       :open="confirmOpen"

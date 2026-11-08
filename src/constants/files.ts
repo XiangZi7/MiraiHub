@@ -1,7 +1,7 @@
 /**
  * 文件类型 → 图标与配色。
  *
- * 图标一律实心（对齐 UI 稿），类型靠颜色区分。
+ * 统一使用与工作台一致的 Lucide 线条图标，类型通过图形和主题配色区分。
  * 远端目录项没有"类型"字段，只能按扩展名归类。
  */
 
@@ -106,83 +106,104 @@ export function extensionOf(name: string): FileKindKey {
   return EXTENSION_MAP[lower.slice(dot + 1)] ?? 'plain'
 }
 
-// 两端文件列表共用离线彩色图标；同类扩展名共享对应格式的图案。
-const FILE_ICONS: ReadonlyArray<readonly [string, string]> = [
-  ['doc docx docm dot dotx odt rtf', 'vscode-icons:file-type-word'],
-  ['xls xlsx xlsm xlsb csv tsv ods', 'vscode-icons:file-type-excel'],
-  ['ppt pptx pps ppsx odp', 'vscode-icons:file-type-powerpoint'],
-  ['pdf', 'vscode-icons:file-type-pdf2'],
+// 两端文件列表共用离线线条图标和主题色，避免混入不同风格的文件图案。
+const FILE_ICONS: ReadonlyArray<readonly [string, string, string]> = [
+  ['doc docx docm dot dotx odt rtf', 'lucide:file-text', 'text-blue'],
+  ['xls xlsx xlsm xlsb csv tsv ods', 'lucide:file-spreadsheet', 'text-success'],
+  ['ppt pptx pps ppsx odp', 'lucide:presentation', 'text-orange'],
+  ['pdf', 'lucide:file-type', 'text-danger'],
   [
-    'png jpg jpeg gif webp avif bmp ico tif tiff heic psd',
-    'vscode-icons:file-type-image',
+    'png jpg jpeg gif webp avif bmp ico tif tiff heic psd svg',
+    'lucide:image',
+    'text-violet',
   ],
-  ['svg', 'vscode-icons:file-type-svg'],
-  ['mp3 wav flac aac ogg m4a opus wma midi', 'vscode-icons:file-type-audio'],
-  ['mp4 mkv mov avi webm m4v wmv flv', 'vscode-icons:file-type-video'],
-  ['zip rar 7z tar gz bz2 xz tgz zst cab iso', 'vscode-icons:file-type-zip'],
-  ['js mjs cjs', 'vscode-icons:file-type-js-official'],
-  ['jsx', 'vscode-icons:file-type-reactjs'],
-  ['ts mts cts', 'vscode-icons:file-type-typescript-official'],
-  ['tsx', 'vscode-icons:file-type-reactts'],
-  ['vue', 'vscode-icons:file-type-vue'],
-  ['json jsonc json5 jsonl', 'vscode-icons:file-type-json'],
-  ['md markdown mdx', 'vscode-icons:file-type-markdown'],
-  ['html htm', 'vscode-icons:file-type-html'],
-  ['css scss sass less', 'vscode-icons:file-type-css'],
-  ['py pyw pyc ipynb', 'vscode-icons:file-type-python'],
-  ['rs', 'vscode-icons:file-type-rust'],
-  ['go', 'vscode-icons:file-type-go'],
-  ['java jar class kt kts', 'vscode-icons:file-type-java'],
-  ['c h', 'vscode-icons:file-type-c'],
-  ['cpp cxx cc hpp hxx', 'vscode-icons:file-type-cpp'],
-  ['cs', 'vscode-icons:file-type-csharp'],
-  ['php', 'vscode-icons:file-type-php'],
-  ['rb', 'vscode-icons:file-type-ruby'],
-  ['sh bash zsh fish bat cmd', 'vscode-icons:file-type-shell'],
-  ['ps1 psm1 psd1', 'vscode-icons:file-type-powershell'],
-  ['sql', 'vscode-icons:file-type-sql'],
-  ['db sqlite sqlite3 db3', 'vscode-icons:file-type-sqlite'],
-  ['yaml yml', 'vscode-icons:file-type-yaml'],
-  ['toml', 'vscode-icons:file-type-toml'],
-  ['ini conf config cfg env properties xml', 'vscode-icons:file-type-config'],
-  ['log', 'vscode-icons:file-type-log'],
-  ['txt text', 'vscode-icons:file-type-text'],
-  ['ttf otf woff woff2 eot', 'vscode-icons:file-type-font'],
-  ['exe dll bin msi dmg deb rpm apk appimage', 'vscode-icons:file-type-binary'],
+  ['mp3 wav flac aac ogg m4a opus wma midi', 'lucide:music-2', 'text-pink'],
+  ['mp4 mkv mov avi webm m4v wmv flv', 'lucide:film', 'text-pink'],
+  [
+    'zip rar 7z tar gz bz2 xz tgz zst cab iso',
+    'lucide:file-archive',
+    'text-amber',
+  ],
+  ['js mjs cjs', 'lucide:file-code', 'text-amber'],
+  ['ts mts cts', 'lucide:file-code-2', 'text-blue'],
+  ['vue jsx tsx', 'lucide:component', 'text-success'],
+  ['json jsonc json5 jsonl', 'lucide:braces', 'text-amber'],
+  ['md markdown mdx', 'lucide:notebook-text', 'text-blue'],
+  ['html htm css scss sass less', 'lucide:code-xml', 'text-orange'],
+  [
+    'py pyw pyc ipynb rs go java jar class kt kts c h cpp cxx cc hpp hxx cs php rb',
+    'lucide:file-code-2',
+    'text-cyan',
+  ],
+  [
+    'sh bash zsh fish bat cmd ps1 psm1 psd1',
+    'lucide:file-terminal',
+    'text-success',
+  ],
+  ['sql db sqlite sqlite3 db3', 'lucide:database', 'text-blue'],
+  [
+    'yaml yml toml ini conf config cfg env properties xml',
+    'lucide:file-cog',
+    'text-cyan',
+  ],
+  ['log', 'lucide:scroll-text', 'text-txt-3'],
+  ['txt text', 'lucide:file-text', 'text-txt-3'],
+  ['ttf otf woff woff2 eot', 'lucide:letter-text', 'text-violet'],
+  ['exe dll bin msi dmg deb rpm apk appimage', 'lucide:binary', 'text-txt-3'],
+  ['pem key pub crt cer p12 pfx', 'lucide:file-key-2', 'text-amber'],
 ]
 const iconsByExtension = new Map(
-  FILE_ICONS.flatMap(([extensions, icon]) =>
-    extensions.split(' ').map(extension => [extension, icon] as const)
+  FILE_ICONS.flatMap(([extensions, icon, tone]) =>
+    extensions.split(' ').map(extension => [extension, { icon, tone }] as const)
   )
 )
+
+// 常见服务器目录补充语义图标，普通目录沿用工作台的蓝色文件夹。
+const FOLDER_ICONS: Record<string, string> = {
+  '.ssh': 'lucide:folder-key',
+  '.config': 'lucide:folder-cog',
+  '.git': 'lucide:folder-git-2',
+  '.cache': 'lucide:folder-sync',
+  '.docker': 'lucide:folder-code',
+  '.local': 'lucide:folder-dot',
+  '.npm': 'lucide:folder-archive',
+  '.nvm': 'lucide:folder-code',
+  '.pm2': 'lucide:folder-cog',
+  node_modules: 'lucide:folder-archive',
+}
 
 /** 按完整文件名、扩展名和目录类型选择对应图标，未知格式保留通用文件图标。 */
 export function fileIcon(
   name: string,
   kind = 'file'
 ): { icon: string; tone: string } {
+  const lower = name.toLowerCase()
   if (kind === 'directory')
-    return { icon: 'vscode-icons:default-folder', tone: '' }
+    return { icon: FOLDER_ICONS[lower] ?? 'lucide:folder', tone: 'text-blue' }
   if (kind === 'symlink' || /\.(lnk|url)$/i.test(name))
     return { icon: 'lucide:file-symlink', tone: 'text-violet' }
-  const lower = name.toLowerCase()
   if (lower === 'dockerfile' || lower.startsWith('docker-compose.'))
-    return { icon: 'vscode-icons:file-type-docker', tone: '' }
+    return { icon: 'lucide:container', tone: 'text-blue' }
   if (
     lower === '.gitignore' ||
+    lower === '.gitconfig' ||
     lower === '.gitattributes' ||
     lower === '.gitmodules'
   )
-    return { icon: 'vscode-icons:file-type-git', tone: '' }
+    return { icon: 'lucide:git-branch', tone: 'text-orange' }
   if (lower === '.env' || lower.startsWith('.env.'))
-    return { icon: 'vscode-icons:file-type-config', tone: '' }
-  if (lower.endsWith('.d.ts'))
-    return { icon: 'vscode-icons:file-type-typescriptdef', tone: '' }
-  const icon =
-    iconsByExtension.get(lower.split('.').at(-1) ?? '') ??
-    'vscode-icons:default-file'
-  return {
-    icon,
-    tone: icon === 'vscode-icons:file-type-audio' ? '[&_path]:fill-pink' : '',
-  }
+    return { icon: 'lucide:file-cog', tone: 'text-cyan' }
+  if (/^\.(bash|zsh|profile|zprofile|zlogin)/.test(lower))
+    return { icon: 'lucide:file-terminal', tone: 'text-success' }
+  if (
+    /^(id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|authorized_keys|known_hosts)$/.test(
+      lower
+    )
+  )
+    return { icon: 'lucide:file-key-2', tone: 'text-amber' }
+  const meta = iconsByExtension.get(lower.split('.').at(-1) ?? '')
+  if (meta) return meta
+  if (lower.startsWith('.'))
+    return { icon: 'lucide:file-cog', tone: 'text-txt-3' }
+  return { icon: 'lucide:file', tone: 'text-txt-3' }
 }

@@ -70,6 +70,7 @@ const LIGHT_TERMINAL_THEME: ITheme = {
   brightWhite: '#413d4a',
 }
 
+/** 将浅色选区与实际终端底色混合，避免透明背景被 xterm 当作黑色。 */
 function lightSelectionBackground(opacity: number): string {
   const background = parseColor('var(--color-terminal)')
   const accent = parseColor('var(--color-accent)')
@@ -81,11 +82,13 @@ function lightSelectionBackground(opacity: number): string {
   return `rgb(${channels.join(', ')})`
 }
 
-/** Resolve CSS tokens to sRGB for xterm's canvas, including custom CSS colors. */
+/** 将皮肤令牌转成 xterm 可解析的颜色，并为文字对比度计算保留真实底色。 */
 export function currentTerminalTheme(): ITheme {
   const light = document.documentElement.dataset.skinScheme === 'light'
   return {
     ...(light ? LIGHT_TERMINAL_THEME : TERMINAL_THEME),
+    // 保留终端底色的 RGB、只将 alpha 设为 0：视觉仍透明，对比度不再按黑底计算。
+    background: rgba('var(--color-terminal)', 0),
     foreground: rgba('var(--color-term-fg)', 1),
     cursor: rgba('var(--color-accent)', 1),
     green: rgba('var(--color-term-green)', 1),

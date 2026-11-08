@@ -47,13 +47,13 @@ import {
 } from '@/utils/database-ddl'
 import { copyText } from '@/utils/clipboard'
 import { tableDesignerSnapshot } from '@/utils/database-designer'
-import DatabaseTableChecksEditor from './designer/DatabaseTableChecksEditor.vue'
-import DatabaseTableDdlPreview from './designer/DatabaseTableDdlPreview.vue'
-import DatabaseTableTriggersEditor from './designer/DatabaseTableTriggersEditor.vue'
-import DatabaseTableFieldsEditor from './designer/DatabaseTableFieldsEditor.vue'
-import DatabaseTableForeignKeysEditor from './designer/DatabaseTableForeignKeysEditor.vue'
-import DatabaseTableIndexesEditor from './designer/DatabaseTableIndexesEditor.vue'
-import DatabaseTableOptionsEditor from './designer/DatabaseTableOptionsEditor.vue'
+import DatabaseTableChecksEditor from '@/components/workspace/database/designer/DatabaseTableChecksEditor.vue'
+import DatabaseTableDdlPreview from '@/components/workspace/database/designer/DatabaseTableDdlPreview.vue'
+import DatabaseTableTriggersEditor from '@/components/workspace/database/designer/DatabaseTableTriggersEditor.vue'
+import DatabaseTableFieldsEditor from '@/components/workspace/database/designer/DatabaseTableFieldsEditor.vue'
+import DatabaseTableForeignKeysEditor from '@/components/workspace/database/designer/DatabaseTableForeignKeysEditor.vue'
+import DatabaseTableIndexesEditor from '@/components/workspace/database/designer/DatabaseTableIndexesEditor.vue'
+import DatabaseTableOptionsEditor from '@/components/workspace/database/designer/DatabaseTableOptionsEditor.vue'
 
 const { t } = useI18n()
 
@@ -312,7 +312,12 @@ async function readTableDetail(
   schema: string,
   name: string
 ): Promise<DatabaseTableDetail> {
-  const detail = await database.tableDetail(props.sessionId, schema, name, 'table')
+  const detail = await database.tableDetail(
+    props.sessionId,
+    schema,
+    name,
+    'table'
+  )
   if (props.databaseKind !== 'sqlite') return detail
   return { ...detail, checks: sqliteTableChecks(detail.ddl) }
 }
@@ -409,20 +414,15 @@ function draftFromDetail(detail: DatabaseTableDetail): TableDesignerDraft {
       name: check.name,
       expression: check.expression,
     })),
-    triggers: detail.triggers?.map(
-      (trigger, index): TableDesignerTrigger => ({
+    triggers: detail.triggers?.map((trigger, index): TableDesignerTrigger => ({
         id: `trigger-${trigger.name}-${index}`,
         name: trigger.name,
         timing: trigger.timing.toUpperCase() === 'AFTER' ? 'AFTER' : 'BEFORE',
-        events: trigger.events.map(
-          event => event.toUpperCase() as TriggerEvent
-        ),
-        level:
-          trigger.level?.toUpperCase() === 'STATEMENT' ? 'STATEMENT' : 'ROW',
+      events: trigger.events.map(event => event.toUpperCase() as TriggerEvent),
+      level: trigger.level?.toUpperCase() === 'STATEMENT' ? 'STATEMENT' : 'ROW',
         body: trigger.body,
         functionName: trigger.function ?? '',
-      })
-    ),
+    })),
     keepTriggerFunctions: [],
     partition: null,
     partitionChanges: [],
@@ -1242,7 +1242,9 @@ function aiColumn(raw: Record<string, unknown>): AiProposalColumn | null {
       comment: String(raw.comment ?? '').trim(),
     }
   )
-  return renamedFrom && renamedFrom !== name ? { ...column, renamedFrom } : column
+  return renamedFrom && renamedFrom !== name
+    ? { ...column, renamedFrom }
+    : column
 }
 
 /** 把模型给出的索引转成设计器索引；引用了不存在字段的索引项会被丢弃。 */
@@ -1357,9 +1359,17 @@ function aiColumnPlan(columns: readonly AiProposalColumn[]) {
   const pairs = columns.map(column => {
     const old = previous.get(column.name) ?? byOriginal.get(column.name)
     if (!old || matched.has(old.id))
-      return { column, old: undefined, renameOf: undefined as TableDesignerColumn | undefined }
+      return {
+        column,
+        old: undefined,
+        renameOf: undefined as TableDesignerColumn | undefined,
+      }
     matched.add(old.id)
-    return { column, old, renameOf: undefined as TableDesignerColumn | undefined }
+    return {
+      column,
+      old,
+      renameOf: undefined as TableDesignerColumn | undefined,
+    }
   })
   const destructive: DesignerAiDestructiveItem[] = []
   for (const pair of pairs) {
@@ -1384,7 +1394,11 @@ function aiColumnPlan(columns: readonly AiProposalColumn[]) {
   if (editing.value)
     for (const column of draft.columns)
       if (column.originalName && !matched.has(column.id))
-        destructive.push({ id: `drop:${column.id}`, kind: 'drop', from: column.name })
+        destructive.push({
+          id: `drop:${column.id}`,
+          kind: 'drop',
+          from: column.name,
+        })
   return { pairs, destructive }
 }
 
@@ -1513,7 +1527,9 @@ function applyAiComments(): void {
       :aria-label="t('建表配置')"
     >
       <label class="flex min-w-0 flex-[1_1_170px] items-center gap-1.5">
-        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{ t('表名') }}</span>
+        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{
+          t('表名')
+        }}</span>
         <AppInput
           v-model="draft.name"
           size="sm"
@@ -1524,7 +1540,9 @@ function applyAiComments(): void {
         />
       </label>
       <label class="flex min-w-0 flex-[1_1_140px] items-center gap-1.5">
-        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{ databaseKind === 'mysql' ? t('Database') : 'Schema' }}</span>
+        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{
+          databaseKind === 'mysql' ? t('Database') : 'Schema'
+        }}</span>
         <AppInput
           v-model="draft.schema"
           size="sm"
@@ -1542,7 +1560,9 @@ function applyAiComments(): void {
           model-value=""
           :label="t('从模板或现有表复制结构')"
           :placeholder="
-            copyingStructure ? t('正在读取表结构…') : t('从模板或现有表复制结构')
+            copyingStructure
+              ? t('正在读取表结构…')
+              : t('从模板或现有表复制结构')
           "
           :options="templateOptions"
           :disabled="copyingStructure"
@@ -1553,7 +1573,9 @@ function applyAiComments(): void {
         />
       </div>
       <label class="flex min-w-0 flex-[2_1_220px] items-center gap-1.5">
-        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{ t('表备注') }}</span>
+        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{
+          t('表备注')
+        }}</span>
         <AppInput
           v-model="draft.comment"
           size="sm"
@@ -1607,10 +1629,11 @@ function applyAiComments(): void {
           aria-haspopup="menu"
           @click="toggleAiMenu"
           ><AppIcon
-            :name="ai.loading.value ? 'lucide:loader-circle' : 'lucide:sparkles'"
+            :name="
+              ai.loading.value ? 'lucide:loader-circle' : 'lucide:sparkles'
+            "
             :size="11"
-            :class="ai.loading.value && 'motion-safe:animate-spin'"
-          />AI<AppIcon
+            :class="ai.loading.value && 'motion-safe:animate-spin'" />AI<AppIcon
             name="lucide:chevron-down"
             :size="10"
         /></AppButton>
@@ -1719,23 +1742,19 @@ function applyAiComments(): void {
     </div>
 
     <fieldset
-      class="m-0 flex min-h-0 min-w-0 flex-1 flex-col p-0"
+      class="relative m-0 flex min-h-0 min-w-0 flex-1 flex-col p-0"
       :disabled="editorDisabled"
+      :aria-busy="loadingDetail"
     >
       <div
         v-if="loadingDetail"
-        class="text-txt-3 flex items-center gap-2 p-6 text-[11px]"
-      >
-        <AppIcon
-          name="lucide:loader-circle"
-          :size="13"
-          class="animate-spin"
+        class="progress-indeterminate"
+        role="progressbar"
+        :aria-label="t('正在读取表结构…')"
         />
-        {{ t('正在读取表结构…') }}
-      </div>
       <div
         v-else-if="loadError"
-        class="text-danger flex min-w-0 max-w-[60%] items-center gap-1.25 overflow-hidden p-6 text-[9.5px] text-ellipsis whitespace-nowrap"
+        class="text-danger flex max-w-[60%] min-w-0 items-center gap-1.25 overflow-hidden p-6 text-[9.5px] text-ellipsis whitespace-nowrap"
         role="alert"
       >
         {{ loadError }}
@@ -1826,7 +1845,9 @@ function applyAiComments(): void {
             <AppCheckbox
               v-for="item in droppableFunctions"
               :key="item.function"
-              :model-value="!draft.keepTriggerFunctions?.includes(item.function)"
+              :model-value="
+                !draft.keepTriggerFunctions?.includes(item.function)
+              "
               :label="
                 t('同时删除触发器函数 {value0}', { value0: item.function })
               "
@@ -1999,7 +2020,11 @@ function applyAiComments(): void {
             v-model="aiInstruction"
             :label="t('表结构描述')"
             :rows="3"
-            :placeholder="t('例如：订单表，包含用户、金额、状态、下单时间，按用户和状态查询')"
+            :placeholder="
+              t(
+                '例如：订单表，包含用户、金额、状态、下单时间，按用户和状态查询'
+              )
+            "
             @keydown.ctrl.enter.prevent="runAi"
           />
           <div class="flex justify-end">
@@ -2009,7 +2034,9 @@ function applyAiComments(): void {
               :disabled="ai.loading.value || !aiInstruction.trim()"
               @click="runAi"
               ><AppIcon
-                :name="ai.loading.value ? 'lucide:loader-circle' : 'lucide:sparkles'"
+                :name="
+                  ai.loading.value ? 'lucide:loader-circle' : 'lucide:sparkles'
+                "
                 :size="11"
                 :class="ai.loading.value && 'motion-safe:animate-spin'"
               />{{ aiProposal ? t('重新生成') : t('生成') }}</AppButton
@@ -2110,7 +2137,9 @@ function applyAiComments(): void {
             role="group"
             :aria-label="t('破坏性变更（需确认）')"
           >
-            <p class="text-amber flex items-center gap-1.5 text-[10.5px] font-medium">
+            <p
+              class="text-amber flex items-center gap-1.5 text-[10.5px] font-medium"
+            >
               <AppIcon
                 name="lucide:triangle-alert"
                 :size="11"
@@ -2248,7 +2277,7 @@ function applyAiComments(): void {
     >
       <div
         v-if="!validation.valid || alterResult.error"
-        class="text-danger flex min-w-0 max-w-[60%] items-center gap-1.25 overflow-hidden text-[9.5px] text-ellipsis whitespace-nowrap"
+        class="text-danger flex max-w-[60%] min-w-0 items-center gap-1.25 overflow-hidden text-[9.5px] text-ellipsis whitespace-nowrap"
         :title="validation.errors.join('\n')"
       >
         <AppIcon

@@ -196,7 +196,7 @@ async function navigate(event: KeyboardEvent): Promise<void> {
         >
           <AppIcon
             :name="row.meta.icon"
-            :size="19"
+            :size="17"
             :class="row.meta.tone"
           />
           <span class="text-txt truncate">{{ row.file.name }}</span>

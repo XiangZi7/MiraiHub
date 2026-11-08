@@ -12,6 +12,7 @@ import {
 import { storeToRefs } from 'pinia'
 import { onClickOutside, useEventListener } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
@@ -299,13 +300,25 @@ useEventListener(window, 'resize', () => {
             @click="close()"
           />
         </header>
-        <input
+        <div
           v-if="!editing"
-          v-model="search"
-          class="field mx-3 my-2"
-          :placeholder="t('搜索命令、分组或标签')"
-          :aria-label="t('搜索命令、分组或标签')"
-        />
+          class="shrink-0 px-3 py-2.5"
+        >
+          <div class="relative">
+            <AppIcon
+              name="lucide:search"
+              :size="14"
+              class="text-txt-4 pointer-events-none absolute top-1/2 left-2.5 z-1 -translate-y-1/2"
+            />
+            <AppInput
+              v-model="search"
+              type="search"
+              class="pl-8"
+              :placeholder="t('搜索命令、分组或标签')"
+              :aria-label="t('搜索命令、分组或标签')"
+            />
+          </div>
+        </div>
         <div
           ref="commandList"
           class="scroll-thin min-h-0 overflow-y-auto"

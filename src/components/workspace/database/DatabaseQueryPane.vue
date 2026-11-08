@@ -7,9 +7,9 @@ import type {
   DatabaseKind,
   DatabaseStatementResult,
 } from '@/types/database'
-import SqlEditor from './SqlEditor.vue'
-import DatabaseQueryResizeHandle from './DatabaseQueryResizeHandle.vue'
-import DatabaseQueryResults from './DatabaseQueryResults.vue'
+import SqlEditor from '@/components/workspace/database/SqlEditor.vue'
+import DatabaseQueryResizeHandle from '@/components/workspace/database/DatabaseQueryResizeHandle.vue'
+import DatabaseQueryResults from '@/components/workspace/database/DatabaseQueryResults.vue'
 import type { PlanNode } from '@/utils/explain-plan'
 import {
   byteOffsetToIndex,
@@ -61,8 +61,7 @@ const style = computed(() => {
   return {
     '--query-split-top': `${value}fr`,
     '--query-split-bottom': `${100 - value}fr`,
-    gridTemplateRows:
-      'var(--query-split-top) 10px var(--query-split-bottom)',
+    gridTemplateRows: 'var(--query-split-top) 10px var(--query-split-bottom)',
   }
 })
 
@@ -189,6 +188,21 @@ defineExpose({ runnableSql: () => editor.value?.runnableSql() ?? sql.value })
       @locate="locate"
       @toggle-pin="emit('togglePin', $event)"
       @close-result="emit('closeResult', $event)"
-    />
+    >
+      <template
+        v-if="$slots.status"
+        #status
+      >
+        <slot
+          name="status"
+          :embedded="true"
+        />
+      </template>
+    </DatabaseQueryResults>
   </div>
+  <slot
+    v-if="resultsHidden"
+    name="status"
+    :embedded="false"
+  />
 </template>

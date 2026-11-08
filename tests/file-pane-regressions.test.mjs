@@ -29,11 +29,11 @@ test('文件图标按格式区分，大小写、点文件、目录和快捷方�
     new Set(formats.map(name => fileIcon(name).icon)).size,
     formats.length
   )
-  assert.match(fileIcon('.env.local').icon, /config/)
+  assert.equal(fileIcon('.env.local').icon, 'lucide:file-cog')
   assert.match(fileIcon('.gitignore').icon, /git/)
-  assert.match(fileIcon('Dockerfile').icon, /docker/)
+  assert.equal(fileIcon('Dockerfile').icon, 'lucide:container')
   assert.match(fileIcon('VS Code.lnk').icon, /symlink/)
-  assert.match(fileIcon('unknown.xyz').icon, /default-file/)
+  assert.equal(fileIcon('unknown.xyz').icon, 'lucide:file')
   assert.match(fileIcon('photos', 'directory').icon, /folder/)
 })
 
