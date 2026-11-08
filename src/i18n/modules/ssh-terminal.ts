@@ -20,6 +20,8 @@ export const en: Record<string, string> = {
   '广播输入到所有分屏': 'Broadcast input to all panes',
   '平铺所有分屏': 'Tile all panes',
   '恢复分栏排列': 'Restore split layout',
+  '插到当前分屏之前': 'Insert before the current pane',
+  '插到当前分屏之后': 'Insert after the current pane',
   '用自然语言描述要执行的操作，回车生成命令': 'Describe what you want to do, press Enter to generate a command',
   '高风险': 'High risk',
   '中风险': 'Medium risk',

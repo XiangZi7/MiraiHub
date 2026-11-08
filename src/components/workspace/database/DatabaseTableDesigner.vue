@@ -1050,12 +1050,23 @@ const aiMenu = reactive({ open: false, x: 0, y: 0 })
 const aiTrigger = shallowRef<HTMLElement | null>(null)
 const aiMode = ref<DesignerAiMode | null>(null)
 const aiInstruction = ref('')
+/** AI 提案字段：renamedFrom 表示模型建议把该已有字段改名而来。 */
+type AiProposalColumn = TableDesignerColumn & { renamedFrom?: string }
+/** 编辑已有表时 AI 提案里的破坏性变更：删除已有字段或给已有字段改名，需逐项确认。 */
+interface DesignerAiDestructiveItem {
+  id: string
+  kind: 'drop' | 'rename'
+  from: string
+  to?: string
+}
 const aiProposal = shallowRef<{
   name: string
   comment: string
-  columns: TableDesignerColumn[]
+  columns: AiProposalColumn[]
   indexes: TableDesignerIndex[]
 } | null>(null)
+// 用户勾选确认的破坏性变更 id；未勾选的删除/改名在应用时保留原字段
+const aiConfirmed = ref<string[]>([])
 const aiComments = shallowRef<{
   table: string
   columns: { id: string; name: string; comment: string }[]
@@ -1160,7 +1171,8 @@ function aiPrompt(mode: DesignerAiMode): string {
       'If CURRENT SQL has columns, treat it as the starting point and return the complete revised table.',
       `Use only these column types: ${types}. Put length/precision (e.g. "64" or "10,2") in "length", without parentheses in "type".`,
       'Use snake_case names. Every column and the table must have a comment in the requested language.',
-      'Return JSON: {"name":"table_name","comment":"...","columns":[{"name":"","type":"","length":"","nullable":true,"primaryKey":false,"unique":false,"autoIncrement":false,"default":"","comment":""}],"indexes":[{"name":"","kind":"index|unique","columns":[""]}]}',
+      'Return JSON: {"name":"table_name","comment":"...","columns":[{"name":"","type":"","length":"","nullable":true,"primaryKey":false,"unique":false,"autoIncrement":false,"default":"","comment":"","renamedFrom":""}],"indexes":[{"name":"","kind":"index|unique","columns":[""]}]}',
+      'Keep existing column names unless asked. To rename an existing column, set "renamedFrom" to its current name. Omit an existing column only if it should be dropped.',
       'Do not list the primary key in "indexes".',
     ].join('\n')
   if (mode === 'comments')
@@ -1198,10 +1210,11 @@ function aiDefaultValue(raw: unknown): string {
   return `'${value.replace(/'/gu, "''")}'`
 }
 
-/** 把模型给出的字段转成设计器字段；类型统一大写，类型里带的括号长度拆到长度列。 */
-function aiColumn(raw: Record<string, unknown>): TableDesignerColumn | null {
+/** 把模型给出的字段转成设计器字段；类型统一大写，类型里带的括号长度拆到长度列，并保留模型声明的改名来源。 */
+function aiColumn(raw: Record<string, unknown>): AiProposalColumn | null {
   const name = String(raw.name ?? '').trim()
   if (!name) return null
+  const renamedFrom = String(raw.renamedFrom ?? '').trim()
   let dataType = String(raw.type ?? 'VARCHAR')
     .trim()
     .toUpperCase()
@@ -1213,7 +1226,7 @@ function aiColumn(raw: Record<string, unknown>): TableDesignerColumn | null {
   }
   const primaryKey = raw.primaryKey === true
   const autoIncrement = raw.autoIncrement === true
-  return templateColumn(
+  const column = templateColumn(
     name,
     normalizeDataTypeLabel(dataType, props.databaseKind),
     {
@@ -1229,6 +1242,7 @@ function aiColumn(raw: Record<string, unknown>): TableDesignerColumn | null {
       comment: String(raw.comment ?? '').trim(),
     }
   )
+  return renamedFrom && renamedFrom !== name ? { ...column, renamedFrom } : column
 }
 
 /** 把模型给出的索引转成设计器索引；引用了不存在字段的索引项会被丢弃。 */
@@ -1267,6 +1281,7 @@ async function runAi(): Promise<void> {
     return
   }
   aiProposal.value = null
+  aiConfirmed.value = []
   aiComments.value = null
   aiReview.value = null
   try {
@@ -1280,7 +1295,7 @@ async function runAi(): Promise<void> {
     if (mode === 'generate') {
       const columns = (Array.isArray(data.columns) ? data.columns : [])
         .map(item => aiColumn(item as Record<string, unknown>))
-        .filter((item): item is TableDesignerColumn => Boolean(item))
+        .filter((item): item is AiProposalColumn => Boolean(item))
       if (!columns.length) throw new Error(t('AI 返回的内容无法解析'))
       aiProposal.value = {
         name: String(data.name ?? '').trim() || draft.name,
@@ -1326,12 +1341,12 @@ async function runAi(): Promise<void> {
   }
 }
 
-/** 应用 AI 生成的表结构：新建表时整体替换；编辑已有表时旧字段只合并类型/长度/注释且全部保留，避免生成 DROP COLUMN 丢数据。 */
-function applyAiProposal(): void {
-  const proposal = aiProposal.value
-  if (!proposal) return
-  if (!editing.value) draft.name = proposal.name
-  if (proposal.comment) draft.comment = proposal.comment
+/**
+ * 把 AI 提案字段与当前草稿字段配对：同名（含原字段名）直接合并；
+ * 声明了 renamedFrom 的字段配对到被改名的字段；编辑已有表时，改名已有字段和
+ * 提案里缺失的已有字段都列为破坏性变更，等待用户逐项确认。
+ */
+function aiColumnPlan(columns: readonly AiProposalColumn[]) {
   const previous = new Map(draft.columns.map(column => [column.name, column]))
   const byOriginal = new Map(
     draft.columns
@@ -1339,34 +1354,108 @@ function applyAiProposal(): void {
       .map(column => [column.originalName as string, column])
   )
   const matched = new Set<string>()
-  const columns = proposal.columns.map(column => {
+  const pairs = columns.map(column => {
     const old = previous.get(column.name) ?? byOriginal.get(column.name)
-    if (!old || matched.has(old.id)) return column
+    if (!old || matched.has(old.id))
+      return { column, old: undefined, renameOf: undefined as TableDesignerColumn | undefined }
     matched.add(old.id)
-    // 只覆盖 AI 明确给出的属性；AI 未给出的长度、默认值、备注和 unsigned 等沿用原值
-    return {
-      ...old,
-      name: column.name,
-      dataType: column.dataType,
-      length: column.length || old.length,
-      nullable: column.nullable,
-      primaryKey: column.primaryKey,
-      unique: column.unique,
-      autoIncrement: column.autoIncrement,
-      unsigned: old.unsigned || column.unsigned,
-      defaultValue: column.autoIncrement
-        ? ''
-        : column.defaultValue || old.defaultValue,
-      comment: column.comment || old.comment,
-    }
+    return { column, old, renameOf: undefined as TableDesignerColumn | undefined }
   })
-  // 编辑已有表时，AI 结果里缺失的原有字段一律保留，避免悄悄生成 DROP COLUMN 丢数据
+  const destructive: DesignerAiDestructiveItem[] = []
+  for (const pair of pairs) {
+    const from = pair.column.renamedFrom
+    if (pair.old || !from) continue
+    const old = draft.columns.find(
+      column =>
+        !matched.has(column.id) &&
+        (column.name === from || column.originalName === from)
+    )
+    if (!old) continue
+    matched.add(old.id)
+    pair.renameOf = old
+    if (editing.value && old.originalName)
+      destructive.push({
+        id: `rename:${old.id}`,
+        kind: 'rename',
+        from: old.name,
+        to: pair.column.name,
+      })
+  }
+  if (editing.value)
+    for (const column of draft.columns)
+      if (column.originalName && !matched.has(column.id))
+        destructive.push({ id: `drop:${column.id}`, kind: 'drop', from: column.name })
+  return { pairs, destructive }
+}
+
+// 当前 AI 提案里需要用户确认的破坏性变更
+const aiDestructive = computed(() =>
+  aiProposal.value ? aiColumnPlan(aiProposal.value.columns).destructive : []
+)
+
+/** 勾选或取消一项破坏性变更。 */
+function toggleAiConfirmed(id: string, checked: boolean): void {
+  aiConfirmed.value = checked
+    ? [...new Set([...aiConfirmed.value, id])]
+    : aiConfirmed.value.filter(item => item !== id)
+}
+
+/**
+ * 应用 AI 生成的表结构：新建表时整体替换；编辑已有表时旧字段只合并类型/长度/注释，
+ * 删除或改名已有字段只在用户勾选确认后生效，未确认的保留原字段，避免悄悄 DROP COLUMN 丢数据。
+ */
+function applyAiProposal(): void {
+  const proposal = aiProposal.value
+  if (!proposal) return
+  if (!editing.value) draft.name = proposal.name
+  if (proposal.comment) draft.comment = proposal.comment
+  const confirmed = new Set(aiConfirmed.value)
+  const used = new Set<string>()
+  const columns = aiColumnPlan(proposal.columns).pairs.flatMap(
+    ({ column: proposed, old, renameOf }): TableDesignerColumn[] => {
+      const { renamedFrom: _renamedFrom, ...column } = proposed
+      const base =
+        old ??
+        (renameOf &&
+        (!editing.value ||
+          !renameOf.originalName ||
+          confirmed.has(`rename:${renameOf.id}`))
+          ? renameOf
+          : undefined)
+      // 未确认的改名：不加入改名后的字段，原字段在下面按原样保留
+      if (!base && renameOf) return []
+      if (!base) return [column]
+      used.add(base.id)
+      // 只覆盖 AI 明确给出的属性；AI 未给出的长度、默认值、备注和 unsigned 等沿用原值
+      return [
+        {
+          ...base,
+          name: column.name,
+          dataType: column.dataType,
+          length: column.length || base.length,
+          nullable: column.nullable,
+          primaryKey: column.primaryKey,
+          unique: column.unique,
+          autoIncrement: column.autoIncrement,
+          unsigned: base.unsigned || column.unsigned,
+          defaultValue: column.autoIncrement
+            ? ''
+            : column.defaultValue || base.defaultValue,
+          comment: column.comment || base.comment,
+        },
+      ]
+    }
+  )
+  // 编辑已有表时，未确认删除或改名的原有字段一律保留
   if (editing.value) {
     const taken = new Set(columns.map(column => column.name))
     columns.push(
       ...draft.columns.filter(
         column =>
-          column.originalName && !matched.has(column.id) && !taken.has(column.name)
+          column.originalName &&
+          !used.has(column.id) &&
+          !taken.has(column.name) &&
+          !confirmed.has(`drop:${column.id}`)
       )
     )
   }
@@ -1414,17 +1503,17 @@ function applyAiComments(): void {
 
 <template>
   <div
-    class="table-designer"
+    class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
     @keydown="onDesignerKeydown"
   >
     <!-- 常规属性一行放下：标签横排在输入框前，标题交给标签页显示 -->
     <fieldset
-      class="general-bar"
+      class="border-line-soft m-0 flex min-w-0 flex-none flex-wrap items-center gap-x-3.5 gap-y-1.5 border-b px-3 py-1.5 [background:linear-gradient(110deg,var(--glass-highlight),transparent_45%),color-mix(in_oklch,var(--color-card)_66%,transparent)]"
       :disabled="editorDisabled"
       :aria-label="t('建表配置')"
     >
-      <label class="general-field table-name">
-        <span>{{ t('表名') }}</span>
+      <label class="flex min-w-0 flex-[1_1_170px] items-center gap-1.5">
+        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{ t('表名') }}</span>
         <AppInput
           v-model="draft.name"
           size="sm"
@@ -1434,8 +1523,8 @@ function applyAiComments(): void {
           :aria-label="t('表名')"
         />
       </label>
-      <label class="general-field schema-field">
-        <span>{{ databaseKind === 'mysql' ? t('Database') : 'Schema' }}</span>
+      <label class="flex min-w-0 flex-[1_1_140px] items-center gap-1.5">
+        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{ databaseKind === 'mysql' ? t('Database') : 'Schema' }}</span>
         <AppInput
           v-model="draft.schema"
           size="sm"
@@ -1447,7 +1536,7 @@ function applyAiComments(): void {
       </label>
       <div
         v-if="!editing"
-        class="general-field w-60 flex-none"
+        class="flex w-60 min-w-0 flex-none items-center gap-1.5"
       >
         <AppSelect
           model-value=""
@@ -1463,8 +1552,8 @@ function applyAiComments(): void {
           @update:model-value="copyStructure"
         />
       </div>
-      <label class="general-field comment-field">
-        <span>{{ t('表备注') }}</span>
+      <label class="flex min-w-0 flex-[2_1_220px] items-center gap-1.5">
+        <span class="text-txt-4 flex-none text-[9.5px] whitespace-nowrap">{{ t('表备注') }}</span>
         <AppInput
           v-model="draft.comment"
           size="sm"
@@ -1475,19 +1564,18 @@ function applyAiComments(): void {
     </fieldset>
 
     <!-- 面板切换与操作同一行：添加按钮跟着面板走，保存固定在右侧 -->
-    <div class="designer-toolbar">
+    <div
+      class="border-line-soft bg-panel/54 flex min-h-9 flex-none flex-wrap items-center justify-between gap-2.5 border-b py-1 pr-2 pl-1"
+    >
       <nav
-        class="designer-tabs"
+        class="scroll-none flex h-full min-w-0 items-stretch gap-px overflow-x-auto"
         :aria-label="t('建表配置')"
       >
         <AppButton
           v-for="item in panelItems"
           :key="item.id"
           variant="bare"
-          :class="[
-            'designer-tab motion-safe:transition-colors',
-            activePanel === item.id && 'designer-tab-active',
-          ]"
+          class="designer-tab motion-safe:transition-colors"
           :aria-current="activePanel === item.id ? 'page' : undefined"
           @click="activePanel = item.id"
         >
@@ -1497,7 +1585,7 @@ function applyAiComments(): void {
           /><span>{{ item.label }}</span
           ><span
             v-if="item.count !== null"
-            class="tab-count"
+            class="grid h-4 min-w-4 place-items-center rounded-full bg-current/9 text-[8px]"
             >{{ item.count }}</span
           ><span
             v-if="panelErrors[item.id]"
@@ -1507,7 +1595,10 @@ function applyAiComments(): void {
           />
         </AppButton>
       </nav>
-      <div class="designer-actions">
+      <!-- 窄窗口只保留主按钮（创建 / 保存），其余操作可用快捷键或展开窗口 -->
+      <div
+        class="flex flex-none items-center gap-1.5 max-[760px]:[&_.btn:not(.btn-primary)]:hidden"
+      >
         <AppButton
           size="sm"
           class="text-violet h-7"
@@ -1628,7 +1719,7 @@ function applyAiComments(): void {
     </div>
 
     <fieldset
-      class="designer-body"
+      class="m-0 flex min-h-0 min-w-0 flex-1 flex-col p-0"
       :disabled="editorDisabled"
     >
       <div
@@ -1644,7 +1735,7 @@ function applyAiComments(): void {
       </div>
       <div
         v-else-if="loadError"
-        class="validation-error p-6"
+        class="text-danger flex min-w-0 max-w-[60%] items-center gap-1.25 overflow-hidden p-6 text-[9.5px] text-ellipsis whitespace-nowrap"
         role="alert"
       >
         {{ loadError }}
@@ -1962,7 +2053,13 @@ function applyAiComments(): void {
                   :key="column.id"
                   class="border-line-soft hover:bg-violet/4 border-t"
                 >
-                  <td class="px-1.5 py-1 font-mono">{{ column.name }}</td>
+                  <td class="px-1.5 py-1 font-mono">
+                    <span
+                      v-if="column.renamedFrom"
+                      class="text-txt-4"
+                      >{{ column.renamedFrom }} → </span
+                    >{{ column.name }}
+                  </td>
                   <td class="px-1.5 py-1 font-mono">
                     {{ column.dataType
                     }}{{ column.length ? `(${column.length})` : '' }}
@@ -2002,11 +2099,45 @@ function applyAiComments(): void {
             </li>
           </ul>
           <p
-            v-if="draft.columns.length > 1"
+            v-if="!editing && draft.columns.length > 1"
             class="text-amber text-[10px]"
           >
             {{ t('应用后将用生成的字段替换当前字段列表，可使用撤销恢复。') }}
           </p>
+          <div
+            v-if="aiDestructive.length"
+            class="border-amber/40 bg-amber/5 grid gap-1.5 rounded-md border p-2"
+            role="group"
+            :aria-label="t('破坏性变更（需确认）')"
+          >
+            <p class="text-amber flex items-center gap-1.5 text-[10.5px] font-medium">
+              <AppIcon
+                name="lucide:triangle-alert"
+                :size="11"
+              />{{ t('破坏性变更（需确认）') }}
+            </p>
+            <p class="text-txt-4 text-[10px] leading-[1.6]">
+              {{
+                t(
+                  '只有勾选的项会应用：未勾选的删除保留原字段，未勾选的改名保留原字段名；删除字段会丢失该列数据。'
+                )
+              }}
+            </p>
+            <AppCheckbox
+              v-for="item in aiDestructive"
+              :key="item.id"
+              :model-value="aiConfirmed.includes(item.id)"
+              :label="
+                item.kind === 'drop'
+                  ? t('删除字段 {value0}', { value0: item.from })
+                  : t('字段 {value0} 改名为 {value1}', {
+                      value0: item.from,
+                      value1: item.to,
+                    })
+              "
+              @update:model-value="toggleAiConfirmed(item.id, $event)"
+            />
+          </div>
         </div>
 
         <div
@@ -2112,10 +2243,12 @@ function applyAiComments(): void {
     </AppDialog>
 
     <!-- 底栏只在出错时说话；没问题就安静地报个数 -->
-    <footer class="designer-footer">
+    <footer
+      class="border-line-soft bg-panel/70 flex min-h-7.5 flex-none items-center gap-2.5 border-t px-3 backdrop-blur-[14px]"
+    >
       <div
         v-if="!validation.valid || alterResult.error"
-        class="validation-error"
+        class="text-danger flex min-w-0 max-w-[60%] items-center gap-1.25 overflow-hidden text-[9.5px] text-ellipsis whitespace-nowrap"
         :title="validation.errors.join('\n')"
       >
         <AppIcon
@@ -2138,159 +2271,3 @@ function applyAiComments(): void {
     </footer>
   </div>
 </template>
-
-<style scoped>
-.table-designer {
-  position: relative;
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--color-bg);
-}
-.general-bar {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  min-width: 0;
-  margin: 0;
-  border: 0;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 6px 12px;
-  background:
-    linear-gradient(110deg, var(--glass-highlight), transparent 45%),
-    color-mix(in oklch, var(--color-card) 66%, transparent);
-}
-.general-field {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-.general-field > span {
-  flex: none;
-  color: var(--color-txt-4);
-  font-size: 9.5px;
-  white-space: nowrap;
-}
-.table-name {
-  flex: 1 1 170px;
-}
-.schema-field {
-  flex: 1 1 140px;
-}
-.comment-field {
-  flex: 2 1 220px;
-}
-.designer-toolbar {
-  display: flex;
-  min-height: 36px;
-  flex-wrap: wrap;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 4px 8px 4px 4px;
-  background: color-mix(in oklch, var(--color-panel) 54%, transparent);
-}
-.designer-tabs {
-  display: flex;
-  min-width: 0;
-  height: 100%;
-  align-items: stretch;
-  gap: 1px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.designer-actions {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-}
-.designer-tab {
-  position: relative;
-  display: flex;
-  flex: none;
-  cursor: pointer;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 9px;
-  color: var(--color-txt-3);
-  font-size: 10.5px;
-  outline: none;
-}
-.designer-tab::after {
-  position: absolute;
-  right: 8px;
-  bottom: -1px;
-  left: 8px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: transparent;
-  content: '';
-}
-.designer-tab:hover,
-.designer-tab:focus-visible {
-  color: var(--color-txt);
-}
-.designer-tab-active {
-  color: var(--color-accent);
-}
-.designer-tab-active::after {
-  background: var(--color-accent);
-  box-shadow: 0 0 8px color-mix(in oklch, var(--color-accent) 35%, transparent);
-}
-.tab-count {
-  display: grid;
-  min-width: 16px;
-  height: 16px;
-  place-items: center;
-  border-radius: 999px;
-  background: color-mix(in oklch, currentColor 9%, transparent);
-  font-size: 8px;
-}
-.designer-body {
-  display: flex;
-  min-width: 0;
-  margin: 0;
-  border: 0;
-  padding: 0;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-}
-.designer-footer {
-  display: flex;
-  min-height: 30px;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  border-top: 1px solid var(--color-line-soft);
-  padding: 0 12px;
-  background: color-mix(in oklch, var(--color-panel) 70%, transparent);
-  backdrop-filter: blur(14px);
-}
-.validation-error {
-  display: flex;
-  min-width: 0;
-  max-width: 60%;
-  align-items: center;
-  gap: 5px;
-  overflow: hidden;
-  color: var(--color-danger);
-  font-size: 9.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-@media (max-width: 760px) {
-  .designer-actions .btn:not(.btn-primary) {
-    display: none;
-  }
-}
-</style>

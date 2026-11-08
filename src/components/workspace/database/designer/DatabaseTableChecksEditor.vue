@@ -12,7 +12,7 @@ const { t } = useI18n()
 const props = defineProps<{
   modelValue: TableDesignerCheck[]
   databaseKind: DatabaseKind
-  /** 编辑已有表：SQLite 不支持改已有表的检查约束。 */
+  /** 编辑已有表：SQLite 修改检查约束需要重建表。 */
   editing: boolean
   errors?: Readonly<Record<string, string[]>>
 }>()
@@ -72,7 +72,11 @@ defineExpose({ add: addCheck })
         name="lucide:triangle-alert"
         :size="11"
       />
-      {{ t('SQLite 不支持修改已有表的检查约束，仅可在新建表时设置。') }}
+      {{
+        t(
+          '保存时将在同一事务中重建表（临时表→复制数据→删除旧表→改名→重建索引与触发器）；字段定义内联的 CHECK 保持不变。'
+        )
+      }}
     </p>
     <article
       v-for="check in modelValue"
@@ -86,7 +90,6 @@ defineExpose({ add: addCheck })
           <AppInput
             :model-value="check.name"
             monospace
-            :disabled="databaseKind === 'sqlite' && editing"
             @update:model-value="updateCheck(check.id, { name: $event })"
         /></label>
         <span />
@@ -95,7 +98,6 @@ defineExpose({ add: addCheck })
           :size="12"
           class="text-danger hover:text-danger size-7"
           :title="t('删除检查约束')"
-          :disabled="databaseKind === 'sqlite' && editing"
           @click="removeCheck(check.id)"
         />
       </div>
@@ -105,7 +107,6 @@ defineExpose({ add: addCheck })
         :rows="2"
         class="font-mono"
         :placeholder="t('例如：price >= 0 AND status IN (0, 1)')"
-        :disabled="databaseKind === 'sqlite' && editing"
         @update:model-value="updateCheck(check.id, { expression: $event })"
       />
       <ul

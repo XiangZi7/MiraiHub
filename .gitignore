@@ -41,6 +41,8 @@ src-tauri/resources/
 
 # Machine-specific AI tool preferences; shared rules/commands remain versioned
 .claude/settings.local.json
+# Claude Code 子代理的临时 git worktree
+.claude/worktrees/
 
 # Editor directories and files
 .vscode/*

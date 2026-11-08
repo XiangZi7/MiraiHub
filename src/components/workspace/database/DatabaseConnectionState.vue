@@ -81,9 +81,9 @@ const SUSPECT =
 
 // ---------- 推导状态 ----------
 const connecting = computed(() => props.status === 'connecting')
-/** 上一次连接结束时的结果；composable 重连时会先清空错误，重连中仍展示它 */
-const settled = shallowRef<'none' | 'failed' | 'idle'>(
-  connecting.value ? 'none' : props.error ? 'failed' : 'idle'
+/** 上一次连接是否以失败结束；composable 重连时会先清空错误，失败后的重连仍展示上次的诊断，其余连接走骨架 */
+const settled = shallowRef<'none' | 'failed'>(
+  !connecting.value && props.error ? 'failed' : 'none'
 )
 const lastError = shallowRef(props.error)
 const lastErrorKind = shallowRef<AppErrorKind | ''>(props.errorKind)
@@ -288,7 +288,7 @@ watch(
     }
     if (previous !== 'connecting') return
     timer.pause()
-    settled.value = props.error ? 'failed' : 'idle'
+    settled.value = props.error ? 'failed' : 'none'
     lastError.value = props.error
     lastErrorKind.value = props.errorKind
     passwordRejected.value =

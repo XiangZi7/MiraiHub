@@ -2249,9 +2249,13 @@ function sqliteCheckRebuildStatements(
       `DELETE FROM ${sequence} WHERE name = ${quoteLiteral(temporaryName, kind)}`,
       `INSERT INTO ${sequence} (name, seq) SELECT ${quoteLiteral(temporaryName, kind)}, seq FROM ${sequence} WHERE name = ${quoteLiteral(current.name, kind)}`
     )
+  // 旧表删除后，引用它的视图 / 其它表的触发器会让新版 RENAME 的结构校验失败；
+  // 按 SQLite 官方重建流程只在改名这一步开启 legacy_alter_table，改名后立即恢复。
   statements.push(
     `${comment(t('3. 删除旧表，并把临时表改回原名'))}DROP TABLE ${target}`,
-    `ALTER TABLE ${temporary} RENAME TO ${quoteIdentifier(current.name, kind)}`
+    'PRAGMA legacy_alter_table = ON',
+    `ALTER TABLE ${temporary} RENAME TO ${quoteIdentifier(current.name, kind)}`,
+    'PRAGMA legacy_alter_table = OFF'
   )
   parsed.others.forEach((statement, index) =>
     statements.push(

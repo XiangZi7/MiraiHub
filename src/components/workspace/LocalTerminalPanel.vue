@@ -6,6 +6,7 @@ import { useResizeObserver } from '@vueuse/core'
 import TerminalActions from './TerminalActions.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useLocalTerminal } from '@/composables/useLocalTerminal'
+import { onTerminalTargetRequest } from '@/composables/useTerminalInsert'
 import { toast } from '@/composables/useToast'
 import type { LocalConnectionSettings } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
@@ -73,6 +74,16 @@ watch(
 )
 
 useResizeObserver(containerRef, () => resize())
+
+// 命令面板插入片段时提供本终端；交给 xterm 粘贴，由它按 shell 是否开启括号粘贴处理换行
+onTerminalTargetRequest(tabId =>
+  tabId === props.connectionId && status.value === 'connected' && term.value
+    ? {
+        paste: text => term.value?.paste(text),
+        focus: () => term.value?.focus(),
+      }
+    : undefined
+)
 
 function reconnect(): void {
   void connect(props.settings).catch(() => {})

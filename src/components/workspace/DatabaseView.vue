@@ -70,7 +70,6 @@ import type { SshSessionStatus } from '@/types/ssh'
 import { copyText } from '@/utils/clipboard'
 import { openConnectionWindow } from '@/utils/window'
 import DatabaseConnectionState from './database/DatabaseConnectionState.vue'
-import DatabaseConnectingSkeleton from './database/DatabaseConnectingSkeleton.vue'
 import DatabaseObjectNameDialog from './database/DatabaseObjectNameDialog.vue'
 import DatabaseObjectTree from './database/DatabaseObjectTree.vue'
 import DatabaseQueryPane from './database/DatabaseQueryPane.vue'
@@ -376,6 +375,7 @@ const {
   session,
   status,
   connectionError,
+  connectionErrorKind,
   needsPassword,
   databases,
   databasesLoading,
@@ -2190,16 +2190,18 @@ registerDatabaseCommandSource(
             {{ t('正在读取数据库结构…') }}
           </div>
 
-          <!-- 连接中只铺骨架：等待时就能看出界面即将长成什么样，
-             真正需要用户操作的失败/未连接态才用居中卡片 -->
-          <DatabaseConnectingSkeleton v-if="status === 'connecting'" />
+          <!-- 连接中 / 失败 / 未连接 / 重连统一由连接状态页呈现 -->
           <DatabaseConnectionState
-            v-else-if="!connected"
+            v-if="!connected"
             v-model:password="password"
             :status="status"
             :needs-password="needsPassword"
             :error="connectionError"
+            :error-kind="connectionErrorKind"
+            :connection="connection"
+            :active="active !== false"
             @connect="connect"
+            @cancel="disconnect"
           />
           <DatabaseTabWorkspace
             v-else

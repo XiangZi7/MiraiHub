@@ -5,6 +5,7 @@ import type { Terminal } from '@xterm/xterm'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import * as agent from '@/api/agent'
+import { translateNativeMessage } from '@/i18n/native'
 import type { ShellCommandSuggestion } from '@/types/agent'
 
 const { t, locale } = useI18n()
@@ -92,7 +93,7 @@ async function generate(): Promise<void> {
     state.resultFor = text
   } catch (err) {
     if (seq !== requestSeq) return
-    state.error = agent.errorMessage(err)
+    state.error = translateNativeMessage(agent.errorMessage(err))
   } finally {
     if (seq === requestSeq) state.loading = false
   }

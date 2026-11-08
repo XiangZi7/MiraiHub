@@ -26,6 +26,11 @@ import { useSettings } from '@/composables/useSettings'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { toast } from '@/composables/useToast'
 import { useTerminalCommandsStore } from '@/stores/terminal-commands'
+import { useWorkspaceStore } from '@/stores/workspace'
+import {
+  insertToTerminal,
+  requestTerminalTarget,
+} from '@/composables/useTerminalInsert'
 import { formatShortcutForPlatform } from '@/utils/shortcut'
 import { copyText } from '@/utils/clipboard'
 
@@ -74,6 +79,7 @@ const listRef = ref<HTMLElement>()
 const source = useDatabaseCommandSource()
 const connections = useConnectionsStore()
 const terminalCommands = useTerminalCommandsStore()
+const workspace = useWorkspaceStore()
 const { settings } = useSettings()
 const { openConnection } = useWorkspaceNavigation()
 // 最近使用的条目 key，越靠前越新
@@ -168,7 +174,7 @@ const sshEntries = computed<PaletteEntry[]>(() =>
     }))
 )
 
-/** 把命令片段复制到剪贴板并提示（面板无法直接写入活动终端） */
+/** 没有可插入的终端时，把命令片段复制到剪贴板并提示 */
 async function copySnippet(command: string): Promise<void> {
   try {
     await copyText(command)
@@ -176,6 +182,23 @@ async function copySnippet(command: string): Promise<void> {
   } catch (error) {
     console.warn('复制命令片段失败：', error)
     toast.error(t('复制失败'))
+  }
+}
+
+/** 把命令片段插入当前标签页的终端（不执行），完成后把焦点还给终端；没有已连接的终端时退回复制 */
+async function runSnippet(command: string): Promise<void> {
+  const target = requestTerminalTarget(workspace.activeId)
+  if (!target) {
+    await copySnippet(command)
+    return
+  }
+  try {
+    if (await insertToTerminal(target.paste, command))
+      toast.success(t('已插入终端，确认后按回车执行'))
+  } catch (error) {
+    toast.error({ title: t('插入终端失败'), description: String(error) })
+  } finally {
+    target.focus()
   }
 }
 
@@ -187,7 +210,7 @@ const snippetEntries = computed<PaletteEntry[]>(() =>
     icon: 'lucide:code-xml',
     hint: item.command,
     exec: () => {
-      void copySnippet(item.command)
+      void runSnippet(item.command)
     },
   }))
 )

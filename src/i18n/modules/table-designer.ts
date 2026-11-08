@@ -228,4 +228,57 @@ export const en: Record<string, string> = {
   '无法自动推导逆向语句，请根据上方已生效的语句手动恢复。':
     'Reverse statements could not be derived. Restore manually based on the applied statements above.',
   '逆向语句已复制': 'Reverse statements copied',
+  '当前数据库暂不支持在设计器中维护分区':
+    'Partitions cannot be maintained in the designer for this database',
+  '当前表未分区；为已有表设置分区方式请在查询中执行 ALTER TABLE … PARTITION BY。':
+    'This table is not partitioned. To partition an existing table, run ALTER TABLE … PARTITION BY in a query.',
+  '当前表包含子分区，暂不支持在此维护，请在查询中执行 ALTER TABLE … PARTITION。':
+    'This table has subpartitions, which cannot be maintained here. Run ALTER TABLE … PARTITION in a query.',
+  'HASH / KEY 分区在此只能清空分区；增减分区数请在查询中执行 ADD PARTITION PARTITIONS / COALESCE PARTITION。':
+    'HASH / KEY partitions can only be truncated here. To change the partition count, run ADD PARTITION PARTITIONS / COALESCE PARTITION in a query.',
+  '分区方式 {value0} 暂不支持在此维护':
+    'Partitioning method {value0} cannot be maintained here',
+  '当前分区方式不支持 {value0}':
+    'The current partitioning method does not support {value0}',
+  '{value0} 需要选择至少一个分区': '{value0} needs at least one partition selected',
+  '分区“{value0}”不存在': 'Partition "{value0}" does not exist',
+  '分区“{value0}”被多个分区操作引用':
+    'Partition "{value0}" is used by more than one partition operation',
+  'RANGE 分区只能重组相邻的分区':
+    'Only adjacent RANGE partitions can be reorganized',
+  '不能删除全部分区；取消分区请在查询中执行 ALTER TABLE … REMOVE PARTITIONING。':
+    'Cannot drop all partitions. To remove partitioning, run ALTER TABLE … REMOVE PARTITIONING in a query.',
+  '{value0} 至少需要一个新分区': '{value0} needs at least one new partition',
+  '最后一个分区是 MAXVALUE，无法追加 RANGE 分区；请改用重组分区拆分“{value0}”。':
+    'The last partition is MAXVALUE, so RANGE partitions cannot be appended. Reorganize "{value0}" to split it instead.',
+  'SQLite 需要重建表才能修改检查约束，请先单独保存字段、索引、外键或触发器的修改':
+    'SQLite must rebuild the table to change check constraints. Save column, index, foreign key or trigger changes separately first.',
+  '无法解析 SQLite 建表语句，不能通过重建表修改检查约束':
+    'Cannot parse the SQLite CREATE TABLE statement, so check constraints cannot be changed by rebuilding the table',
+  '表“{value0}”有指向自身的外键，重建会触发外键动作，请在查询中手动修改检查约束':
+    'Table "{value0}" has a self-referencing foreign key and rebuilding it would fire foreign key actions. Change the check constraints manually in a query.',
+  'SQLite 无法直接修改检查约束，以下语句将在同一事务中重建表，任一步失败都会整体回滚。':
+    'SQLite cannot alter check constraints directly. The statements below rebuild the table in one transaction; if any step fails, everything is rolled back.',
+  '1. 确认没有其他表的外键引用此表（删除旧表会触发外键动作）':
+    '1. Make sure no other table references this table by foreign key (dropping the old table fires foreign key actions)',
+  '2. 按新的检查约束创建临时表并复制数据':
+    '2. Create a temporary table with the new check constraints and copy the data',
+  '3. 删除旧表，并把临时表改回原名':
+    '3. Drop the old table and rename the temporary table back',
+  '4. 原样重建索引与触发器': '4. Recreate indexes and triggers as they were',
+  '破坏性变更（需确认）': 'Destructive changes (confirmation required)',
+  '只有勾选的项会应用：未勾选的删除保留原字段，未勾选的改名保留原字段名；删除字段会丢失该列数据。':
+    'Only checked items are applied: unchecked drops keep the column and unchecked renames keep the original name. Dropping a column deletes its data.',
+  '删除字段 {value0}': 'Drop column {value0}',
+  '字段 {value0} 改名为 {value1}': 'Rename column {value0} to {value1}',
+  '保存时将在同一事务中重建表（临时表→复制数据→删除旧表→改名→重建索引与触发器）；字段定义内联的 CHECK 保持不变。':
+    'Saving rebuilds the table in one transaction (temporary table → copy data → drop old table → rename → recreate indexes and triggers). CHECKs written inline in column definitions stay unchanged.',
+  '分区操作': 'Partition operation',
+  '删除分区操作': 'Remove partition operation',
+  '作用的分区': 'Target partitions',
+  '新增的分区': 'New partitions',
+  '重组为以下分区': 'Reorganize into these partitions',
+  '添加分区操作': 'Add partition operation',
+  '每项操作生成一条独立的 ALTER TABLE 语句；MySQL 分区操作不支持事务，失败前已执行的语句不会回滚。删除或清空分区会丢弃其中的数据。':
+    'Each operation runs as a separate ALTER TABLE statement. MySQL partition operations are not transactional, so statements that ran before a failure are not rolled back. Dropping or truncating a partition discards its data.',
 }

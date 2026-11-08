@@ -16,6 +16,8 @@ const {
   normalizeDataTypeLabel,
   designerColumnFromStored,
   designerIndexFromStored,
+  partitionEditSupport,
+  sqliteTableChecks,
 } = await load('src/utils/database-ddl.ts')
 
 function optionsDraft(overrides = {}) {
@@ -1055,5 +1057,366 @@ test('删除 PostgreSQL 触发器时默认连带删除专属函数，可按勾�
       draft
     ),
     []
+  )
+})
+
+function partitionedDetail(method, partitions) {
+  return currentDetail({
+    columns: [currentColumn()],
+    primaryKey: ['id'],
+    // 表选项与 optionsDraft 一致，断言里只剩分区语句
+    options: {
+      engine: 'InnoDB',
+      charset: 'utf8mb4',
+      collation: 'utf8mb4_bin',
+      rowFormat: 'DYNAMIC',
+      comment: '',
+      autoIncrement: null,
+    },
+    partition: {
+      method,
+      expression: 'id',
+      partitions: partitions.map(([name, description]) => ({
+        name,
+        description,
+        rows: null,
+      })),
+    },
+  })
+}
+
+function partitionDraft(partitionChanges) {
+  return optionsDraft({ autoIncrement: null, partitionChanges })
+}
+
+test('已有表的分区维护：RANGE / LIST 支持全部操作，HASH 只能清空，其它情况只读', () => {
+  const rangeColumns = partitionEditSupport(
+    'mysql',
+    partitionedDetail('RANGE COLUMNS', [['p0', "'2025-01-01'"]]).partition
+  )
+  assert.deepEqual(rangeColumns.actions, ['add', 'drop', 'truncate', 'reorganize'])
+  assert.equal(rangeColumns.columns, true)
+  const hash = partitionEditSupport(
+    'mysql',
+    partitionedDetail('LINEAR KEY', [['p0', ''], ['p1', '']]).partition
+  )
+  assert.deepEqual(hash.actions, ['truncate'])
+  assert.ok(hash.reason)
+  for (const support of [
+    partitionEditSupport('postgresql', partitionedDetail('RANGE', [['p0', '1']]).partition),
+    partitionEditSupport('mysql', null),
+    // 子分区在 information_schema 里每个子分区一行，分区名重复
+    partitionEditSupport(
+      'mysql',
+      partitionedDetail('RANGE', [['p0', '1'], ['p0', '1']]).partition
+    ),
+  ]) {
+    assert.deepEqual(support.actions, [])
+    assert.ok(support.reason)
+  }
+})
+
+test('MySQL 已有分区表生成 TRUNCATE / DROP / REORGANIZE / ADD PARTITION 独立语句', () => {
+  const current = partitionedDetail('RANGE', [
+    ['p0', '100'],
+    ['p1', '200'],
+    ['p2', '300'],
+    ['p_max', 'MAXVALUE'],
+  ])
+  const statements = buildAlterTableStatements({
+    kind: 'mysql',
+    current,
+    draft: partitionDraft([
+      // 故意乱序：输出固定为 TRUNCATE → DROP → REORGANIZE
+      {
+        id: 'r',
+        action: 'reorganize',
+        partitions: ['p_max'],
+        items: [
+          { id: 'a', name: 'p3', value: '400' },
+          { id: 'b', name: 'p_max', value: 'MAXVALUE' },
+        ],
+      },
+      { id: 'd', action: 'drop', partitions: ['p1'], items: [] },
+      { id: 't', action: 'truncate', partitions: ['p0'], items: [] },
+    ]),
+  })
+  assert.deepEqual(statements, [
+    'ALTER TABLE `app`.`users` TRUNCATE PARTITION `p0`',
+    'ALTER TABLE `app`.`users` DROP PARTITION `p1`',
+    'ALTER TABLE `app`.`users` REORGANIZE PARTITION `p_max` INTO (\n  PARTITION `p3` VALUES LESS THAN (400),\n  PARTITION `p_max` VALUES LESS THAN MAXVALUE\n)',
+  ])
+  const summary = summarizeTableChanges(
+    'mysql',
+    current,
+    partitionDraft([{ id: 't', action: 'truncate', partitions: ['p0'], items: [] }])
+  )
+  assert.ok(summary.length)
+
+  // 末尾不是 MAXVALUE 时可以追加；RANGE COLUMNS 的 MAXVALUE 写在括号里
+  assert.deepEqual(
+    buildAlterTableStatements({
+      kind: 'mysql',
+      current: partitionedDetail('RANGE COLUMNS', [['p0', "'2025-01-01'"]]),
+      draft: partitionDraft([
+        {
+          id: 'a',
+          action: 'add',
+          partitions: [],
+          items: [{ id: 'x', name: 'p1', value: 'MAXVALUE' }],
+        },
+      ]),
+    }),
+    [
+      'ALTER TABLE `app`.`users` ADD PARTITION (\n  PARTITION `p1` VALUES LESS THAN (MAXVALUE)\n)',
+    ]
+  )
+  // LIST 的取值原样放进 IN (...)
+  assert.deepEqual(
+    buildAlterTableStatements({
+      kind: 'mysql',
+      current: partitionedDetail('LIST', [['p_a', '1,2']]),
+      draft: partitionDraft([
+        {
+          id: 'a',
+          action: 'add',
+          partitions: [],
+          items: [{ id: 'x', name: 'p_b', value: '3, 4' }],
+        },
+      ]),
+    }),
+    ['ALTER TABLE `app`.`users` ADD PARTITION (\n  PARTITION `p_b` VALUES IN (3, 4)\n)']
+  )
+})
+
+test('MySQL 分区维护拦截不支持或有风险的操作', () => {
+  const range = partitionedDetail('RANGE', [
+    ['p0', '100'],
+    ['p1', '200'],
+    ['p_max', 'MAXVALUE'],
+  ])
+  const run = (current, changes) => () =>
+    buildAlterTableStatements({
+      kind: 'mysql',
+      current,
+      draft: partitionDraft(changes),
+    })
+  const item = (name, value) => [{ id: `i-${name}`, name, value }]
+  // 末尾是 MAXVALUE 时不能追加
+  assert.throws(
+    run(range, [{ id: 'a', action: 'add', partitions: [], items: item('p9', '900') }]),
+    /MAXVALUE/u
+  )
+  // RANGE 只能重组相邻分区
+  assert.throws(
+    run(range, [
+      {
+        id: 'r',
+        action: 'reorganize',
+        partitions: ['p0', 'p_max'],
+        items: item('p_all', 'MAXVALUE'),
+      },
+    ]),
+    /adjacent/u
+  )
+  // 不能删除全部分区
+  assert.throws(
+    run(range, [
+      { id: 'd', action: 'drop', partitions: ['p0', 'p1', 'p_max'], items: [] },
+    ]),
+    /REMOVE PARTITIONING/u
+  )
+  // 同一分区被两个操作引用、不存在的分区、空选择、新分区重名、取值注入
+  assert.throws(
+    run(range, [
+      { id: 't', action: 'truncate', partitions: ['p0'], items: [] },
+      { id: 'd', action: 'drop', partitions: ['p0'], items: [] },
+    ]),
+    /more than one/u
+  )
+  assert.throws(
+    run(range, [{ id: 't', action: 'truncate', partitions: ['nope'], items: [] }]),
+    /does not exist/u
+  )
+  assert.throws(
+    run(range, [{ id: 't', action: 'truncate', partitions: [], items: [] }]),
+    /at least one partition/u
+  )
+  assert.throws(
+    run(range, [
+      { id: 'r', action: 'reorganize', partitions: ['p_max'], items: item('p0', 'MAXVALUE') },
+    ]),
+    /duplicated/u
+  )
+  assert.throws(
+    run(range, [
+      {
+        id: 'r',
+        action: 'reorganize',
+        partitions: ['p_max'],
+        items: item('p2', '1; DROP TABLE x'),
+      },
+    ]),
+    /invalid value/u
+  )
+  // HASH / KEY 只能清空分区
+  const hash = partitionedDetail('HASH', [['p0', ''], ['p1', '']])
+  assert.deepEqual(
+    run(hash, [{ id: 't', action: 'truncate', partitions: ['p1'], items: [] }])(),
+    ['ALTER TABLE `app`.`users` TRUNCATE PARTITION `p1`']
+  )
+  assert.throws(
+    run(hash, [{ id: 'd', action: 'drop', partitions: ['p1'], items: [] }]),
+    /HASH/u
+  )
+})
+
+const SQLITE_DDL = [
+  'CREATE TABLE "orders" (\n  "id" INTEGER PRIMARY KEY AUTOINCREMENT,\n  "price" REAL CHECK (price < 1000000),\n  "status" INTEGER,\n  CONSTRAINT "chk_price" CHECK (price >= 0),\n  CHECK (status IN (0, 1))\n);',
+  'CREATE INDEX "idx_orders_status" ON "orders" ("status");',
+  'CREATE TRIGGER "trg_orders" AFTER INSERT ON "orders" BEGIN UPDATE "orders" SET status = 0 WHERE id = NEW.id; END;',
+].join('\n\n')
+
+function sqliteCurrent(overrides = {}) {
+  return currentDetail({
+    schema: 'main',
+    name: 'orders',
+    columns: [
+      currentColumn({ dataType: 'INTEGER' }),
+      currentColumn({
+        name: 'price',
+        dataType: 'REAL',
+        nullable: true,
+        ordinal: 2,
+        primaryKey: false,
+        autoIncrement: false,
+      }),
+      currentColumn({
+        name: 'status',
+        dataType: 'INTEGER',
+        nullable: true,
+        ordinal: 3,
+        primaryKey: false,
+        autoIncrement: false,
+      }),
+    ],
+    primaryKey: ['id'],
+    ddl: SQLITE_DDL,
+    checks: sqliteTableChecks(SQLITE_DDL),
+    ...overrides,
+  })
+}
+
+function sqliteDraft(checks, overrides = {}) {
+  const plain = { nullable: true, primaryKey: false, autoIncrement: false }
+  return optionsDraft({
+    schema: 'main',
+    name: 'orders',
+    engine: '',
+    charset: '',
+    collation: '',
+    rowFormat: '',
+    autoIncrement: null,
+    columns: [
+      draftColumn({ dataType: 'INTEGER', originalName: 'id' }),
+      draftColumn({ id: 'p', name: 'price', originalName: 'price', dataType: 'REAL', ...plain }),
+      draftColumn({ id: 's', name: 'status', originalName: 'status', dataType: 'INTEGER', ...plain }),
+    ],
+    checks,
+    ...overrides,
+  })
+}
+
+test('SQLite 从建表语句读出表级检查约束，未命名的补 check_N，字段内联 CHECK 不算', () => {
+  assert.deepEqual(sqliteTableChecks(SQLITE_DDL), [
+    { name: 'chk_price', expression: 'price >= 0' },
+    { name: 'check_1', expression: 'status IN (0, 1)' },
+  ])
+  assert.equal(sqliteTableChecks('CREATE TABLE t AS SELECT 1'), undefined)
+})
+
+test('SQLite 修改检查约束在事务内重建表：临时表→复制数据→删旧表→改名→重建索引与触发器', () => {
+  const current = sqliteCurrent()
+  const unchanged = current.checks.map((check, index) => ({ id: `k${index}`, ...check }))
+  assert.deepEqual(
+    buildAlterTableStatements({ kind: 'sqlite', current, draft: sqliteDraft(unchanged) }),
+    []
+  )
+  const statements = buildAlterTableStatements({
+    kind: 'sqlite',
+    current,
+    draft: sqliteDraft([
+      { id: 'k1', name: 'chk_price', expression: 'price > 0' },
+      { id: 'k2', name: 'check_1', expression: 'status IN (0, 1)' },
+      { id: 'k3', name: 'chk_status', expression: 'status IS NOT NULL' },
+    ]),
+  })
+  const sql = statements.join(';\n')
+  // 守卫：有其它表的外键引用此表时让 CHECK 失败，整个事务回滚
+  assert.match(statements[0], /^-- .*\n-- .*\nCREATE TEMP TABLE temp\."_mh_rebuild_guard"/u)
+  assert.match(
+    statements[1],
+    /pragma_foreign_key_list\(m\.name, 'main'\).*f\."table" = 'orders' COLLATE NOCASE/u
+  )
+  const create = statements.find(statement =>
+    statement.includes('CREATE TABLE "main"."_mh_rebuild_orders"')
+  )
+  assert.ok(create)
+  // 未变化的未命名约束与字段内联 CHECK 保留原文，修改与新增的约束追加在末尾
+  assert.match(create, /"price" REAL CHECK \(price < 1000000\)/u)
+  assert.match(create, /\n {2}CHECK \(status IN \(0, 1\)\)/u)
+  assert.doesNotMatch(create, /price >= 0/u)
+  assert.match(
+    create,
+    /CONSTRAINT "chk_price" CHECK \(price > 0\),\n {2}CONSTRAINT "chk_status" CHECK \(status IS NOT NULL\)\n\)$/u
+  )
+  const order = [
+    'INSERT INTO "main"."_mh_rebuild_orders" ("id", "price", "status") SELECT "id", "price", "status" FROM "main"."orders"',
+    `INSERT INTO "main".sqlite_sequence (name, seq) SELECT '_mh_rebuild_orders', seq FROM "main".sqlite_sequence WHERE name = 'orders'`,
+    'DROP TABLE "main"."orders"',
+    // 引用旧表的视图 / 触发器不能让改名失败，只在改名这一步开启 legacy_alter_table
+    'PRAGMA legacy_alter_table = ON',
+    'ALTER TABLE "main"."_mh_rebuild_orders" RENAME TO "orders"',
+    'PRAGMA legacy_alter_table = OFF',
+    'CREATE INDEX "idx_orders_status" ON "orders" ("status")',
+    'CREATE TRIGGER "trg_orders" AFTER INSERT ON "orders" BEGIN UPDATE "orders" SET status = 0 WHERE id = NEW.id; END',
+  ].map(part => sql.indexOf(part))
+  assert.ok(order.every(position => position >= 0), String(order))
+  assert.deepEqual([...order].sort((left, right) => left - right), order)
+  assert.ok(summarizeTableChanges('sqlite', current, sqliteDraft([])).length)
+
+  // 删除约束同样走重建
+  const dropped = buildAlterTableStatements({ kind: 'sqlite', current, draft: sqliteDraft([]) })
+  const droppedCreate = dropped.find(statement =>
+    statement.includes('CREATE TABLE "main"."_mh_rebuild_orders"')
+  )
+  assert.doesNotMatch(droppedCreate, /CHECK \(status|chk_price/u)
+  // 与其它结构修改混在同一次保存里时拒绝
+  const mixed = sqliteDraft([])
+  mixed.columns.push(
+    draftColumn({ id: 'n', name: 'note', dataType: 'TEXT', nullable: true, primaryKey: false, autoIncrement: false })
+  )
+  assert.throws(
+    () => buildAlterTableStatements({ kind: 'sqlite', current, draft: mixed }),
+    /separately/u
+  )
+  // 自引用外键在删旧表时会触发外键动作，直接拒绝
+  const foreignKey = {
+    name: 'fk_parent',
+    columns: ['status'],
+    referencedSchema: 'main',
+    referencedTable: 'orders',
+    referencedColumns: ['id'],
+    onDelete: 'NO ACTION',
+    onUpdate: 'NO ACTION',
+  }
+  assert.throws(
+    () =>
+      buildAlterTableStatements({
+        kind: 'sqlite',
+        current: sqliteCurrent({ foreignKeys: [foreignKey] }),
+        draft: sqliteDraft([], { foreignKeys: [{ id: 'f', ...foreignKey }] }),
+      }),
+    /self-referencing/u
   )
 })

@@ -11,12 +11,14 @@ import {
 } from 'vue'
 import { useThrottleFn } from '@vueuse/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { ask } from '@tauri-apps/plugin-dialog'
 import { copyText } from '@/utils/clipboard'
 import { IS_TAURI } from '@/utils/window'
 import { isAgentWebLink, renderAgentMarkdown } from '@/utils/agent-markdown'
-import { writeToShell } from '@/api/ssh'
 import { useAgentTerminalSession } from '@/composables/useAgentContextBus'
+import {
+  insertToTerminal as insertTextToTerminal,
+  sshPaste,
+} from '@/composables/useTerminalInsert'
 import { toast } from '@/composables/useToast'
 
 const { t } = useI18n()
@@ -106,32 +108,16 @@ function notify(message: string, failed = false): void {
     state.feedback = ''
   }, 2500)
 }
-// 把代码块文本粘贴到活动终端但不执行；多行先确认，并用括号粘贴模式避免 shell 逐行执行。
+// 把代码块文本粘贴到活动终端但不执行；多行确认与括号粘贴交给共用的插入函数。
 async function insertToTerminal(code: string): Promise<void> {
   const sessionId = terminalSession?.value
   if (!sessionId) {
     notify(t('终端未连接，无法插入'), true)
     return
   }
-  const text = code.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
-  if (!text.trim()) return
-  const lines = text.split('\n').length
-  if (lines > 1) {
-    const message = t(
-      '将插入 {value0} 行命令。支持括号粘贴的 shell 会等待你按回车，否则可能逐行执行，确定插入？',
-      { value0: lines }
-    )
-    const confirmed = IS_TAURI
-      ? await ask(message, { title: t('插入终端'), kind: 'warning' })
-      : window.confirm(message)
-    if (!confirmed) return
-  }
   try {
-    await writeToShell(
-      sessionId,
-      lines > 1 ? `\x1b[200~${text.replace(/\n/g, '\r')}\x1b[201~` : text
-    )
-    notify(t('已插入终端，确认后按回车执行'))
+    if (await insertTextToTerminal(sshPaste(sessionId), code))
+      notify(t('已插入终端，确认后按回车执行'))
   } catch (error) {
     toast.error({ title: t('插入终端失败'), description: String(error) })
   }

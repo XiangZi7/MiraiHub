@@ -1,4 +1,5 @@
 import { i18n } from '@/i18n'
+import { translateNativeMessage } from '@/i18n/native'
 /**
  * SSH 终端会话。
  *
@@ -114,12 +115,16 @@ export function useSshTerminal() {
         state.status = payload.status
 
         if (payload.status === 'disconnected') {
-          state.error = payload.reason ?? ''
+          // 断线原因是后端的中文文案，按当前语言翻译后再显示
+          const reason = payload.reason
+            ? translateNativeMessage(payload.reason)
+            : ''
+          state.error = reason
           // 没有退出码时把断线原因（远端关闭连接 / 网络超时 / 认证失败）写进提示行
           const suffix =
             payload.exitCode === null
-              ? payload.reason
-                ? i18n.global.t('（{value0}）', { value0: payload.reason })
+              ? reason
+                ? i18n.global.t('（{value0}）', { value0: reason })
                 : ''
               : i18n.global.t('（退出码 {value0}）', {
                   value0: payload.exitCode,
@@ -178,7 +183,7 @@ export function useSshTerminal() {
       state.status = 'disconnected'
       // Shown as a notice above the terminal. Writing it into xterm breaks CJK
       // glyphs, because the cell grid cannot match the fallback font's width.
-      state.error = ssh.errorMessage(err)
+      state.error = translateNativeMessage(ssh.errorMessage(err))
 
       // TCP 已连上但订阅、PTY 或启动命令失败时，后端会话已经登记进管理器；
       // 只清前端订阅会把它永久留在会话表里，所以这里也要主动断开。
@@ -272,7 +277,7 @@ export function useSshTerminal() {
     if (state.status !== 'connected') return
 
     state.status = 'disconnected'
-    state.error = ssh.errorMessage(err)
+    state.error = translateNativeMessage(ssh.errorMessage(err))
   }
 
   /** 统一发送用户输入，并同步维护一份轻量的当前行镜像供补全使用。 */

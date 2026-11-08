@@ -92,6 +92,7 @@ const load = sourceLoader(
     'src/components/workspace/database/DatabaseTreeCollapse.vue',
     'src/components/workspace/database/DatabaseTableOverview.vue',
     'src/components/workspace/database/DatabaseConnectingSkeleton.vue',
+    'src/components/workspace/database/DatabaseConnectionState.vue',
     'src/components/ui/AppButton.vue',
   ]
 )
@@ -349,9 +350,12 @@ test('unloaded databases spin their collapsed arrow and expand only after metada
     )
   )
   assert.doesNotMatch(textOf(view.root), /Connecting|正在连接数据库/)
+  // 连接中只有底栏一处转圈，并点名连接目标
+  assert.match(textOf(view.root), /正在连接 Fixture connection…/)
   assert.equal(
-    all(view.root).some(el => el.props['data-icon'] === 'lucide:loader-circle'),
-    false
+    all(view.root).filter(el => el.props['data-icon'] === 'lucide:loader-circle')
+      .length,
+    1
   )
   connected.resolve(session(''))
   await flush()

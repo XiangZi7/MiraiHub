@@ -42,7 +42,74 @@
             ? 'light'
             : 'dark',
         password: '',
+        // 连接状态页预览：当前场景与模拟出的会话状态
+        scenario: 'auth',
+        status: 'disconnected',
+        error: '',
+        errorKind: '',
       })
+      // 预览用的连接：MySQL 生产库，经 SSH 隧道
+      const PREVIEW_CONNECTION = {
+        id: 'preview-mysql',
+        name: '生产主库',
+        kind: 'mysql',
+        host: '10.0.0.12',
+        port: 3306,
+        username: 'root',
+        group: '',
+        description: '',
+        tags: [],
+        tagColor: 'blue',
+        createdAt: 0,
+        lastUsedAt: 0,
+        settings: {
+          database: 'app_db',
+          ssl: false,
+          environment: 'production',
+          sshTunnel: {
+            enabled: true,
+            host: 'bastion-prod',
+            port: 22,
+            username: 'ops',
+            auth: { type: 'agent' },
+          },
+        },
+      }
+      // 各场景对应的后端错误与 AppErrorKind；idle 表示未连接且没有错误
+      const SCENARIOS = {
+        auth: [
+          "连接 root@10.0.0.12:3306 失败：error returned from database: 1045 (28000): Access denied for user 'root'@'172.17.0.1' (using password: YES)",
+          'auth',
+        ],
+        refused: [
+          'error communicating with database: 由于目标计算机积极拒绝，无法连接。 (os error 10061)',
+          'network',
+        ],
+        tunnel: ['SSH 隧道失败：Connection refused (os error 111)', 'network'],
+        unknown: ['something weird happened', 'internal'],
+        idle: ['', ''],
+      }
+      // 切换预览场景，直接落到对应的失败或未连接态
+      const pickScenario = scenario => {
+        state.scenario = scenario
+        state.status = 'disconnected'
+        ;[state.error, state.errorKind] = SCENARIOS[scenario]
+      }
+      pickScenario('auth')
+      let previewTimer = 0
+      // 模拟一次连接：先进入连接中，4 秒后按当前场景失败；空错误的场景模拟取消
+      const simulateConnect = () => {
+        clearTimeout(previewTimer)
+        state.status = 'connecting'
+        state.error = ''
+        state.errorKind = ''
+        previewTimer = setTimeout(() => pickScenario(state.scenario), 4000)
+      }
+      // 取消模拟连接，回到未连接态
+      const simulateCancel = () => {
+        clearTimeout(previewTimer)
+        state.status = 'disconnected'
+      }
       // 这个页面不跑 settings-runtime，自己写明暗；真实应用由 applySkin 写入。
       const applyScheme = () => {
         document.documentElement.dataset.skinScheme = state.scheme
@@ -139,16 +206,41 @@
                   ),
                 ]),
                 section(
-                  '数据库连接失败（居中卡片）',
+                  h('div', { class: 'flex w-full items-center gap-2' }, [
+                    h('span', '数据库连接状态页'),
+                    h(
+                      'div',
+                      { class: 'ml-auto flex items-center gap-1' },
+                      Object.keys(SCENARIOS).map(scenario =>
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            class: [
+                              'seg',
+                              state.scenario === scenario && 'seg-active',
+                            ],
+                            onClick: () => pickScenario(scenario),
+                          },
+                          scenario
+                        )
+                      )
+                    ),
+                  ]),
                   h(DatabaseConnectionState, {
-                    status: 'disconnected',
-                    needsPassword: true,
-                    error:
-                      'Error 1045 (28000): Access denied for user "mirai"@"10.0.0.2" (using password: YES)',
+                    status: state.status,
+                    needsPassword:
+                      state.status !== 'connecting' &&
+                      state.errorKind === 'auth',
+                    error: state.error,
+                    errorKind: state.errorKind,
+                    connection: PREVIEW_CONNECTION,
                     password: state.password,
                     'onUpdate:password': value => (state.password = value),
+                    onConnect: simulateConnect,
+                    onCancel: simulateCancel,
                   }),
-                  'flex-1'
+                  'flex flex-1 flex-col'
                 ),
               ]),
               h(ToastHost),

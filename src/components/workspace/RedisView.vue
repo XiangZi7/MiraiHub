@@ -8,7 +8,6 @@ import TabBar from '@/components/ui/TabBar.vue'
 import SessionErrorNotice from '@/components/ui/SessionErrorNotice.vue'
 import AiAgentPanel from '@/components/agent/AiAgentPanel.vue'
 import DatabaseConnectionState from './database/DatabaseConnectionState.vue'
-import DatabaseConnectingSkeleton from './database/DatabaseConnectingSkeleton.vue'
 import RedisKeyBrowser from './redis/RedisKeyBrowser.vue'
 import RedisKeyDetail from './redis/RedisKeyDetail.vue'
 import RedisConsole from './redis/RedisConsole.vue'
@@ -29,6 +28,7 @@ const {
   session,
   status,
   error,
+  errorKind,
   needsPassword,
   busy,
   keys,
@@ -321,18 +321,18 @@ defineExpose({
           @retry="connect(needsPassword ? password : undefined)"
           @dismiss="error = ''"
         />
-        <DatabaseConnectingSkeleton
-          v-if="status === 'connecting'"
-          kind="redis"
-        />
         <DatabaseConnectionState
-          v-else-if="!connected"
+          v-if="!connected"
           v-model:password="password"
           kind="redis"
           :status="status"
           :needs-password="needsPassword"
           :error="error"
+          :error-kind="errorKind"
+          :connection="connection"
+          :active="active !== false"
           @connect="connect"
+          @cancel="disconnect"
         />
         <template v-else>
           <RedisKeyDetail

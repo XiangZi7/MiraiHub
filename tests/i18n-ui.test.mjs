@@ -648,6 +648,30 @@ test('native labels translate while external errors and user content stay intact
   )
 })
 
+test('ssh backend messages translate fixed wording and keep hosts and server text verbatim', () => {
+  i18n.global.locale.value = 'en-US'
+  assert.equal(translateNativeMessage('网络超时：心跳无响应'), 'Network timeout: no keepalive response')
+  assert.equal(
+    translateNativeMessage('认证失败：服务器拒绝了 publickey 方式'),
+    'Authentication failed: the server rejected the publickey method'
+  )
+  assert.equal(
+    translateNativeMessage('远端关闭连接：Too many sessions'),
+    'The remote host closed the connection: Too many sessions'
+  )
+  assert.equal(
+    translateNativeMessage('连接 root@10.0.0.1:22 失败：网络超时'),
+    'Failed to connect to root@10.0.0.1:22: Network timeout'
+  )
+  assert.equal(translateNativeMessage('120 秒内未确认'), 'Not confirmed within 120 seconds')
+  assert.equal(translateNativeMessage('自定义服务端文本'), '自定义服务端文本')
+  i18n.global.locale.value = 'zh-CN'
+  assert.equal(
+    translateNativeMessage('连接 root@10.0.0.1:22 失败：网络超时'),
+    '连接 root@10.0.0.1:22 失败：网络超时'
+  )
+})
+
 test('every literal translation key used by the frontend exists in both catalogs', () => {
   const missing = []
   function scan(code, file) {

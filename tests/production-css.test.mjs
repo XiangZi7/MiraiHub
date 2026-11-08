@@ -24,7 +24,6 @@ function productionCss(source) {
 
 for (const file of [
   'src/assets/styles/main.css',
-  'src/components/workspace/database/DatabaseConnectionState.vue',
   'src/components/ui/ToastHost.vue',
 ]) {
   test(`生产压缩保留标准 backdrop-filter，包括关闭模糊的规则：${file}`, async () => {

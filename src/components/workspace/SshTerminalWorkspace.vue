@@ -16,6 +16,10 @@ import { useMachinePaneWidth } from '@/composables/useMachinePaneWidth'
 import { useSplitPanes, type SplitDirection } from '@/composables/useSplitPanes'
 import { useSplitDropZone } from '@/composables/useSplitDropZone'
 import { onAgentContextRequest } from '@/composables/useAgentContextBus'
+import {
+  onTerminalTargetRequest,
+  sshPaste,
+} from '@/composables/useTerminalInsert'
 import TerminalPanel from './TerminalPanel.vue'
 import MachinePanel from './MachinePanel.vue'
 import ServerStatusBar from './ServerStatusBar.vue'
@@ -190,6 +194,16 @@ onAgentContextRequest(ask => {
   machineView.value = 'agent'
   machineOpen.value = true
   return true
+})
+// 命令面板插入片段时提供当前聚焦分屏的会话；聚焦的分屏未连接时退回任一已连接分屏
+onTerminalTargetRequest(tabId => {
+  if (tabId !== props.connectionId || !props.active) return undefined
+  const paneId = paneSessions.has(activePaneId.value)
+    ? activePaneId.value
+    : paneSessions.keys().next().value
+  const session = paneId ? paneSessions.get(paneId) : undefined
+  if (!paneId || !session) return undefined
+  return { paste: sshPaste(session), focus: () => panels.get(paneId)?.focus() }
 })
 
 // 广播输入：把某个分屏的输入写到其他所有分屏的会话
@@ -377,6 +391,7 @@ defineExpose({
       <SplitDropIndicator
         v-if="dropDirection"
         :direction="dropDirection"
+        :grid="tiled"
       />
     </div>
     <AppSidePane

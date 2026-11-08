@@ -449,16 +449,15 @@ export function redactConnectionError(
   message: string,
   secrets: { host?: string; user?: string; database?: string; sshHost?: string }
 ): string {
-  const pairs = (
-    [
-      [secrets.sshHost, '<ssh-host>'],
-      [secrets.host, '<host>'],
-      [secrets.user, '<user>'],
-      [secrets.database, '<database>'],
-    ] as const
-  )
-    .filter((pair): pair is readonly [string, string] => Boolean(pair[0]?.trim()))
-    .sort((a, b) => b[0].length - a[0].length)
+  const pairs: [string, string][] = []
+  for (const [secret, placeholder] of [
+    [secrets.sshHost, '<ssh-host>'],
+    [secrets.host, '<host>'],
+    [secrets.user, '<user>'],
+    [secrets.database, '<database>'],
+  ] as const)
+    if (secret?.trim()) pairs.push([secret, placeholder])
+  pairs.sort((a, b) => b[0].length - a[0].length)
   return pairs.reduce(
     (text, [secret, placeholder]) => text.split(secret).join(placeholder),
     message
