@@ -55,7 +55,7 @@ const load = sourceLoader(
         return () => h('div', { 'data-table-marker': marker }, props.object.name)
       } }
     `),
-    './database/DatabaseQueryPane.vue': dataModule(`
+    '@/components/workspace/database/DatabaseQueryPane.vue': dataModule(`
       import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
       export default { props:['modelValue','databaseName','execution'], emits:['update:modelValue','run'], setup(props,{emit,expose}) {
         expose({ runnableSql: () => props.modelValue })
@@ -66,7 +66,7 @@ const load = sourceLoader(
         ])
       } }
     `),
-    './database/DatabaseTransferDialog.vue': dataModule(`
+    '@/components/workspace/database/DatabaseTransferDialog.vue': dataModule(`
       import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
       export default { props:['open','mode'], setup: props => () =>
         props.open ? h('dialog', { 'data-transfer-mode': props.mode }) : null }

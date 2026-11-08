@@ -1751,7 +1751,7 @@ function applyAiComments(): void {
         class="progress-indeterminate"
         role="progressbar"
         :aria-label="t('正在读取表结构…')"
-        />
+      />
       <div
         v-else-if="loadError"
         class="text-danger flex max-w-[60%] min-w-0 items-center gap-1.25 overflow-hidden p-6 text-[9.5px] text-ellipsis whitespace-nowrap"
