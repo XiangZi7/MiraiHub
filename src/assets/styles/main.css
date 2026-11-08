@@ -1020,3 +1020,18 @@ html.reduce-motion::view-transition-new(root) {
     animation: none;
   }
 }
+
+/* 表设计器里改过的单元格：淡琥珀底 + 左上角三角，不只依赖颜色 */
+@utility designer-cell-changed {
+  position: relative;
+  background-color: color-mix(in oklch, var(--color-amber) 7%, transparent);
+  &::before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-top: 5px solid var(--color-amber);
+    border-right: 5px solid transparent;
+    content: '';
+    pointer-events: none;
+  }
+}

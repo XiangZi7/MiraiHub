@@ -4,7 +4,7 @@
 //! 建目录、收紧权限、按公钥数据去重后追加。公钥内容来自本机 `~/.ssh` 下的 `.pub`，
 //! 前端只传密钥 id（私钥路径），不经手公钥文本，也就没法借此注入任意命令。
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Duration};
 
 use russh::keys::{HashAlg, PublicKey};
 use serde::Serialize;
@@ -17,6 +17,9 @@ use super::{keys, manager::SessionManager, shell};
 /// 远端脚本在 stdout 上报告结果的标记
 const MARK_ADDED: &str = "MIRAIHUB_KEY_ADDED";
 const MARK_EXISTS: &str = "MIRAIHUB_KEY_EXISTS";
+const MARK_FAILED: &str = "MIRAIHUB_KEY_FAILED";
+/// 远端脚本的执行时限：exec 本身没有超时，远端卡住（如家目录挂载失效）时不能让前端一直等
+const DEPLOY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// 部署结果。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -105,28 +108,36 @@ fn read_local_public_key(key_id: &str) -> AppResult<PublicKeyLine> {
 
 /// 生成远端执行的部署脚本（外层再用 `sh -c` 包一次，不依赖用户的登录 shell 语法）。
 ///
+/// - 脚本写成单行（`;` 分隔）：csh / tcsh 登录 shell 不接受单引号内的换行
 /// - `umask 077` 保证新建的目录 / 文件默认就是私有权限
-/// - 按 base64 数据去重：同一把钥匙即使注释不同、前面带了 options 也视为已存在
+/// - 按 base64 数据去重（忽略 `#` 注释行）：同一把钥匙即使注释不同、前面带了 options 也视为已存在
 /// - 文件末尾没有换行时先补一个，避免新公钥拼到上一行后面
 /// - 追加用 `printf '%s\n'`，公钥文本只作为参数出现，不会被解释
+/// - 失败时在 stdout 打出 `MIRAIHUB_KEY_FAILED=<code>`：exec 收到 EOF 即返回，退出码可能拿不到
 fn build_deploy_command(key: &PublicKeyLine) -> String {
-    let script = format!(
-        "umask 077\n\
-         mkdir -p \"$HOME/.ssh\" && chmod 700 \"$HOME/.ssh\" || exit 11\n\
-         f=\"$HOME/.ssh/authorized_keys\"\n\
-         k={line}\n\
-         b={blob}\n\
-         touch \"$f\" && chmod 600 \"$f\" || exit 12\n\
-         if grep -qF -e \"$b\" \"$f\"; then echo {exists}; exit 0; fi\n\
-         if [ -s \"$f\" ] && [ -n \"$(tail -c 1 \"$f\")\" ]; then printf '\\n' >> \"$f\" || exit 13; fi\n\
-         printf '%s\\n' \"$k\" >> \"$f\" || exit 13\n\
-         chmod 600 \"$f\"\n\
-         echo {added}\n",
-        line = shell::quote(&key.line),
-        blob = shell::quote(&key.blob),
-        exists = MARK_EXISTS,
-        added = MARK_ADDED,
-    );
+    let fail = |code: u32| format!("{{ echo {MARK_FAILED}={code}; exit {code}; }}");
+    let script = [
+        "umask 077".to_string(),
+        format!(
+            "mkdir -p \"$HOME/.ssh\" && chmod 700 \"$HOME/.ssh\" || {}",
+            fail(11)
+        ),
+        "f=\"$HOME/.ssh/authorized_keys\"".to_string(),
+        format!("k={}", shell::quote(&key.line)),
+        format!("b={}", shell::quote(&key.blob)),
+        format!("touch \"$f\" && chmod 600 \"$f\" || {}", fail(12)),
+        format!(
+            "if grep -v '^[[:space:]]*#' \"$f\" | grep -qF -e \"$b\"; then echo {MARK_EXISTS}; exit 0; fi"
+        ),
+        format!(
+            "if [ -s \"$f\" ] && [ -n \"$(tail -c 1 \"$f\")\" ]; then printf '\\n' >> \"$f\" || {}; fi",
+            fail(13)
+        ),
+        format!("printf '%s\\n' \"$k\" >> \"$f\" || {}", fail(13)),
+        "chmod 600 \"$f\"".to_string(),
+        format!("echo {MARK_ADDED}"),
+    ]
+    .join("; ");
     format!("sh -c {}", shell::quote(&script))
 }
 
@@ -139,7 +150,14 @@ fn parse_deploy_output(stdout: &str, stderr: &str, exit_code: Option<u32>) -> Ap
         return Ok("added");
     }
 
-    let reason = match exit_code {
+    // 退出码丢失时以脚本自报的失败码为准
+    let reported = stdout.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix(MARK_FAILED)
+            .and_then(|rest| rest.strip_prefix('='))
+            .and_then(|code| code.parse::<u32>().ok())
+    });
+    let reason = match reported.or(exit_code) {
         Some(11) => "无法创建或设置远端 ~/.ssh 目录权限".to_string(),
         Some(12) => "无法创建或设置 authorized_keys 权限".to_string(),
         Some(13) => "写入 authorized_keys 失败".to_string(),
@@ -164,7 +182,12 @@ pub async fn ssh_deploy_public_key(
 ) -> AppResult<DeployKeyResult> {
     let key = read_local_public_key(&key_id)?;
     let session = manager.get(&session_id).await?;
-    let output = session.exec(&build_deploy_command(&key)).await?;
+    // exec 默认 30 秒超时，这里放宽到部署上限之外，由外层计时给出部署专用提示
+    let command = build_deploy_command(&key);
+    let exec = session.exec_timeout(&command, DEPLOY_TIMEOUT + Duration::from_secs(1));
+    let output = tokio::time::timeout(DEPLOY_TIMEOUT, exec)
+        .await
+        .map_err(|_| AppError::internal("部署公钥超时，远端未在 60 秒内返回"))??;
     let status = parse_deploy_output(&output.stdout, &output.stderr, output.exit_code)?;
 
     Ok(DeployKeyResult {
@@ -248,5 +271,18 @@ mod tests {
         let err = parse_deploy_output("", "Permission denied", Some(12)).unwrap_err();
         assert!(err.message.contains("authorized_keys"));
         assert!(err.message.contains("Permission denied"));
+        // 退出码丢失时按脚本自报的失败码给出原因
+        let err = parse_deploy_output("MIRAIHUB_KEY_FAILED=13\n", "", None).unwrap_err();
+        assert!(err.message.contains("写入 authorized_keys 失败"));
+    }
+
+    #[test]
+    fn command_is_single_line_and_skips_comment_lines() {
+        let key = normalize_public_key(ED25519).unwrap();
+        let command = build_deploy_command(&key);
+        assert!(!command.contains('\n'));
+        let script = unquote(command.strip_prefix("sh -c ").unwrap());
+        assert!(script.contains("grep -v '^[[:space:]]*#' \"$f\" | grep -qF -e \"$b\""));
+        assert!(script.contains("{ echo MIRAIHUB_KEY_FAILED=11; exit 11; }"));
     }
 }

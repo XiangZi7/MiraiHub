@@ -22,6 +22,8 @@ import type {
   SshRouteProgress,
   SshSessionInfo,
   ShellSuggestion,
+  SshAuthPrompt,
+  SshHostKeyPrompt,
   SshStatusEvent,
   SshSystemStats,
   SshTransferEvent,
@@ -181,13 +183,19 @@ export async function resizeShell(
 /**
  * 执行单条命令并等待结果。
  * 与 openShell 相互独立：走的是新开的一次性通道，不影响交互式 shell。
+ * timeoutSecs 缺省时后端按 30 秒超时，避免远端命令不退出时永久挂起。
  */
 export async function exec(
   sessionId: string,
-  command: string
+  command: string,
+  timeoutSecs?: number
 ): Promise<SshCommandOutput> {
   ensureTauri()
-  return invoke<SshCommandOutput>('ssh_exec', { sessionId, command })
+  return invoke<SshCommandOutput>('ssh_exec', {
+    sessionId,
+    command,
+    timeoutSecs,
+  })
 }
 
 /** 查询交互式 shell 当前输入行的命令与路径候选。 */
@@ -369,5 +377,51 @@ export function onTransfer(
 ): Promise<UnlistenFn> {
   return listen<SshTransferEvent>(EVENT_TRANSFER, event =>
     handler(event.payload)
+  )
+}
+
+// 回应主机密钥确认：accept 继续连接，remember 同时写入 known_hosts
+export async function respondHostKey(
+  requestId: string,
+  accept: boolean,
+  remember: boolean
+): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_host_key_respond', { requestId, accept, remember })
+}
+
+// 回应键盘交互认证；answers 传 null 表示取消本次连接
+export async function respondAuthPrompt(
+  requestId: string,
+  answers: string[] | null
+): Promise<void> {
+  ensureTauri()
+  await invoke('ssh_auth_prompt_respond', { requestId, answers })
+}
+
+// 订阅主机密钥确认请求
+export function onHostKeyPrompt(
+  handler: (payload: SshHostKeyPrompt) => void
+): Promise<UnlistenFn> {
+  return listen<SshHostKeyPrompt>('ssh://host-key-prompt', event =>
+    handler(event.payload)
+  )
+}
+
+// 订阅键盘交互 / 二次验证请求
+export function onAuthPrompt(
+  handler: (payload: SshAuthPrompt) => void
+): Promise<UnlistenFn> {
+  return listen<SshAuthPrompt>('ssh://auth-prompt', event =>
+    handler(event.payload)
+  )
+}
+
+// 订阅确认请求失效（超时或连接已放弃），用于关掉对应弹窗
+export function onPromptClosed(
+  handler: (requestId: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ requestId: string }>('ssh://prompt-closed', event =>
+    handler(event.payload.requestId)
   )
 }

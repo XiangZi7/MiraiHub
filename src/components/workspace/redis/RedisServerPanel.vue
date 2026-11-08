@@ -36,8 +36,7 @@ const state = reactive({
   samples: [] as Sample[],
   updatedAt: 0,
 })
-const { view, sections, loading, error, interval, filter, samples } =
-  toRefs(state)
+const { view, loading, error, interval, filter } = toRefs(state)
 const intervals = computed(() => [
   { value: '0', label: t('不自动刷新') },
   { value: '2', label: '2s' },

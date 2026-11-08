@@ -611,6 +611,8 @@ export const en = {
   'SSH 隧道 / 本地端口转发': 'SSH tunnels / Local port forwarding',
   '通过已连接的 SSH 服务器，将本机端口转发到远端服务。':
     'Forward a local port to a remote service through a connected SSH server.',
+  '通过已连接的 SSH 服务器转发端口：本地转发、远程转发或动态 SOCKS5 代理。':
+    'Forward ports through a connected SSH server: local, remote, or dynamic SOCKS5 proxy.',
   '关闭此窗口后隧道继续运行，断开 SSH 或退出应用后停止。每条隧道最多 32 个并发连接。':
     'Tunnels keep running after this window closes and stop when SSH disconnects or the app exits. Each tunnel supports up to 32 concurrent connections.',
   'MiraiHub 启动画面': 'MiraiHub splash screen',

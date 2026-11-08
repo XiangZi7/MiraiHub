@@ -31,6 +31,10 @@ import {
   useGridSelection,
 } from '@/composables/useGridSelection'
 import {
+  toStatusSelection,
+  usePublishDatabaseSelection,
+} from '@/composables/useDatabaseStatusBar'
+import {
   formatGridSelection,
   isNumericType,
   type GridCopyFormat,
@@ -306,6 +310,8 @@ const selection = useGridSelection({
   copy: value => void copyGridText(value),
   edit: position => openViewer(position.row, position.column),
 })
+// 把多选统计同步到数据库底部状态栏
+usePublishDatabaseSelection(() => toStatusSelection(selection.stats.value))
 watch([result, page], () => {
   selection.clear()
   gridMenu.open = false

@@ -17,6 +17,9 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppContextMenu from '@/components/ui/AppContextMenu.vue'
+import AppTextarea from '@/components/ui/AppTextarea.vue'
+import { useDatabaseAi } from '@/composables/useDatabaseAi'
 import { toast } from '@/composables/useToast'
 import type { DatabaseKind, DatabaseObject } from '@/types/database'
 import type { DatabaseTableDetail } from '@/types/database'
@@ -24,6 +27,7 @@ import type {
   TableDesignerDraft,
   TableDesignerColumn,
   TableDesignerIndex,
+  TableIndexKind,
   ReferentialAction,
   TableDesignerTrigger,
   TriggerEvent,
@@ -117,6 +121,8 @@ function defaultDraft(schema: string): TableDesignerDraft {
 
 const draft = reactive<TableDesignerDraft>(defaultDraft(props.schema))
 const baseline = ref(tableDesignerSnapshot(draft))
+// 基线版本：每次重新记录基线时递增，结构未变（快照相同）时也能刷新基线字段。
+const baselineVersion = ref(0)
 const activePanel = ref<DesignerPanel>('columns')
 const creating = ref(false)
 const applying = ref(false)
@@ -317,6 +323,7 @@ async function loadEditTarget(): Promise<void> {
     currentDetail.value = detail
     hydrateFromDetail(detail)
     baseline.value = tableDesignerSnapshot(draft)
+    baselineVersion.value++
     resetHistory()
   } catch (cause) {
     if (version !== loadVersion) return
@@ -538,6 +545,7 @@ async function createTable(): Promise<void> {
     )
     if (!ok) return
     baseline.value = tableDesignerSnapshot(draft)
+    baselineVersion.value++
     emit('dirty', false)
     emit('created', draft.schema, draft.name)
   } finally {
@@ -561,6 +569,7 @@ async function applyChanges(): Promise<void> {
       return
     }
     baseline.value = tableDesignerSnapshot(draft)
+    baselineVersion.value++
     emit('dirty', false)
     emit('applied', draft.schema, draft.name)
   } finally {
@@ -906,6 +915,405 @@ const editorDisabled = computed(
     creating.value ||
     applying.value
 )
+
+/** 各标签页是否有校验错误，用于标签上的红点。 */
+const panelErrors = computed<Partial<Record<DesignerPanel, boolean>>>(() => {
+  const has = (record?: Record<string, string[]>) =>
+    Object.values(record ?? {}).some(list => list.length > 0)
+  return {
+    columns: has(validation.value.columnErrors),
+    indexes: has(validation.value.indexErrors),
+    foreignKeys: has(validation.value.foreignKeyErrors),
+    checks: has(validation.value.checkErrors),
+    triggers: has(validation.value.triggerErrors),
+    sql: Boolean(alterResult.value.error || lastFailure.value),
+  }
+})
+
+// 基线字段：读取 / 保存时记录，用于在字段表格里标出改过的单元格。
+const baselineColumns = shallowRef<TableDesignerColumn[]>([])
+watch(
+  baselineVersion,
+  () => {
+    baselineColumns.value = JSON.parse(
+      JSON.stringify(draft.columns)
+    ) as TableDesignerColumn[]
+  },
+  { immediate: true, flush: 'sync' }
+)
+
+// ---------- AI 辅助 ----------
+type DesignerAiMode = 'generate' | 'comments' | 'review'
+interface DesignerAiReviewItem {
+  level: 'error' | 'warning' | 'info'
+  target: string
+  message: string
+}
+const ai = useDatabaseAi()
+const aiMenu = reactive({ open: false, x: 0, y: 0 })
+const aiTrigger = shallowRef<HTMLElement | null>(null)
+const aiMode = ref<DesignerAiMode | null>(null)
+const aiInstruction = ref('')
+const aiProposal = shallowRef<{
+  name: string
+  comment: string
+  columns: TableDesignerColumn[]
+  indexes: TableDesignerIndex[]
+} | null>(null)
+const aiComments = shallowRef<{
+  table: string
+  columns: { id: string; name: string; comment: string }[]
+} | null>(null)
+const aiReview = shallowRef<DesignerAiReviewItem[] | null>(null)
+const aiMenuItems = computed(() => [
+  {
+    id: 'generate',
+    label: t('AI 生成表结构'),
+    icon: 'lucide:wand-sparkles',
+    iconTone: 'violet' as const,
+  },
+  {
+    id: 'comments',
+    label: t('AI 补全注释'),
+    icon: 'lucide:message-square-text',
+    iconTone: 'violet' as const,
+    disabled: !draft.columns.length,
+  },
+  {
+    id: 'review',
+    label: t('AI 审查设计'),
+    icon: 'lucide:scan-search',
+    iconTone: 'violet' as const,
+    disabled: !draft.columns.length,
+  },
+])
+const aiTitle = computed(
+  () =>
+    ({
+      generate: t('AI 生成表结构'),
+      comments: t('AI 补全注释'),
+      review: t('AI 审查设计'),
+    })[aiMode.value ?? 'generate']
+)
+
+/** 点击 AI 按钮：在按钮下方展开 AI 功能菜单，再次点击收起。 */
+function toggleAiMenu(event: MouseEvent): void {
+  if (aiMenu.open) {
+    aiMenu.open = false
+    return
+  }
+  const element = event.currentTarget as HTMLElement
+  const rect = element.getBoundingClientRect()
+  aiTrigger.value = element
+  aiMenu.x = rect.left
+  aiMenu.y = rect.bottom + 4
+  aiMenu.open = true
+}
+
+/** 选择 AI 功能：生成需先填写描述，补全注释与审查直接发起请求。 */
+function chooseAi(id: string): void {
+  aiMenu.open = false
+  aiMode.value = id as DesignerAiMode
+  aiProposal.value = null
+  aiComments.value = null
+  aiReview.value = null
+  if (id !== 'generate') void runAi()
+}
+
+/** 关闭 AI 对话框并中止进行中的请求。 */
+function closeAi(): void {
+  ai.cancel()
+  aiMode.value = null
+}
+
+/** 把当前草稿压缩成发给模型的 JSON，只保留结构要素，省 token。 */
+function draftForAi(): string {
+  return JSON.stringify({
+    table: draft.name,
+    comment: draft.comment,
+    columns: draft.columns.map(column => ({
+      name: column.name,
+      type: column.length
+        ? `${column.dataType}(${column.length})`
+        : column.dataType,
+      nullable: column.nullable,
+      primaryKey: column.primaryKey,
+      unique: column.unique,
+      autoIncrement: column.autoIncrement,
+      default: column.defaultValue || undefined,
+      comment: column.comment || undefined,
+    })),
+    indexes: draft.indexes.map(index => ({
+      name: index.name,
+      kind: index.kind,
+      columns: index.columns,
+    })),
+    foreignKeys: draft.foreignKeys.map(foreignKey => ({
+      columns: foreignKey.columns,
+      references: `${foreignKey.referencedTable}(${foreignKey.referencedColumns.join(', ')})`,
+    })),
+  })
+}
+
+/** 按模式拼出给模型的指令，明确要求的 JSON 输出格式。 */
+function aiPrompt(mode: DesignerAiMode): string {
+  const types = columnTypes(props.databaseKind).join(', ')
+  if (mode === 'generate')
+    return [
+      `Design a ${props.databaseKind} table from this description: ${aiInstruction.value.trim()}`,
+      'If CURRENT SQL has columns, treat it as the starting point and return the complete revised table.',
+      `Use only these column types: ${types}. Put length/precision (e.g. "64" or "10,2") in "length", without parentheses in "type".`,
+      'Use snake_case names. Every column and the table must have a comment in the requested language.',
+      'Return JSON: {"name":"table_name","comment":"...","columns":[{"name":"","type":"","length":"","nullable":true,"primaryKey":false,"unique":false,"autoIncrement":false,"default":"","comment":""}],"indexes":[{"name":"","kind":"index|unique","columns":[""]}]}',
+      'Do not list the primary key in "indexes".',
+    ].join('\n')
+  if (mode === 'comments')
+    return [
+      'Write concise comments for the table and every column in CURRENT SQL, inferred from names and types.',
+      'Return JSON: {"table":"table comment","columns":{"column_name":"comment"}}',
+    ].join('\n')
+  return [
+    `Review this ${props.databaseKind} table design: naming conventions, data type choices, missing indexes (for foreign keys and likely filter columns), primary key, nullability, and normalization.`,
+    'Return at most 12 concrete findings, most important first, as JSON: {"items":[{"level":"error|warning|info","target":"column or index name, or table","message":"problem and the suggested fix"}]}',
+  ].join('\n')
+}
+
+/** 从模型回复中取出 JSON 对象：优先 ```json 代码块，否则取第一个到最后一个花括号之间的内容。 */
+function parseAiJson(text: string): Record<string, unknown> {
+  const block = /```(?:json)?\s*([\s\S]*?)```/u.exec(text)?.[1] ?? text
+  const start = block.indexOf('{')
+  const end = block.lastIndexOf('}')
+  if (start < 0 || end <= start) throw new Error(t('AI 返回的内容无法解析'))
+  return JSON.parse(block.slice(start, end + 1)) as Record<string, unknown>
+}
+
+/** 校验 AI 给出的默认值：只放行数字、引号字符串、NULL/布尔与常见无参函数，其余按字符串字面量转义，避免把 SQL 片段拼进 DDL。 */
+function aiDefaultValue(raw: unknown): string {
+  const value = String(raw ?? '').trim()
+  if (!value) return ''
+  if (/^-?\d+(\.\d+)?$/u.test(value)) return value
+  if (/^'(?:[^']|'')*'$/u.test(value)) return value
+  if (
+    /^(NULL|TRUE|FALSE|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|LOCALTIMESTAMP|NOW\(\)|CURRENT_TIMESTAMP\(\d\)|UUID\(\)|GEN_RANDOM_UUID\(\))$/iu.test(
+      value
+    )
+  )
+    return value.toUpperCase()
+  return `'${value.replace(/'/gu, "''")}'`
+}
+
+/** 把模型给出的字段转成设计器字段；类型统一大写，类型里带的括号长度拆到长度列。 */
+function aiColumn(raw: Record<string, unknown>): TableDesignerColumn | null {
+  const name = String(raw.name ?? '').trim()
+  if (!name) return null
+  let dataType = String(raw.type ?? 'VARCHAR')
+    .trim()
+    .toUpperCase()
+  let length = String(raw.length ?? '').trim()
+  const inline = /^([^(]+)\((.*)\)$/u.exec(dataType)
+  if (inline) {
+    dataType = inline[1].trim()
+    length ||= inline[2].trim()
+  }
+  const primaryKey = raw.primaryKey === true
+  const autoIncrement = raw.autoIncrement === true
+  return templateColumn(
+    name,
+    normalizeDataTypeLabel(dataType, props.databaseKind),
+    {
+      length: /^\d+(,\d+)?$/u.test(length.replace(/\s+/gu, ''))
+        ? length.replace(/\s+/gu, '')
+        : '',
+      nullable: !primaryKey && raw.nullable !== false,
+      primaryKey,
+      unique: raw.unique === true && !primaryKey,
+      unsigned: props.databaseKind === 'mysql' && autoIncrement,
+      autoIncrement,
+      defaultValue: autoIncrement ? '' : aiDefaultValue(raw.default),
+      comment: String(raw.comment ?? '').trim(),
+    }
+  )
+}
+
+/** 把模型给出的索引转成设计器索引；引用了不存在字段的索引项会被丢弃。 */
+function aiIndexes(
+  items: unknown,
+  names: ReadonlySet<string>
+): TableDesignerIndex[] {
+  return (Array.isArray(items) ? items : []).flatMap(
+    (item, position): TableDesignerIndex[] => {
+      const raw = item as Record<string, unknown>
+      const columns = (Array.isArray(raw.columns) ? raw.columns : [])
+        .map(String)
+        .filter(name => names.has(name))
+      if (!columns.length) return []
+      const kind: TableIndexKind = raw.kind === 'unique' ? 'unique' : 'index'
+      return [
+        {
+          id: `index-ai-${Date.now()}-${position}`,
+          name: String(raw.name ?? '').trim() || `idx_${columns.join('_')}`,
+          kind,
+          method: 'btree',
+          columns,
+          columnOptions: {},
+        },
+      ]
+    }
+  )
+}
+
+/** 发起当前模式的 AI 请求，并把结果解析成可预览的提案；失败统一走通知。 */
+async function runAi(): Promise<void> {
+  const mode = aiMode.value
+  if (!mode) return
+  if (mode === 'generate' && !aiInstruction.value.trim()) {
+    toast.warning(t('请先描述要创建的表'))
+    return
+  }
+  aiProposal.value = null
+  aiComments.value = null
+  aiReview.value = null
+  try {
+    const result = await ai.run({
+      mode: 'design',
+      instruction: aiPrompt(mode),
+      sql: draftForAi(),
+    })
+    if (!result || aiMode.value !== mode) return
+    const data = parseAiJson(result.text)
+    if (mode === 'generate') {
+      const columns = (Array.isArray(data.columns) ? data.columns : [])
+        .map(item => aiColumn(item as Record<string, unknown>))
+        .filter((item): item is TableDesignerColumn => Boolean(item))
+      if (!columns.length) throw new Error(t('AI 返回的内容无法解析'))
+      aiProposal.value = {
+        name: String(data.name ?? '').trim() || draft.name,
+        comment: String(data.comment ?? '').trim(),
+        columns,
+        indexes: aiIndexes(
+          data.indexes,
+          new Set(columns.map(column => column.name))
+        ),
+      }
+    } else if (mode === 'comments') {
+      const map = (data.columns ?? {}) as Record<string, unknown>
+      aiComments.value = {
+        table: draft.comment.trim() ? '' : String(data.table ?? '').trim(),
+        columns: draft.columns.flatMap(column => {
+          const comment = String(map[column.name] ?? '').trim()
+          return !column.comment.trim() && comment
+            ? [{ id: column.id, name: column.name, comment }]
+            : []
+        }),
+      }
+    } else {
+      aiReview.value = (Array.isArray(data.items) ? data.items : []).map(
+        item => {
+          const raw = item as Record<string, unknown>
+          const level = String(raw.level)
+          return {
+            level: level === 'error' || level === 'warning' ? level : 'info',
+            target: String(raw.target ?? ''),
+            message: String(raw.message ?? ''),
+          }
+        }
+      )
+    }
+  } catch (cause) {
+    toast.error({
+      title: t('AI 请求失败'),
+      description:
+        cause instanceof SyntaxError
+          ? t('AI 返回的内容无法解析')
+          : database.errorMessage(cause),
+    })
+  }
+}
+
+/** 应用 AI 生成的表结构：新建表时整体替换；编辑已有表时旧字段只合并类型/长度/注释且全部保留，避免生成 DROP COLUMN 丢数据。 */
+function applyAiProposal(): void {
+  const proposal = aiProposal.value
+  if (!proposal) return
+  if (!editing.value) draft.name = proposal.name
+  if (proposal.comment) draft.comment = proposal.comment
+  const previous = new Map(draft.columns.map(column => [column.name, column]))
+  const byOriginal = new Map(
+    draft.columns
+      .filter(column => column.originalName)
+      .map(column => [column.originalName as string, column])
+  )
+  const matched = new Set<string>()
+  const columns = proposal.columns.map(column => {
+    const old = previous.get(column.name) ?? byOriginal.get(column.name)
+    if (!old || matched.has(old.id)) return column
+    matched.add(old.id)
+    // 只覆盖 AI 明确给出的属性；AI 未给出的长度、默认值、备注和 unsigned 等沿用原值
+    return {
+      ...old,
+      name: column.name,
+      dataType: column.dataType,
+      length: column.length || old.length,
+      nullable: column.nullable,
+      primaryKey: column.primaryKey,
+      unique: column.unique,
+      autoIncrement: column.autoIncrement,
+      unsigned: old.unsigned || column.unsigned,
+      defaultValue: column.autoIncrement
+        ? ''
+        : column.defaultValue || old.defaultValue,
+      comment: column.comment || old.comment,
+    }
+  })
+  // 编辑已有表时，AI 结果里缺失的原有字段一律保留，避免悄悄生成 DROP COLUMN 丢数据
+  if (editing.value) {
+    const taken = new Set(columns.map(column => column.name))
+    columns.push(
+      ...draft.columns.filter(
+        column =>
+          column.originalName && !matched.has(column.id) && !taken.has(column.name)
+      )
+    )
+  }
+  const names = new Set(columns.map(column => column.name))
+  const kept = draft.indexes.filter(index =>
+    index.columns.every(
+      name => names.has(name) || index.columnOptions?.[name]?.expression
+    )
+  )
+  const keptNames = new Set(kept.map(index => index.name))
+  draft.columns = columns
+  // 外键引用的本地字段已不存在时一并移除，避免草稿校验失败或执行时报依赖错误
+  draft.foreignKeys = draft.foreignKeys.filter(key =>
+    key.columns.every(name => names.has(name))
+  )
+  draft.indexes = [
+    ...kept,
+    ...proposal.indexes.filter(index => !keptNames.has(index.name)),
+  ]
+  activePanel.value = 'columns'
+  closeAi()
+  toast.success(t('已应用 AI 生成的表结构，可撤销'))
+}
+
+/** 应用 AI 注释：只填写原本为空的表备注和字段备注。 */
+function applyAiComments(): void {
+  const result = aiComments.value
+  if (!result) return
+  let filled = 0
+  if (result.table && !draft.comment.trim()) {
+    draft.comment = result.table
+    filled++
+  }
+  const comments = new Map(result.columns.map(item => [item.id, item.comment]))
+  draft.columns = draft.columns.map(column => {
+    const comment = comments.get(column.id)
+    if (!comment || column.comment.trim()) return column
+    filled++
+    return { ...column, comment }
+  })
+  closeAi()
+  toast.success(t('已补全 {value0} 处注释', { value0: filled }))
+}
 </script>
 
 <template>
@@ -981,9 +1389,10 @@ const editorDisabled = computed(
           :key="item.id"
           variant="bare"
           :class="[
-            'designer-tab',
+            'designer-tab motion-safe:transition-colors',
             activePanel === item.id && 'designer-tab-active',
           ]"
+          :aria-current="activePanel === item.id ? 'page' : undefined"
           @click="activePanel = item.id"
         >
           <AppIcon
@@ -994,10 +1403,30 @@ const editorDisabled = computed(
             v-if="item.count !== null"
             class="tab-count"
             >{{ item.count }}</span
-          >
+          ><span
+            v-if="panelErrors[item.id]"
+            class="bg-danger absolute top-1.5 right-1 size-1.5 rounded-full"
+            :aria-label="t('存在错误')"
+            role="img"
+          />
         </AppButton>
       </nav>
       <div class="designer-actions">
+        <AppButton
+          size="sm"
+          class="text-violet h-7"
+          :disabled="editorDisabled"
+          :aria-expanded="aiMenu.open"
+          aria-haspopup="menu"
+          @click="toggleAiMenu"
+          ><AppIcon
+            :name="ai.loading.value ? 'lucide:loader-circle' : 'lucide:sparkles'"
+            :size="11"
+            :class="ai.loading.value && 'motion-safe:animate-spin'"
+          />AI<AppIcon
+            name="lucide:chevron-down"
+            :size="10"
+        /></AppButton>
         <AppButton
           size="sm"
           class="h-7"
@@ -1128,6 +1557,8 @@ const editorDisabled = computed(
         <DatabaseTableFieldsEditor
           v-show="activePanel === 'columns'"
           ref="fieldsEditor"
+          class="panel-fade-in"
+          :baseline="editing ? baselineColumns : undefined"
           :model-value="draft.columns"
           @update:model-value="updateColumns"
           :database-kind="databaseKind"
@@ -1140,6 +1571,7 @@ const editorDisabled = computed(
         <DatabaseTableIndexesEditor
           v-show="activePanel === 'indexes'"
           ref="indexesEditor"
+          class="panel-fade-in"
           v-model="draft.indexes"
           :columns="draft.columns"
           :database-kind="databaseKind"
@@ -1148,6 +1580,7 @@ const editorDisabled = computed(
         <DatabaseTableForeignKeysEditor
           v-show="activePanel === 'foreignKeys'"
           ref="foreignKeysEditor"
+          class="panel-fade-in"
           v-model="draft.foreignKeys"
           :columns="draft.columns"
           :schema="draft.schema"
@@ -1162,6 +1595,7 @@ const editorDisabled = computed(
           <DatabaseTableChecksEditor
             v-if="draft.checks"
             ref="checksEditor"
+            class="panel-fade-in"
             v-model="draft.checks"
             :database-kind="databaseKind"
             :editing="editing"
@@ -1178,6 +1612,7 @@ const editorDisabled = computed(
           <DatabaseTableTriggersEditor
             v-if="draft.triggers"
             ref="triggersEditor"
+            class="panel-fade-in"
             v-model="draft.triggers"
             :database-kind="databaseKind"
             :errors="validation.triggerErrors"
@@ -1191,6 +1626,7 @@ const editorDisabled = computed(
         </template>
         <DatabaseTableOptionsEditor
           v-show="activePanel === 'options'"
+          class="panel-fade-in"
           v-model:engine="draft.engine"
           v-model:charset="draft.charset"
           v-model:collation="draft.collation"
@@ -1206,6 +1642,7 @@ const editorDisabled = computed(
         />
         <DatabaseTableDdlPreview
           v-if="activePanel === 'sql'"
+          class="panel-fade-in"
           :sql="hasChanges ? sqlPreview : ''"
           :error="
             lastFailure
@@ -1290,6 +1727,239 @@ const editorDisabled = computed(
           size="sm"
           @click="confirmSave"
           >{{ editing ? t('保存修改') : t('创建表') }}</AppButton
+        >
+      </template>
+    </AppDialog>
+
+    <AppContextMenu
+      :open="aiMenu.open"
+      :x="aiMenu.x"
+      :y="aiMenu.y"
+      :items="aiMenuItems"
+      :label="t('AI 辅助')"
+      :trigger="aiTrigger"
+      @close="aiMenu.open = false"
+      @select="chooseAi"
+    />
+
+    <AppDialog
+      v-if="aiMode"
+      :title="aiTitle"
+      :description="
+        aiMode === 'generate'
+          ? t('用自然语言描述表的用途和字段，生成后先预览再应用。')
+          : aiMode === 'comments'
+            ? t('只会填写当前为空的表备注和字段备注。')
+            : t('从命名、类型选择、索引和范式角度检查当前设计。')
+      "
+      wide
+      @close="closeAi"
+    >
+      <div class="grid gap-3 p-4 text-[11px]">
+        <template v-if="aiMode === 'generate'">
+          <AppTextarea
+            v-model="aiInstruction"
+            :label="t('表结构描述')"
+            :rows="3"
+            :placeholder="t('例如：订单表，包含用户、金额、状态、下单时间，按用户和状态查询')"
+            @keydown.ctrl.enter.prevent="runAi"
+          />
+          <div class="flex justify-end">
+            <AppButton
+              variant="primary"
+              size="sm"
+              :disabled="ai.loading.value || !aiInstruction.trim()"
+              @click="runAi"
+              ><AppIcon
+                :name="ai.loading.value ? 'lucide:loader-circle' : 'lucide:sparkles'"
+                :size="11"
+                :class="ai.loading.value && 'motion-safe:animate-spin'"
+              />{{ aiProposal ? t('重新生成') : t('生成') }}</AppButton
+            >
+          </div>
+        </template>
+
+        <div
+          v-if="ai.loading.value"
+          class="text-txt-3 flex items-center gap-2"
+          role="status"
+        >
+          <AppIcon
+            name="lucide:loader-circle"
+            :size="13"
+            class="motion-safe:animate-spin"
+          />{{ t('AI 正在分析…') }}
+        </div>
+
+        <div
+          v-if="aiProposal"
+          class="border-line-soft pop-in grid gap-2 rounded-lg border p-2.5"
+        >
+          <p class="text-txt-2 flex items-center gap-1.5">
+            <code class="font-mono">{{ aiProposal.name }}</code>
+            <span class="text-txt-4 truncate">{{ aiProposal.comment }}</span>
+          </p>
+          <div class="scroll-thin max-h-64 overflow-auto">
+            <table class="w-full text-left text-[10.5px]">
+              <thead class="text-txt-4 bg-card sticky top-0">
+                <tr>
+                  <th class="px-1.5 py-1 font-normal">{{ t('字段名') }}</th>
+                  <th class="px-1.5 py-1 font-normal">{{ t('类型') }}</th>
+                  <th class="px-1.5 py-1 font-normal">{{ t('属性') }}</th>
+                  <th class="px-1.5 py-1 font-normal">{{ t('备注') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="column in aiProposal.columns"
+                  :key="column.id"
+                  class="border-line-soft hover:bg-violet/4 border-t"
+                >
+                  <td class="px-1.5 py-1 font-mono">{{ column.name }}</td>
+                  <td class="px-1.5 py-1 font-mono">
+                    {{ column.dataType
+                    }}{{ column.length ? `(${column.length})` : '' }}
+                  </td>
+                  <td class="text-txt-3 px-1.5 py-1">
+                    {{
+                      [
+                        column.primaryKey && 'PK',
+                        column.autoIncrement && 'AI',
+                        column.unique && 'UQ',
+                        !column.nullable && 'NOT NULL',
+                        column.defaultValue && `= ${column.defaultValue}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    }}
+                  </td>
+                  <td class="text-txt-3 px-1.5 py-1">{{ column.comment }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ul
+            v-if="aiProposal.indexes.length"
+            class="text-txt-3 grid gap-0.5"
+          >
+            <li
+              v-for="index in aiProposal.indexes"
+              :key="index.id"
+            >
+              <span class="text-txt-4">{{
+                index.kind === 'unique' ? t('唯一索引') : t('索引')
+              }}</span>
+              <code class="ml-1 font-mono"
+                >{{ index.name }} ({{ index.columns.join(', ') }})</code
+              >
+            </li>
+          </ul>
+          <p
+            v-if="draft.columns.length > 1"
+            class="text-amber text-[10px]"
+          >
+            {{ t('应用后将用生成的字段替换当前字段列表，可使用撤销恢复。') }}
+          </p>
+        </div>
+
+        <div
+          v-if="aiComments"
+          class="border-line-soft pop-in grid gap-1 rounded-lg border p-2.5"
+        >
+          <p
+            v-if="!aiComments.table && !aiComments.columns.length"
+            class="text-txt-4"
+          >
+            {{ t('没有需要补全的注释') }}
+          </p>
+          <p v-if="aiComments.table">
+            <span class="text-txt-4">{{ t('表备注') }}：</span
+            >{{ aiComments.table }}
+          </p>
+          <div class="scroll-thin max-h-64 overflow-auto">
+            <p
+              v-for="item in aiComments.columns"
+              :key="item.id"
+              class="flex gap-2 py-0.5"
+            >
+              <code class="text-txt-2 w-36 shrink-0 truncate font-mono">{{
+                item.name
+              }}</code
+              ><span class="text-txt-3">{{ item.comment }}</span>
+            </p>
+          </div>
+        </div>
+
+        <div
+          v-if="aiReview"
+          class="pop-in scroll-thin grid max-h-80 gap-1.5 overflow-auto"
+        >
+          <p
+            v-if="!aiReview.length"
+            class="text-success flex items-center gap-1.5"
+          >
+            <AppIcon
+              name="lucide:circle-check"
+              :size="12"
+            />{{ t('未发现明显问题') }}
+          </p>
+          <div
+            v-for="(item, index) in aiReview"
+            :key="index"
+            class="border-line-soft flex items-start gap-2 rounded-md border px-2 py-1.5"
+          >
+            <span
+              class="mt-px shrink-0 rounded px-1.5 py-0.5 text-[9.5px]"
+              :class="{
+                'bg-danger/10 text-danger': item.level === 'error',
+                'bg-amber/10 text-amber': item.level === 'warning',
+                'bg-blue/10 text-blue': item.level === 'info',
+              }"
+              >{{
+                { error: t('问题'), warning: t('建议'), info: t('提示') }[
+                  item.level
+                ]
+              }}</span
+            >
+            <div class="min-w-0">
+              <code
+                v-if="item.target"
+                class="text-txt-2 font-mono"
+                >{{ item.target }}</code
+              >
+              <p class="text-txt-3">{{ item.message }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <AppButton
+          size="sm"
+          @click="closeAi"
+          >{{ t('关闭') }}</AppButton
+        >
+        <AppButton
+          v-if="aiMode !== 'generate' && !ai.loading.value"
+          size="sm"
+          @click="runAi"
+          ><AppIcon
+            name="lucide:refresh-cw"
+            :size="11"
+          />{{ t('重新生成') }}</AppButton
+        >
+        <AppButton
+          v-if="aiProposal"
+          variant="primary"
+          size="sm"
+          @click="applyAiProposal"
+          >{{ t('应用到设计器') }}</AppButton
+        >
+        <AppButton
+          v-if="aiComments && (aiComments.table || aiComments.columns.length)"
+          variant="primary"
+          size="sm"
+          @click="applyAiComments"
+          >{{ t('填入注释') }}</AppButton
         >
       </template>
     </AppDialog>

@@ -329,7 +329,7 @@ const placeholder = computed(() => {
   if (mode.value === 'object') return t('搜索表或视图…')
   if (mode.value === 'query') return t('搜索已保存查询…')
   if (mode.value === 'action') return t('搜索数据库动作或连接…')
-  return t('输入命令…（# 表 · @ 已保存查询 · > 数据库动作）')
+  return t("输入命令…（# 表 · {'@'} 已保存查询 · > 数据库动作）")
 })
 
 // 打开时聚焦搜索框

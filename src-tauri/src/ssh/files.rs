@@ -288,7 +288,7 @@ pub async fn delete_path(session: &SshSession, path: &str, is_directory: bool) -
     }
 }
 
-/// 拒绝对根目录或家目录这类“整盘”路径做递归操作。
+/// 拒绝对根目录、相对路径或含 `..` 的路径做递归操作。
 fn validate_tree_root(path: &str) -> SshResult<()> {
     validate_remote_path(path)?;
     let trimmed = path.trim_end_matches('/');
@@ -314,6 +314,14 @@ async fn entry_attributes(
         .map_err(|error| tree_error("读取", path, error))
 }
 
+/// 是否是真正的目录。russh-sftp 的 `is_dir()` 按位包含判断，
+/// 套接字（0o140000）与块设备（0o060000）也带目录位，递归时会被误当成目录去 READDIR。
+fn is_plain_dir(attrs: &FileAttributes) -> bool {
+    attrs
+        .permissions
+        .is_some_and(|mode| mode & 0o170000 == 0o040000)
+}
+
 /// 递归操作中的失败带上具体路径，便于用户定位。
 fn tree_error(action: &str, path: &str, error: russh_sftp::client::error::Error) -> SshError {
     SshError::Sftp(format!("{action} {path} 失败：{error}"))
@@ -333,7 +341,7 @@ pub async fn delete_tree(session: &SshSession, path: &str) -> SshResult<u64> {
     let mut deleted = 0u64;
     let mut pending = vec![(path.trim_end_matches('/').to_owned(), root, false)];
     while let Some((current, attrs, visited)) = pending.pop() {
-        let result = if attrs.is_dir() && !attrs.is_symlink() {
+        let result = if is_plain_dir(&attrs) {
             if visited {
                 sftp.remove_dir(&current)
                     .await
@@ -346,13 +354,21 @@ pub async fn delete_tree(session: &SshSession, path: &str) -> SshResult<u64> {
                 match entries {
                     Ok(entries) => {
                         pending.push((current.clone(), attrs, true));
+                        let mut listed = Ok(());
                         for entry in entries {
                             let child = join_path(&current, &entry.file_name());
-                            let child_attrs =
-                                entry_attributes(&sftp, &child, entry.metadata()).await?;
-                            pending.push((child, child_attrs, false));
+                            match entry_attributes(&sftp, &child, entry.metadata()).await {
+                                Ok(child_attrs) => pending.push((child, child_attrs, false)),
+                                Err(error) => {
+                                    listed = Err(error);
+                                    break;
+                                }
+                            }
                         }
-                        continue;
+                        if listed.is_ok() {
+                            continue;
+                        }
+                        listed
                     }
                     Err(error) => Err(error),
                 }
@@ -406,7 +422,7 @@ pub async fn chmod_path(
         .symlink_metadata(path)
         .await
         .map_err(|error| tree_error("读取", path, error))?;
-    if !recursive || !root.is_dir() || root.is_symlink() {
+    if !recursive || !is_plain_dir(&root) {
         set_mode(path.to_owned()).await?;
         return Ok(1);
     }
@@ -416,7 +432,7 @@ pub async fn chmod_path(
         if attrs.is_symlink() {
             continue;
         }
-        if !attrs.is_dir() || visited {
+        if !is_plain_dir(&attrs) || visited {
             set_mode(current).await?;
             changed += 1;
             continue;
@@ -1566,6 +1582,20 @@ mod tests {
         assert!(validate_tree_root("relative").is_err());
         assert!(validate_tree_root("/var/../").is_err());
         assert!(validate_tree_root("/var/www").is_ok());
+    }
+
+    #[test]
+    fn sockets_and_block_devices_are_not_directories() {
+        let attrs = |mode: u32| {
+            let mut attrs = FileAttributes::empty();
+            attrs.permissions = Some(mode);
+            attrs
+        };
+        assert!(is_plain_dir(&attrs(0o040755)));
+        assert!(!is_plain_dir(&attrs(0o140755)));
+        assert!(!is_plain_dir(&attrs(0o060660)));
+        assert!(!is_plain_dir(&attrs(0o120777)));
+        assert!(!is_plain_dir(&FileAttributes::empty()));
     }
 
     #[test]

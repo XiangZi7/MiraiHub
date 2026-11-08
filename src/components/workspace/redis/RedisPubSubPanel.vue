@@ -302,7 +302,8 @@ onScopeDispose(unsubscribeAll)
         <AppTextarea
           v-model="publishMessage"
           class="min-h-20 font-mono text-[11px]"
-          :aria-label="t('消息')"
+          :label="t('消息')"
+          hide-label
           :placeholder="t('消息内容（Ctrl+Enter 发布）')"
           spellcheck="false"
           @keydown.ctrl.enter.prevent="publish"

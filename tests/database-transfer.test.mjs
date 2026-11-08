@@ -37,7 +37,7 @@ const load = sourceLoader(
       'export const settingNumber = (_key, fallback) => fallback; export const settingsSnapshot = () => ({})'
     ),
     './ssh': dataModule(
-      'export const errorMessage = error => error.message ?? String(error); export const isAppError = () => false'
+      'export const errorMessage = error => error.message ?? String(error); export const isAppError = () => false; export const resolveSshRoute = async config => config'
     ),
     '@/composables/useToast': dataModule(`
       import { mock } from ${JSON.stringify(boundary)}

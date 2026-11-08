@@ -10,7 +10,7 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
-import { useClipboard } from '@vueuse/core'
+import { useClipboard, useEventListener } from '@vueuse/core'
 import {
   open as openFileDialog,
   save as saveFileDialog,
@@ -133,6 +133,8 @@ watch(
   () => {
     state.transfer = null
     state.properties = []
+    // 权限弹窗绑定旧会话的路径，切换连接后不能对新会话的同名路径提交
+    state.chmodTarget = null
   }
 )
 
@@ -771,6 +773,14 @@ function handleDragLeave(): void {
   dragDepth = Math.max(0, dragDepth - 1)
   if (dragDepth === 0) browserDragging.value = false
 }
+
+// 拖放在任意位置结束（含被本地栏 stop 掉的 drop）时清零计数，防止遮罩卡住
+function resetBrowserDrag(): void {
+  dragDepth = 0
+  browserDragging.value = false
+}
+useEventListener(window, 'drop', resetBrowserDrag, { capture: true })
+useEventListener(window, 'dragend', resetBrowserDrag, { capture: true })
 
 // 处理浏览器拖放：内部本地栏拖入或带路径的系统文件
 function handleBrowserDrop(event: DragEvent): void {

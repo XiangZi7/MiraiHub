@@ -34,6 +34,8 @@ const props = defineProps<{
   tableCollation?: string
   /** 按字段 ID 归类的校验错误。 */
   errors?: Record<string, string[]>
+  /** 上次读取 / 保存时的字段，传入后标出改过的单元格（只在编辑现有表时传）。 */
+  baseline?: readonly TableDesignerColumn[]
 }>()
 
 const emit = defineEmits<{
@@ -425,6 +427,30 @@ function onRowKeydown(event: KeyboardEvent, column: TableDesignerColumn): void {
   }
 }
 
+const baselineById = computed(
+  () => new Map((props.baseline ?? []).map(column => [column.id, column]))
+)
+
+/** 判断字段的指定属性是否与基线不同；新增的字段整行都算改过。 */
+function changed(
+  column: TableDesignerColumn,
+  ...keys: (keyof TableDesignerColumn)[]
+): boolean {
+  if (!props.baseline) return false
+  const original = baselineById.value.get(column.id)
+  if (!original) return true
+  return keys.some(key => (original[key] ?? '') !== (column[key] ?? ''))
+}
+
+/** 改过的单元格样式：淡琥珀底色 + 左上角小三角，不只依赖颜色区分。 */
+function changedCell(
+  column: TableDesignerColumn,
+  ...keys: (keyof TableDesignerColumn)[]
+): string | undefined {
+  return changed(column, ...keys) ? 'designer-cell-changed' : undefined
+}
+
+/** 字段的校验错误列表，用于行内提示。 */
 function rowErrors(column: TableDesignerColumn): string[] {
   return props.errors?.[column.id] ?? []
 }
@@ -547,12 +573,14 @@ defineExpose({ add: () => void addColumn() })
           <tr
             v-for="column in modelValue"
             :key="column.id"
+            :aria-invalid="rowErrors(column).length > 0 || undefined"
             :data-reorderable-tab-id="column.id"
             tabindex="0"
             :title="rowErrors(column).join('\n') || undefined"
             :class="
               cn(
                 'outline-none',
+                'hover:[&>td]:bg-violet/3 motion-safe:[&>td]:transition-colors',
                 activeId === column.id &&
                   '[&>td]:bg-violet/6 [&>td:first-child]:shadow-[inset_2px_0_var(--color-violet)]',
                 rowErrors(column).length &&
@@ -593,7 +621,10 @@ defineExpose({ add: () => void addColumn() })
                 </span>
               </div>
             </td>
-            <td data-cell="name">
+            <td
+              data-cell="name"
+              :class="changedCell(column, 'name')"
+            >
               <div class="flex items-center">
                 <AppInput
                   :model-value="column.name"
@@ -612,9 +643,18 @@ defineExpose({ add: () => void addColumn() })
                   class="text-violet mr-1 shrink-0"
                   :title="t('生成列')"
                 />
+                <AppIcon
+                  v-if="rowErrors(column).length"
+                  name="lucide:circle-alert"
+                  :size="11"
+                  class="text-danger mr-1 shrink-0"
+                  role="img"
+                  :aria-label="rowErrors(column).join('; ')"
+                  :title="rowErrors(column).join('; ')"
+                />
               </div>
             </td>
-            <td>
+            <td :class="changedCell(column, 'dataType')">
               <AppSelect
                 :model-value="column.dataType"
                 :label="t('字段类型')"
@@ -631,6 +671,7 @@ defineExpose({ add: () => void addColumn() })
               <td
                 colspan="2"
                 data-cell="length"
+                :class="changedCell(column, 'length')"
               >
                 <AppInput
                   :model-value="column.length"
@@ -645,7 +686,10 @@ defineExpose({ add: () => void addColumn() })
               </td>
             </template>
             <template v-else>
-              <td data-cell="length">
+              <td
+                data-cell="length"
+                :class="changedCell(column, 'length')"
+              >
                 <AppInput
                   :model-value="lengthPart(column, 0)"
                   variant="cell"
@@ -670,7 +714,7 @@ defineExpose({ add: () => void addColumn() })
                 />
               </td>
             </template>
-            <td>
+            <td :class="changedCell(column, 'nullable')">
               <div class="flex justify-center">
                 <AppCheckbox
                   :model-value="column.nullable"
@@ -683,7 +727,7 @@ defineExpose({ add: () => void addColumn() })
                 />
               </div>
             </td>
-            <td>
+            <td :class="changedCell(column, 'primaryKey')">
               <div class="flex items-center justify-center gap-0.5">
                 <AppCheckbox
                   :model-value="column.primaryKey"
@@ -699,7 +743,7 @@ defineExpose({ add: () => void addColumn() })
                 >
               </div>
             </td>
-            <td>
+            <td :class="changedCell(column, 'unique')">
               <div class="flex justify-center">
                 <AppCheckbox
                   :model-value="column.unique"
@@ -726,7 +770,7 @@ defineExpose({ add: () => void addColumn() })
                 />
               </div>
             </td>
-            <td>
+            <td :class="changedCell(column, 'autoIncrement')">
               <div class="flex justify-center">
                 <AppCheckbox
                   :model-value="column.autoIncrement"
@@ -742,7 +786,10 @@ defineExpose({ add: () => void addColumn() })
                 />
               </div>
             </td>
-            <td data-cell="default">
+            <td
+              data-cell="default"
+              :class="changedCell(column, 'defaultValue')"
+            >
               <AppInput
                 :model-value="defaultInput(column)"
                 variant="cell"
@@ -760,7 +807,10 @@ defineExpose({ add: () => void addColumn() })
                 @update:model-value="setDefaultInput(column, $event)"
               />
             </td>
-            <td data-cell="comment">
+            <td
+              data-cell="comment"
+              :class="changedCell(column, 'comment')"
+            >
               <AppInput
                 :model-value="column.comment"
                 variant="cell"
@@ -785,7 +835,15 @@ defineExpose({ add: () => void addColumn() })
               :colspan="columnCount"
               class="text-txt-4 h-28 text-center"
             >
+              <AppIcon
+                name="lucide:columns-3"
+                :size="18"
+                class="text-txt-4/70 mx-auto mb-1.5"
+              />
               {{ t('尚未添加字段') }}
+              <p class="mt-1 text-[10px]">
+                {{ t('点击工具栏「添加字段」，或使用 AI 生成表结构') }}
+              </p>
             </td>
           </tr>
         </tbody>

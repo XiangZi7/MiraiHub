@@ -19,12 +19,14 @@ use super::events::{emit_status, StatusEvent};
 use super::known_hosts::{self, HostKeyCheck};
 use super::liveness::{self, LinkState};
 use super::models::{AuthMethod, CommandOutput, PtyOptions, SshConfig};
+use super::output::{self, TerminalHistory};
 use super::prompt::{
     self, timeout_excluding_prompts, AuthPrompt, AuthPromptField, HostKeyPrompt, PauseClock,
     Prompter,
 };
 use super::proxy;
 use super::sftp_stream::SftpStream;
+use super::tunnels::{ForwardedChannel, RemoteForwardRoutes};
 
 /// Shared by all uploads and downloads on this SSH connection, including extra channels.
 const MAX_TRANSFER_CHANNELS: usize = 4;
@@ -32,6 +34,8 @@ const MAX_TRANSFER_CHANNELS: usize = 4;
 const MAX_METADATA_CHANNELS: usize = 2;
 /// 键盘交互认证最多来回的轮数，防止服务端无限追问。
 const MAX_KEYBOARD_INTERACTIVE_ROUNDS: usize = 12;
+/// 一次性命令默认的最长等待时间，避免远端命令不退出时永久挂起。
+pub const DEFAULT_EXEC_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 连接事件处理器。
 ///
@@ -46,6 +50,8 @@ struct ClientHandler {
     prompter: Option<Arc<Prompter>>,
     /// 测试用：覆盖 ~/.ssh/known_hosts
     known_hosts: Option<std::path::PathBuf>,
+    /// 远程转发路由表，与所属 `SshSession` 共享同一份（跳板一跳为空表）
+    remote_forwards: RemoteForwardRoutes,
 }
 
 impl ClientHandler {
@@ -58,6 +64,7 @@ impl ClientHandler {
             clock: Arc::default(),
             prompter,
             known_hosts: None,
+            remote_forwards: RemoteForwardRoutes::default(),
         }
     }
 
@@ -74,6 +81,28 @@ impl Drop for ClientHandler {
 
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
+
+    /// 远程转发：服务器在监听端口上收到连接后打开 forwarded-tcpip 通道，按监听地址路由到隧道。
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        originator_address: &str,
+        originator_port: u32,
+        session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        // 回调运行在会话循环里，拒绝时用同步的 Session::close，不能 await 通道消息队列
+        if let Some(rejected) = self.remote_forwards.dispatch(
+            channel,
+            connected_address,
+            connected_port,
+            (originator_address, originator_port),
+        ) {
+            let _ = session.close(rejected.id());
+        }
+        Ok(())
+    }
 
     async fn check_server_key(
         &mut self,
@@ -183,6 +212,10 @@ pub struct SshSession {
     metadata_slots: Arc<Semaphore>,
     /// 目标机连接的存活状态，会话表靠它发现死会话
     link: Arc<LinkState>,
+    /// 远程转发路由表，与最终一跳的 ClientHandler 共享
+    remote_forwards: RemoteForwardRoutes,
+    /// 交互式 shell 最近输出的纯文本，供 AI 读取
+    terminal: TerminalHistory,
 }
 
 impl SshSession {
@@ -231,7 +264,14 @@ impl SshSession {
         };
         for (index, hop) in config.jump_hosts.iter().enumerate() {
             report(index, hop.endpoint(), "connecting");
-            match connect_handle(hop, jump_handles.last(), prompter.as_ref()).await {
+            match connect_handle(
+                hop,
+                jump_handles.last(),
+                prompter.as_ref(),
+                RemoteForwardRoutes::default(),
+            )
+            .await
+            {
                 Ok((handle, _)) => {
                     jump_handles.push(handle);
                     report(index, hop.endpoint(), "connected");
@@ -243,17 +283,24 @@ impl SshSession {
             }
         }
         report(config.jump_hosts.len(), config.endpoint(), "connecting");
-        let (handle, link) =
-            match connect_handle(&config, jump_handles.last(), prompter.as_ref()).await {
-                Ok(connected) => {
-                    report(config.jump_hosts.len(), config.endpoint(), "connected");
-                    connected
-                }
-                Err(error) => {
-                    report(config.jump_hosts.len(), config.endpoint(), "failed");
-                    return Err(error);
-                }
-            };
+        let remote_forwards = RemoteForwardRoutes::default();
+        let (handle, link) = match connect_handle(
+            &config,
+            jump_handles.last(),
+            prompter.as_ref(),
+            remote_forwards.clone(),
+        )
+        .await
+        {
+            Ok(connected) => {
+                report(config.jump_hosts.len(), config.endpoint(), "connected");
+                connected
+            }
+            Err(error) => {
+                report(config.jump_hosts.len(), config.endpoint(), "failed");
+                return Err(error);
+            }
+        };
         log::info!(
             "SSH 已连接：{}（{} 跳）",
             config.endpoint(),
@@ -269,6 +316,8 @@ impl SshSession {
             transfer_slots: Arc::new(Semaphore::new(MAX_TRANSFER_CHANNELS)),
             metadata_slots: Arc::new(Semaphore::new(MAX_METADATA_CHANNELS)),
             link,
+            remote_forwards,
+            terminal: TerminalHistory::default(),
         })
     }
 
@@ -299,6 +348,11 @@ impl SshSession {
 
     pub fn config(&self) -> &SshConfig {
         &self.config
+    }
+
+    /// 交互式 shell 最近 n 行输出（已去除 ANSI 控制序列），从旧到新。
+    pub fn recent_terminal_lines(&self, n: usize) -> Vec<String> {
+        self.terminal.recent_lines(n)
     }
 
     /// 打开带 PTY 的交互式 shell，并起一个后台任务把输出推给前端。
@@ -341,9 +395,10 @@ impl SshSession {
 
         let session_id = self.id.clone();
         let link = self.link.clone();
+        let history = self.terminal.clone();
 
         tokio::spawn(async move {
-            pump_output(app, session_id, read_half, output, link).await;
+            pump_output(app, session_id, read_half, output, link, history).await;
         });
 
         Ok(())
@@ -371,39 +426,56 @@ impl SshSession {
         Ok(())
     }
 
-    /// 执行单条命令，等它跑完并收集全部输出。
+    /// 执行单条命令，等它跑完并收集全部输出；超过 [`DEFAULT_EXEC_TIMEOUT`] 视为失败。
     ///
     /// 走独立 channel，不影响交互式 shell。
     pub async fn exec(&self, command: &str) -> SshResult<CommandOutput> {
+        self.exec_timeout(command, DEFAULT_EXEC_TIMEOUT).await
+    }
+
+    /// 与 [`Self::exec`] 相同，但可指定超时；超时后关闭通道并返回错误。
+    pub async fn exec_timeout(&self, command: &str, limit: Duration) -> SshResult<CommandOutput> {
         let mut channel = {
             let handle = self.handle.lock().await;
             handle.channel_open_session().await?
         };
 
-        channel.exec(true, command).await?;
+        let run = async {
+            channel.exec(true, command).await?;
 
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut exit_code = None;
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let mut exit_code = None;
 
-        while let Some(msg) = channel.wait().await {
-            match msg {
-                ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
-                // ext == 1 是 stderr，其余扩展类型按协议保留，忽略即可
-                ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
-                ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
-                ChannelMsg::Eof | ChannelMsg::Close => break,
-                _ => {}
+            while let Some(msg) = channel.wait().await {
+                match msg {
+                    ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
+                    // ext == 1 是 stderr，其余扩展类型按协议保留，忽略即可
+                    ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
+                    ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
+                    ChannelMsg::Eof | ChannelMsg::Close => break,
+                    _ => {}
+                }
+            }
+
+            Ok::<_, SshError>(CommandOutput {
+                // 命令输出按 UTF-8 解，非法字节用替换字符顶掉而不是报错：
+                // 远端可能输出任意编码，为此让整条命令失败不合理
+                stdout: String::from_utf8_lossy(&stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&stderr).into_owned(),
+                exit_code,
+            })
+        };
+        match tokio::time::timeout(limit, run).await {
+            Ok(result) => result,
+            Err(_) => {
+                let _ = channel.close().await;
+                Err(SshError::InvalidInput(format!(
+                    "命令超过 {} 秒仍未结束，已关闭通道；远端进程可能仍在运行",
+                    limit.as_secs()
+                )))
             }
         }
-
-        Ok(CommandOutput {
-            // 命令输出按 UTF-8 解，非法字节用替换字符顶掉而不是报错：
-            // 远端可能输出任意编码，为此让整条命令失败不合理
-            stdout: String::from_utf8_lossy(&stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&stderr).into_owned(),
-            exit_code,
-        })
     }
 
     /// AI uses a separate channel with a deadline and bounded output.
@@ -470,6 +542,78 @@ impl SshSession {
             )
             .await?;
         Ok(channel.into_stream())
+    }
+
+    /// 请求服务器在 address:port 上监听（-R）。端口为 0 时由服务器分配，返回实际端口。
+    ///
+    /// 指定端口时先登记路由再发请求，避免服务器在应答前就转来连接时找不到隧道。
+    pub async fn remote_forward(
+        &self,
+        address: &str,
+        port: u16,
+        sender: tokio::sync::mpsc::Sender<ForwardedChannel>,
+    ) -> SshResult<u16> {
+        if port != 0
+            && !self
+                .remote_forwards
+                .try_insert(address, port as u32, sender.clone())
+        {
+            return Err(SshError::InvalidInput(format!(
+                "{address}:{port} 已有远程转发在运行"
+            )));
+        }
+        // russh 的 Handle 不可克隆且 tcpip_forward 需要 &mut，只能持锁等待应答；
+        // 把超时放进锁内并缩短，避免长时间阻塞同会话的其他通道操作与存活检查
+        let result = {
+            let mut handle = self.handle.lock().await;
+            tokio::time::timeout(
+                std::time::Duration::from_secs(8),
+                handle.tcpip_forward(address, port as u32),
+            )
+            .await
+        };
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => {
+                if port != 0 {
+                    self.remote_forwards.remove(address, port as u32);
+                }
+                return Err(SshError::InvalidInput("等待服务器应答远程转发超时（8 秒）".into()));
+            }
+        };
+        match result {
+            Ok(assigned) => {
+                let bound = if port == 0 { assigned } else { port as u32 };
+                if port == 0 {
+                    self.remote_forwards.insert(address, bound, sender);
+                }
+                u16::try_from(bound)
+                    .map_err(|_| SshError::InvalidInput("服务器返回了无效的监听端口".into()))
+            }
+            Err(error) => {
+                // 只摘本次登记的路由；端口 0 时尚未登记，不能误删
+                if port != 0 {
+                    self.remote_forwards.remove(address, port as u32);
+                }
+                Err(match error {
+                    russh::Error::RequestDenied => SshError::InvalidInput(
+                        "服务器拒绝了远程转发请求（端口被占用或 AllowTcpForwarding 已关闭）".into(),
+                    ),
+                    other => other.into(),
+                })
+            }
+        }
+    }
+
+    /// 撤销远程转发：先摘掉路由，再通知服务器停止监听；会话已断开时忽略。
+    pub async fn cancel_remote_forward(&self, address: &str, port: u16) -> SshResult<()> {
+        self.remote_forwards.remove(address, port as u32);
+        let handle = self.handle.lock().await;
+        if handle.is_closed() {
+            return Ok(());
+        }
+        handle.cancel_tcpip_forward(address, port as u32).await?;
+        Ok(())
     }
 
     pub async fn open_raw_sftp(&self) -> SshResult<russh_sftp::client::RawSftpSession> {
@@ -602,8 +746,10 @@ async fn connect_handle(
     config: &SshConfig,
     previous: Option<&Handle<ClientHandler>>,
     prompter: Option<&Arc<Prompter>>,
+    remote_forwards: RemoteForwardRoutes,
 ) -> SshResult<(Handle<ClientHandler>, Arc<LinkState>)> {
-    let handler = ClientHandler::new(config, prompter.cloned());
+    let mut handler = ClientHandler::new(config, prompter.cloned());
+    handler.remote_forwards = remote_forwards;
     let link = handler.link.clone();
     let clock = handler.clock.clone();
     let connect = async {
@@ -632,7 +778,7 @@ async fn connect_handle(
             },
         })?;
         authenticate(&mut handle, config, &clock, prompter.map(Arc::as_ref)).await?;
-        Ok(handle)
+        Ok::<_, SshError>(handle)
     };
     let handle = timeout_excluding_prompts(
         Duration::from_secs(config.timeout_secs.clamp(1, 300)),
@@ -659,22 +805,16 @@ async fn pump_output(
     mut channel: ChannelReadHalf,
     output: Channel<InvokeResponseBody>,
     link: Arc<LinkState>,
+    history: TerminalHistory,
 ) {
-    let mut exit_code = None;
-
-    while let Some(msg) = channel.wait().await {
-        match msg {
-            ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, ext: 1 } => {
-                // 窗口已关闭时发送失败属正常，继续读到 shell 结束，退出状态仍要上报。
-                if let Err(err) = output.send(InvokeResponseBody::Raw(data.to_vec())) {
-                    log::debug!("推送终端输出失败：{err}");
-                }
-            }
-            ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
-            ChannelMsg::Eof | ChannelMsg::Close => break,
-            _ => {}
+    // 短时间内的多个数据块合并成一次发送，降低 IPC 次数；顺序不变，结束时冲刷剩余数据
+    let exit_code = output::forward_output(&mut channel, &history, |data| {
+        // 窗口已关闭时发送失败属正常，继续读到 shell 结束，退出状态仍要上报。
+        if let Err(err) = output.send(InvokeResponseBody::Raw(data)) {
+            log::debug!("推送终端输出失败：{err}");
         }
-    }
+    })
+    .await;
 
     // 没有退出码且整条连接随之断开：断线原因由会话表的清理任务上报，这里不重复发
     if exit_code.is_none()
@@ -746,10 +886,15 @@ async fn authenticate(
     let password_rejected = saved_password.is_some()
         && !partial_success
         && remaining_methods.contains(&MethodKind::Password);
-    // 密码本身被拒时直接报错，不再弹交互框让用户重输一遍
-    if remaining_methods.contains(&MethodKind::KeyboardInteractive) && !password_rejected {
-        // 服务端只开放键盘交互、或密码已通过还要二次验证时，保存的密码可以回答第一个密码提示
-        return keyboard_interactive(handle, config, saved_password, clock, prompter).await;
+    if remaining_methods.contains(&MethodKind::KeyboardInteractive) {
+        if !password_rejected {
+            // 服务端只开放键盘交互、或密码已通过还要二次验证时，保存的密码可以回答第一个密码提示
+            return keyboard_interactive(handle, config, saved_password, clock, prompter).await;
+        }
+        if prompter.is_some() {
+            // 保存的密码已被拒：转入键盘交互让用户当场重新输入，不再自动回填错误的密码
+            return keyboard_interactive(handle, config, None, clock, prompter).await;
+        }
     }
 
     Err(SshError::AuthRejected {
@@ -947,7 +1092,7 @@ fn validate_config(config: &SshConfig) -> SshResult<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1066,6 +1211,8 @@ mod tests {
                 transfer_slots: Arc::new(Semaphore::new(MAX_TRANSFER_CHANNELS)),
                 metadata_slots: Arc::new(Semaphore::new(MAX_METADATA_CHANNELS)),
                 link,
+                remote_forwards: RemoteForwardRoutes::default(),
+                terminal: TerminalHistory::default(),
             },
             rejected,
         )
@@ -1120,7 +1267,7 @@ mod tests {
         assert!(matches!(pending.await, Err(SshError::SessionNotFound(_))));
     }
 
-    fn config_with(host: &str, username: &str, port: u16) -> SshConfig {
+    pub(crate) fn config_with(host: &str, username: &str, port: u16) -> SshConfig {
         SshConfig {
             jump_hosts: Vec::new(),
             host: host.to_owned(),
@@ -1207,7 +1354,7 @@ mod tests {
         }
     }
     /// 只在本机启动临时 SSH 服务，验证真实 direct-tcpip 链路而不依赖外部服务器。
-    async fn jump_test_server() -> (u16, tokio::task::JoinHandle<()>) {
+    pub(crate) async fn jump_test_server() -> (u16, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let config = Arc::new(russh::server::Config {
@@ -1230,6 +1377,24 @@ mod tests {
                     Some(_) = sessions.join_next(), if !sessions.is_empty() => {}
                 }
             }
+        });
+        (port, task)
+    }
+
+    /// 在本机转发一条到 `target` 的 TCP 连接；abort 返回的任务即模拟远端掉线。
+    /// russh 的 run_stream 内部自己 spawn，直接 abort 测试服务端并不会断开已有连接。
+    pub(crate) async fn dropping_relay(target: u16) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let task = tokio::spawn(async move {
+            let Ok((mut inbound, _)) = listener.accept().await else {
+                return;
+            };
+            let Ok(mut outbound) = tokio::net::TcpStream::connect(("127.0.0.1", target)).await
+            else {
+                return;
+            };
+            let _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound).await;
         });
         (port, task)
     }
@@ -1277,7 +1442,13 @@ mod tests {
                     partial_success: true,
                 }
             } else {
-                russh::server::Auth::reject()
+                // 与 OpenSSH 一致：密码错误后仍列出 password，可继续尝试
+                russh::server::Auth::Reject {
+                    proceed_with_methods: Some(MethodSet::from(
+                        &[MethodKind::Password, MethodKind::KeyboardInteractive][..],
+                    )),
+                    partial_success: false,
+                }
             })
         }
         async fn auth_keyboard_interactive<'a>(
@@ -1292,10 +1463,13 @@ mod tests {
                     instructions: "Enter your one-time code".into(),
                     prompts: vec![("Verification code: ".into(), true)].into(),
                 },
-                Some(mut answers) if answers.next().as_deref() == Some(&b"123456"[..]) => {
-                    russh::server::Auth::Accept
+                Some(mut answers) => {
+                    if answers.next().as_deref() == Some(&b"123456"[..]) {
+                        russh::server::Auth::Accept
+                    } else {
+                        russh::server::Auth::reject()
+                    }
                 }
-                Some(_) => russh::server::Auth::reject(),
             })
         }
     }
@@ -1377,6 +1551,47 @@ mod tests {
             .unwrap();
         let result = authenticate(&mut handle, &config, &PauseClock::default(), Some(&prompter)).await;
         assert!(matches!(result, Err(SshError::UserDeclined(_))));
+    }
+
+    #[tokio::test]
+    async fn rejected_password_falls_back_to_keyboard_interactive() {
+        let config = SshConfig {
+            auth: AuthMethod::Password {
+                password: "wrong".into(),
+            },
+            ..config_with("test", "test", 22)
+        };
+        // 没有前端可问：保持认证失败
+        let mut handler = ClientHandler::new(&config, None);
+        handler.verify_host_key = false;
+        let stream = serve_once(TwoFactorServer).await;
+        let mut handle = client::connect_stream(Arc::new(client::Config::default()), stream, handler)
+            .await
+            .unwrap();
+        let result = authenticate(&mut handle, &config, &PauseClock::default(), None).await;
+        assert!(matches!(result, Err(SshError::AuthRejected { .. })));
+
+        // 有前端：转入键盘交互由用户作答，不再自动回填被拒的密码
+        let (prompter, mut events) = crate::ssh::prompt::tests::test_prompter(Duration::from_secs(5));
+        let responder = prompter.clone();
+        let asked = tokio::spawn(async move {
+            let (event, payload) = events.recv().await.unwrap();
+            assert_eq!(event, prompt::EVENT_AUTH_PROMPT);
+            assert!(responder.respond_auth(
+                payload["requestId"].as_str().unwrap(),
+                Some(vec!["123456".into()])
+            ));
+        });
+        let mut handler = ClientHandler::new(&config, None);
+        handler.verify_host_key = false;
+        let stream = serve_once(TwoFactorServer).await;
+        let mut handle = client::connect_stream(Arc::new(client::Config::default()), stream, handler)
+            .await
+            .unwrap();
+        authenticate(&mut handle, &config, &PauseClock::default(), Some(&prompter))
+            .await
+            .unwrap();
+        asked.await.unwrap();
     }
 
     fn known_hosts_file(name: &str) -> std::path::PathBuf {
@@ -1493,7 +1708,8 @@ mod tests {
 
     #[tokio::test]
     async fn remote_close_marks_the_link_closed_with_a_reason() {
-        let (port, server) = jump_test_server().await;
+        let (target, server) = jump_test_server().await;
+        let (port, relay) = dropping_relay(target).await;
         let config = SshConfig {
             auth: AuthMethod::Password {
                 password: "test".into(),
@@ -1505,8 +1721,9 @@ mod tests {
         let session = SshSession::connect("liveness".into(), config).await.unwrap();
         let link = session.link();
         assert!(!link.is_closed());
-        server.abort();
+        relay.abort();
         assert!(link.wait_closed(Duration::from_secs(5)).await);
+        server.abort();
         // 平台不同可能是正常 EOF 也可能是连接被重置，但一定要有具体原因
         let reason = link.reason();
         assert!(

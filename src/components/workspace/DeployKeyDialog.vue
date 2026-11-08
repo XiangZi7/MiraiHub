@@ -39,7 +39,7 @@ const state = reactive({
   // 部署失败的原因
   error: '',
 })
-const { loading, deploying, connectionId, error } = toRefs(state)
+const { loading, deploying, targets, connectionId, error } = toRefs(state)
 
 // 下拉选项：名称 + user@host:port
 const options = computed(() =>
@@ -105,7 +105,7 @@ async function deploy(): Promise<void> {
     @close="emit('close')"
   >
     <p
-      v-if="!loading && !state.targets.length"
+      v-if="!loading && !targets.length"
       class="text-txt-3 text-[11px]"
     >
       {{ t('还没有已保存的 SSH 连接') }}

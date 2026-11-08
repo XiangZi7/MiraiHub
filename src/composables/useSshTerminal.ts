@@ -115,9 +115,12 @@ export function useSshTerminal() {
 
         if (payload.status === 'disconnected') {
           state.error = payload.reason ?? ''
+          // 没有退出码时把断线原因（远端关闭连接 / 网络超时 / 认证失败）写进提示行
           const suffix =
             payload.exitCode === null
-              ? ''
+              ? payload.reason
+                ? i18n.global.t('（{value0}）', { value0: payload.reason })
+                : ''
               : i18n.global.t('（退出码 {value0}）', {
                   value0: payload.exitCode,
                 })

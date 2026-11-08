@@ -63,6 +63,10 @@ import {
   useGridSelection,
 } from '@/composables/useGridSelection'
 import {
+  toStatusSelection,
+  usePublishDatabaseSelection,
+} from '@/composables/useDatabaseStatusBar'
+import {
   formatGridSelection,
   isBinaryValue,
   isNumericType,
@@ -346,6 +350,8 @@ const selection = useGridSelection({
   edit: position => openCell(position.row, position.column),
   clearCells: range => setRangeNull(range),
 })
+// 把多选统计同步到数据库底部状态栏
+usePublishDatabaseSelection(() => toStatusSelection(selection.stats.value))
 const canInsert = computed(() => state.detail?.kind === 'table')
 const canEditExisting = computed(
   () => canInsert.value && Boolean(state.detail?.primaryKey.length)

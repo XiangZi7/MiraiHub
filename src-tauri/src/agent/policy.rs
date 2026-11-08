@@ -77,6 +77,11 @@ pub enum Action {
         lines: usize,
     },
     ListTunnels,
+    /// 读取交互式终端最近的纯文本输出；session_id 为空时用当前会话
+    ReadTerminal {
+        session_id: Option<String>,
+        lines: usize,
+    },
     HostsStatus {
         sessions: Vec<String>,
     },
@@ -199,6 +204,10 @@ impl Action {
                 "读取日志尾部，最多 1000 行".into(),
             ),
             Self::ListTunnels => ("list_tunnels".into(), "列出本机已配置的 SSH 隧道".into()),
+            Self::ReadTerminal { session_id, lines } => (
+                json!({"session_id": session_id, "lines": lines}).to_string(),
+                "读取终端最近显示的输出文本".into(),
+            ),
             Self::HostsStatus { sessions } => (
                 json!({"sessions": sessions}).to_string(),
                 "比较选定已连接主机的固定状态信息".into(),
@@ -283,6 +292,7 @@ impl Action {
             Self::Explain { .. } => "分析执行计划",
             Self::TailLog { .. } => "读取日志尾部",
             Self::ListTunnels => "列出 SSH 隧道",
+            Self::ReadTerminal { .. } => "读取终端输出",
             Self::HostsStatus { .. } => "比较服务器状态",
             Self::AttachmentList { .. } => "列出聊天附件",
             Self::AttachmentRead { .. } => "读取聊天附件",
@@ -404,6 +414,19 @@ struct TailLog {
     path: String,
     lines: usize,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReadTerminal {
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default = "default_terminal_lines")]
+    lines: usize,
+}
+fn default_terminal_lines() -> usize {
+    80
+}
+/// read_terminal 单次最多返回的行数。
+pub const MAX_TERMINAL_LINES: usize = 500;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HostsStatus {
@@ -548,6 +571,26 @@ pub fn classify(
         ("ssh", "list_tunnels") => {
             let _: std::collections::HashMap<String, String> = parse(args)?;
             Ok(Action::ListTunnels)
+        }
+        ("ssh", "read_terminal") => {
+            let a: ReadTerminal = parse(args)?;
+            let session_id = a.session_id.filter(|id| !id.trim().is_empty());
+            if let Some(id) = &session_id {
+                if id.len() > 128
+                    || !id
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+                {
+                    return Err(AppError::invalid_input("终端会话标识无效"));
+                }
+            }
+            if a.lines == 0 {
+                return Err(AppError::invalid_input("终端行数无效"));
+            }
+            Ok(Action::ReadTerminal {
+                session_id,
+                lines: a.lines.min(MAX_TERMINAL_LINES),
+            })
         }
         ("ssh", "hosts_status") => {
             let a: HostsStatus = parse(args)?;
@@ -1018,6 +1061,39 @@ mod tests {
             );
             assert!(ApprovalMode::Ask.requires_approval(&action));
         }
+    }
+    #[test]
+    fn read_terminal_defaults_and_bounds() {
+        let registry = crate::agent::mcp::Registry::build("ssh", &[]);
+        let action = classify(&registry, "ssh", "read_terminal", "{}").unwrap();
+        assert!(matches!(&action, Action::ReadTerminal { session_id: None, lines: 80 }));
+        assert!(!ApprovalMode::Auto.requires_approval(&action));
+        assert!(ApprovalMode::Ask.requires_approval(&action));
+        assert_eq!(action.risk(), Risk::Low);
+        let action = classify(
+            &registry,
+            "ssh",
+            "read_terminal",
+            r#"{"session_id":"abc-1","lines":9000}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(&action, Action::ReadTerminal { session_id: Some(id), lines: 500 } if id == "abc-1")
+        );
+        for args in [
+            r#"{"lines":0}"#,
+            r#"{"session_id":"../x"}"#,
+            r#"{"lines":10,"path":"/etc"}"#,
+        ] {
+            assert!(classify(&registry, "ssh", "read_terminal", args).is_err(), "{args}");
+        }
+        let database = crate::agent::mcp::Registry::build("database", &[]);
+        assert!(classify(&database, "database", "read_terminal", "{}").is_err());
+        assert!(definitions("ssh")
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tool| tool["function"]["name"] == "read_terminal"));
     }
     #[test]
     fn tools_fail_closed() {

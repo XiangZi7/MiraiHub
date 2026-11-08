@@ -236,3 +236,40 @@ export interface SshRouteProgress {
   endpoint: string
   status: 'connecting' | 'connected' | 'failed'
 }
+
+/** ssh://host-key-prompt：主机密钥未知或已变化，等待用户确认 */
+export interface SshHostKeyPrompt {
+  requestId: string
+  host: string
+  port: number
+  algorithm: string
+  /** SHA256:... 形式的指纹 */
+  fingerprint: string
+  /** unknown 首次见到；changed 与 known_hosts 记录不符（可能被劫持） */
+  status: 'unknown' | 'changed'
+  /** changed 时 known_hosts 里旧密钥的指纹 */
+  oldFingerprint?: string
+}
+
+/** 键盘交互认证中的一个输入项；echo=false 表示密码 / 验证码类输入 */
+export interface SshAuthPromptField {
+  prompt: string
+  echo: boolean
+}
+
+/** ssh://auth-prompt：键盘交互 / 二次验证，等待用户逐项填写 */
+export interface SshAuthPrompt {
+  requestId: string
+  host: string
+  port: number
+  username: string
+  name: string
+  instructions: string
+  prompts: SshAuthPromptField[]
+}
+
+/**
+ * 隧道类型，与 Rust `ssh::tunnels::TunnelKind` 对应。
+ * local = -L 本地转发，remote = -R 远程转发，dynamic = -D 动态 SOCKS5；旧数据缺省按 local。
+ */
+export type SshTunnelKind = 'local' | 'remote' | 'dynamic'

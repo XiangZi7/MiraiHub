@@ -179,4 +179,39 @@ export const en: Record<string, string> = {
   '触发级别': 'Level',
   '触发语句': 'Trigger statement',
   '重做 (Ctrl+Y)': 'Redo (Ctrl+Y)',
+  'AI 生成表结构': 'AI: generate table',
+  'AI 补全注释': 'AI: fill in comments',
+  'AI 审查设计': 'AI: review design',
+  'AI 辅助': 'AI assist',
+  '存在错误': 'Has errors',
+  'AI 返回的内容无法解析': 'Could not parse the AI response',
+  '请先描述要创建的表': 'Describe the table first',
+  'AI 请求失败': 'AI request failed',
+  '已应用 AI 生成的表结构，可撤销':
+    'Applied the AI-generated structure. You can undo it.',
+  '已补全 {value0} 处注释': 'Filled in {value0} comments',
+  '用自然语言描述表的用途和字段，生成后先预览再应用。':
+    'Describe the table and its columns in plain language. Review the result before applying it.',
+  '只会填写当前为空的表备注和字段备注。':
+    'Only empty table and column comments are filled in.',
+  '从命名、类型选择、索引和范式角度检查当前设计。':
+    'Checks naming, type choices, indexes and normalization.',
+  '表结构描述': 'Table description',
+  '例如：订单表，包含用户、金额、状态、下单时间，按用户和状态查询':
+    'e.g. An orders table with user, amount, status and order time, queried by user and status',
+  'AI 正在分析…': 'AI is working…',
+  '属性': 'Attributes',
+  '应用后将用生成的字段替换当前字段列表，可使用撤销恢复。':
+    'Applying replaces the current column list with the generated one. You can undo it.',
+  '没有需要补全的注释': 'No comments need filling in',
+  '未发现明显问题': 'No obvious problems found',
+  '问题': 'Problem',
+  '建议': 'Suggestion',
+  '关闭': 'Close',
+  '应用到设计器': 'Apply to designer',
+  '填入注释': 'Fill in comments',
+  '点击工具栏「添加字段」，或使用 AI 生成表结构':
+    'Click “Add column” in the toolbar, or let AI generate the table',
+  '字段名': 'Column',
+  '备注': 'Comment',
 }

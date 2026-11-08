@@ -228,15 +228,15 @@ async function linkJumpHosts(
   return unresolved
 }
 
-// 导入勾选的主机，完成后提示新增、跳过与未能关联跳板的数量
+// 导入勾选的主机，完成后提示新增、跳过与未能关联跳板的数量；中途失败时如实报告已导入数量并刷新重复标注
 async function importSelected(): Promise<void> {
   if (!state.preview || state.importing || !state.selected.length) return
   state.importing = true
+  const created: { host: OpenSshHost; connection: SavedConnection }[] = []
   try {
     const targets = state.preview.hosts.filter(host =>
       state.selected.includes(host.alias)
     )
-    const created: { host: OpenSshHost; connection: SavedConnection }[] = []
     for (const host of targets) {
       created.push({ host, connection: await connections.create(toNewConnection(host)) })
     }
@@ -261,7 +261,18 @@ async function importSelected(): Promise<void> {
     emit('imported', created.length)
     emit('close')
   } catch (caught) {
-    toast.error({ title: t('导入失败'), description: errorMessage(caught) })
+    toast.error({
+      title: created.length
+        ? t('导入中断，已导入 {value0} 条连接', { value0: created.length })
+        : t('导入失败'),
+      description: errorMessage(caught),
+    })
+    if (created.length) {
+      emit('imported', created.length)
+      // 重新读取，让刚导入的主机显示为已存在，避免重试时重复导入
+      state.importing = false
+      await load()
+    }
   } finally {
     state.importing = false
   }

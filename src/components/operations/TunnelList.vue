@@ -6,6 +6,7 @@ import type { Tunnel } from '@/api/operations'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import { cn } from '@/utils/cn'
 
 const { t } = useI18n()
 
@@ -18,6 +19,41 @@ const titleId = useId()
 const runningCount = computed(
   () => props.tunnels.filter(tunnel => tunnel.status === 'running').length
 )
+// 拼接 host:port，IPv6 地址加方括号
+function address(host: string, port: number): string {
+  return `${host.includes(':') ? `[${host}]` : host}:${port}`
+}
+// 生成列表行的类型徽标、路由摘要与复制提示，旧记录缺省按本地转发处理
+function describe(row: Tunnel) {
+  const bind = address(row.bindHost, row.bindPort)
+  const target = address(row.targetHost, row.targetPort)
+  if (row.kind === 'dynamic')
+    return {
+      badge: 'D',
+      title: t('动态转发'),
+      tone: 'border-cyan/40 bg-cyan/10 text-cyan',
+      from: `SOCKS5 ${bind}`,
+      to: '',
+      copy: t('复制 SOCKS5 代理地址'),
+    }
+  if (row.kind === 'remote')
+    return {
+      badge: 'R',
+      title: t('远程转发'),
+      tone: 'border-amber/40 bg-amber/10 text-amber',
+      from: `${t('远端')} ${bind}`,
+      to: `${t('本机')} ${target}`,
+      copy: t('复制远端监听地址'),
+    }
+  return {
+    badge: 'L',
+    title: t('本地转发'),
+    tone: 'border-violet/40 bg-violet/10 text-violet',
+    from: bind,
+    to: target,
+    copy: t('复制本地连接地址'),
+  }
+}
 </script>
 
 <template>
@@ -59,13 +95,26 @@ const runningCount = computed(
       >
         <div class="tunnel-row-content">
           <div class="tunnel-row-route">
-            <code>{{ row.bindHost }}:{{ row.bindPort }}</code>
-            <AppIcon
-              name="lucide:arrow-right"
-              :size="14"
-              aria-hidden="true"
-            />
-            <code>{{ row.targetHost }}:{{ row.targetPort }}</code>
+            <abbr
+              :title="describe(row).title"
+              :aria-label="describe(row).title"
+              :class="
+                cn(
+                  'inline-flex size-5 shrink-0 items-center justify-center rounded-[5px] border font-mono text-[10px] font-semibold no-underline',
+                  describe(row).tone
+                )
+              "
+              >{{ describe(row).badge }}</abbr
+            >
+            <code>{{ describe(row).from }}</code>
+            <template v-if="describe(row).to">
+              <AppIcon
+                name="lucide:arrow-right"
+                :size="14"
+                aria-hidden="true"
+              />
+              <code>{{ describe(row).to }}</code>
+            </template>
           </div>
           <p class="tunnel-row-endpoint">
             {{ t('tunnel.via', { endpoint: row.endpoint }) }}
@@ -93,7 +142,7 @@ const runningCount = computed(
         <div class="tunnel-row-actions">
           <IconButton
             icon="lucide:copy"
-            :title="t('复制本地连接地址')"
+            :title="describe(row).copy"
             :size="14"
             @click="emit('copy', row)"
           />

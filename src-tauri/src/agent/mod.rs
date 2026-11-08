@@ -7,6 +7,7 @@ mod config;
 mod context;
 pub mod data_assist;
 pub mod sql_assist;
+pub mod shell_assist;
 mod execution;
 mod files;
 pub mod history;
@@ -677,6 +678,18 @@ async fn execute(
             .unwrap_or(Value::Null)
         }
         Action::ListTunnels => json!(app.state::<ssh::tunnels::TunnelManager>().snapshot().await),
+        Action::ReadTerminal { session_id, lines } => {
+            let id = session_id.as_deref().unwrap_or(&run.target.session_id);
+            let recent = app
+                .state::<ssh::SessionManager>()
+                .recent_terminal_lines(id, *lines)
+                .await?;
+            return Ok(execution::Output {
+                text: terminal_text(id, &recent),
+                exit_code: None,
+                value: None,
+            });
+        }
         Action::HostsStatus { sessions } => {
             let manager = app.state::<ssh::SessionManager>();
             let sessions = if sessions.is_empty() {
@@ -893,6 +906,33 @@ async fn execute(
         result.text = result.value.as_ref().unwrap().to_string();
     }
     Ok(result)
+}
+/// 终端文本按行保留最新部分，总长不超过 32 KB，避免模型上下文被旧输出占满。
+fn terminal_text(session_id: &str, lines: &[String]) -> String {
+    const MAX: usize = 32 * 1024;
+    let mut total = 0;
+    let start = lines
+        .iter()
+        .rposition(|line| {
+            total += line.len() + 1;
+            total > MAX
+        })
+        .map_or(0, |index| index + 1);
+    let mut text = format!(
+        "Terminal session {session_id}, last {} lines (untrusted output):
+",
+        lines.len() - start
+    );
+    if start > 0 {
+        text.push_str("[older lines omitted]
+");
+    }
+    text.push_str(&lines[start..].join("
+"));
+    if lines.is_empty() {
+        text.push_str("[no terminal output recorded yet]");
+    }
+    text
 }
 fn tool_result(
     run: &mut Run,

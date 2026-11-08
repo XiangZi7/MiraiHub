@@ -517,7 +517,7 @@ const typeahead = { text: '', at: 0 }
 /** 当前可见的树节点（排除正在收起过渡中的分组），按 DOM 顺序。 */
 function treeItems(): HTMLElement[] {
   const root = treeRef.value
-  if (!root) return []
+  if (!root || typeof root.querySelectorAll !== 'function') return []
   return [...root.querySelectorAll<HTMLElement>('[role="treeitem"]')].filter(
     item => !item.closest('[data-tree-collapsed]') && !item.matches(':disabled')
   )
@@ -526,7 +526,7 @@ function treeItems(): HTMLElement[] {
 /** 漫游 tabindex：整棵树只有一个可 Tab 进入的节点。 */
 function focusItem(item: HTMLElement | undefined): void {
   if (!item) return
-  const focusable = treeRef.value?.querySelectorAll<HTMLElement>(
+  const focusable = treeRef.value?.querySelectorAll?.<HTMLElement>(
     '[role="treeitem"][tabindex="0"]'
   )
   for (const other of focusable ?? []) if (other !== item) other.tabIndex = -1

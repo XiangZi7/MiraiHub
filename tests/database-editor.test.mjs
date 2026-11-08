@@ -44,12 +44,18 @@ const vueUrl = import.meta.resolve('vue')
 const load = sourceLoader(
   {
     '@/api/database': dataModule(
-      `export async function tableDetail(){ return structuredClone(globalThis.__databaseEditorTest.detail) }; export async function execute(...args){ globalThis.__databaseEditorTest.calls.push(args); return { statements: [] } }; export function errorMessage(e){return String(e)}; export async function completionColumns(...args){ return globalThis.__databaseEditorTest.complete(...args) }`
+      `export async function tableDetail(){ return structuredClone(globalThis.__databaseEditorTest.detail) }; export async function execute(...args){ globalThis.__databaseEditorTest.calls.push(args); return { statements: [] } }; export function errorMessage(e){return String(e)}; export async function completionColumns(...args){ return globalThis.__databaseEditorTest.complete(...args) }; export async function completionTableColumns(){ return [] }; export async function executeDdl(id, statements){ globalThis.__databaseEditorTest.calls.push([id, statements.join(' ')]); return { executed: statements.length } }`
     ),
     '@/composables/useToast': dataModule(
       'export const toast = { success(){}, warning(){}, error(){}, info(){} }'
     ),
     '@/utils/clipboard': dataModule('export async function copyText(){}'),
+    '@/components/ui/AppDialog.vue': dataModule(
+      `import { h } from '${vueUrl}'; export default { setup(_props,{slots}){return ()=>h('dialog',{},[slots.default?.(),slots.footer?.()])} }`
+    ),
+    '@/stores/settings': dataModule(
+      'export const useSettingsStore = () => ({ values: new Proxy({}, { get: () => "" }) })'
+    ),
     '@/components/ui/AppInput.vue': dataModule(
       `import { h } from '${vueUrl}'; export default { props:['modelValue'], emits:['update:modelValue'], setup(props,{attrs,emit}){return ()=>h('input',{...attrs,value:props.modelValue,onChange:value=>emit('update:modelValue',value)})} }`
     ),
@@ -170,6 +176,12 @@ test('打开设计表不标脏；无效编辑也提示，改回原值或保存�
   await settle()
   assert.equal(save().props.disabled, false)
   await save().props.onClick()
+  await settle()
+  // 保存前弹出变更确认，点确认对话框里的保存按钮才执行。
+  const confirm = all(root).filter(
+    el => el.type === 'button' && textOf(el) === '保存修改'
+  )
+  await confirm.at(-1).props.onClick()
   await settle()
   assert.equal(dirty.at(-1), false)
   assert.match(calls.at(-1)[1], /RENAME TABLE/)

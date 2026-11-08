@@ -37,6 +37,7 @@ pub use transfers::TransferManager;
 
 pub mod batch;
 pub mod editor;
+pub mod socks5;
 pub mod tunnels;
 
 pub mod workspace_files;
@@ -47,3 +48,4 @@ pub mod prompt;
 
 pub mod key_deploy;
 pub mod openssh_config;
+pub mod output;

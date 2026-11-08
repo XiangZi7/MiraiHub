@@ -66,6 +66,7 @@ impl LinkState {
         self.closed.send_replace(true);
     }
 
+    #[cfg(test)]
     pub fn is_closed(&self) -> bool {
         *self.closed.borrow()
     }

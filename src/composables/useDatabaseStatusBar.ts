@@ -49,3 +49,13 @@ export function usePublishDatabaseSelection(
     if (published && target.value === published) target.value = null
   })
 }
+
+/** 把网格选区统计（useGridSelection().stats）转换成状态栏格式；没有数值单元格时不显示合计/平均。 */
+export function toStatusSelection(
+  stats: { cells: number; numbers: number; sum: number; average: number } | null
+): DatabaseSelectionStats | null {
+  if (!stats) return null
+  return stats.numbers
+    ? { cells: stats.cells, sum: stats.sum, average: stats.average }
+    : { cells: stats.cells }
+}

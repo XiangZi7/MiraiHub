@@ -18,6 +18,7 @@ import { formatDate, formatRelative } from '@/utils/time'
 import { cn } from '@/utils/cn'
 import { scheduleClipboardClear } from '@/utils/clipboard'
 import GenerateKeyDialog from './GenerateKeyDialog.vue'
+import DeployKeyDialog from './DeployKeyDialog.vue'
 
 const { t } = useI18n()
 
@@ -47,6 +48,8 @@ onMounted(refreshKeys)
 // 生成密钥对话框是否打开
 const generateOpen = shallowRef(false)
 const pendingDelete = shallowRef<{ id: string; label: string } | null>(null)
+// 待部署到服务器的密钥；非空时打开部署对话框
+const pendingDeploy = shallowRef<{ id: string; label: string } | null>(null)
 // 拿到对话框实例，生成失败时把错误回传给它显示在表单里
 const dialogRef =
   useTemplateRef<InstanceType<typeof GenerateKeyDialog>>('generateDialog')
@@ -95,6 +98,11 @@ async function copyPublicKey(): Promise<void> {
   await publicKeyClip.copy(current.value.publicKey)
   scheduleClipboardClear(current.value.publicKey)
   toast.success(t('SSH 公钥已复制'))
+}
+
+// 打开“部署到服务器”对话框（ssh-copy-id）
+function requestDeploy(keyId: string, label: string): void {
+  pendingDeploy.value = { id: keyId, label }
 }
 
 function makeDefault(path: string): void {
@@ -239,6 +247,12 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
           {{ t('Default') }}
         </span>
         <div class="flex-1" />
+        <IconButton
+          icon="lucide:server-cog"
+          :size="14"
+          :title="t('部署到服务器')"
+          @click="requestDeploy(current.id, current.label)"
+        />
         <IconButton
           icon="lucide:star"
           :size="14"
@@ -402,6 +416,12 @@ async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
       ref="generateDialog"
       @close="generateOpen = false"
       @submit="handleGenerate"
+    />
+    <DeployKeyDialog
+      v-if="pendingDeploy"
+      :key-id="pendingDeploy.id"
+      :key-label="pendingDeploy.label"
+      @close="pendingDeploy = null"
     />
     <AppConfirmDialog
       :open="Boolean(pendingDelete)"

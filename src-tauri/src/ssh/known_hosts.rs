@@ -74,8 +74,14 @@ pub fn replace(host: &str, port: u16, key: &PublicKey, path: &Path) -> Result<()
         }
         // 先写临时文件再改名，写一半崩溃也不会把整份 known_hosts 弄坏
         let temp = path.with_extension("miraihub-tmp");
-        std::fs::write(&temp, kept)?;
-        std::fs::rename(&temp, path)?;
+        let written = std::fs::write(&temp, kept)
+            // 沿用原文件权限（Unix 上通常是 0600/0644），避免改名后变成默认权限
+            .and_then(|()| std::fs::set_permissions(&temp, std::fs::metadata(path)?.permissions()))
+            .and_then(|()| std::fs::rename(&temp, path));
+        if let Err(error) = written {
+            let _ = std::fs::remove_file(&temp);
+            return Err(error.into());
+        }
     }
     learn_known_hosts_path(host, port, key, path)
 }

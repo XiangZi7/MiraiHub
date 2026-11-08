@@ -4,6 +4,10 @@ import { createRenderer, h, markRaw, nextTick, shallowRef } from 'vue'
 import { createPinia } from 'pinia'
 import { sourceLoader, dataModule } from './helpers/source-module.mjs'
 
+// 对象树展开过渡依赖动画帧，测试环境用定时器模拟。
+globalThis.requestAnimationFrame ??= callback => setTimeout(callback, 0)
+globalThis.cancelAnimationFrame ??= id => clearTimeout(id)
+
 const api = dataModule(`
   export const mock = { calls: [], handlers: {} }
   const call = async (name, args) => {
@@ -85,6 +89,7 @@ const load = sourceLoader(
     'src/components/ui/IconButton.vue',
     'src/components/workspace/database/DatabaseObjectTree.vue',
     'src/components/workspace/database/DatabaseObjectCategory.vue',
+    'src/components/workspace/database/DatabaseTreeCollapse.vue',
     'src/components/workspace/database/DatabaseTableOverview.vue',
     'src/components/workspace/database/DatabaseConnectingSkeleton.vue',
     'src/components/ui/AppButton.vue',

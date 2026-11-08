@@ -28,6 +28,8 @@ pub async fn ssh_connect(
     config: SshConfig,
     request_id: Option<String>,
 ) -> AppResult<String> {
+    // 让主机密钥确认、二次验证能弹到主窗口，也供死会话清理推送断线原因
+    super::prompt::install(&app);
     Ok(if let Some(request_id) = request_id {
         manager.connect_report(config, app, request_id).await?
     } else {
@@ -95,15 +97,19 @@ pub async fn ssh_resize(
     Ok(())
 }
 
-/// 执行单条命令并返回结果。
+/// 执行单条命令并返回结果；`timeout_secs` 缺省为 30 秒，最长 1 小时。
 #[tauri::command]
 pub async fn ssh_exec(
     manager: State<'_, SessionManager>,
     session_id: String,
     command: String,
+    timeout_secs: Option<u64>,
 ) -> AppResult<CommandOutput> {
     let session = manager.get(&session_id).await?;
-    Ok(session.exec(&command).await?)
+    let limit = timeout_secs
+        .map(|secs| std::time::Duration::from_secs(secs.clamp(1, 3600)))
+        .unwrap_or(super::session::DEFAULT_EXEC_TIMEOUT);
+    Ok(session.exec_timeout(&command, limit).await?)
 }
 
 /// 根据当前输入行返回命令与远端路径候选。

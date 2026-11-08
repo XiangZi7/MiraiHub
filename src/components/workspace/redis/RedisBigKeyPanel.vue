@@ -56,7 +56,7 @@ async function start() {
       }
     )
     // 极小的库可能在返回任务 ID 前就已扫完。
-    if (!state.progress?.done) state.job = id
+    if (!(state.progress as RedisBigKeyProgress | null)?.done) state.job = id
   } catch (error) {
     toast.error(redis.errorMessage(error))
   }

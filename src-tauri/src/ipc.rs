@@ -54,6 +54,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         agent::data_assist::ai_describe_tables,
         agent::sql_assist::ai_sql_assist,
         agent::sql_assist::ai_sql_assist_cancel,
+        agent::shell_assist::ai_shell_command,
         agent::ai_list_mcp_servers,
         agent::ai_save_mcp_server,
         agent::ai_delete_mcp_server,
@@ -96,6 +97,8 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ssh::commands::ssh_connect,
         ssh::commands::ssh_disconnect,
         ssh::commands::ssh_list_sessions,
+        ssh::prompt::ssh_host_key_respond,
+        ssh::prompt::ssh_auth_prompt_respond,
         // ---------- SSH：终端 ----------
         ssh::commands::ssh_open_shell,
         ssh::commands::ssh_write,

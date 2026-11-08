@@ -6,11 +6,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use tauri::Manager;
 use tokio::sync::RwLock;
 
 use super::error::{SshError, SshResult};
+use super::events::{emit_status, StatusEvent};
 use super::models::{SessionInfo, SessionStatus, SshConfig};
+use super::prompt;
 use super::session::SshSession;
+use super::tunnels::TunnelManager;
 
 /// 全局会话管理器。
 ///
@@ -18,7 +22,8 @@ use super::session::SshSession;
 /// 且查询期间不该挡住其他会话的读操作。
 #[derive(Default)]
 pub struct SessionManager {
-    sessions: RwLock<HashMap<String, SessionEntry>>,
+    /// Arc：死会话清理任务也要能摘除表项
+    sessions: Arc<RwLock<HashMap<String, SessionEntry>>>,
 }
 
 struct SessionEntry {
@@ -35,14 +40,7 @@ impl SessionManager {
     pub async fn connect(&self, config: SshConfig) -> SshResult<String> {
         let id = new_session_id();
         let session = SshSession::connect(id.clone(), config).await?;
-
-        let entry = SessionEntry {
-            session: Arc::new(session),
-            connected_at: now_millis(),
-        };
-
-        self.sessions.write().await.insert(id.clone(), entry);
-
+        self.register(id.clone(), session).await;
         Ok(id)
     }
 
@@ -56,14 +54,44 @@ impl SessionManager {
         let id = new_session_id();
         let session =
             SshSession::connect_report(id.clone(), config, Some((app, request_id))).await?;
+        self.register(id.clone(), session).await;
+        Ok(id)
+    }
+
+    /// 登记会话，并盯住底层连接：心跳超时、远端关闭等意外断开时
+    /// 把它移出会话表、释放通道额度、停掉隧道，再把原因推给前端。
+    async fn register(&self, id: String, session: SshSession) {
+        let link = session.link();
+        let session = Arc::new(session);
+        let watched = Arc::downgrade(&session);
         self.sessions.write().await.insert(
             id.clone(),
             SessionEntry {
-                session: Arc::new(session),
+                session,
                 connected_at: now_millis(),
             },
         );
-        Ok(id)
+
+        let sessions = Arc::clone(&self.sessions);
+        tokio::spawn(async move {
+            link.closed().await;
+            let Some(entry) = remove_if_same(&sessions, &id, &watched).await else {
+                // 主动断开时表项早已移除，无需再报
+                return;
+            };
+            if link.is_manual() {
+                return;
+            }
+            let reason = link.reason();
+            log::warn!("会话 {id} 意外断开：{reason}");
+            entry.session.abandon().await;
+            if let Some(app) = prompt::app_handle() {
+                if let Some(tunnels) = app.try_state::<TunnelManager>() {
+                    tunnels.stop_session(&id).await;
+                }
+                emit_status(&app, StatusEvent::failed(&id, reason));
+            }
+        });
     }
 
     /// 按 id 取会话。
@@ -77,6 +105,11 @@ impl SessionManager {
             .get(id)
             .map(|entry| Arc::clone(&entry.session))
             .ok_or_else(|| SshError::SessionNotFound(id.to_owned()))
+    }
+
+    /// 会话交互式终端最近 n 行纯文本输出（已去除 ANSI 控制序列），从旧到新。
+    pub async fn recent_terminal_lines(&self, id: &str, n: usize) -> SshResult<Vec<String>> {
+        Ok(self.get(id).await?.recent_terminal_lines(n))
     }
 
     /// 断开并移除会话。
@@ -138,6 +171,23 @@ impl SessionManager {
     }
 }
 
+/// 只移除仍是同一个会话的表项，防止误删同 id 的新会话。
+async fn remove_if_same(
+    sessions: &RwLock<HashMap<String, SessionEntry>>,
+    id: &str,
+    watched: &std::sync::Weak<SshSession>,
+) -> Option<SessionEntry> {
+    let mut table = sessions.write().await;
+    let same = table
+        .get(id)
+        .is_some_and(|entry| std::ptr::eq(Arc::as_ptr(&entry.session), watched.as_ptr()));
+    if same {
+        table.remove(id)
+    } else {
+        None
+    }
+}
+
 /// 生成会话 id。
 ///
 /// 用「毫秒时间戳 + 进程内自增序号」而不是引入 uuid 依赖：
@@ -181,5 +231,46 @@ mod tests {
             Err(other) => panic!("期望 SessionNotFound，实际是 {other}"),
             Ok(_) => panic!("空管理器不该返回会话"),
         }
+    }
+
+    fn password_config(port: u16) -> SshConfig {
+        SshConfig {
+            auth: crate::ssh::models::AuthMethod::Password {
+                password: "test".into(),
+            },
+            verify_host_key: false,
+            timeout_secs: 3,
+            ..crate::ssh::session::tests::config_with("127.0.0.1", "test", port)
+        }
+    }
+
+    #[tokio::test]
+    async fn dead_sessions_leave_the_table() {
+        let (target, server) = crate::ssh::session::tests::jump_test_server().await;
+        let (port, relay) = crate::ssh::session::tests::dropping_relay(target).await;
+        let manager = SessionManager::new();
+        let id = manager.connect(password_config(port)).await.unwrap();
+        assert!(manager.get(&id).await.is_ok());
+
+        // 模拟远端掉线
+        relay.abort();
+        let removed = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while manager.get(&id).await.is_ok() {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+        assert!(removed.is_ok(), "远端断开后会话仍留在表里");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn manual_disconnect_still_removes_the_session() {
+        let (port, server) = crate::ssh::session::tests::jump_test_server().await;
+        let manager = SessionManager::new();
+        let id = manager.connect(password_config(port)).await.unwrap();
+        manager.disconnect(&id).await.unwrap();
+        assert!(manager.get(&id).await.is_err());
+        server.abort();
     }
 }

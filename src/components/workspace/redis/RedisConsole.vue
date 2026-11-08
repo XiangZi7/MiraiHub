@@ -47,8 +47,73 @@ const splitStyle = computed(() => ({
     'fr)',
 }))
 const lines = computed(() => command.value.split('\n').length)
+// 常用 Redis 命令名，用于首词补全
+const COMMANDS = (
+  'APPEND AUTH BGSAVE BITCOUNT BLPOP BRPOP CLIENT CONFIG COPY DBSIZE DECR DECRBY DEL DUMP ECHO EVAL EVALSHA EXISTS EXPIRE EXPIREAT EXPIRETIME ' +
+  'FLUSHALL FLUSHDB GEOADD GEODIST GEOPOS GEOSEARCH GET GETDEL GETEX GETRANGE GETSET HDEL HEXISTS HGET HGETALL HINCRBY HINCRBYFLOAT HKEYS HLEN ' +
+  'HMGET HMSET HSCAN HSET HSETNX HSTRLEN HVALS INCR INCRBY INCRBYFLOAT INFO KEYS LASTSAVE LINDEX LINSERT LLEN LMOVE LPOP LPOS LPUSH LPUSHX ' +
+  'LRANGE LREM LSET LTRIM MEMORY MGET MONITOR MOVE MSET MSETNX OBJECT PERSIST PEXPIRE PFADD PFCOUNT PFMERGE PING PSETEX PTTL PUBLISH PUBSUB ' +
+  'RANDOMKEY RENAME RENAMENX RPOP RPUSH RPUSHX SADD SAVE SCAN SCARD SCRIPT SDIFF SELECT SET SETEX SETNX SETRANGE SINTER SISMEMBER SLOWLOG ' +
+  'SMEMBERS SMOVE SPOP SRANDMEMBER SREM SSCAN STRLEN SUNION TIME TOUCH TTL TYPE UNLINK XACK XADD XDEL XGROUP XINFO XLEN XRANGE XREAD ' +
+  'XREVRANGE XTRIM ZADD ZCARD ZCOUNT ZINCRBY ZPOPMAX ZPOPMIN ZRANGE ZRANGEBYSCORE ZRANK ZREM ZREVRANGE ZSCAN ZSCORE'
+).split(' ')
+// 命令历史（最近 100 条、去重），持久化到本地存储
+const history = useStorage<string[]>('miraihub:redis-console-history', [])
+// 上/下键浏览历史时的当前位置，-1 表示未在浏览
+let historyIndex = -1
+// 单行输入首词时的命令补全候选
+const suggestions = computed(() => {
+  const text = command.value
+  if (text.includes('\n') || /\s/.test(text.trimStart())) return []
+  const word = text.trim().toUpperCase()
+  if (!word) return []
+  return COMMANDS.filter(name => name.startsWith(word) && name !== word).slice(0, 8)
+})
+// 用补全候选替换首词并聚焦编辑器
+function applySuggestion(name: string) {
+  command.value = name + ' '
+  void nextTick(() => editor.value?.focus())
+}
+// Tab 键接受第一个补全候选
+function onTab(event: KeyboardEvent) {
+  const first = suggestions.value[0]
+  if (!first) return
+  event.preventDefault()
+  applySuggestion(first)
+}
+// 单行时用上/下键切换历史命令
+function onHistoryKey(event: KeyboardEvent, step: number) {
+  if (command.value.includes('\n') || !history.value.length) return
+  const next = historyIndex + step
+  if (next < -1 || next >= history.value.length) return
+  event.preventDefault()
+  historyIndex = next
+  command.value = next === -1 ? '' : history.value[next]!
+}
+// 从历史下拉框选取命令
+function pickHistory(event: Event) {
+  const select = event.target as HTMLSelectElement
+  if (select.value) void insertCommand(select.value)
+  select.value = ''
+}
+// 判断命令文本是否包含凭据（AUTH、HELLO AUTH、CONFIG SET requirepass/masterauth、MIGRATE AUTH、ACL SETUSER 等），这类命令不写入历史
+function isSensitiveCommand(text: string) {
+  return text.split('\n').some(line => {
+    const upper = line.trim().toUpperCase()
+    return /^AUTH\b/.test(upper)
+      || /^HELLO\b.*\bAUTH\b/.test(upper)
+      || /^CONFIG\s+SET\b.*\b(REQUIREPASS|MASTERAUTH|MASTERUSER)\b/.test(upper)
+      || /^MIGRATE\b.*\bAUTH2?\b/.test(upper)
+      || /^ACL\s+SETUSER\b/.test(upper)
+  })
+}
+// 执行命令并记录到历史（含凭据的命令不记录）
 function run() {
-  if (!props.busy && command.value.trim()) emit('execute')
+  const text = command.value.trim()
+  if (props.busy || !text) return
+  if (!isSensitiveCommand(text)) history.value = [text, ...history.value.filter(item => item !== text)].slice(0, 100)
+  historyIndex = -1
+  emit('execute')
 }
 </script>
 

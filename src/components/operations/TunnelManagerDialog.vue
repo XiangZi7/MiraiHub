@@ -5,7 +5,7 @@ import { computed, onMounted, reactive, toRefs } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import * as ssh from '@/api/ssh'
 import * as api from '@/api/operations'
-import type { SshSessionInfo } from '@/types/ssh'
+import type { SshSessionInfo, SshTunnelKind } from '@/types/ssh'
 import OperationDialog from './OperationDialog.vue'
 import TunnelCreateForm from './TunnelCreateForm.vue'
 import TunnelList from './TunnelList.vue'
@@ -22,9 +22,13 @@ const state = reactive({
   tunnels: [] as api.Tunnel[],
   // 选中的 SSH 会话
   sessionId: props.preferredSessionId ?? '',
-  // 本地监听端口，输入框清空时保留空字符串
+  // 隧道类型：本地 -L / 远程 -R / 动态 -D
+  kind: 'local' as SshTunnelKind,
+  // 远程转发时服务器上的监听地址，仅允许服务器回环地址
+  remoteBindHost: '127.0.0.1',
+  // 监听端口（本机或服务器），输入框清空时保留空字符串
   bindPort: 0 as number | string,
-  // SSH 服务器访问的目标地址
+  // 转发目标地址：本地转发由 SSH 服务器访问，远程转发由本机访问
   targetHost: '127.0.0.1',
   // 目标服务端口
   targetPort: 3306 as number | string,
@@ -39,6 +43,8 @@ const {
   sessions,
   tunnels,
   sessionId,
+  kind,
+  remoteBindHost,
   bindPort,
   targetHost,
   targetPort,
@@ -46,6 +52,7 @@ const {
   loading,
   error,
 } = toRefs(state)
+// 表单是否可提交：动态转发只需监听端口，其余类型还需要目标地址
 const valid = computed(
   () =>
     state.sessions.some(s => s.id === state.sessionId) &&
@@ -53,11 +60,13 @@ const valid = computed(
     Number.isInteger(Number(state.bindPort)) &&
     Number(state.bindPort) >= 0 &&
     Number(state.bindPort) <= 65535 &&
-    Number.isInteger(Number(state.targetPort)) &&
-    Number(state.targetPort) > 0 &&
-    Number(state.targetPort) <= 65535 &&
-    Boolean(state.targetHost.trim())
+    (state.kind === 'dynamic' ||
+      (Number.isInteger(Number(state.targetPort)) &&
+        Number(state.targetPort) > 0 &&
+        Number(state.targetPort) <= 65535 &&
+        Boolean(state.targetHost.trim())))
 )
+// 刷新已连接的会话与隧道列表
 async function refresh(): Promise<void> {
   if (state.loading) return
   state.loading = true
@@ -77,17 +86,20 @@ async function refresh(): Promise<void> {
 }
 onMounted(refresh)
 useIntervalFn(() => void refresh(), 2000)
+// 按当前类型建立隧道，动态转发不发送目标地址
 async function start(): Promise<void> {
   if (!valid.value || state.busy) return
   state.busy = true
   state.error = ''
+  const dynamic = state.kind === 'dynamic'
   try {
     await api.startTunnel({
       sessionId: state.sessionId,
-      bindHost: '127.0.0.1',
+      kind: state.kind,
+      bindHost: state.kind === 'remote' ? state.remoteBindHost : '127.0.0.1',
       bindPort: Number(state.bindPort),
-      targetHost: state.targetHost.trim(),
-      targetPort: Number(state.targetPort),
+      targetHost: dynamic ? '' : state.targetHost.trim(),
+      targetPort: dynamic ? 0 : Number(state.targetPort),
     })
     await refresh()
   } catch (error) {
@@ -96,6 +108,7 @@ async function start(): Promise<void> {
     state.busy = false
   }
 }
+// 运行中的隧道停止，已停止的记录移除
 async function action(row: api.Tunnel): Promise<void> {
   state.error = ''
   try {
@@ -106,9 +119,12 @@ async function action(row: api.Tunnel): Promise<void> {
     state.error = api.errorMessage(error)
   }
 }
+// 复制监听地址，动态转发复制为 socks5:// 代理地址
 async function copy(row: api.Tunnel): Promise<void> {
+  const host = row.bindHost.includes(':') ? `[${row.bindHost}]` : row.bindHost
+  const address = `${host}:${row.bindPort}`
   try {
-    await copyText(`${row.bindHost}:${row.bindPort}`)
+    await copyText(row.kind === 'dynamic' ? `socks5://${address}` : address)
   } catch (error) {
     state.error = api.errorMessage(error)
   }
@@ -117,16 +133,22 @@ async function copy(row: api.Tunnel): Promise<void> {
 
 <template>
   <OperationDialog
-    :title="t('SSH 隧道 / 本地端口转发')"
+    :title="t('SSH 隧道 / 端口转发')"
     :busy="busy"
     @close="emit('close')"
   >
     <div class="tunnel-manager">
       <p class="tunnel-intro">
-        {{ t('通过已连接的 SSH 服务器，将本机端口转发到远端服务。') }}
+        {{
+          t(
+            '通过已连接的 SSH 服务器转发端口：本地转发、远程转发或动态 SOCKS5 代理。'
+          )
+        }}
       </p>
       <TunnelCreateForm
         v-model:session-id="sessionId"
+        v-model:kind="kind"
+        v-model:remote-bind-host="remoteBindHost"
         v-model:bind-port="bindPort"
         v-model:target-host="targetHost"
         v-model:target-port="targetPort"

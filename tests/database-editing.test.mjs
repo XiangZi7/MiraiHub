@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createRenderer, h, markRaw, nextTick } from 'vue'
 import { dataModule, sourceLoader } from './helpers/source-module.mjs'
+// 表格虚拟滚动依赖动画帧，测试环境用定时器模拟。
+globalThis.requestAnimationFrame ??= callback => setTimeout(callback, 0)
+globalThis.cancelAnimationFrame ??= id => clearTimeout(id)
 const vue = JSON.stringify(import.meta.resolve('vue'))
 const api = dataModule(`
   export const mock={preview:null};
@@ -32,7 +35,14 @@ const { default: Table } = await load(
 )
 const { mock } = await import(api)
 const node = (type, text = '') =>
-  markRaw({ type, text, props: {}, children: [], parent: null })
+  markRaw({
+    type,
+    text,
+    props: {},
+    children: [],
+    parent: null,
+    querySelector: () => null,
+  })
 const renderer = createRenderer({
   createElement: node,
   createText: text => node('#text', text),

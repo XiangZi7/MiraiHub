@@ -29,6 +29,7 @@ import WorkspaceHelp from '@/components/workspace/WorkspaceHelp.vue'
 import TransferCenter from '@/components/workspace/TransferCenter.vue'
 import AppUpdateControl from '@/components/workspace/AppUpdateControl.vue'
 import RemoteEditorHost from '@/components/operations/RemoteEditorHost.vue'
+import SshPromptHost from '@/components/workspace/SshPromptHost.vue'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { provideWorkspaceControllers } from '@/composables/useWorkspaceControllers'
@@ -420,6 +421,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </div>
 
     <RemoteEditorHost />
+    <SshPromptHost />
   </WindowFrame>
 
   <!-- 脱离窗口壳的滤镜层，让模糊直接采样工作区内容。 -->

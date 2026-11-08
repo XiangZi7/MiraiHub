@@ -948,3 +948,65 @@ test('建表输出多列外键、检查约束、触发器与 MySQL 分区', () =
   const summary = summarizeTableChanges('mysql', null, draft)
   assert.ok(summary.some(item => item.target === '触发器' && item.action === 'add'))
 })
+
+test('AI 生成的草稿：带索引与注释的建表输出，及精度、重复索引列、PRIMARY 索引名校验', () => {
+  const columns = [
+    draftColumn({ comment: '主键', unsigned: true }),
+    draftColumn({
+      id: 'u',
+      name: 'user_id',
+      primaryKey: false,
+      autoIncrement: false,
+      comment: '用户',
+    }),
+    draftColumn({
+      id: 'a',
+      name: 'amount',
+      dataType: 'DECIMAL',
+      length: '10,2',
+      primaryKey: false,
+      autoIncrement: false,
+      comment: '金额',
+    }),
+  ]
+  const index = {
+    id: 'i',
+    name: 'idx_user_id',
+    kind: 'index',
+    method: 'btree',
+    columns: ['user_id'],
+    columnOptions: {},
+  }
+  const draft = optionsDraft({
+    name: 'orders',
+    comment: '订单',
+    autoIncrement: null,
+    columns,
+    indexes: [index],
+  })
+  assert.equal(validateTableDraft({ kind: 'mysql', draft }).valid, true)
+  const sql = buildCreateTableSql({ kind: 'mysql', draft })
+  assert.match(sql, /`amount` DECIMAL\(10,2\)/u)
+  assert.match(sql, /COMMENT '金额'/u)
+  assert.match(sql, /KEY `idx_user_id` \(`user_id`\)/u)
+
+  const badScale = optionsDraft({
+    autoIncrement: null,
+    columns: [columns[0], { ...columns[2], length: '4,6' }],
+  })
+  assert.equal(validateTableDraft({ kind: 'mysql', draft: badScale }).valid, false)
+
+  const duplicated = optionsDraft({
+    autoIncrement: null,
+    columns,
+    indexes: [{ ...index, columns: ['user_id', 'user_id'] }],
+  })
+  assert.equal(validateTableDraft({ kind: 'mysql', draft: duplicated }).valid, false)
+
+  const reserved = optionsDraft({
+    autoIncrement: null,
+    columns,
+    indexes: [{ ...index, name: 'PRIMARY' }],
+  })
+  assert.equal(validateTableDraft({ kind: 'mysql', draft: reserved }).valid, false)
+})

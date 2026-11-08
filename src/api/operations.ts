@@ -2,6 +2,7 @@ import { i18n } from '@/i18n'
 import { invoke } from '@tauri-apps/api/core'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
 import type { SshConfigTransferPreview } from '@/types/ssh-config-transfer'
+import type { SshTunnelKind } from '@/types/ssh'
 import { IS_TAURI } from '@/utils/window'
 export { errorMessage } from './ssh'
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -15,6 +16,8 @@ export interface Tunnel {
   id: string
   sessionId: string
   endpoint: string
+  /** 隧道类型；旧版后端不返回时按本地转发处理 */
+  kind?: SshTunnelKind
   bindHost: string
   bindPort: number
   targetHost: string
@@ -48,6 +51,8 @@ export interface TextDocument {
 export const listTunnels = () => call<Tunnel[]>('ssh_tunnel_list')
 export const startTunnel = (request: {
   sessionId: string
+  /** 缺省为本地转发；dynamic 时目标字段被忽略 */
+  kind?: SshTunnelKind
   bindHost: string
   bindPort: number
   targetHost: string

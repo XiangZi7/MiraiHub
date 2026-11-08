@@ -41,8 +41,8 @@ export const en = {
   '搜索表或视图…': 'Search tables or views…',
   '搜索已保存查询…': 'Search saved queries…',
   '搜索数据库动作或连接…': 'Search database actions or connections…',
-  '输入命令…（# 表 · @ 已保存查询 · > 数据库动作）':
-    'Type a command… (# tables · @ saved queries · > database actions)',
+  "输入命令…（# 表 · {'@'} 已保存查询 · > 数据库动作）":
+    "Type a command… (# tables · {'@'} saved queries · > database actions)",
   请先打开并连接一个数据库: 'Open and connect a database first',
   没有匹配的命令: 'No matching commands',
   表: 'Tables',

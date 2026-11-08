@@ -1,5 +1,5 @@
 import { computed, nextTick, shallowRef, type Ref } from 'vue'
-import { useEventListener, useStorage } from '@vueuse/core'
+import { defaultWindow, useEventListener, useStorage } from '@vueuse/core'
 import { gridTsv, type GridRange } from '@/utils/database-grid'
 
 export interface GridPosition {
@@ -183,7 +183,7 @@ export function useGridSelection(options: {
     dragging = 'cell'
   }
 
-  useEventListener(window, 'pointermove', (event: PointerEvent) => {
+  useEventListener(defaultWindow, 'pointermove', (event: PointerEvent) => {
     if (!dragging) return
     const element = options.container.value
     if (element) {
@@ -206,7 +206,7 @@ export function useGridSelection(options: {
     else if (position.column !== null)
       head.value = { row: position.row, column: position.column }
   })
-  useEventListener(window, 'pointerup', () => {
+  useEventListener(defaultWindow, 'pointerup', () => {
     dragging = null
   })
 

@@ -188,10 +188,13 @@ async fn write_temp(
     let mut attrs = FileAttributes::empty();
     attrs.permissions = permissions;
     let result = async {
+        // 先清掉上次中断残留的临时文件，再以 O_EXCL 独占创建：
+        // 目录可被他人写入时，预先放置的同名软链不会被跟随截断到别处。
+        let _ = sftp.remove_file(temp).await;
         let mut file = sftp
             .open_with_flags_and_attributes(
                 temp,
-                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE,
+                OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
                 attrs,
             )
             .await
@@ -339,7 +342,9 @@ pub async fn ssh_text_save(
     let path = document.view.path.clone();
     let expected = document.version;
     let force = force.unwrap_or(false);
-    let operation = async {
+    // 放进独立任务：超时只停止等待，不会在“原文件已挪成备份、临时文件尚未落位”
+    // 的中间状态取消替换流程，否则远端会短暂乃至永久缺失原文件。
+    let operation = tokio::spawn(async move {
         let sftp = session.open_sftp().await?;
         let attrs = sftp.symlink_metadata(&path).await.map_err(sftp_error)?;
         if !attrs.is_regular() || attrs.is_symlink() {
@@ -351,11 +356,12 @@ pub async fn ssh_text_save(
         }
         save_atomic(&sftp, &path, &bytes, &attrs).await?;
         let saved = sftp.symlink_metadata(&path).await.map_err(sftp_error)?;
-        Ok(RemoteVersion::of(&saved))
-    };
+        Ok::<_, AppError>(RemoteVersion::of(&saved))
+    });
     let version = tokio::time::timeout(Duration::from_secs(45), operation)
         .await
-        .map_err(|_| AppError::internal("保存超时，请重新加载核对远端文件"))??;
+        .map_err(|_| AppError::internal("保存超时，请重新加载核对远端文件"))?
+        .map_err(|_| AppError::internal("保存任务异常中止，请重新加载核对远端文件"))??;
     document.version = version;
     document.view.text = text;
     Ok(document.view.clone())
