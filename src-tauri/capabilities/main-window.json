@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Bring the main window to the front when a native child window hands context to the AI assistant",
+  "windows": ["main"],
+  "permissions": [
+    "core:window:allow-unminimize",
+    "core:window:allow-show",
+    "core:window:allow-set-focus"
+  ]
+}

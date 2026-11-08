@@ -462,7 +462,7 @@ defineExpose({ add: () => void addColumn() })
 </script>
 
 <template>
-  <section class="designer-section">
+  <section class="flex min-h-0 flex-1 flex-col">
     <div
       class="border-line-soft text-txt-3 flex h-9 shrink-0 items-center gap-1 border-b px-2 text-[10.5px]"
     >
@@ -530,7 +530,7 @@ defineExpose({ add: () => void addColumn() })
     </div>
     <div
       ref="tableWrap"
-      class="designer-table-wrap scroll-thin"
+      class="scroll-thin min-h-0 flex-1 overflow-auto p-2"
     >
       <table class="designer-table min-w-295">
         <thead class="database-glass-header database-glass-header--sticky">
@@ -584,15 +584,14 @@ defineExpose({ add: () => void addColumn() })
                 activeId === column.id &&
                   '[&>td]:bg-violet/6 [&>td:first-child]:shadow-[inset_2px_0_var(--color-violet)]',
                 rowErrors(column).length &&
-                  '[&>td:first-child]:shadow-[inset_2px_0_var(--color-danger)]',
-                reorder.draggedId.value === column.id && 'field-dragging',
-                reorder.targetId.value === column.id &&
-                  reorder.targetPosition.value === 'before' &&
-                  'field-drop-before',
-                reorder.targetId.value === column.id &&
-                  reorder.targetPosition.value === 'after' &&
-                  'field-drop-after'
+                  '[&>td:first-child]:shadow-[inset_2px_0_var(--color-danger)]'
               )
+            "
+            :data-dragging="reorder.draggedId.value === column.id || undefined"
+            :data-drop="
+              reorder.targetId.value === column.id
+                ? reorder.targetPosition.value || undefined
+                : undefined
             "
             @pointerdown="reorder.start($event, column.id)"
             @focusin="activeId = column.id"
@@ -611,7 +610,8 @@ defineExpose({ add: () => void addColumn() })
             <td>
               <div class="flex items-center justify-center">
                 <span
-                  class="field-grip"
+                  class="text-txt-4 hover:text-txt-2 grid h-6 w-4 cursor-grab touch-none place-items-center"
+                  data-grip
                   :title="t('拖动排序')"
                 >
                   <AppIcon
@@ -1016,50 +1016,50 @@ defineExpose({ add: () => void addColumn() })
     <Teleport to="body">
       <div
         v-if="reorder.dragging.value && draggedColumn"
-        class="field-drag-ghost"
+        class="designer-drag-ghost text-txt pointer-events-none fixed z-200 flex max-w-155 -translate-y-1/2 items-center gap-2.5 rounded-lg py-1.5 pr-3 pl-1.5 text-[11px] leading-none whitespace-nowrap"
         :style="reorder.dragStyle.value"
         aria-hidden="true"
       >
-        <span class="field-ghost-grip">
+        <span class="text-accent grid w-4 shrink-0 place-items-center">
           <AppIcon
             name="lucide:grip-vertical"
             :size="11"
           />
         </span>
-        <span class="field-ghost-cell field-ghost-mono">
+        <span class="text-txt-2 min-w-0 overflow-hidden font-mono text-ellipsis tabular-nums">
           {{ draggedColumn.name }}
         </span>
-        <span class="field-ghost-cell field-ghost-mono">
+        <span class="text-txt-2 min-w-0 overflow-hidden font-mono text-ellipsis tabular-nums">
           {{ draggedColumn.dataType
           }}{{ draggedColumn.length ? `(${draggedColumn.length})` : '' }}
         </span>
         <span
           v-if="draggedColumn.primaryKey"
-          class="field-ghost-badge"
+          class="designer-ghost-badge"
         >
           PK
         </span>
         <span
           v-if="draggedColumn.unique"
-          class="field-ghost-badge"
+          class="designer-ghost-badge"
         >
           UQ
         </span>
         <span
           v-if="draggedColumn.autoIncrement"
-          class="field-ghost-badge"
+          class="designer-ghost-badge"
         >
           AI
         </span>
         <span
           v-if="draggedColumn.defaultValue"
-          class="field-ghost-cell field-ghost-mono"
+          class="text-txt-2 min-w-0 overflow-hidden font-mono text-ellipsis tabular-nums"
         >
           {{ draggedColumn.defaultValue }}
         </span>
         <span
           v-if="draggedColumn.comment"
-          class="field-ghost-cell"
+          class="text-txt-2 min-w-0 overflow-hidden text-ellipsis"
         >
           {{ draggedColumn.comment }}
         </span>
@@ -1067,137 +1067,3 @@ defineExpose({ add: () => void addColumn() })
     </Teleport>
   </section>
 </template>
-
-<style scoped>
-.designer-section {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-}
-.designer-table-wrap {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: 8px;
-}
-.designer-table {
-  width: 100%;
-  border-collapse: separate;
-  border: 1px solid var(--color-line-soft);
-  border-spacing: 0;
-  overflow: hidden;
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--color-card) 72%, transparent);
-  font-size: 10.5px;
-}
-.designer-table th {
-  border-right: 1px solid var(--color-line-soft);
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 7px 6px;
-  color: var(--color-txt-3);
-  font-weight: 500;
-  text-align: left;
-}
-.designer-table td {
-  height: 32px;
-  border-right: 1px solid var(--color-line-soft);
-  border-bottom: 1px solid var(--color-line-soft);
-  padding: 2px;
-  color: var(--color-txt-2);
-}
-.designer-table tr:hover td {
-  background-color: color-mix(in oklch, var(--color-hover) 72%, transparent);
-}
-/* 行内拖拽排序：行本身不选中文字，落点指示线画在单元格背景上 */
-.designer-table tbody tr {
-  user-select: none;
-}
-.designer-table tbody td:first-child {
-  position: relative;
-}
-.field-grip {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 24px;
-  color: var(--color-txt-4);
-  cursor: grab;
-  touch-action: none;
-}
-.field-grip:hover {
-  color: var(--color-txt-2);
-}
-.designer-table tbody tr:active .field-grip {
-  cursor: grabbing;
-}
-.designer-table tr.field-dragging td {
-  background-color: color-mix(in oklch, var(--color-hover) 72%, transparent);
-  opacity: 0.42;
-}
-/* 落点指示线：与标签栏同款的紫色线条，横贯整行标出插入位置 */
-.designer-table tr.field-drop-before td {
-  background-image: linear-gradient(var(--color-violet), var(--color-violet));
-  background-position: 0 0;
-  background-repeat: no-repeat;
-  background-size: 100% 2px;
-}
-.designer-table tr.field-drop-after td {
-  background-image: linear-gradient(var(--color-violet), var(--color-violet));
-  background-position: 0 100%;
-  background-repeat: no-repeat;
-  background-size: 100% 2px;
-}
-/* 拖拽幽灵：整行被拖起来的样式 —— 行形浮条跟随指针，配色与表格行一致 */
-.field-drag-ghost {
-  position: fixed;
-  z-index: 200;
-  display: flex;
-  max-width: 620px;
-  pointer-events: none;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid
-    color-mix(in oklch, var(--color-violet) 48%, var(--color-line));
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--color-card) 88%, transparent);
-  /* 浮层玻璃与其余 popover 统一：模糊 + 提饱和透出背景 */
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
-  backdrop-filter: blur(24px) saturate(165%);
-  box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
-  padding: 6px 12px 6px 6px;
-  color: var(--color-txt);
-  font-size: 11px;
-  line-height: 1;
-  transform: translateY(-50%);
-  white-space: nowrap;
-}
-.field-ghost-grip {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 16px;
-  color: var(--color-accent);
-}
-.field-ghost-cell {
-  overflow: hidden;
-  min-width: 0;
-  text-overflow: ellipsis;
-  color: var(--color-txt-2);
-}
-.field-ghost-mono {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-.field-ghost-badge {
-  flex-shrink: 0;
-  border: 1px solid
-    color-mix(in oklch, var(--color-violet) 40%, var(--color-line));
-  border-radius: 4px;
-  padding: 2px 4px;
-  color: var(--color-accent);
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-}
-</style>

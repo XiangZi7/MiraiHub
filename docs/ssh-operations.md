@@ -110,7 +110,7 @@ SFTP 不可用时的 `ls -lA` 回退解析保留文件名首尾空格，仅对�
 
 `ai_shell_command(sessionId, request, context, language)` 把自然语言转换成一条命令建议 `{command, explanation, risk}`，只返回建议、不执行。远端系统信息（uname、os-release、shell）按会话探测一次后缓存；`context` 为空时用后端终端历史的最近 40 行。模型被要求只输出 JSON，解析失败时退回到代码块或单行文本。风险取模型判断与后端规则的较高者：含 rm/dd 等危险命令一律为 high，非只读命令至少为 medium。相同请求的结果缓存 120 秒。
 
-`ssh_exec` 支持可选参数 `timeoutSecs`，缺省 30 秒，最长 3600 秒；超时后关闭通道并报错。
+`ssh_exec` 支持可选参数 `timeoutSecs`，缺省 30 秒，最长 3600 秒；超时后关闭通道并报错。时限从打开通道算起，后端内部的 `exec`（文件、补全、监控探测等）同样受 30 秒默认时限约束；超时错误类型为 network，只关闭本地通道，远端进程可能仍在运行。
 
 ## 验证范围
 

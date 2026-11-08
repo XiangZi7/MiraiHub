@@ -54,6 +54,23 @@ pub struct BackupRequest {
     /// pg_dump 用 INSERT 代替 COPY，便于内置导入恢复。
     #[serde(default)]
     pub inserts: bool,
+    /// 备份内容：all（默认）/ structure（仅结构）/ data（仅数据）。
+    #[serde(default)]
+    pub content: Option<String>,
+    /// 只备份这些表；为空表示整库。PostgreSQL 传 `schema.table`。
+    #[serde(default)]
+    pub tables: Vec<String>,
+}
+
+impl BackupRequest {
+    /// 解析备份内容选项，返回（含结构，含数据）。
+    fn content_flags(&self) -> (bool, bool) {
+        match self.content.as_deref() {
+            Some("structure") => (true, false),
+            Some("data") => (false, true),
+            _ => (true, true),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -374,9 +391,10 @@ pub async fn backup(
         .then(|| find_tool(config.kind, dump_name, request.tool_dir.as_deref()))
         .flatten();
     let Some(tool) = tool else {
-        return backup_builtin(manager, &request.session_id, path, started).await;
+        return backup_builtin(manager, request, path, started).await;
     };
 
+    let (structure, data) = request.content_flags();
     let database = manager.describe_session(&request.session_id).await?.database;
     let mut cmd = command(&tool);
     apply_connection(&mut cmd, &config);
@@ -384,21 +402,38 @@ pub async fn backup(
         DatabaseKind::Mysql => {
             cmd.args([
                 "--single-transaction",
-                "--routines",
-                "--triggers",
-                "--events",
                 "--hex-blob",
                 "--default-character-set=utf8mb4",
-            ])
-            .arg(format!("--result-file={path}"))
-            .arg(&database);
+            ]);
+            // 仅数据时不带例程/触发器/事件定义，避免恢复时重复创建。
+            if structure {
+                cmd.args(["--routines", "--triggers", "--events"]);
+            }
+            if !structure {
+                cmd.arg("--no-create-info");
+            }
+            if !data {
+                cmd.arg("--no-data");
+            }
+            cmd.arg(format!("--result-file={path}"))
+                .arg(&database)
+                .args(&request.tables);
         }
         DatabaseKind::Postgresql => {
             cmd.args(["--format=plain", "--no-owner", "--encoding=UTF8"])
                 .arg(format!("--file={path}"))
                 .arg(format!("--dbname={database}"));
-            if request.inserts {
+            if request.inserts && data {
                 cmd.arg("--inserts");
+            }
+            if !structure {
+                cmd.arg("--data-only");
+            }
+            if !data {
+                cmd.arg("--schema-only");
+            }
+            for table in &request.tables {
+                cmd.arg(format!("--table={table}"));
             }
         }
         DatabaseKind::Sqlite => unreachable!(),
@@ -464,18 +499,24 @@ pub async fn backup(
 
 async fn backup_builtin(
     manager: &DatabaseManager,
-    session_id: &str,
+    request: &BackupRequest,
     path: &str,
     started: Instant,
 ) -> DatabaseResult<BackupResult> {
+    if !request.tables.is_empty() {
+        return Err(DatabaseError::InvalidInput(
+            "内置导出不支持按表备份，请配置 mysqldump/pg_dump 或改为备份整库".to_owned(),
+        ));
+    }
+    let (structure, data) = request.content_flags();
     let result = transfer::export_sql(
         manager,
-        session_id,
+        &request.session_id,
         path,
         transfer::SqlExportOptions {
-            include_data: true,
-            drop_existing: true,
-            include_structure: true,
+            include_data: data,
+            drop_existing: structure,
+            include_structure: structure,
             include_database: false,
         },
         None,

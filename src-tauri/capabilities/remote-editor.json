@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "remote-editor",
-  "description": "Native remote text editors: event subscriptions, title bar controls and interface zoom",
+  "description": "Native remote text editors: event subscriptions, forwarding toasts and AI context to the main window, title bar controls and interface zoom",
   "windows": ["remote-editor-*"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
+    "core:event:allow-emit-to",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-internal-toggle-maximize",

@@ -108,10 +108,14 @@ impl TerminalHistory {
         }
     }
 
-    /// 输出结束：把未完成的 UTF-8 片段按替换字符处理。
+    /// 输出结束：把未完成的 UTF-8 片段按替换字符处理，并复位解析状态，
+    /// 避免 shell 停在全屏程序或半截控制序列里时，同一会话新开的 shell 输出被吞掉。
     fn finish(&self) {
         if let Ok(mut screen) = self.0.lock() {
             screen.flush_utf8();
+            screen.escape = Escape::None;
+            screen.csi.clear();
+            screen.alternate = false;
         }
     }
 
@@ -259,7 +263,8 @@ impl TextScreen {
             '\r' => self.cursor = 0,
             '\u{08}' => self.cursor = self.cursor.saturating_sub(1),
             '\t' => {
-                let next = (self.cursor / 8 + 1) * 8;
+                // 封顶到行宽上限：write 在上限处不再前进，否则这里会死循环
+                let next = ((self.cursor / 8 + 1) * 8).min(MAX_LINE_CHARS);
                 while self.cursor < next {
                     self.write(' ');
                 }
@@ -343,8 +348,11 @@ impl TextScreen {
         self.lines.push_back(line);
     }
 
-    /// 最近 n 行，当前行非空时计入最后一行。
+    /// 最近 n 行，当前行非空时计入最后一行；n 为 0 时返回空。
     fn recent(&self, n: usize) -> Vec<String> {
+        if n == 0 {
+            return Vec::new();
+        }
         let current: String = self.current.iter().collect();
         let current = current.trim_end();
         let partial = (!current.is_empty()).then(|| current.to_owned());
@@ -386,6 +394,26 @@ mod tests {
         assert_eq!(screen("hello\x1b[3Dy\n"), ["heylo"]);
         assert_eq!(screen("abc\x1b[1G\x1b[1Pz\n"), ["zc"]);
         assert_eq!(screen("a\tb\n"), ["a       b"]);
+    }
+
+    #[test]
+    fn overlong_lines_are_capped_without_hanging() {
+        // 行宽到达上限后再来制表符或右移，不能卡死，也不能超出上限
+        let long = "x".repeat(MAX_LINE_CHARS + 10);
+        let lines = screen(&format!("{long}\t\ty\x1b[5C\tz\n"));
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].chars().count(), MAX_LINE_CHARS);
+    }
+
+    #[test]
+    fn finish_resets_modes_and_zero_lines_is_empty() {
+        let history = TerminalHistory::default();
+        // shell 停在全屏程序里结束：新 shell 的输出仍要记录
+        history.push(b"$ top\r\n\x1b[?1049hCPU");
+        history.finish();
+        history.push(b"$ echo ok\r\nok\r\n");
+        assert_eq!(history.recent_lines(3), ["$ top", "$ echo ok", "ok"]);
+        assert!(history.recent_lines(0).is_empty());
     }
 
     #[test]

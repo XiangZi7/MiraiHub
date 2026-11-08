@@ -272,6 +272,29 @@ test('终端内分屏比例与主面板 id 保持稳定', () => {
   assert.equal(layout.panes.value.length, 3)
 })
 
+test('终端网格平铺至少 3 个面板，平铺时新增不改原分栏方向，少于 3 个自动退回', () => {
+  const layout = useSplitPanes({ rootId: 'primary' })
+  layout.add('down', 'second')
+  layout.toggleTiled()
+  assert.equal(layout.canTile.value, false)
+  assert.equal(layout.tiled.value, false)
+  layout.add('down', 'third')
+  layout.toggleTiled()
+  assert.equal(layout.tiled.value, true)
+  layout.add('right', 'fourth')
+  assert.equal(layout.orientation.value, 'vertical')
+  assert.deepEqual(
+    layout.panes.value.map(pane => pane.id),
+    ['primary', 'second', 'third', 'fourth']
+  )
+  layout.remove('fourth')
+  assert.equal(layout.tiled.value, true)
+  layout.remove('third')
+  assert.equal(layout.tiled.value, false)
+  layout.add('down', 'again')
+  assert.equal(layout.tiled.value, false)
+})
+
 test('分屏按钮取消拖拽后抑制点击，下一次正常点击不受影响', t => {
   const scope = effectScope(),
     dropped = []

@@ -1,7 +1,9 @@
 import { i18n } from '@/i18n'
 import { Channel, invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { emitTo, listen } from '@tauri-apps/api/event'
+import type { AgentContextAsk } from '@/composables/useAgentContextBus'
 import type {
+  AgentContextRequest,
   AgentSettings,
   AgentProfileInput,
   AgentModelListInput,
@@ -67,6 +69,9 @@ export const describeTables = (
   tables: string,
   language: string
 ) => call<string>('ai_describe_tables', { target, tables, language })
+/** 连接失败时的一次性 AI 诊断：不需要会话，输入已在前端脱敏。 */
+export const diagnoseConnection = (input: string, language: string) =>
+  call<string>('ai_diagnose_connection', { input, language })
 /** 终端内联 AI：把自然语言转换为一条 shell 命令，只返回建议不执行。 */
 export const shellCommand = (
   sessionId: string,
@@ -89,6 +94,37 @@ export const testMcpServer = (id: string) =>
   call<McpProbe>('ai_test_mcp_server', { id })
 export const onConfigChanged = (handler: () => void) =>
   IS_TAURI ? listen('ai-config-changed', handler) : Promise.resolve(() => {})
+/** 原生子窗口（如远端编辑器）把 AI 上下文转交给主窗口 SSH 工作区的事件 */
+export const AGENT_CONTEXT_EVENT = 'miraihub:agent-context'
+const CONTEXT_INTENTS: AgentContextRequest['intent'][] = [
+  'explain',
+  'optimize',
+  'fix',
+  'query',
+]
+// 校验子窗口经 IPC 送来的上下文结构，字段缺失或类型不符的消息直接丢弃。
+function isContextAsk(value: unknown): value is AgentContextAsk {
+  if (!value || typeof value !== 'object') return false
+  const ask = value as Record<string, unknown>
+  return (
+    typeof ask.content === 'string' &&
+    CONTEXT_INTENTS.includes(ask.intent as AgentContextRequest['intent']) &&
+    (ask.name === undefined || typeof ask.name === 'string') &&
+    (ask.sessionId === undefined || typeof ask.sessionId === 'string')
+  )
+}
+// 原生子窗口把 AI 上下文发给主窗口，只负责投递，是否有工作区接收由主窗口提示。
+export const sendContextToMain = (ask: AgentContextAsk) =>
+  emitTo('main', AGENT_CONTEXT_EVENT, ask)
+// 主窗口监听子窗口转交的 AI 上下文，返回取消监听函数；浏览器预览时为空操作。
+export const onContextFromWindows = (
+  handler: (ask: AgentContextAsk) => void
+) =>
+  IS_TAURI
+    ? listen<unknown>(AGENT_CONTEXT_EVENT, event => {
+        if (isContextAsk(event.payload)) handler(event.payload)
+      })
+    : Promise.resolve(() => {})
 export const start = (
   target: AgentTarget,
   prompt: string,

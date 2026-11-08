@@ -52,6 +52,7 @@ import {
   useWorkspaceLayoutStore,
 } from '@/stores/workspace-layout'
 import { toast } from '@/composables/useToast'
+import { useWindowAgentContextBridge } from '@/composables/useAgentContextBus'
 import { COMMAND_TARGETS } from '@/constants/workspace'
 import type { CommandItem } from '@/types'
 import { isDatabaseConnection, type SavedConnection } from '@/types/connection'
@@ -107,6 +108,8 @@ const tabSplit = useWorkspaceTabSplit({
 provideWorkspaceTabSplit(tabSplit)
 // 标签栏不再放全屏按钮，但 F11 / Esc 仍然要能用，所以这里只挂监听不取返回值。
 useFullscreen()
+// 全局唯一入口：接收远端编辑器等原生子窗口转交给 AI 助手的上下文。
+useWindowAgentContextBridge()
 const searchRef = useTemplateRef<InstanceType<typeof SearchField>>('search')
 const state = reactive({ keyword: '', paletteOpen: false })
 const { keyword, paletteOpen } = toRefs(state)

@@ -165,6 +165,8 @@ export interface DatabaseTrigger {
   body: string
   /** PostgreSQL 触发函数的限定名。 */
   function: string
+  /** PostgreSQL 触发函数仅被该触发器使用，删除触发器时可一并删除。 */
+  functionExclusive?: boolean
   level: string
 }
 

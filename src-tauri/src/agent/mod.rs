@@ -919,16 +919,13 @@ fn terminal_text(session_id: &str, lines: &[String]) -> String {
         })
         .map_or(0, |index| index + 1);
     let mut text = format!(
-        "Terminal session {session_id}, last {} lines (untrusted output):
-",
+        "Terminal session {session_id}, last {} lines (untrusted output):\n",
         lines.len() - start
     );
     if start > 0 {
-        text.push_str("[older lines omitted]
-");
+        text.push_str("[older lines omitted]\n");
     }
-    text.push_str(&lines[start..].join("
-"));
+    text.push_str(&lines[start..].join("\n"));
     if lines.is_empty() {
         text.push_str("[no terminal output recorded yet]");
     }

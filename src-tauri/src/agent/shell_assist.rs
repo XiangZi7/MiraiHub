@@ -162,22 +162,46 @@ fn merge_risk(model: Option<&str>, command: &str) -> &'static str {
     }
 }
 
-/// 把模型给出的命令规整成单行：去掉代码围栏、续行符，多行用 && 连接，避免粘贴时逐行执行。
+/// 把模型给出的命令规整成单行：去掉代码围栏、续行符，多行按语法拼接，避免粘贴时逐行执行。
 fn normalize_command(command: &str) -> String {
     let text = command.replace("\r\n", "\n").replace("\\\n", " ");
-    let lines: Vec<&str> = text
+    let mut joined = String::new();
+    for line in text
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with("```"))
         .map(|line| line.strip_prefix("$ ").unwrap_or(line))
-        .collect();
-    lines
-        .join(" && ")
+    {
+        if !joined.is_empty() {
+            joined.push_str(line_joiner(&joined, line));
+        }
+        joined.push_str(line);
+    }
+    joined
         .chars()
         .filter(|ch| !ch.is_control() || *ch == '\t')
         .collect::<String>()
         .trim()
         .to_owned()
+}
+
+/// 两行之间的连接符：上一行以管道、逻辑符或 do/then 等结尾时直接拼接，
+/// 下一行是 done/fi 等收尾关键字时用分号，其余视为先后执行的步骤用 &&。
+fn line_joiner(previous: &str, next: &str) -> &'static str {
+    let last_word = previous.rsplit(char::is_whitespace).next().unwrap_or("");
+    if previous.ends_with(['|', '&', ';', '{', '('])
+        || matches!(last_word, "do" | "then" | "else")
+    {
+        return " ";
+    }
+    let first_word = next.split(char::is_whitespace).next().unwrap_or("");
+    if matches!(
+        first_word,
+        "done" | "fi" | "esac" | "}" | ")" | "else" | "elif" | "then" | "do"
+    ) {
+        return "; ";
+    }
+    " && "
 }
 
 /// 从文本中取第一个代码块的内容。
@@ -374,6 +398,16 @@ mod tests {
     fn multiline_commands_become_one_line() {
         assert_eq!(normalize_command("cd /srv\n$ git pull\n"), "cd /srv && git pull");
         assert_eq!(normalize_command("echo a\u{7}b"), "echo ab");
+        // 循环、条件与管道续行不能被 && 拆坏
+        assert_eq!(
+            normalize_command("for f in *.log; do\n  gzip \"$f\"\ndone"),
+            "for f in *.log; do gzip \"$f\"; done"
+        );
+        assert_eq!(
+            normalize_command("if [ -f a ]\nthen\n  cat a\nelse\n  echo none\nfi"),
+            "if [ -f a ]; then cat a; else echo none; fi"
+        );
+        assert_eq!(normalize_command("ps aux |\n  grep nginx"), "ps aux | grep nginx");
     }
 
     #[test]

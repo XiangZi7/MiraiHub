@@ -7,6 +7,11 @@ import AppButton from '@/components/ui/AppButton.vue'
 import RedisCommandGuide from './RedisCommandGuide.vue'
 import DatabaseQueryResizeHandle from '../database/DatabaseQueryResizeHandle.vue'
 import type { RedisCommandResult, RedisKey } from '@/types/redis'
+import {
+  REDIS_CONSOLE_HISTORY_KEY,
+  isSensitiveRedisCommand,
+  sanitizeRedisHistory,
+} from '@/utils/redis-console-history'
 const props = defineProps<{
   busy: boolean
   result: RedisCommandResult | null
@@ -58,7 +63,10 @@ const COMMANDS = (
   'XREVRANGE XTRIM ZADD ZCARD ZCOUNT ZINCRBY ZPOPMAX ZPOPMIN ZRANGE ZRANGEBYSCORE ZRANK ZREM ZREVRANGE ZSCAN ZSCORE'
 ).split(' ')
 // 命令历史（最近 100 条、去重），持久化到本地存储
-const history = useStorage<string[]>('miraihub:redis-console-history', [])
+const history = useStorage<string[]>(REDIS_CONSOLE_HISTORY_KEY, [])
+// 打开控制台时再清理一次，兜底启动后才写入的旧版敏感记录
+const sanitizedHistory = sanitizeRedisHistory(history.value)
+if (sanitizedHistory) history.value = sanitizedHistory
 // 上/下键浏览历史时的当前位置，-1 表示未在浏览
 let historyIndex = -1
 // 单行输入首词时的命令补全候选
@@ -96,22 +104,11 @@ function pickHistory(event: Event) {
   if (select.value) void insertCommand(select.value)
   select.value = ''
 }
-// 判断命令文本是否包含凭据（AUTH、HELLO AUTH、CONFIG SET requirepass/masterauth、MIGRATE AUTH、ACL SETUSER 等），这类命令不写入历史
-function isSensitiveCommand(text: string) {
-  return text.split('\n').some(line => {
-    const upper = line.trim().toUpperCase()
-    return /^AUTH\b/.test(upper)
-      || /^HELLO\b.*\bAUTH\b/.test(upper)
-      || /^CONFIG\s+SET\b.*\b(REQUIREPASS|MASTERAUTH|MASTERUSER)\b/.test(upper)
-      || /^MIGRATE\b.*\bAUTH2?\b/.test(upper)
-      || /^ACL\s+SETUSER\b/.test(upper)
-  })
-}
 // 执行命令并记录到历史（含凭据的命令不记录）
 function run() {
   const text = command.value.trim()
   if (props.busy || !text) return
-  if (!isSensitiveCommand(text)) history.value = [text, ...history.value.filter(item => item !== text)].slice(0, 100)
+  if (!isSensitiveRedisCommand(text)) history.value = [text, ...history.value.filter(item => item !== text)].slice(0, 100)
   historyIndex = -1
   emit('execute')
 }

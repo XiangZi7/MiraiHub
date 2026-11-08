@@ -18,7 +18,13 @@ const TOP = 8
 const PLOT_WIDTH = WIDTH - LEFT - 4
 const PLOT_HEIGHT = HEIGHT - TOP - BOTTOM
 // 经校验的分类色板，按系列固定顺序分配，颜色跟随系列而非排名。
-const COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500']
+// 具体色值在 figure 上按明暗分别定义：浅色面板上青、黄两色加深，保证对背景 >= 3:1。
+const COLORS = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+]
 
 const data = computed(() => {
   const names = props.statement.columns.map(column => column.name)
@@ -118,7 +124,7 @@ function format(value: number): string {
 <template>
   <figure
     v-if="data.series.length && data.labels.length"
-    class="m-0 flex flex-col gap-1"
+    class="m-0 flex flex-col gap-1 [--chart-1:#3987e5] [--chart-2:#d95926] [--chart-3:#199e70] [--chart-4:#c98500] [html[data-skin-scheme=light]_&]:[--chart-1:#2a78d6] [html[data-skin-scheme=light]_&]:[--chart-3:#17946a] [html[data-skin-scheme=light]_&]:[--chart-4:#a87400]"
   >
     <figcaption class="text-txt-2 text-[11px] font-medium">
       {{ spec.title || t('推荐图表') }}
@@ -181,7 +187,7 @@ function format(value: number): string {
               :width="barWidth"
               :height="Math.max(1, Math.abs(yOf(value) - yOf(0)))"
               rx="2"
-              :fill="item.color"
+              :style="{ fill: item.color }"
               :opacity="hovered === null || hovered === index ? 1 : 0.55"
             />
           </template>
@@ -203,7 +209,7 @@ function format(value: number): string {
           fill="none"
           stroke-width="2"
           stroke-linejoin="round"
-          :stroke="item.color"
+          :style="{ stroke: item.color }"
         />
       </template>
       <text

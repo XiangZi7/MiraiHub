@@ -18,6 +18,8 @@ export const en: Record<string, string> = {
   '分析选中内容': 'Analyze selection',
   '广播': 'Broadcast',
   '广播输入到所有分屏': 'Broadcast input to all panes',
+  '平铺所有分屏': 'Tile all panes',
+  '恢复分栏排列': 'Restore split layout',
   '用自然语言描述要执行的操作，回车生成命令': 'Describe what you want to do, press Enter to generate a command',
   '高风险': 'High risk',
   '中风险': 'Medium risk',
@@ -42,4 +44,14 @@ export const en: Record<string, string> = {
   'AI 分析失败原因': 'Analyze failure with AI',
   '批量执行失败-{value0}.txt': 'batch-failure-{value0}.txt',
   '已添加到 AI 助手，关闭此窗口即可查看': 'Added to the AI assistant. Close this window to view it',
+  '读取终端输出': 'Read terminal output',
+  '读取终端最近显示的输出文本': 'Read the recent text shown in the terminal',
+  '终端会话标识无效': 'Invalid terminal session ID',
+  '终端行数无效': 'Invalid number of terminal lines',
+  '请求为空或过长': 'The request is empty or too long',
+  '模型未返回可用的命令': 'The model did not return a usable command',
+  '模型回复无法解析为命令建议，请换个说法重试':
+    'Could not parse the model reply as a command suggestion. Rephrase and try again',
+  '命令执行超时，已关闭通道；远端进程可能仍在运行':
+    'The command timed out and its channel was closed. The remote process may still be running',
 }

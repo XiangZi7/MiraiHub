@@ -515,14 +515,22 @@ pub async fn db_preview_mutations(
     Ok(mutation::preview(&pool, &request).await?)
 }
 
-/// 读取单条语句的 JSON 执行计划（不实际执行语句）。
+/// 读取单条语句的 JSON 执行计划（不实际执行语句）；`params` 为占位符的绑定值。
 #[tauri::command]
 pub async fn db_explain(
     manager: State<'_, DatabaseManager>,
     session_id: String,
     sql: String,
+    params: Option<Vec<Option<String>>>,
 ) -> AppResult<String> {
-    Ok(query::explain(&manager, &session_id, &sql, 60).await?)
+    Ok(query::explain_with_params(
+        &manager,
+        &session_id,
+        &sql,
+        params.as_deref().unwrap_or_default(),
+        60,
+    )
+    .await?)
 }
 
 #[tauri::command]

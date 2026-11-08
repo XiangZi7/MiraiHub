@@ -851,6 +851,18 @@ pub async fn explain(
     sql_text: &str,
     timeout_secs: u64,
 ) -> DatabaseResult<String> {
+    explain_with_params(manager, session_id, sql_text, &[], timeout_secs).await
+}
+
+/// 带绑定参数读取执行计划。`params` 为占位符已转成方言原生写法（`?` / `$n`）后的
+/// 绑定值；EXPLAIN 前缀不改变占位符的位置与序号，按预处理协议分析，不做字符串拼接。
+pub async fn explain_with_params(
+    manager: &DatabaseManager,
+    session_id: &str,
+    sql_text: &str,
+    params: &[Option<String>],
+    timeout_secs: u64,
+) -> DatabaseResult<String> {
     let kind = manager.pool(session_id).await?.kind();
     let wrapped = explain_statement(kind, sql_text)?;
     let max_rows = if kind == super::models::DatabaseKind::Sqlite {
@@ -858,7 +870,9 @@ pub async fn explain(
     } else {
         10
     };
-    let execution = execute(manager, session_id, &wrapped, max_rows, timeout_secs).await?;
+    let execution =
+        execute_with_params(manager, session_id, &wrapped, params, max_rows, timeout_secs)
+            .await?;
     let statement = execution
         .statements
         .into_iter()

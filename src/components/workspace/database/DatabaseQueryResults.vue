@@ -310,8 +310,11 @@ const selection = useGridSelection({
   copy: value => void copyGridText(value),
   edit: position => openViewer(position.row, position.column),
 })
-// 把多选统计同步到数据库底部状态栏
-usePublishDatabaseSelection(() => toStatusSelection(selection.stats.value))
+// 把多选统计同步到数据库底部状态栏；结果网格不可见（切走标签、收起结果、切到其他页签）时清掉
+usePublishDatabaseSelection(
+  () => toStatusSelection(selection.stats.value),
+  () => gridScroller.value
+)
 watch([result, page], () => {
   selection.clear()
   gridMenu.open = false

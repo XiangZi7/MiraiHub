@@ -67,6 +67,9 @@ const emit = defineEmits<{
   removeDatabase: [name: string]
   exportDatabase: [name: string]
   importDatabase: [name: string]
+  backupDatabase: []
+  sessionMonitor: []
+  userManager: []
   renameObject: [object: DatabaseObject]
   removeObject: [object: DatabaseObject]
   designObject: [object: DatabaseObject]
@@ -267,6 +270,29 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         separatorBefore: true,
       },
       ...transferItems.value,
+      {
+        id: 'backup-database',
+        label: t('备份与恢复…'),
+        icon: 'lucide:archive-restore',
+        iconTone: 'blue',
+        disabled: props.loading,
+      },
+      // 运维入口：SQLite 没有服务器会话和账号体系
+      ...(props.databaseKind === 'sqlite'
+        ? []
+        : [
+            {
+              id: 'session-monitor',
+              label: t('会话监控'),
+              icon: 'lucide:activity',
+              separatorBefore: true,
+            },
+            {
+              id: 'user-manager',
+              label: t('用户与权限'),
+              icon: 'lucide:users',
+            },
+          ]),
     ]
   }
 
@@ -654,6 +680,9 @@ function handleContextAction(id: string): void {
     emit('exportDatabase', transferDatabase.value)
   else if (id === 'import-database')
     emit('importDatabase', transferDatabase.value)
+  else if (id === 'backup-database') emit('backupDatabase')
+  else if (id === 'session-monitor') emit('sessionMonitor')
+  else if (id === 'user-manager') emit('userManager')
   else if (id === 'create-saved-query')
     emit('createSavedQuery', context.database)
   else if (id === 'open-saved-query' && savedQuery)

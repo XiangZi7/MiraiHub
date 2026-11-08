@@ -392,10 +392,17 @@ export async function executeDdl(
   })
 }
 
-/** 读取单条语句的 JSON 执行计划（只估算，不执行语句）。 */
-export async function explain(sessionId: string, sql: string): Promise<string> {
+/**
+ * 读取单条语句的 JSON 执行计划（只估算，不执行语句）。
+ * 语句含占位符时传入绑定值，占位符须已转换成方言原生写法（`?` / `$n`）。
+ */
+export async function explain(
+  sessionId: string,
+  sql: string,
+  params?: (string | null)[]
+): Promise<string> {
   ensureTauri()
-  return invoke<string>('db_explain', { sessionId, sql })
+  return invoke<string>('db_explain', { sessionId, sql, params })
 }
 
 export async function cancelQuery(sessionId: string): Promise<boolean> {
@@ -483,4 +490,95 @@ export async function importSql(
       includeDatabase: options.content !== 'data' && options.includeDatabase,
     },
   })
+}
+
+// ---------- 运维：会话监控、用户权限、原生备份 ----------
+
+/** 读取服务器上的会话列表；权限不足时 notice 给出降级说明。 */
+export async function listServerSessions(
+  sessionId: string
+): Promise<import('@/types/database-ops').SessionSnapshot> {
+  ensureTauri()
+  return invoke('db_list_server_sessions', { sessionId })
+}
+
+/** 取消目标会话的当前语句或断开其连接；断开连接在受保护环境下需二次确认。 */
+export async function killServerSession(
+  sessionId: string,
+  target: number,
+  mode: import('@/types/database-ops').KillMode
+): Promise<boolean> {
+  return guardedInvoke<boolean>('db_kill_server_session', {
+    sessionId,
+    target,
+    mode,
+  })
+}
+
+/** 列出数据库账号/角色。 */
+export async function listAccounts(
+  sessionId: string
+): Promise<import('@/types/database-ops').AccountList> {
+  ensureTauri()
+  return invoke('db_list_accounts', { sessionId })
+}
+
+/** 读取某个账号的授权明细。 */
+export async function listGrants(
+  sessionId: string,
+  name: string,
+  host?: string | null
+): Promise<import('@/types/database-ops').GrantEntry[]> {
+  ensureTauri()
+  return invoke('db_list_grants', { sessionId, name, host: host ?? null })
+}
+
+/** 预览账号操作将执行的 SQL（密码已打码）。 */
+export async function previewUserAction(
+  sessionId: string,
+  action: import('@/types/database-ops').UserAction
+): Promise<string[]> {
+  ensureTauri()
+  return invoke('db_preview_user_action', { sessionId, action })
+}
+
+/** 执行账号操作；删除用户和撤销权限在受保护环境下需二次确认。 */
+export async function applyUserAction(
+  sessionId: string,
+  action: import('@/types/database-ops').UserAction
+): Promise<void> {
+  await guardedInvoke('db_apply_user_action', { sessionId, action })
+}
+
+/** 探测本机的 mysqldump/pg_dump 及对应客户端工具。 */
+export async function detectBackupTools(
+  sessionId: string,
+  toolDir?: string
+): Promise<import('@/types/database-ops').BackupTools> {
+  ensureTauri()
+  return invoke('db_detect_backup_tools', {
+    sessionId,
+    toolDir: toolDir?.trim() || null,
+  })
+}
+
+/** 执行备份；进度通过 db-backup-progress 事件推送。 */
+export async function backupDatabase(
+  request: import('@/types/database-ops').BackupRequest
+): Promise<import('@/types/database-ops').BackupResult> {
+  ensureTauri()
+  return invoke('db_backup', { request })
+}
+
+/** 用备份文件恢复当前数据库，总是需要二次确认。 */
+export async function restoreBackup(
+  request: import('@/types/database-ops').RestoreRequest
+): Promise<import('@/types/database-ops').BackupResult> {
+  return guardedInvoke('db_restore_backup', { request })
+}
+
+/** 取消正在进行的备份或恢复任务。 */
+export async function cancelBackup(taskId: string): Promise<boolean> {
+  ensureTauri()
+  return invoke('db_cancel_backup', { taskId })
 }

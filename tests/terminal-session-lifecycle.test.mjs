@@ -48,9 +48,24 @@ const gesturesUrl = dataModule(`
   }
 `)
 const { drops } = await import(gesturesUrl)
+// 包一层真实布局引擎，测试里才能直接切换平铺
+const splitPanesUrl = dataModule(`
+  export const layouts = []
+  export const engine = {}
+  export function useSplitPanes(options) {
+    const layout = engine.create(options)
+    layouts.push(layout)
+    return layout
+  }
+`)
+const { layouts, engine } = await import(splitPanesUrl)
+engine.create = (
+  await sourceLoader()('src/composables/useSplitPanes.ts')
+).useSplitPanes
 const load = sourceLoader(
   {
     '@/composables/useSplitDropZone': gesturesUrl,
+    '@/composables/useSplitPanes': splitPanesUrl,
     '@/composables/useSshTerminal': sessionsUrl,
     '@/composables/useLocalTerminal': sessionsUrl,
     '@/composables/useSshShellCompletion': dataModule(`
@@ -82,7 +97,11 @@ const load = sourceLoader(
     '@/composables/useWorkspaceControllers': dataModule(`
       export function registerWorkspaceController() {}
     `),
-    '@/utils/window': dataModule('export function openConnectionWindow() {}'),
+    // Agent 上下文总线经 @/api/agent 间接用到 IS_TAURI
+    '@/utils/window': dataModule(`
+      export const IS_TAURI = false
+      export function openConnectionWindow() {}
+    `),
     '@/composables/useToast': dataModule('export const toast = { error() {} }'),
     '@/i18n': dataModule('export const i18n = { global: { t: key => key } }'),
     'vue-i18n': dataModule('export const useI18n = () => ({ t: key => key })'),
@@ -131,6 +150,7 @@ function connection(id, kind = 'ssh') {
 async function fixture(t, connections) {
   sessions.length = 0
   drops.length = 0
+  layouts.length = 0
   const pinia = createPinia()
   setActivePinia(pinia)
   const workspace = useWorkspaceStore()
@@ -292,4 +312,29 @@ test('向左和向上分屏保持主会话、启动命令和状态绑定，副�
     assert.equal(secondary.connects.length, 1)
     assert.equal(secondary.connects[0].options.startupCommand, undefined)
   }
+})
+
+test('分屏切换网格平铺不重建终端会话，关到不足 3 块自动退回分栏', async t => {
+  await fixture(t, [connection('a')])
+  drops[0]('right')
+  await flush()
+  drops[0]('down')
+  await flush()
+  assert.equal(sessions.length, 3)
+  const ids = sessions.map(session => session.sessionId.value)
+  const [layout] = layouts
+  for (const expected of [true, false, true]) {
+    layout.toggleTiled()
+    await flush()
+    assert.equal(layout.tiled.value, expected)
+    assert.equal(sessions.length, 3)
+    sessions.forEach((session, index) =>
+      assertConnectedOnce(session, ids[index])
+    )
+  }
+  layout.remove(layout.activeId.value)
+  await flush()
+  assert.equal(layout.tiled.value, false)
+  assert.equal(sessions.length, 3)
+  assert.equal(sessions.filter(session => session.closed.length).length, 1)
 })

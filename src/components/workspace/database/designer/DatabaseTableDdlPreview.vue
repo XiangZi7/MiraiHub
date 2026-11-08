@@ -14,9 +14,17 @@ const props = defineProps<{
   editing: boolean
   /** 当前方言是否能整体回滚。 */
   transactional: boolean
+  /** MySQL 失败前已生效的语句。 */
+  executedStatements?: readonly string[]
+  /** 根据已生效部分推导的建议逆向语句，供手动恢复。 */
+  reverseStatements?: readonly string[]
 }>()
 
-const emit = defineEmits<{ copy: [] }>()
+const emit = defineEmits<{
+  copy: []
+  copyReverse: []
+  queryReverse: []
+}>()
 
 const KEYWORDS = new Set(
   `ADD AFTER ALTER AND AS AUTO_INCREMENT BEFORE BEGIN BY CASCADE CHANGE CHARSET CHECK COLLATE COLUMN COMMENT CONSTRAINT CREATE DEFAULT DELETE DROP EACH END ENGINE EXECUTE FOR FOREIGN FUNCTION IF IN INDEX INSERT INTO IS KEY LANGUAGE LESS MAXVALUE MODIFY NOT NULL ON OR PARTITION PARTITIONS PRIMARY RANGE LIST HASH REFERENCES RENAME REPLACE RESTART RESTRICT RETURNS ROW ROW_FORMAT SCHEMA SET STATEMENT TABLE THAN TO TRIGGER TRUNCATE TYPE UNIQUE UPDATE USING VALUES WITH ACTION NO RETURN NEW OLD SEQUENCE`.split(
@@ -52,6 +60,12 @@ function tokenize(sql: string): Token[] {
 }
 
 const tokens = computed(() => tokenize(props.sql))
+/** 逆向语句的展示文本，每条一行。 */
+const reverseSql = computed(() =>
+  (props.reverseStatements ?? [])
+    .map(statement => `${statement};`)
+    .join('\n')
+)
 const tokenClass: Record<Token['kind'], string> = {
   keyword: 'text-violet font-semibold',
   string: 'text-success',
@@ -150,6 +164,69 @@ const actionMeta: Record<
     >
       {{ error }}
     </p>
+    <div
+      v-if="executedStatements?.length"
+      class="border-orange/30 bg-orange/5 scroll-thin grid max-h-56 shrink-0 gap-2 overflow-y-auto rounded-lg border p-2.5"
+    >
+      <p class="text-orange flex items-center gap-1 text-[10.5px] font-semibold">
+        <AppIcon
+          name="lucide:triangle-alert"
+          :size="11"
+        />
+        {{
+          t('以下 {value0} 条语句已生效，未被回滚：', {
+            value0: executedStatements.length,
+          })
+        }}
+      </p>
+      <ol class="grid list-inside list-decimal gap-1 text-[10.5px]">
+        <li
+          v-for="(statement, index) in executedStatements"
+          :key="index"
+          class="text-txt-2 font-mono break-all whitespace-pre-wrap select-text"
+        >
+          {{ statement }}
+        </li>
+      </ol>
+      <template v-if="reverseStatements?.length">
+        <div class="flex items-center justify-between gap-2">
+          <p class="text-txt-3 text-[10.5px] font-semibold">
+            {{ t('建议的逆向语句（请核对后手动执行，已删除的数据无法恢复）') }}
+          </p>
+          <div class="flex shrink-0 gap-1">
+            <AppButton
+              size="sm"
+              @click="emit('copyReverse')"
+            >
+              <AppIcon
+                name="lucide:copy"
+                :size="12"
+              />
+              {{ t('复制') }}
+            </AppButton>
+            <AppButton
+              size="sm"
+              @click="emit('queryReverse')"
+            >
+              <AppIcon
+                name="lucide:square-terminal"
+                :size="12"
+              />
+              {{ t('在查询中打开') }}
+            </AppButton>
+          </div>
+        </div>
+        <pre
+          class="border-line-soft bg-panel rounded-md border p-2 font-mono text-[10.5px] leading-relaxed break-all whitespace-pre-wrap select-text"
+        >{{ reverseSql }}</pre>
+      </template>
+      <p
+        v-else
+        class="text-txt-4 text-[10.5px]"
+      >
+        {{ t('无法自动推导逆向语句，请根据上方已生效的语句手动恢复。') }}
+      </p>
+    </div>
     <pre
       class="border-line-soft bg-panel scroll-thin min-h-0 flex-1 overflow-auto rounded-lg border p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap select-text"
     ><template v-if="sql"><span

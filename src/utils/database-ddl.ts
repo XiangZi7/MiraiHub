@@ -9,13 +9,18 @@ import type {
   TableDesignerIndex,
   TableIndexMethod,
   TableDesignerOptions,
+  TableDesignerPartitionChange,
+  TableDesignerPartitionItem,
   TableDesignerValidation,
+  TablePartitionAction,
 } from '@/types/database-designer'
 import type {
   DatabaseColumn,
+  DatabaseCheckConstraint,
   DatabaseForeignKey,
   DatabaseIndex,
   DatabaseKind,
+  DatabasePartitionInfo,
   DatabaseTableDetail,
   DatabaseTableOptions,
   DatabaseTrigger,
@@ -750,7 +755,7 @@ function triggerCreateStatements(
   ]
 }
 
-/** 删除触发器语句；PostgreSQL 的触发函数可能被共用，保留不删。 */
+/** 删除触发器语句；PostgreSQL 的触发函数另由 droppableTriggerFunctions 决定是否一并删除。 */
 function triggerDropStatement(
   name: string,
   kind: DatabaseKind,
@@ -770,15 +775,229 @@ function renderPartition(draft: TableDesignerDraft): string {
   const expression = partition.expression.trim()
   if (partition.method === 'HASH' || partition.method === 'KEY')
     return `\nPARTITION BY ${partition.method} (${expression}) PARTITIONS ${partition.count.trim()}`
-  const items = partition.items.map(item => {
-    const value = item.value.trim()
-    const name = quoteIdentifier(item.name.trim(), 'mysql')
-    if (partition.method === 'LIST') return `  PARTITION ${name} VALUES IN (${value})`
-    return /^maxvalue$/iu.test(value)
-      ? `  PARTITION ${name} VALUES LESS THAN MAXVALUE`
-      : `  PARTITION ${name} VALUES LESS THAN (${value})`
-  })
+  const items = partition.items.map(
+    item => `  ${renderPartitionItem(partition.method === 'LIST' ? 'LIST' : 'RANGE', false, item)}`
+  )
   return `\nPARTITION BY ${partition.method} (${expression}) (\n${items.join(',\n')}\n)`
+}
+
+/**
+ * 单个 RANGE / LIST 分区定义，建表与已有表 ADD / REORGANIZE PARTITION 共用。
+ * RANGE COLUMNS 的 MAXVALUE 必须写在括号里，普通 RANGE 写裸 MAXVALUE。
+ */
+function renderPartitionItem(
+  family: 'RANGE' | 'LIST',
+  columns: boolean,
+  item: Pick<TableDesignerPartitionItem, 'name' | 'value'>
+): string {
+  const value = item.value.trim()
+  const name = quoteIdentifier(item.name.trim(), 'mysql')
+  if (family === 'LIST') return `PARTITION ${name} VALUES IN (${value})`
+  if (/^maxvalue$/iu.test(value))
+    return columns
+      ? `PARTITION ${name} VALUES LESS THAN (MAXVALUE)`
+      : `PARTITION ${name} VALUES LESS THAN MAXVALUE`
+  return `PARTITION ${name} VALUES LESS THAN (${value})`
+}
+
+/** 已有分区表能在设计器里做哪些分区维护；actions 为空表示只读，reason 说明原因或限制。 */
+export interface PartitionEditSupport {
+  family: 'RANGE' | 'LIST' | 'HASH' | ''
+  /** RANGE COLUMNS / LIST COLUMNS。 */
+  columns: boolean
+  actions: TablePartitionAction[]
+  reason: string
+}
+
+/** 判断已有表的分区能否在设计器里维护：RANGE / LIST 支持全部操作，HASH / KEY 只能清空，子分区只读。 */
+export function partitionEditSupport(
+  kind: DatabaseKind,
+  partition: DatabasePartitionInfo | null | undefined
+): PartitionEditSupport {
+  const readonly = (reason: string): PartitionEditSupport => ({
+    family: '',
+    columns: false,
+    actions: [],
+    reason,
+  })
+  if (kind !== 'mysql')
+    return readonly(i18n.global.t('当前数据库暂不支持在设计器中维护分区'))
+  if (!partition?.method || !partition.partitions.length)
+    return readonly(
+      i18n.global.t('当前表未分区；为已有表设置分区方式请在查询中执行 ALTER TABLE … PARTITION BY。')
+    )
+  // information_schema 每个子分区一行，分区名重复说明带子分区。
+  const names = partition.partitions.map(item => item.name.toLowerCase())
+  if (new Set(names).size !== names.length)
+    return readonly(
+      i18n.global.t('当前表包含子分区，暂不支持在此维护，请在查询中执行 ALTER TABLE … PARTITION。')
+    )
+  const method = partition.method.trim().toUpperCase()
+  const columns = /\bCOLUMNS$/u.test(method)
+  if (method === 'RANGE' || method === 'RANGE COLUMNS')
+    return {
+      family: 'RANGE',
+      columns,
+      actions: ['add', 'drop', 'truncate', 'reorganize'],
+      reason: '',
+    }
+  if (method === 'LIST' || method === 'LIST COLUMNS')
+    return {
+      family: 'LIST',
+      columns,
+      actions: ['add', 'drop', 'truncate', 'reorganize'],
+      reason: '',
+    }
+  if (/^(LINEAR )?(HASH|KEY)$/u.test(method))
+    return {
+      family: 'HASH',
+      columns: false,
+      actions: ['truncate'],
+      reason: i18n.global.t(
+        'HASH / KEY 分区在此只能清空分区；增减分区数请在查询中执行 ADD PARTITION PARTITIONS / COALESCE PARTITION。'
+      ),
+    }
+  return readonly(
+    i18n.global.t('分区方式 {value0} 暂不支持在此维护', { value0: partition.method })
+  )
+}
+
+/** 分区维护操作对应的 SQL 关键字，用于错误提示与变更摘要。 */
+function partitionActionKeyword(action: TablePartitionAction): string {
+  return `${action.toUpperCase()} PARTITION`
+}
+
+/** RANGE 分区的边界是否为 MAXVALUE（RANGE COLUMNS 看第一列）。 */
+function isMaxValueBound(description: string): boolean {
+  return /^\(?\s*maxvalue\b/iu.test(description.trim())
+}
+
+/**
+ * 把已有 MySQL 分区表的维护操作生成为独立语句（分区操作不能与其它 ALTER 子句合并）。
+ * 顺序固定为 TRUNCATE → DROP → REORGANIZE → ADD；校验失败直接抛出说明。
+ */
+function partitionChangeStatements(
+  kind: DatabaseKind,
+  current: DatabaseTableDetail,
+  changes: readonly TableDesignerPartitionChange[]
+): string[] {
+  if (!changes.length) return []
+  const support = partitionEditSupport(kind, current.partition)
+  const existing = current.partition?.partitions ?? []
+  const positions = new Map(
+    existing.map((item, index) => [item.name.toLowerCase(), index])
+  )
+  const target = qualifiedName(current.schema, current.name, kind)
+  const quoted = (names: readonly string[]) =>
+    names.map(name => quoteIdentifier(name, 'mysql')).join(', ')
+
+  // 每个现有分区最多被一个操作引用，先收集所有引用再校验新分区名。
+  const referenced = new Set<string>()
+  const removed = new Set<string>()
+  for (const change of changes) {
+    const keyword = partitionActionKeyword(change.action)
+    if (!support.actions.includes(change.action))
+      throw new Error(
+        support.reason ||
+          i18n.global.t('当前分区方式不支持 {value0}', { value0: keyword })
+      )
+    if (change.action === 'add') continue
+    if (!change.partitions.length)
+      throw new Error(
+        i18n.global.t('{value0} 需要选择至少一个分区', { value0: keyword })
+      )
+    for (const name of change.partitions) {
+      const key = name.toLowerCase()
+      if (!positions.has(key))
+        throw new Error(i18n.global.t('分区“{value0}”不存在', { value0: name }))
+      if (referenced.has(key))
+        throw new Error(
+          i18n.global.t('分区“{value0}”被多个分区操作引用', { value0: name })
+        )
+      referenced.add(key)
+      if (change.action !== 'truncate') removed.add(key)
+    }
+    if (change.action === 'reorganize' && support.family === 'RANGE') {
+      const sorted = change.partitions
+        .map(name => positions.get(name.toLowerCase())!)
+        .sort((left, right) => left - right)
+      if (sorted.some((value, index) => index > 0 && value !== sorted[index - 1] + 1))
+        throw new Error(i18n.global.t('RANGE 分区只能重组相邻的分区'))
+    }
+  }
+
+  const dropped = changes
+    .filter(change => change.action === 'drop')
+    .flatMap(change => change.partitions)
+  if (dropped.length && dropped.length >= existing.length)
+    throw new Error(
+      i18n.global.t('不能删除全部分区；取消分区请在查询中执行 ALTER TABLE … REMOVE PARTITIONING。')
+    )
+
+  // 新分区名不能与保留下来的分区或彼此重复；重组可以沿用被重组分区的名字。
+  const names = new Set(
+    existing
+      .map(item => item.name.toLowerCase())
+      .filter(name => !removed.has(name))
+  )
+  for (const change of changes) {
+    if (change.action !== 'add' && change.action !== 'reorganize') continue
+    if (!change.items.length)
+      throw new Error(
+        i18n.global.t('{value0} 至少需要一个新分区', {
+          value0: partitionActionKeyword(change.action),
+        })
+      )
+    for (const item of change.items) {
+      const name = item.name.trim().toLowerCase()
+      if (!name || !/^\w+$/u.test(name) || names.has(name))
+        throw new Error(
+          i18n.global.t('分区名“{value0}”为空、不合法或重复', {
+            value0: item.name,
+          })
+        )
+      names.add(name)
+      if (!item.value.trim() || UNSAFE_SQL_TOKEN.test(item.value))
+        throw new Error(
+          i18n.global.t('分区“{value0}”的取值不合法', { value0: item.name })
+        )
+    }
+  }
+
+  // RANGE 只能在末尾追加；末尾是 MAXVALUE 且未被删除或重组时只能改用重组。
+  const last = existing.at(-1)
+  if (
+    support.family === 'RANGE' &&
+    changes.some(change => change.action === 'add') &&
+    last &&
+    !removed.has(last.name.toLowerCase()) &&
+    isMaxValueBound(last.description)
+  )
+    throw new Error(
+      i18n.global.t('最后一个分区是 MAXVALUE，无法追加 RANGE 分区；请改用重组分区拆分“{value0}”。', {
+        value0: last.name,
+      })
+    )
+
+  const family = support.family === 'LIST' ? 'LIST' : 'RANGE'
+  const definitions = (items: readonly TableDesignerPartitionItem[]) =>
+    items
+      .map(item => `  ${renderPartitionItem(family, support.columns, item)}`)
+      .join(',\n')
+  const order: TablePartitionAction[] = ['truncate', 'drop', 'reorganize', 'add']
+  return order.flatMap(action =>
+    changes
+      .filter(change => change.action === action)
+      .map(change => {
+        if (action === 'truncate')
+          return `ALTER TABLE ${target} TRUNCATE PARTITION ${quoted(change.partitions)}`
+        if (action === 'drop')
+          return `ALTER TABLE ${target} DROP PARTITION ${quoted(change.partitions)}`
+        if (action === 'reorganize')
+          return `ALTER TABLE ${target} REORGANIZE PARTITION ${quoted(change.partitions)} INTO (\n${definitions(change.items)}\n)`
+        return `ALTER TABLE ${target} ADD PARTITION (\n${definitions(change.items)}\n)`
+      })
+  )
 }
 
 export function buildCreateTableSql(options: TableDesignerOptions): string {
@@ -1622,6 +1841,7 @@ export function buildAlterTableStatements({
   // 草稿没带 checks / triggers（旧调用方）时不碰库里已有的对象。
   const preStatements: string[] = []
   const postStatements: string[] = []
+  let sqliteChecksChanged = false
   if (draft.checks && current.checks) {
     const draftChecks = new Map(
       draft.checks.map(check => [check.name.trim().toLowerCase(), check])
@@ -1629,13 +1849,15 @@ export function buildAlterTableStatements({
     const storedChecks = new Map(
       current.checks.map(check => [check.name.toLowerCase(), check])
     )
-    const sameExpression = (left: string, right: string) =>
-      left.replace(/\s+/gu, ' ').trim() === right.replace(/\s+/gu, ' ').trim()
+    const sameExpression = sameCheckExpression
     for (const [key, stored] of storedChecks) {
       const next = draftChecks.get(key)
       if (next && sameExpression(next.expression, stored.expression)) continue
-      if (kind === 'sqlite')
-        throw new Error(i18n.global.t('SQLite 不支持修改已有表的检查约束'))
+      // SQLite 改检查约束只能重建表，统一在最后生成重建语句。
+      if (kind === 'sqlite') {
+        sqliteChecksChanged = true
+        continue
+      }
       preStatements.push(
         `ALTER TABLE ${target} ${kind === 'mysql' ? 'DROP CHECK' : 'DROP CONSTRAINT'} ${quoteIdentifier(stored.name, kind)}`
       )
@@ -1644,8 +1866,10 @@ export function buildAlterTableStatements({
       const stored = storedChecks.get(key)
       if (stored && sameExpression(check.expression, stored.expression))
         continue
-      if (kind === 'sqlite')
-        throw new Error(i18n.global.t('SQLite 不支持修改已有表的检查约束'))
+      if (kind === 'sqlite') {
+        sqliteChecksChanged = true
+        continue
+      }
       postStatements.push(`ALTER TABLE ${target} ADD ${renderCheck(check, kind)}`)
     }
   }
@@ -1662,6 +1886,11 @@ export function buildAlterTableStatements({
         triggerDropStatement(stored.name, kind, current.schema, current.name)
       )
     }
+    // 专属触发函数默认随触发器删除，用户在设计器里取消勾选的保留。
+    const keep = new Set(draft.keepTriggerFunctions ?? [])
+    for (const item of droppableTriggerFunctions(kind, current, draft))
+      if (!keep.has(item.function))
+        preStatements.push(`DROP FUNCTION IF EXISTS ${item.function}()`)
     for (const trigger of draft.triggers) {
       const stored = storedTriggers.get(trigger.name.trim().toLowerCase())
       if (stored && !triggerChanged(stored, trigger)) continue
@@ -1734,6 +1963,20 @@ export function buildAlterTableStatements({
   }
   statements.unshift(...preStatements)
   statements.push(...postStatements)
+  // 分区维护不能与其它子句合并，逐条放在结构修改之后、改名之前。
+  statements.push(
+    ...partitionChangeStatements(kind, current, draft.partitionChanges ?? [])
+  )
+  // SQLite 重建表会原样重建索引与触发器，不能和其它结构修改混在同一次保存里。
+  if (sqliteChecksChanged) {
+    if (statements.length)
+      throw new Error(
+        i18n.global.t('SQLite 需要重建表才能修改检查约束，请先单独保存字段、索引、外键或触发器的修改')
+      )
+    statements.push(
+      ...sqliteCheckRebuildStatements(current, draft.checks ?? [])
+    )
+  }
 
   // 改名 / 换 schema 放在最后。
   const schemaChanged = draft.schema.trim() !== current.schema
@@ -1760,6 +2003,33 @@ export function buildAlterTableStatements({
   return statements
 }
 
+/**
+ * 找出本次删除的 PostgreSQL 触发器中，触发函数只被它使用、且草稿里没有别的触发器再引用的那些。
+ * 设计器据此展示“同时删除触发器函数”勾选项，ALTER 生成据此追加 DROP FUNCTION。
+ */
+export function droppableTriggerFunctions(
+  kind: DatabaseKind,
+  current: Pick<DatabaseTableDetail, 'triggers'> | null,
+  draft: Pick<TableDesignerDraft, 'triggers'>
+): { trigger: string; function: string }[] {
+  if (kind !== 'postgresql' || !current?.triggers || !draft.triggers) return []
+  const draftNames = new Set(
+    draft.triggers.map(trigger => trigger.name.trim().toLowerCase())
+  )
+  const referenced = new Set(
+    draft.triggers.map(trigger => (trigger.functionName ?? '').trim())
+  )
+  return current.triggers
+    .filter(
+      stored =>
+        stored.functionExclusive &&
+        stored.function &&
+        !draftNames.has(stored.name.toLowerCase()) &&
+        !referenced.has(stored.function)
+    )
+    .map(stored => ({ trigger: stored.name, function: stored.function }))
+}
+
 /** 判断库中触发器与草稿是否不同（时机、事件、级别、语句体、函数名），不同则需删除重建。 */
 function triggerChanged(
   stored: DatabaseTrigger,
@@ -1779,7 +2049,221 @@ function triggerChanged(
   )
 }
 
-/** 生成保存前的变更摘要：列出新增 / 修改 / 删除 / 重命名的字段、索引、外键、检查约束、触发器与表选项。 */
+/** 忽略空白差异比较两个检查约束表达式。 */
+function sameCheckExpression(left: string, right: string): boolean {
+  return left.replace(/\s+/gu, ' ').trim() === right.replace(/\s+/gu, ' ').trim()
+}
+
+/** SQLite CREATE TABLE 文本拆出的结构：括号前的表头、顶层字段 / 约束项、括号后的表选项。 */
+interface SqliteCreateTableParts {
+  head: string
+  items: string[]
+  suffix: string
+}
+
+/**
+ * 按顶层逗号拆分 SQLite 保存的 CREATE TABLE 文本，引号与注释里的括号、逗号不参与拆分。
+ * CREATE TABLE … AS SELECT 或无法识别的文本返回 null。
+ */
+function splitSqliteCreateTable(sql: string): SqliteCreateTableParts | null {
+  if (!/^\s*CREATE\s+(?:TEMP\s+|TEMPORARY\s+)?TABLE\b/iu.test(sql)) return null
+  let depth = 0
+  let open = -1
+  let itemStart = 0
+  const items: string[] = []
+  for (let index = 0; index < sql.length; index++) {
+    const char = sql[index]
+    if (char === "'" || char === '"' || char === '`' || char === '[') {
+      // 成对的转义引号会被当成两段相邻字符串，结果一样。
+      const close = sql.indexOf(char === '[' ? ']' : char, index + 1)
+      if (close < 0) return null
+      index = close
+    } else if (char === '-' && sql[index + 1] === '-') {
+      const newline = sql.indexOf('\n', index)
+      index = newline < 0 ? sql.length : newline
+    } else if (char === '/' && sql[index + 1] === '*') {
+      const close = sql.indexOf('*/', index + 2)
+      index = close < 0 ? sql.length : close + 1
+    } else if (char === '(') {
+      depth++
+      if (depth === 1 && open < 0) {
+        open = index
+        itemStart = index + 1
+        if (/\bAS\s*$/iu.test(sql.slice(0, open))) return null
+      }
+    } else if (char === ')') {
+      depth--
+      if (depth === 0 && open >= 0) {
+        items.push(sql.slice(itemStart, index))
+        return {
+          head: sql.slice(0, open),
+          items: items.map(item => item.trim()),
+          suffix: sql.slice(index + 1).trimEnd(),
+        }
+      }
+    } else if (char === ',' && depth === 1) {
+      items.push(sql.slice(itemStart, index))
+      itemStart = index + 1
+    }
+  }
+  return null
+}
+
+/** 去掉 SQLite 标识符外层的引号并还原转义。 */
+function unquoteSqliteIdentifier(identifier: string): string {
+  const first = identifier[0]
+  if (first === '[') return identifier.slice(1, -1)
+  if (first === '"' || first === '`' || first === "'")
+    return identifier.slice(1, -1).replaceAll(`${first}${first}`, first)
+  return identifier
+}
+
+/** 识别表级 CHECK 约束项，返回约束名（未命名为空串）与括号内的表达式；不是 CHECK 时返回 null。 */
+function sqliteCheckItem(
+  item: string
+): { name: string; expression: string } | null {
+  const text = item
+    .replace(/^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*/u, '')
+    .trimEnd()
+  const match =
+    /^(?:CONSTRAINT\s+("(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]*\]|'(?:[^']|'')*'|[^\s(]+)\s+)?CHECK\s*\(/iu.exec(
+      text
+    )
+  if (!match || !text.endsWith(')')) return null
+  return {
+    name: unquoteSqliteIdentifier(match[1] ?? ''),
+    expression: text.slice(match[0].length, -1).trim(),
+  }
+}
+
+/**
+ * 解析 SQLite 表详情里的 DDL：第一条是建表语句，其余为索引与触发器（重建时原样执行）。
+ * 未命名的检查约束按顺序给出 check_N 名称，以便在设计器里编辑和对比。
+ */
+function parseSqliteTableDdl(ddl: string): {
+  create: SqliteCreateTableParts
+  createSql: string
+  checks: (DatabaseCheckConstraint & { item: number })[]
+  others: string[]
+} | null {
+  const statements = ddl
+    .trim()
+    .split(/;\s*\n\n(?=CREATE\s)/iu)
+    .map(statement => statement.trim().replace(/;$/u, ''))
+    .filter(Boolean)
+  const createSql = statements[0] ?? ''
+  const create = splitSqliteCreateTable(createSql)
+  if (!create) return null
+  const found = create.items.flatMap((item, index) => {
+    const check = sqliteCheckItem(item)
+    return check ? [{ ...check, item: index }] : []
+  })
+  const named = new Set(
+    found.filter(check => check.name).map(check => check.name.toLowerCase())
+  )
+  let counter = 1
+  const checks = found.map(check => {
+    if (check.name) return check
+    while (named.has(`check_${counter}`)) counter++
+    const name = `check_${counter++}`
+    return { ...check, name }
+  })
+  return { create, createSql, checks, others: statements.slice(1) }
+}
+
+/** 从 SQLite 表 DDL 中读出表级检查约束；DDL 无法解析时返回 undefined（设计器保持只读）。 */
+export function sqliteTableChecks(
+  ddl: string
+): DatabaseCheckConstraint[] | undefined {
+  const parsed = parseSqliteTableDdl(ddl)
+  return parsed?.checks.map(({ name, expression }) => ({ name, expression }))
+}
+
+/**
+ * SQLite 不能直接改检查约束：在同一事务里按原建表文本创建临时表、复制数据、删除旧表、改名，
+ * 再原样重建索引与触发器。未变化的约束与字段定义保持原文，新约束追加在末尾。
+ * DROP TABLE 会触发外键动作，所以自引用直接拒绝，被其他表引用时由守卫语句中止并回滚。
+ */
+function sqliteCheckRebuildStatements(
+  current: DatabaseTableDetail,
+  draftChecks: readonly TableDesignerCheck[]
+): string[] {
+  const t = i18n.global.t
+  const parsed = parseSqliteTableDdl(current.ddl)
+  if (!parsed)
+    throw new Error(t('无法解析 SQLite 建表语句，不能通过重建表修改检查约束'))
+  if (
+    current.foreignKeys.some(
+      foreignKey =>
+        foreignKey.referencedTable.toLowerCase() === current.name.toLowerCase()
+    )
+  )
+    throw new Error(
+      t('表“{value0}”有指向自身的外键，重建会触发外键动作，请在查询中手动修改检查约束', {
+        value0: current.name,
+      })
+    )
+
+  const kind: DatabaseKind = 'sqlite'
+  const schema = current.schema || 'main'
+  const target = qualifiedName(schema, current.name, kind)
+  const temporaryName = `_mh_rebuild_${current.name}`
+  const temporary = qualifiedName(schema, temporaryName, kind)
+  const master = `${quoteIdentifier(schema, kind)}.sqlite_master`
+  const sequence = `${quoteIdentifier(schema, kind)}.sqlite_sequence`
+  const guard = 'temp."_mh_rebuild_guard"'
+
+  // 未变化的约束保留原文（包括未命名约束），变化或新增的按草稿重新生成。
+  const draftByName = new Map(
+    draftChecks.map(check => [check.name.trim().toLowerCase(), check])
+  )
+  const storedByItem = new Map(parsed.checks.map(check => [check.item, check]))
+  const kept = new Set<string>()
+  const items = parsed.create.items.flatMap((item, index) => {
+    const stored = storedByItem.get(index)
+    if (!stored) return [item]
+    const next = draftByName.get(stored.name.toLowerCase())
+    if (!next || !sameCheckExpression(next.expression, stored.expression))
+      return []
+    kept.add(stored.name.toLowerCase())
+    return [item]
+  })
+  for (const check of draftChecks)
+    if (!kept.has(check.name.trim().toLowerCase()))
+      items.push(renderCheck(check, kind))
+
+  const columns = current.columns
+    .map(column => quoteIdentifier(column.name, kind))
+    .join(', ')
+  const comment = (text: string) => `-- ${text}\n`
+  const statements = [
+    `${comment(t('SQLite 无法直接修改检查约束，以下语句将在同一事务中重建表，任一步失败都会整体回滚。'))}${comment(t('1. 确认没有其他表的外键引用此表（删除旧表会触发外键动作）'))}CREATE TEMP TABLE ${guard} ("referencing_foreign_keys" INTEGER CONSTRAINT "table_is_referenced_by_foreign_keys" CHECK ("referencing_foreign_keys" = 0))`,
+    `INSERT INTO ${guard} SELECT COUNT(*) FROM ${master} AS m, pragma_foreign_key_list(m.name, ${quoteLiteral(schema, kind)}) AS f WHERE m.type = 'table' AND f."table" = ${quoteLiteral(current.name, kind)} COLLATE NOCASE`,
+    `DROP TABLE ${guard}`,
+    `${comment(t('2. 按新的检查约束创建临时表并复制数据'))}CREATE TABLE ${temporary} (\n  ${items.join(',\n  ')}\n)${parsed.create.suffix}`,
+    `INSERT INTO ${temporary} (${columns}) SELECT ${columns} FROM ${target}`,
+  ]
+  // AUTOINCREMENT 的计数器随旧表删除，先转给临时表，改名时会一起改过去。
+  if (/\bAUTOINCREMENT\b/iu.test(parsed.createSql))
+    statements.push(
+      `DELETE FROM ${sequence} WHERE name = ${quoteLiteral(temporaryName, kind)}`,
+      `INSERT INTO ${sequence} (name, seq) SELECT ${quoteLiteral(temporaryName, kind)}, seq FROM ${sequence} WHERE name = ${quoteLiteral(current.name, kind)}`
+    )
+  statements.push(
+    `${comment(t('3. 删除旧表，并把临时表改回原名'))}DROP TABLE ${target}`,
+    `ALTER TABLE ${temporary} RENAME TO ${quoteIdentifier(current.name, kind)}`
+  )
+  parsed.others.forEach((statement, index) =>
+    statements.push(
+      index === 0
+        ? `${comment(t('4. 原样重建索引与触发器'))}${statement}`
+        : statement
+    )
+  )
+  return statements
+}
+
+/** 生成保存前的变更摘要：列出新增 / 修改 / 删除 / 重命名的字段、索引、外键、检查约束、触发器、分区维护与表选项。 */
 export function summarizeTableChanges(
   kind: DatabaseKind,
   current: DatabaseTableDetail | null,
@@ -1874,7 +2358,31 @@ export function summarizeTableChanges(
     )
   if (draft.triggers && current.triggers)
     diffNamed('触发器', draft.triggers, current.triggers, triggerChanged)
+  const keepFunctions = new Set(draft.keepTriggerFunctions ?? [])
+  for (const item of droppableTriggerFunctions(kind, current, draft))
+    if (!keepFunctions.has(item.function))
+      changes.push({ action: 'remove', target: '触发器函数', name: item.function })
 
+  // 分区维护：新增 / 删除按分区列出，清空与重组记为修改。
+  for (const change of draft.partitionChanges ?? []) {
+    const newNames = change.items.map(item => item.name.trim()).join(', ')
+    if (change.action === 'add')
+      for (const item of change.items)
+        changes.push({ action: 'add', target: '分区', name: item.name.trim() })
+    else if (change.action === 'drop')
+      for (const name of change.partitions)
+        changes.push({ action: 'remove', target: '分区', name })
+    else
+      changes.push({
+        action: 'modify',
+        target: '分区',
+        name: change.partitions.join(', '),
+        detail:
+          change.action === 'truncate'
+            ? 'TRUNCATE'
+            : `REORGANIZE → ${newNames}`,
+      })
+  }
   // 表级：改名与选项。
   if (
     draft.name.trim() !== current.name ||

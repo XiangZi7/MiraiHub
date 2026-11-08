@@ -1,4 +1,8 @@
 import { inject, onScopeDispose, provide, type InjectionKey, type Ref } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { onContextFromWindows } from '@/api/agent'
+import { toast } from '@/composables/useToast'
+import { i18n } from '@/i18n'
 import type { AgentContextRequest } from '@/types/agent'
 
 /**
@@ -32,6 +36,34 @@ export function requestAgentContext(ask: AgentContextAsk): boolean {
 export function onAgentContextRequest(handler: AgentContextHandler): void {
   handlers.add(handler)
   onScopeDispose(() => handlers.delete(handler))
+}
+
+// 主窗口接收原生子窗口（远端编辑器等）转交的上下文：交给 SSH 工作区并把主窗口带到前台；只在主窗口布局挂载一次。
+export function useWindowAgentContextBridge(): void {
+  let disposed = false
+  let stop: (() => void) | undefined
+  void onContextFromWindows(ask => {
+    if (!requestAgentContext(ask)) {
+      toast.error(i18n.global.t('没有可用的 AI 助手，请先连接终端'))
+      return
+    }
+    const win = getCurrentWindow()
+    void win
+      .unminimize()
+      .then(() => win.show())
+      .then(() => win.setFocus())
+      .catch(error => console.warn('切换到主窗口失败：', error))
+    toast.success(i18n.global.t('已添加到 AI 助手'))
+  })
+    .then(unlisten => {
+      if (disposed) unlisten()
+      else stop = unlisten
+    })
+    .catch(error => console.warn('订阅子窗口 AI 上下文失败：', error))
+  onScopeDispose(() => {
+    disposed = true
+    stop?.()
+  })
 }
 
 /** Agent 面板向其 Markdown 子组件提供的活动终端会话 id，空串表示未连接 */

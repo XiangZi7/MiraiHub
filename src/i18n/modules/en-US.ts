@@ -15,6 +15,8 @@ import { en as sshFiles } from './ssh-files'
 import { en as sshTerminal } from './ssh-terminal'
 import { en as databaseSafety } from './database-safety'
 import { en as dbux } from './dbux'
+import { en as dbOps } from './db-ops'
+import { en as connectionState } from './connection-state'
 export default {
   数据导入完成: 'Data import completed',
   数据导入失败: 'Data import failed',
@@ -157,6 +159,8 @@ export default {
   ...sshTerminal,
   ...databaseSafety,
   ...dbux,
+  ...dbOps,
+  ...connectionState,
   请求批准: 'Ask to approve',
   帮我批准: 'Auto approve',
   完全访问权限: 'Full access',

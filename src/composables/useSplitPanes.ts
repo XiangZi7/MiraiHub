@@ -23,6 +23,8 @@ interface SplitPanesOptions {
 }
 
 const DEFAULT_MIN_SHARE_OF_PAIR = 0.15
+/** 网格平铺至少需要的面板数：只有两块时，平铺和左右分栏没有区别 */
+const MIN_TILED_PANES = 3
 
 /**
  * 一维可调分屏的布局引擎。
@@ -32,6 +34,9 @@ const DEFAULT_MIN_SHARE_OF_PAIR = 0.15
  *
  * 占比用百分比表示并始终归一化到 100，这样面板增删后不必关心历史累计误差，
  * 渲染端直接把它当 flex-grow 用。
+ *
+ * 网格平铺只是同一批面板的另一种展示方式：不改面板顺序、占比和排列方向，
+ * 切回分栏时原样恢复。
  */
 export function useSplitPanes(options: SplitPanesOptions) {
   const minShareOfPair = options.minShareOfPair ?? DEFAULT_MIN_SHARE_OF_PAIR
@@ -42,9 +47,13 @@ export function useSplitPanes(options: SplitPanesOptions) {
     orientation: 'vertical' as SplitOrientation,
     /** 当前获得焦点的面板。分屏时从它身上让出空间 */
     activeId: options.rootId,
+    /** 是否按两列网格平铺。面板少于 MIN_TILED_PANES 个时自动退回分栏 */
+    tiled: false,
   })
 
   const split = computed(() => state.panes.length > 1)
+  /** 面板数是否够平铺，决定平铺开关是否出现 */
+  const canTile = computed(() => state.panes.length >= MIN_TILED_PANES)
 
   /** 把占比重新缩放到总和 100，吸收浮点累计误差 */
   function normalize(): void {
@@ -68,14 +77,16 @@ export function useSplitPanes(options: SplitPanesOptions) {
    *
    * 新面板从当前活动面板身上对半分 —— 分屏的直觉是「把我这块一分为二」，
    * 而不是把已经调好的所有面板等比压扁。
+   * 平铺时落位只决定插在活动面板之前还是之后，不改排列方向，免得切回分栏时变了样。
    */
   function add(
     direction: SplitDirection = 'down',
     id: string = crypto.randomUUID()
   ): string {
     if (state.panes.some(pane => pane.id === id)) return id
-    state.orientation =
-      direction === 'up' || direction === 'down' ? 'vertical' : 'horizontal'
+    if (!state.tiled)
+      state.orientation =
+        direction === 'up' || direction === 'down' ? 'vertical' : 'horizontal'
 
     const activeIndex = state.panes.findIndex(
       pane => pane.id === state.activeId
@@ -96,6 +107,7 @@ export function useSplitPanes(options: SplitPanesOptions) {
   /**
    * 移除面板。始终保留至少一个 —— 面板数归零会让整块工作区变空白，
    * 而用户关掉的只是分屏，不是这个连接。
+   * 剩下的面板不够平铺时自动退回分栏。
    */
   function remove(id: string): void {
     if (state.panes.length <= 1) return
@@ -104,6 +116,7 @@ export function useSplitPanes(options: SplitPanesOptions) {
 
     const [released] = state.ratios.splice(index, 1)
     state.panes.splice(index, 1)
+    if (!canTile.value) state.tiled = false
 
     // 腾出的占比按现有权重还给剩下的面板，保持它们之间的相对比例不变
     const total = state.ratios.reduce((sum, ratio) => sum + ratio, 0)
@@ -148,14 +161,21 @@ export function useSplitPanes(options: SplitPanesOptions) {
       state.orientation === 'vertical' ? 'horizontal' : 'vertical'
   }
 
+  /** 在两列网格平铺与原来的分栏之间切换；面板不够平铺时保持分栏 */
+  function toggleTiled(): void {
+    state.tiled = !state.tiled && canTile.value
+  }
+
   return {
     ...toRefs(state),
     split,
+    canTile,
     add,
     remove,
     resize,
     focus,
     toggleOrientation,
+    toggleTiled,
     distributeEvenly,
   }
 }

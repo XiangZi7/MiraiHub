@@ -32,6 +32,8 @@ const props = defineProps<{
   columns: ReadonlyArray<DatabaseQueryColumn>
   canEdit: boolean
   deleted: boolean
+  /** 本行是刚提交成功的改动/新增行，播放一次提交高亮。 */
+  flash?: boolean
   /** 全表未提交的修改，key 为 `行:列`；这里只读取本行的键。 */
   edits: ReadonlyMap<string, string | null>
   editingColumn: number | null
@@ -123,7 +125,8 @@ const cells = computed<CellView[]>(() =>
         'hover:bg-hover',
         deleted
           ? 'bg-danger/10 text-danger decoration-danger motion-safe:grid-row-removed line-through opacity-70'
-          : 'text-txt-2'
+          : 'text-txt-2',
+        flash && 'motion-safe:grid-commit-flash'
       )
     "
     :data-row-index="rowIndex"

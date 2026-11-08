@@ -1,3 +1,4 @@
+import { useElementVisibility } from '@vueuse/core'
 import {
   inject,
   onBeforeUnmount,
@@ -32,15 +33,23 @@ export function provideDatabaseStatusSelection(): ShallowRef<DatabaseSelectionSt
 /**
  * 网格组件调用：把自己的选区统计发布到状态栏。
  * 组件卸载或不可见（getter 返回 null）时自动清空，避免显示其他标签的残留统计。
+ *
+ * 传入网格滚动容器时还会跟踪它是否真的可见：标签切走（v-show 隐藏）、结果面板收起
+ * 或切到非数据页签时，状态栏上本网格的统计会被清掉；切回来且选区还在时重新发布。
  */
 export function usePublishDatabaseSelection(
-  getter: () => DatabaseSelectionStats | null
+  getter: () => DatabaseSelectionStats | null,
+  element?: () => HTMLElement | null | undefined
 ): void {
   const target = inject(selectionKey, null)
   if (!target) return
+  // 元素被 v-if 移除时 IntersectionObserver 不会再回调，需同时判断元素是否还存在。
+  const intersecting = element ? useElementVisibility(element) : null
+  const visible = (): boolean =>
+    !element || (Boolean(element()) && Boolean(intersecting?.value))
   let published: DatabaseSelectionStats | null = null
   watchEffect(() => {
-    const next = getter()
+    const next = visible() ? getter() : null
     if (next) target.value = next
     else if (target.value === published) target.value = null
     published = next

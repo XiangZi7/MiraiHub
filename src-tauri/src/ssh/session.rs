@@ -434,11 +434,22 @@ impl SshSession {
     }
 
     /// 与 [`Self::exec`] 相同，但可指定超时；超时后关闭通道并返回错误。
+    ///
+    /// 时限从开通道算起：连接半死时开通道本身也可能不返回，同样不能无限等。
     pub async fn exec_timeout(&self, command: &str, limit: Duration) -> SshResult<CommandOutput> {
-        let mut channel = {
-            let handle = self.handle.lock().await;
-            handle.channel_open_session().await?
+        let deadline = tokio::time::Instant::now() + limit;
+        // 错误文案固定，前端才能按原文翻译；具体时限写进日志
+        let timed_out = || {
+            log::warn!("SSH 命令超过 {} 秒未结束，已放弃等待", limit.as_secs());
+            SshError::CommandTimeout
         };
+        let open = async {
+            let handle = self.handle.lock().await;
+            handle.channel_open_session().await
+        };
+        let mut channel = tokio::time::timeout_at(deadline, open)
+            .await
+            .map_err(|_| timed_out())??;
 
         let run = async {
             channel.exec(true, command).await?;
@@ -466,14 +477,12 @@ impl SshSession {
                 exit_code,
             })
         };
-        match tokio::time::timeout(limit, run).await {
+        match tokio::time::timeout_at(deadline, run).await {
             Ok(result) => result,
             Err(_) => {
-                let _ = channel.close().await;
-                Err(SshError::InvalidInput(format!(
-                    "命令超过 {} 秒仍未结束，已关闭通道；远端进程可能仍在运行",
-                    limit.as_secs()
-                )))
+                // 关通道也要限时：会话消息队列堵住时不能在这里再挂住
+                let _ = tokio::time::timeout(Duration::from_secs(2), channel.close()).await;
+                Err(timed_out())
             }
         }
     }
@@ -1339,10 +1348,14 @@ pub(crate) mod tests {
         async fn exec_request(
             &mut self,
             channel: russh::ChannelId,
-            _: &[u8],
+            command: &[u8],
             session: &mut russh::server::Session,
         ) -> Result<(), Self::Error> {
             session.channel_success(channel)?;
+            // 模拟永不退出的远端命令，用来验证 exec 超时
+            if command == b"hang" {
+                return Ok(());
+            }
             session.data(
                 channel,
                 russh::CryptoVec::from_slice(b"routed through two hops"),
@@ -1703,6 +1716,28 @@ pub(crate) mod tests {
         let (prompter, mut seen) = answer_host_keys(false, false);
         assert!(handshake(port, &path, Some(prompter)).await.0.is_ok());
         assert!(seen.try_recv().is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn exec_gives_up_when_the_remote_command_never_ends() {
+        let (port, server) = jump_test_server().await;
+        let config = SshConfig {
+            auth: AuthMethod::Password {
+                password: "test".into(),
+            },
+            verify_host_key: false,
+            timeout_secs: 3,
+            ..config_with("127.0.0.1", "test", port)
+        };
+        let session = SshSession::connect("exec-timeout".into(), config).await.unwrap();
+        let started = std::time::Instant::now();
+        let result = session.exec_timeout("hang", Duration::from_millis(300)).await;
+        assert!(matches!(result, Err(SshError::CommandTimeout)), "{result:?}");
+        assert!(started.elapsed() < Duration::from_secs(3));
+        // 超时只关掉那一条通道，会话里的其他命令照常执行
+        let output = session.exec("echo ok").await.unwrap();
+        assert_eq!(output.stdout, "routed through two hops");
         server.abort();
     }
 

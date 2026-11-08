@@ -80,6 +80,8 @@ const {
   panes,
   ratios,
   orientation,
+  tiled,
+  canTile,
   activeId: activePaneId,
   split,
   add: addPane,
@@ -87,6 +89,7 @@ const {
   resize: resizePane,
   focus: focusPane,
   toggleOrientation,
+  toggleTiled,
   distributeEvenly,
 } = useSplitPanes({ rootId: ROOT_PANE_ID })
 
@@ -278,6 +281,7 @@ defineExpose({
         :ratios="ratios"
         :orientation="orientation"
         :active-id="activePaneId"
+        :grid="tiled"
         @resize="resizePane"
         @reset="distributeEvenly"
       >
@@ -318,8 +322,9 @@ defineExpose({
               v-if="pane.id === ROOT_PANE_ID"
               #actions
             >
+              <!-- 平铺时各格等分，横竖排切换看不出效果，先收起 -->
               <IconButton
-                v-if="split"
+                v-if="split && !tiled"
                 :icon="
                   orientation === 'vertical'
                     ? 'lucide:columns-2'
@@ -332,6 +337,13 @@ defineExpose({
                     : t('改为上下分屏')
                 "
                 @click="toggleOrientation"
+              />
+              <IconButton
+                v-if="canTile"
+                :icon="tiled ? 'lucide:columns-2' : 'lucide:layout-grid'"
+                :size="14"
+                :title="tiled ? t('恢复分栏排列') : t('平铺所有分屏')"
+                @click="toggleTiled"
               />
               <IconButton
                 v-if="split"

@@ -30,6 +30,7 @@ import { i18n, translateLabel } from '@/i18n'
 import { startLanguageRuntime } from '@/i18n/runtime'
 import { startMainToastReceiver } from '@/composables/useToast'
 import { useAppUpdaterStore } from '@/stores/app-updater'
+import { purgeSensitiveRedisHistory } from '@/utils/redis-console-history'
 
 // 构建时自动收集实际使用的图标，保留离线能力而不加载整套图标集。
 addCollection(lucideIcons as IconifyJSON)
@@ -42,6 +43,9 @@ addCollection(databaseIcons as IconifyJSON)
 // Tauri 里窗口是透明的，交给系统 acrylic 打底；
 // 浏览器预览时没有系统效果，保留 CSS 兜底桌面背景
 if (IS_TAURI) document.documentElement.classList.add('is-tauri')
+
+// 启动时清掉旧版本写入 Redis 控制台历史的含凭据命令（AUTH、CONFIG SET requirepass 等）
+purgeSensitiveRedisHistory()
 
 // 启动画面使用独立 Logo 与 Blur，不参与工作区缩放 / 材质设置；其余窗口在挂载前先应用设置
 const entry = resolveWindowEntry(

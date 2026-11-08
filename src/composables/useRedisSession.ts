@@ -19,7 +19,7 @@ import type {
   RedisKeyDetail,
   RedisCommandResult,
 } from '@/types/redis'
-import type { SshSessionStatus } from '@/types/ssh'
+import type { AppErrorKind, SshSessionStatus } from '@/types/ssh'
 import { isRedisReadCommand } from '@/utils/redis-commands'
 
 export function useRedisSession(
@@ -34,6 +34,8 @@ export function useRedisSession(
     status: 'disconnected' as SshSessionStatus,
     // 当前操作的错误信息
     error: '',
+    // 后端错误类别，连接状态页据此归类失败原因
+    errorKind: '' as AppErrorKind | '',
     // 认证失败后临时输入密码
     needsPassword: false,
     // 同一会话串行操作，避免切库时读取旧库
@@ -94,6 +96,7 @@ export function useRedisSession(
     state.session = null
     state.busy = false
     state.error = ''
+    state.errorKind = ''
     state.needsPassword = false
     clearData()
     status('connecting')
@@ -113,6 +116,7 @@ export function useRedisSession(
     } catch (error) {
       if (request !== generation) return
       state.error = redis.errorMessage(error)
+      state.errorKind = redis.isAppError(error) ? error.kind : ''
       state.needsPassword = redis.isAppError(error) && error.kind === 'auth'
       status('disconnected')
     }
@@ -134,6 +138,7 @@ export function useRedisSession(
     } catch (error) {
       if (request !== generation) return false
       state.error = redis.errorMessage(error)
+      state.errorKind = redis.isAppError(error) ? error.kind : ''
       if (
         redis.isAppError(error) &&
         (error.kind === 'network' || error.kind === 'auth')

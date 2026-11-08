@@ -96,7 +96,20 @@ export interface TableDesignerPartitionItem {
   value: string
 }
 
-/** MySQL 建表时的分区定义；现有表的分区只读展示。 */
+/** 已有 MySQL 分区表支持的分区维护操作。 */
+export type TablePartitionAction = 'add' | 'drop' | 'truncate' | 'reorganize'
+
+/** 已有分区表的一项分区维护操作，每项生成一条独立的 ALTER TABLE … PARTITION 语句。 */
+export interface TableDesignerPartitionChange {
+  id: string
+  action: TablePartitionAction
+  /** drop / truncate / reorganize 作用的现有分区名。 */
+  partitions: string[]
+  /** add / reorganize 生成的新分区定义。 */
+  items: TableDesignerPartitionItem[]
+}
+
+/** MySQL 建表时的分区定义；已有表的分区改由 partitionChanges 维护。 */
 export interface TableDesignerPartition {
   method: TablePartitionMethod
   /** 分区表达式或列（KEY 为逗号分隔的列名）。 */
@@ -121,7 +134,11 @@ export interface TableDesignerDraft {
   foreignKeys: TableDesignerForeignKey[]
   checks?: TableDesignerCheck[]
   triggers?: TableDesignerTrigger[]
+  /** 删除 PostgreSQL 触发器时保留不删的专属触发函数（限定名）；未列出的随触发器一起删除。 */
+  keepTriggerFunctions?: string[]
   partition?: TableDesignerPartition | null
+  /** 编辑已有 MySQL 分区表时的分区维护操作（ADD / DROP / TRUNCATE / REORGANIZE）。 */
+  partitionChanges?: TableDesignerPartitionChange[]
 }
 
 export interface TableDesignerValidation {

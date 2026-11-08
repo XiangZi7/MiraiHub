@@ -282,6 +282,8 @@ pub struct DatabaseTrigger {
     pub body: String,
     /// PostgreSQL 触发函数的限定名，MySQL 为空。
     pub function: String,
+    /// PostgreSQL 触发函数仅被该触发器使用（可随触发器一起删除）；MySQL 恒为 false。
+    pub function_exclusive: bool,
     /// ROW / STATEMENT
     pub level: String,
 }

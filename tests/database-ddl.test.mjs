@@ -6,6 +6,8 @@ const load = sourceLoader()
 await load('src/i18n/index.ts')
 const {
   buildAlterTableSql,
+  buildAlterTableStatements,
+  droppableTriggerFunctions,
   buildCreateTableSql,
   buildCreateTableStatements,
   summarizeTableChanges,
@@ -1009,4 +1011,49 @@ test('AI 生成的草稿：带索引与注释的建表输出，及精度、重�
     indexes: [{ ...index, name: 'PRIMARY' }],
   })
   assert.equal(validateTableDraft({ kind: 'mysql', draft: reserved }).valid, false)
+})
+
+test('删除 PostgreSQL 触发器时默认连带删除专属函数，可按勾选保留', () => {
+  const trigger = {
+    name: 'trg_a',
+    timing: 'BEFORE',
+    events: ['INSERT'],
+    level: 'ROW',
+    body: '',
+    function: 'public.fn_a',
+    functionExclusive: true,
+  }
+  const current = currentDetail({ schema: 'public', triggers: [trigger] })
+  const draft = optionsDraft({
+    schema: 'public',
+    autoIncrement: null,
+    engine: '',
+    charset: '',
+    collation: '',
+    rowFormat: '',
+    triggers: [],
+  })
+  const dropped = droppableTriggerFunctions('postgresql', current, draft)
+  assert.deepEqual(dropped, [{ trigger: 'trg_a', function: 'public.fn_a' }])
+  assert.ok(
+    buildAlterTableStatements({ kind: 'postgresql', current, draft }).includes(
+      'DROP FUNCTION IF EXISTS public.fn_a()'
+    )
+  )
+  assert.ok(
+    !buildAlterTableStatements({
+      kind: 'postgresql',
+      current,
+      draft: { ...draft, keepTriggerFunctions: ['public.fn_a'] },
+    }).some(statement => statement.startsWith('DROP FUNCTION'))
+  )
+  assert.deepEqual(droppableTriggerFunctions('mysql', current, draft), [])
+  assert.deepEqual(
+    droppableTriggerFunctions(
+      'postgresql',
+      currentDetail({ triggers: [{ ...trigger, functionExclusive: false }] }),
+      draft
+    ),
+    []
+  )
 })

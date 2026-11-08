@@ -214,4 +214,18 @@ export const en: Record<string, string> = {
     'Click “Add column” in the toolbar, or let AI generate the table',
   '字段名': 'Column',
   '备注': 'Comment',
+  '触发器函数': 'Trigger function',
+  '已删除触发器的专属函数': 'Functions used only by removed triggers',
+  '同时删除触发器函数 {value0}': 'Also drop trigger function {value0}',
+  '该函数仅被触发器 {value0} 使用，取消勾选则保留函数。':
+    'Only trigger {value0} uses this function. Clear the box to keep it.',
+  'MySQL 不支持 DDL 事务：每条语句执行后立即生效，中途失败时之前的语句不会回滚。失败后会列出已生效的语句，并尽量给出逆向语句供手动恢复。':
+    'MySQL has no transactional DDL: each statement takes effect immediately, and statements that ran before a failure are not rolled back. On failure, the applied statements are listed along with suggested reverse statements for manual recovery where possible.',
+  '以下 {value0} 条语句已生效，未被回滚：':
+    'These {value0} statements were applied and not rolled back:',
+  '建议的逆向语句（请核对后手动执行，已删除的数据无法恢复）':
+    'Suggested reverse statements (review before running manually; dropped data cannot be recovered)',
+  '无法自动推导逆向语句，请根据上方已生效的语句手动恢复。':
+    'Reverse statements could not be derived. Restore manually based on the applied statements above.',
+  '逆向语句已复制': 'Reverse statements copied',
 }

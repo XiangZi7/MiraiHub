@@ -13,6 +13,7 @@ import {
 } from 'vue'
 import * as database from '@/api/database'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppInput from '@/components/ui/AppInput.vue'
@@ -36,10 +37,12 @@ import {
   buildAlterTableStatements,
   buildCreateTableStatements,
   columnTypes,
+  droppableTriggerFunctions,
   summarizeTableChanges,
   designerColumnFromStored,
   designerIndexFromStored,
   normalizeDataTypeLabel,
+  sqliteTableChecks,
   validateTableDraft,
 } from '@/utils/database-ddl'
 import { copyText } from '@/utils/clipboard'
@@ -301,6 +304,19 @@ const addAction = computed(() => {
 })
 
 let loadVersion = 0
+/**
+ * 读取表详情。SQLite 后端不返回检查约束，这里从建表 DDL 里解析出表级 CHECK，
+ * 让设计器能展示和编辑（保存时通过重建表生效）；DDL 解析不了时保持只读。
+ */
+async function readTableDetail(
+  schema: string,
+  name: string
+): Promise<DatabaseTableDetail> {
+  const detail = await database.tableDetail(props.sessionId, schema, name, 'table')
+  if (props.databaseKind !== 'sqlite') return detail
+  return { ...detail, checks: sqliteTableChecks(detail.ddl) }
+}
+
 /** 读取要编辑的现有表结构并灌入草稿，同时重置撤销历史。 */
 async function loadEditTarget(): Promise<void> {
   const version = ++loadVersion
@@ -313,12 +329,7 @@ async function loadEditTarget(): Promise<void> {
   }
   loadingDetail.value = true
   try {
-    const detail = await database.tableDetail(
-      props.sessionId,
-      target.schema,
-      target.name,
-      'table'
-    )
+    const detail = await readTableDetail(target.schema, target.name)
     if (version !== loadVersion) return
     currentDetail.value = detail
     hydrateFromDetail(detail)
@@ -346,7 +357,12 @@ function hydrateFromDetail(detail: DatabaseTableDetail): void {
     if (!columnTypes(kind).includes(label as never)) extra.add(label)
   }
   extraTypes.value = [...extra]
+  Object.assign(draft, draftFromDetail(detail))
+}
 
+/** 由表结构生成一份独立草稿；加载编辑目标与 MySQL 失败后推导逆向语句时共用。 */
+function draftFromDetail(detail: DatabaseTableDetail): TableDesignerDraft {
+  const kind = props.databaseKind
   const indexes = detail.indexes.flatMap((index, position) => {
     const item = designerIndexFromStored(
       index,
@@ -368,42 +384,64 @@ function hydrateFromDetail(detail: DatabaseTableDetail): void {
     onUpdate: (foreignKey.updateRule || 'NO ACTION') as ReferentialAction,
   }))
 
-  draft.schema = detail.schema
-  draft.name = detail.name
-  draft.comment = detail.options?.comment ?? ''
-  draft.engine = detail.options?.engine ?? ''
-  draft.charset = detail.options?.charset ?? ''
-  draft.collation = detail.options?.collation ?? ''
-  draft.rowFormat = detail.options?.rowFormat?.toUpperCase() ?? ''
-  draft.autoIncrement = detail.options?.autoIncrement ?? null
-  draft.columns = detail.columns.map((column, index) =>
-    designerColumnFromStored(
-      column,
-      kind,
-      detail,
-      `column-${Date.now()}-${index}`
-    )
-  )
-  draft.indexes = indexes
-  draft.foreignKeys = foreignKeys
-  // 后端没读到（如 SQLite）时保持 undefined，差异生成就不会去动库里的对象。
-  draft.checks = detail.checks?.map((check, index) => ({
-    id: `check-${check.name}-${index}`,
-    name: check.name,
-    expression: check.expression,
-  }))
-  draft.triggers = detail.triggers?.map(
-    (trigger, index): TableDesignerTrigger => ({
-      id: `trigger-${trigger.name}-${index}`,
-      name: trigger.name,
-      timing: trigger.timing.toUpperCase() === 'AFTER' ? 'AFTER' : 'BEFORE',
-      events: trigger.events.map(event => event.toUpperCase() as TriggerEvent),
-      level: trigger.level?.toUpperCase() === 'STATEMENT' ? 'STATEMENT' : 'ROW',
-      body: trigger.body,
-      functionName: trigger.function ?? '',
-    })
-  )
-  draft.partition = null
+  return {
+    schema: detail.schema,
+    name: detail.name,
+    comment: detail.options?.comment ?? '',
+    engine: detail.options?.engine ?? '',
+    charset: detail.options?.charset ?? '',
+    collation: detail.options?.collation ?? '',
+    rowFormat: detail.options?.rowFormat?.toUpperCase() ?? '',
+    autoIncrement: detail.options?.autoIncrement ?? null,
+    columns: detail.columns.map((column, index) =>
+      designerColumnFromStored(
+        column,
+        kind,
+        detail,
+        `column-${Date.now()}-${index}`
+      )
+    ),
+    indexes,
+    foreignKeys,
+    // 后端没读到（如 SQLite）时保持 undefined，差异生成就不会去动库里的对象。
+    checks: detail.checks?.map((check, index) => ({
+      id: `check-${check.name}-${index}`,
+      name: check.name,
+      expression: check.expression,
+    })),
+    triggers: detail.triggers?.map(
+      (trigger, index): TableDesignerTrigger => ({
+        id: `trigger-${trigger.name}-${index}`,
+        name: trigger.name,
+        timing: trigger.timing.toUpperCase() === 'AFTER' ? 'AFTER' : 'BEFORE',
+        events: trigger.events.map(
+          event => event.toUpperCase() as TriggerEvent
+        ),
+        level:
+          trigger.level?.toUpperCase() === 'STATEMENT' ? 'STATEMENT' : 'ROW',
+        body: trigger.body,
+        functionName: trigger.function ?? '',
+      })
+    ),
+    keepTriggerFunctions: [],
+    partition: null,
+    partitionChanges: [],
+  }
+}
+
+/** 本次删除的 PostgreSQL 触发器里，可随触发器一起删除的专属触发函数。 */
+const droppableFunctions = computed(() =>
+  editing.value
+    ? droppableTriggerFunctions(props.databaseKind, currentDetail.value, draft)
+    : []
+)
+
+/** 勾选 / 取消“同时删除触发器函数”；取消的函数记入保留列表，SQL 预览随之更新。 */
+function setDropTriggerFunction(name: string, drop: boolean): void {
+  const keep = new Set(draft.keepTriggerFunctions ?? [])
+  if (drop) keep.delete(name)
+  else keep.add(name)
+  draft.keepTriggerFunctions = [...keep]
 }
 
 onMounted(() => {
@@ -454,12 +492,14 @@ function openSqlQuery(): void {
 
 /** 保存前确认对话框是否打开。 */
 const confirmOpen = ref(false)
-/** 最近一次执行失败的详情，在 SQL 预览中展示。 */
+/** 最近一次执行失败的详情，在 SQL 预览中展示；MySQL 部分生效时附带已执行语句与建议的逆向语句。 */
 const lastFailure = ref<{
   statement: string
   error: string
   rolledBack: boolean
   executed: number
+  executedStatements: string[]
+  reverseStatements: string[]
 } | null>(null)
 const transactional = computed(() => props.databaseKind !== 'mysql')
 
@@ -510,6 +550,12 @@ async function runStatements(
       error: result.error,
       rolledBack: result.rolledBack,
       executed: result.executed,
+      executedStatements: result.rolledBack
+        ? []
+        : statements
+            .filter(statement => statement.trim())
+            .slice(0, result.executed),
+      reverseStatements: [],
     }
     activePanel.value = 'sql'
     toast.error({
@@ -564,8 +610,15 @@ async function applyChanges(): Promise<void> {
       t('保存表结构修改失败')
     )
     if (!ok) {
-      if (lastFailure.value?.executed && !lastFailure.value.rolledBack)
+      if (lastFailure.value?.executed && !lastFailure.value.rolledBack) {
         await refreshCurrentDetail()
+        const after = currentDetail.value
+        if (lastFailure.value && after && after !== current)
+          lastFailure.value.reverseStatements = suggestReverseStatements(
+            current,
+            after
+          )
+      }
       return
     }
     baseline.value = tableDesignerSnapshot(draft)
@@ -577,17 +630,64 @@ async function applyChanges(): Promise<void> {
   }
 }
 
+/**
+ * MySQL 部分执行失败后，按“刷新后的结构 → 保存前的结构”反向求差，给出建议的逆向语句。
+ * 只作展示供用户手动执行；被删字段的数据无法找回，生成失败时返回空列表。
+ */
+function suggestReverseStatements(
+  before: DatabaseTableDetail,
+  after: DatabaseTableDetail
+): string[] {
+  try {
+    const target = draftFromDetail(before)
+    // 已生效的字段改名：反向草稿以新名作为原名，否则会被当成删列再加列。
+    const afterNames = new Set(after.columns.map(column => column.name))
+    const renamed = new Map<string, string>()
+    for (const column of draft.columns) {
+      const name = column.name.trim()
+      if (
+        column.originalName &&
+        column.originalName !== name &&
+        afterNames.has(name) &&
+        !afterNames.has(column.originalName)
+      )
+        renamed.set(column.originalName, name)
+    }
+    target.columns = target.columns.map(column => ({
+      ...column,
+      originalName: renamed.get(column.name) ?? column.originalName,
+    }))
+    return buildAlterTableStatements({
+      kind: props.databaseKind,
+      current: after,
+      draft: target,
+      extraTypes: extraTypes.value,
+    })
+  } catch {
+    return []
+  }
+}
+
+/** 复制建议的逆向语句。 */
+async function copyReverseSql(): Promise<void> {
+  const statements = lastFailure.value?.reverseStatements ?? []
+  if (!statements.length) return
+  await copyText(joinStatements(statements))
+  toast.success(t('逆向语句已复制'))
+}
+
+/** 把建议的逆向语句送到查询页，由用户确认后手动执行。 */
+function openReverseQuery(): void {
+  const statements = lastFailure.value?.reverseStatements ?? []
+  if (statements.length) emit('query', joinStatements(statements))
+}
+
 /** 只刷新库中现有结构（不覆盖草稿），让后续差异基于已生效的部分。 */
 async function refreshCurrentDetail(): Promise<void> {
   const target = props.editTable
   if (!target) return
   try {
-    currentDetail.value = await database.tableDetail(
-      props.sessionId,
-      target.schema,
-      target.name,
-      'table'
-    )
+    currentDetail.value = await readTableDetail(target.schema, target.name)
   } catch {
     // 刷新失败时保留旧结构，用户可手动点刷新。
   }
@@ -748,6 +848,7 @@ function restoreSnapshot(snapshot: string): void {
   draft.checks = undefined
   draft.triggers = undefined
   draft.partition = null
+  draft.partitionChanges = undefined
   Object.assign(draft, value)
   historyCurrent = snapshot
   historyStamp = 0
@@ -865,12 +966,7 @@ async function copyStructure(value: string): Promise<void> {
   if (!object) return
   copyingStructure.value = true
   try {
-    const detail = await database.tableDetail(
-      props.sessionId,
-      object.schema,
-      object.name,
-      'table'
-    )
+    const detail = await readTableDetail(object.schema, object.name)
     hydrateFromDetail(detail)
     const suffix = '_copy'
     draft.schema = props.schema || detail.schema
@@ -1623,6 +1719,36 @@ function applyAiComments(): void {
           >
             {{ t('当前数据库未返回触发器信息，暂不支持在此编辑。') }}
           </p>
+          <div
+            v-if="droppableFunctions.length"
+            class="border-line-soft bg-card/60 mx-3 mb-3 grid shrink-0 gap-2 rounded-lg border p-3"
+          >
+            <p
+              class="text-txt-3 flex items-center gap-1.5 text-[10.5px] font-semibold"
+            >
+              <AppIcon
+                name="lucide:trash-2"
+                :size="12"
+              />
+              {{ t('已删除触发器的专属函数') }}
+            </p>
+            <AppCheckbox
+              v-for="item in droppableFunctions"
+              :key="item.function"
+              :model-value="!draft.keepTriggerFunctions?.includes(item.function)"
+              :label="
+                t('同时删除触发器函数 {value0}', { value0: item.function })
+              "
+              :description="
+                t('该函数仅被触发器 {value0} 使用，取消勾选则保留函数。', {
+                  value0: item.trigger,
+                })
+              "
+              @update:model-value="
+                setDropTriggerFunction(item.function, Boolean($event))
+              "
+            />
+          </div>
         </template>
         <DatabaseTableOptionsEditor
           v-show="activePanel === 'options'"
@@ -1634,6 +1760,7 @@ function applyAiComments(): void {
           v-model:comment="draft.comment"
           v-model:auto-increment="draft.autoIncrement"
           v-model:partition="draft.partition"
+          v-model:partition-changes="draft.partitionChanges"
           :session-id="sessionId"
           :database-kind="databaseKind"
           :columns="draft.columns"
@@ -1657,7 +1784,11 @@ function applyAiComments(): void {
           :changes="changeSummary"
           :editing="editing"
           :transactional="transactional"
+          :executed-statements="lastFailure?.executedStatements"
+          :reverse-statements="lastFailure?.reverseStatements"
           @copy="copySql"
+          @copy-reverse="copyReverseSql"
+          @query-reverse="openReverseQuery"
         />
       </template>
     </fieldset>
@@ -1674,6 +1805,22 @@ function applyAiComments(): void {
       @close="confirmOpen = false"
     >
       <div class="grid gap-3 p-4">
+        <p
+          v-if="!transactional"
+          role="note"
+          class="bg-orange/10 text-orange flex items-start gap-1.5 rounded-md px-2.5 py-2 text-[11px] leading-relaxed"
+        >
+          <AppIcon
+            name="lucide:triangle-alert"
+            :size="13"
+            class="mt-0.5 shrink-0"
+          />
+          {{
+            t(
+              'MySQL 不支持 DDL 事务：每条语句执行后立即生效，中途失败时之前的语句不会回滚。失败后会列出已生效的语句，并尽量给出逆向语句供手动恢复。'
+            )
+          }}
+        </p>
         <ul class="scroll-thin grid max-h-48 gap-1 overflow-y-auto text-[11px]">
           <li
             v-for="(change, index) in changeSummary"

@@ -197,32 +197,32 @@ defineExpose({ add: addIndex })
 </script>
 
 <template>
-  <section class="designer-section">
-    <div class="index-list scroll-thin">
+  <section class="flex min-h-0 flex-1 flex-col">
+    <div class="scroll-thin min-h-0 overflow-y-auto p-3">
       <article
         v-for="index in modelValue"
         :key="index.id"
         :class="
           cn(
-            'index-card',
+            'designer-glass-card mb-2.25 rounded-[9px] p-2.75',
             indexErrors(index).length && 'border-danger/50!'
           )
         "
       >
-        <div class="index-card-heading">
-          <span class="index-icon"
+        <div class="grid grid-cols-[32px_1fr_110px_28px] items-end gap-2 min-[901px]:grid-cols-[32px_minmax(150px,1fr)_130px_105px_28px]">
+          <span class="border-[color-mix(in_oklch,var(--color-violet)_28%,var(--color-line))] bg-violet/9 text-violet grid size-7.5 place-items-center rounded-[7px] border"
             ><AppIcon
               name="lucide:list-tree"
               :size="14"
           /></span>
-          <label class="field-label">
+          <label class="text-txt-4 mt-0.5 grid gap-1 text-[9.5px]">
             {{ t('索引名') }}
             <AppInput
               :model-value="index.name"
               monospace
               @update:model-value="updateIndex(index.id, { name: $event })"
           /></label>
-          <div class="field-label">
+          <div class="text-txt-4 mt-0.5 grid gap-1 text-[9.5px]">
             <span> {{ t('类型') }} </span
             ><AppSelect
               :model-value="index.kind"
@@ -233,7 +233,7 @@ defineExpose({ add: addIndex })
               @update:model-value="changeKind(index, $event)"
             />
           </div>
-          <div class="field-label">
+          <div class="text-txt-4 mt-0.5 hidden gap-1 text-[9.5px] min-[901px]:grid">
             <span> {{ t('方法') }} </span
             ><AppSelect
               :model-value="index.method"
@@ -259,7 +259,7 @@ defineExpose({ add: addIndex })
         </div>
 
         <div class="mt-2.5 grid gap-2 md:grid-cols-2">
-          <label class="field-label">
+          <label class="text-txt-4 mt-0.5 grid gap-1 text-[9.5px]">
             {{ t('索引备注') }}
             <AppInput
               :model-value="index.comment ?? ''"
@@ -268,7 +268,7 @@ defineExpose({ add: addIndex })
           /></label>
           <label
             v-if="!mysql"
-            class="field-label"
+            class="text-txt-4 mt-0.5 grid gap-1 text-[9.5px]"
           >
             {{ t('条件（部分索引 WHERE）') }}
             <AppInput
@@ -286,7 +286,7 @@ defineExpose({ add: addIndex })
           v-if="index.columns.length"
           class="mt-3 grid gap-1"
         >
-          <p class="field-label">{{ t('索引列（按顺序）') }}</p>
+          <p class="text-txt-4 mt-0.5 grid gap-1 text-[9.5px]">{{ t('索引列（按顺序）') }}</p>
           <div
             v-for="(column, position) in index.columns"
             :key="column"
@@ -382,18 +382,16 @@ defineExpose({ add: addIndex })
         </div>
 
         <div class="mt-3">
-          <p class="field-label mb-1.5">
+          <p class="text-txt-4 mt-0.5 grid gap-1 text-[9.5px] mb-1.5">
             {{ t('索引字段（点击选择，选择顺序即索引顺序）') }}
           </p>
-          <div class="column-picker">
+          <div class="flex min-h-7.25 flex-wrap gap-1.25">
             <AppButton
               v-for="column in columns"
               :key="column.id"
               variant="bare"
-              :class="[
-                'column-chip',
-                index.columns.includes(column.name) && 'column-chip-active',
-              ]"
+              class="designer-chip"
+              :aria-pressed="index.columns.includes(column.name)"
               @click="toggleColumn(index, column.name)"
             >
               <AppIcon
@@ -406,14 +404,14 @@ defineExpose({ add: addIndex })
               />{{ column.name || t('未命名字段') }}
               <span
                 v-if="index.columns.includes(column.name)"
-                class="order-badge"
+                class="bg-accent/15 grid h-3.5 min-w-3.5 place-items-center rounded-full text-[8px]"
                 >{{ index.columns.indexOf(column.name) + 1 }}</span
               >
             </AppButton>
             <AppButton
               v-if="!mysql && ordered(index)"
               variant="bare"
-              class="column-chip"
+              class="designer-chip"
               @click="addExpression(index)"
             >
               <AppIcon
@@ -439,135 +437,15 @@ defineExpose({ add: addIndex })
       </article>
       <div
         v-if="!modelValue.length"
-        class="empty-state"
+        class="text-txt-4 grid min-h-57.5 place-items-center content-center gap-1.75 text-center text-[11px]"
       >
         <AppIcon
           name="lucide:list-tree"
           :size="24"
         />
         <p>{{ t('尚未配置额外索引') }}</p>
-        <span> {{ t('主键和字段级唯一约束可直接在“字段”页配置。') }} </span>
+        <span class="text-[9.5px]"> {{ t('主键和字段级唯一约束可直接在“字段”页配置。') }} </span>
       </div>
     </div>
   </section>
 </template>
-
-<style scoped>
-.designer-section {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-}
-.field-label {
-  margin-top: 2px;
-  color: var(--color-txt-4);
-  font-size: 9.5px;
-}
-.index-list {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px;
-}
-.index-card {
-  margin-bottom: 9px;
-  border: 1px solid var(--color-line-soft);
-  border-radius: 9px;
-  background:
-    linear-gradient(145deg, var(--glass-highlight), transparent),
-    color-mix(in oklch, var(--color-card) 72%, transparent);
-  padding: 11px;
-  box-shadow: inset 0 1px var(--glass-highlight);
-}
-.index-card-heading {
-  display: grid;
-  grid-template-columns: 32px minmax(150px, 1fr) 130px 105px 28px;
-  align-items: end;
-  gap: 8px;
-}
-.index-icon {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid
-    color-mix(in oklch, var(--color-violet) 28%, var(--color-line));
-  border-radius: 7px;
-  background: color-mix(in oklch, var(--color-violet) 9%, transparent);
-  color: var(--color-violet);
-}
-.field-label {
-  display: grid;
-  gap: 4px;
-}
-.column-picker {
-  display: flex;
-  min-height: 29px;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.column-chip {
-  display: flex;
-  height: 27px;
-  cursor: pointer;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--color-line-soft);
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--color-panel) 58%, transparent);
-  padding: 0 7px;
-  color: var(--color-txt-3);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  outline: none;
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease,
-    color 150ms ease;
-}
-.column-chip:hover,
-.column-chip:focus-visible {
-  border-color: var(--color-line-strong);
-  color: var(--color-txt);
-}
-.column-chip-active {
-  border-color: color-mix(in oklch, var(--color-accent) 38%, transparent);
-  background: color-mix(in oklch, var(--color-accent) 9%, transparent);
-  color: var(--color-accent);
-}
-.order-badge {
-  display: grid;
-  min-width: 14px;
-  height: 14px;
-  place-items: center;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-accent) 15%, transparent);
-  font-size: 8px;
-}
-.empty-state {
-  display: grid;
-  min-height: 230px;
-  place-items: center;
-  align-content: center;
-  gap: 7px;
-  color: var(--color-txt-4);
-  font-size: 11px;
-  text-align: center;
-}
-.empty-state span {
-  font-size: 9.5px;
-}
-@media (max-width: 900px) {
-  .index-card-heading {
-    grid-template-columns: 32px 1fr 110px 28px;
-  }
-  .index-card-heading > :nth-child(4) {
-    display: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .column-chip {
-    transition: none;
-  }
-}
-</style>

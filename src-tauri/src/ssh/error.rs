@@ -79,14 +79,19 @@ pub enum SshError {
     /// 用户拒绝了主机密钥、取消了二次验证，或确认超时。
     #[error("{0}")]
     UserDeclined(String),
+
+    /// 远端命令超过时限仍未结束。文案固定（时限只写日志），前端才能按原文翻译。
+    #[error("命令执行超时，已关闭通道；远端进程可能仍在运行")]
+    CommandTimeout,
 }
 
 impl From<SshError> for AppError {
     fn from(err: SshError) -> Self {
         let kind = match &err {
-            SshError::Connect { .. } | SshError::Timeout { .. } | SshError::Proxy { .. } => {
-                ErrorKind::Network
-            }
+            SshError::Connect { .. }
+            | SshError::Timeout { .. }
+            | SshError::Proxy { .. }
+            | SshError::CommandTimeout => ErrorKind::Network,
             SshError::AuthRejected { .. }
             | SshError::KeyParse { .. }
             | SshError::AgentAuth(_)

@@ -7,9 +7,21 @@ import type { SplitDropPosition } from '@/utils/split-drop'
 
 const { t } = useI18n()
 
-const props = defineProps<{ direction: SplitDropPosition }>()
+const props = withDefaults(
+  defineProps<{
+    direction: SplitDropPosition
+    /** 分屏组正按网格平铺：新面板只按顺序插在当前分屏前后，落点与半区无关 */
+    grid?: boolean
+  }>(),
+  { grid: false }
+)
 
+// 投放提示的图标与文案；网格平铺时左/上表示插到当前分屏之前，右/下表示之后
 const hint = computed(() => {
+  if (props.grid && props.direction !== 'center')
+    return props.direction === 'left' || props.direction === 'up'
+      ? { icon: 'lucide:arrow-left-to-line', label: t('插到当前分屏之前') }
+      : { icon: 'lucide:arrow-right-to-line', label: t('插到当前分屏之后') }
   switch (props.direction) {
     case 'center':
       return { icon: 'lucide:panels-top-left', label: t('移动到此标签分组') }
@@ -24,8 +36,9 @@ const hint = computed(() => {
   }
 })
 
-/** 覆盖目标半区 */
+/** 覆盖目标半区；网格平铺时落点不对应任何半区，改为覆盖整个分屏组 */
 const area = computed(() => {
+  if (props.grid) return 'inset-0'
   switch (props.direction) {
     case 'center':
       return 'inset-0'

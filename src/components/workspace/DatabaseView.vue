@@ -83,6 +83,9 @@ import ErDiagramView from './database/ErDiagramView.vue'
 import { registerDatabaseCommandSource } from '@/composables/useDatabaseCommandSource'
 import DatabaseSchemaDiffDialog from './database/DatabaseSchemaDiffDialog.vue'
 import DatabaseDocDialog from './database/DatabaseDocDialog.vue'
+import DatabaseSessionMonitor from './database/DatabaseSessionMonitor.vue'
+import DatabaseUserManager from './database/DatabaseUserManager.vue'
+import DatabaseBackupDialog from './database/DatabaseBackupDialog.vue'
 import DatabaseTestDataDialog from './database/DatabaseTestDataDialog.vue'
 import DatabaseGuardDialog from './database/DatabaseGuardDialog.vue'
 import DatabaseTransferDialog, {
@@ -357,6 +360,10 @@ const state = reactive({
   // ER 图与结构对比浮层
   erOpen: false,
   schemaDiffOpen: false,
+  // 运维：原生备份、会话监控、用户与权限
+  backupOpen: false,
+  sessionMonitorOpen: false,
+  userManagerOpen: false,
   // 右键触发的测试数据与数据字典弹窗
   testDataObject: null as DatabaseObject | null,
   docOpen: false,
@@ -1573,13 +1580,27 @@ function updateResultHistory(
   })
 }
 
-/** 分析当前标签里某条语句的执行计划，结果挂在该标签下的 Plan 页签。 */
+/**
+ * 分析当前标签里某条语句的执行计划，结果挂在该标签下的 Plan 页签。
+ * 语句含 :name / ? / $1 占位符时与执行一样先弹变量面板，按绑定参数分析；取消则不分析。
+ */
 async function explainQuery(sql: string, tabId: string): Promise<void> {
   if (!connected.value || !sessionId.value) return
   const kind = databaseKind.value
+  const bound = await sqlParamsPrompt.prepare(
+    sql,
+    kind,
+    props.connection?.id ?? ''
+  )
+  const currentSession = sessionId.value
+  if (!bound || !connected.value || !currentSession) return
   state.queryPlans[tabId] = { plan: null, loading: true }
   try {
-    const json = await database.explain(sessionId.value, sql)
+    const json = await database.explain(
+      currentSession,
+      bound.sql,
+      bound.params.length ? bound.params : undefined
+    )
     state.queryPlans[tabId] = {
       plan: parseExplainPlan(kind, json),
       loading: false,
@@ -1786,12 +1807,26 @@ registerDatabaseCommandSource(
           run: () => void openDatabaseTransfer(currentDatabase(), 'import'),
         },
         {
-          // 备份走导出对话框（结构 + 数据转储）
+          // 备份优先用 mysqldump/pg_dump，找不到时对话框内回退到内置导出
           id: 'backup-database',
           label: '备份数据库',
           icon: 'lucide:database-backup',
-          enabled: () => ready() && !!currentDatabase(),
-          run: () => void openDatabaseTransfer(currentDatabase(), 'export'),
+          enabled: ready,
+          run: () => (state.backupOpen = true),
+        },
+        {
+          id: 'session-monitor',
+          label: '会话监控',
+          icon: 'lucide:activity',
+          enabled: () => ready() && databaseKind.value !== 'sqlite',
+          run: () => (state.sessionMonitorOpen = true),
+        },
+        {
+          id: 'user-manager',
+          label: '用户与权限',
+          icon: 'lucide:users',
+          enabled: () => ready() && databaseKind.value !== 'sqlite',
+          run: () => (state.userManagerOpen = true),
         },
         {
           id: 'schema-diff',
@@ -1946,6 +1981,32 @@ registerDatabaseCommandSource(
             @click="openDatabaseDoc(null)"
           />
           <IconButton
+            icon="lucide:database-backup"
+            :size="13"
+            class="shrink-0"
+            :title="t('备份与恢复')"
+            :disabled="!connected"
+            @click="state.backupOpen = true"
+          />
+          <IconButton
+            v-if="databaseKind !== 'sqlite'"
+            icon="lucide:activity"
+            :size="13"
+            class="shrink-0"
+            :title="t('会话监控')"
+            :disabled="!connected"
+            @click="state.sessionMonitorOpen = true"
+          />
+          <IconButton
+            v-if="databaseKind !== 'sqlite'"
+            icon="lucide:users"
+            :size="13"
+            class="shrink-0"
+            :title="t('用户与权限')"
+            :disabled="!connected"
+            @click="state.userManagerOpen = true"
+          />
+          <IconButton
             :icon="tab.savedQueryId ? 'lucide:cloud-check' : 'lucide:save'"
             :size="13"
             class="shrink-0"
@@ -2066,6 +2127,9 @@ registerDatabaseCommandSource(
           @select-schema="selectSchema"
           @export-database="openDatabaseTransfer($event, 'export')"
           @import-database="openDatabaseTransfer($event, 'import')"
+          @backup-database="state.backupOpen = true"
+          @session-monitor="state.sessionMonitorOpen = true"
+          @user-manager="state.userManagerOpen = true"
           @create-database="showNameDialog('create-database')"
           @create-object="createObjectTemplate"
           @new-query="newQueryForSchema"
@@ -2335,6 +2399,41 @@ registerDatabaseCommandSource(
             item => item.schema === table.schema && item.name === table.name
           )
           if (object) openObject(object)
+        }
+      "
+    />
+    <DatabaseSessionMonitor
+      v-if="state.sessionMonitorOpen && sessionId"
+      :session-id="sessionId"
+      :connection-name="connection?.name ?? ''"
+      @close="state.sessionMonitorOpen = false"
+      @open-sql="
+        sql => {
+          state.sessionMonitorOpen = false
+          addQueryTab(sql)
+        }
+      "
+    />
+    <DatabaseUserManager
+      v-if="state.userManagerOpen && sessionId"
+      :session-id="sessionId"
+      :database-kind="databaseKind"
+      :database-name="databaseName"
+      :connection-name="connection?.name ?? ''"
+      @close="state.userManagerOpen = false"
+    />
+    <DatabaseBackupDialog
+      v-if="state.backupOpen && sessionId"
+      :session-id="sessionId"
+      :database-kind="databaseKind"
+      :database-name="databaseName"
+      :connection-id="connection?.id ?? ''"
+      :connection-name="connection?.name ?? ''"
+      @close="state.backupOpen = false"
+      @export="
+        () => {
+          state.backupOpen = false
+          void openDatabaseTransfer(databaseName, 'export')
         }
       "
     />

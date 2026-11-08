@@ -20,7 +20,7 @@ import type {
   DatabaseObject,
   DatabaseSession,
 } from '@/types/database'
-import type { SshSessionStatus } from '@/types/ssh'
+import type { AppErrorKind, SshSessionStatus } from '@/types/ssh'
 import { invalidateCompletionCache } from '@/composables/useDatabaseCompletions'
 
 /** 会改变对象结构的语句；执行成功后补全元数据缓存需要失效。 */
@@ -51,6 +51,8 @@ export function useDatabaseSession(
     session: null as DatabaseSession | null,
     status: 'disconnected' as SshSessionStatus,
     connectionError: '',
+    // 后端错误类别，连接状态页据此归类失败原因
+    connectionErrorKind: '' as AppErrorKind | '',
     needsPassword: false,
     databases: [] as string[],
     databasesLoading: false,
@@ -151,6 +153,7 @@ export function useDatabaseSession(
     runtimePassword = password ?? runtimePassword
     setStatus('connecting')
     state.connectionError = ''
+    state.connectionErrorKind = ''
     state.needsPassword = false
     resetData()
     void release(previousSession)
@@ -180,6 +183,7 @@ export function useDatabaseSession(
 
       setStatus('disconnected')
       state.connectionError = database.errorMessage(error)
+      state.connectionErrorKind = database.isAppError(error) ? error.kind : ''
       state.needsPassword = database.isAppError(error) && error.kind === 'auth'
     }
   }

@@ -1,11 +1,22 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, toRefs } from 'vue'
+import { computed, toRefs, useTemplateRef } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { errorMessage, sendContextToMain } from '@/api/agent'
+import { requestAgentContext } from '@/composables/useAgentContextBus'
 import { useRemoteTextDocument } from '@/composables/useRemoteTextDocument'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
+import { toast } from '@/composables/useToast'
+import { IS_TAURI } from '@/utils/window'
 import OperationDialog from './OperationDialog.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+
+/** 发给 AI 助手的正文上限（UTF-8 字节）：上下文总量限 64000 字节，这里给截断说明留出余量 */
+const AGENT_CONTENT_BYTES = 60000
+/** AI 上下文拒收的控制字符，与 useAgentDraft 的 addContext 校验保持一致 */
+const AGENT_CONTROL_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu
 
 const { t } = useI18n()
 const props = defineProps<RemoteEditRequest & { standalone?: boolean }>()
@@ -38,6 +49,53 @@ const {
   conflict,
 } = toRefs(state)
 const fileName = computed(() => props.path.split('/').pop() || t('远端文件'))
+const input = useTemplateRef<HTMLTextAreaElement>('input')
+// 取选中内容（没有选中时取全文），替换 AI 上下文拒收的控制字符，过长时按字节截断并在正文里注明。
+function agentContent(): string {
+  const el = input.value
+  // 选区下标基于换行归一化后的 textarea.value，不能拿去切 draft。
+  const selected = el ? el.value.slice(el.selectionStart, el.selectionEnd) : ''
+  const text = (selected.trim() ? selected : state.draft).replace(
+    AGENT_CONTROL_CHARS,
+    '\uFFFD'
+  )
+  // encodeInto 写满缓冲区即停，read 是不会切开字符的 UTF-16 下标。
+  const { read } = new TextEncoder().encodeInto(
+    text,
+    new Uint8Array(AGENT_CONTENT_BYTES)
+  )
+  if (read === text.length) return text
+  const note = t(
+    '（内容过长已截断，仅包含前 {value0} 个字符，共 {value1} 个字符）',
+    {
+      value0: read,
+      value1: text.length,
+    }
+  )
+  return `${text.slice(0, read)}\n\n${note}`
+}
+// 把文件内容交给 AI 助手：主 webview 直接投递，原生子窗口经事件转交主窗口，后者的结果由主窗口提示。
+async function analyzeWithAgent(): Promise<void> {
+  const ask = {
+    sessionId: props.sessionId,
+    intent: 'explain' as const,
+    name: fileName.value,
+    content: agentContent(),
+  }
+  if (!IS_TAURI || getCurrentWindow().label === 'main') {
+    if (requestAgentContext(ask))
+      toast.success(t('已添加到 AI 助手，关闭此窗口即可查看'))
+    else toast.error(t('没有可用的 AI 助手，请先连接终端'))
+    return
+  }
+  try {
+    await sendContextToMain(ask)
+    state.error = ''
+    state.message = t('已发送到主窗口的 AI 助手')
+  } catch (error) {
+    state.error = errorMessage(error)
+  }
+}
 defineExpose({ requestClose })
 </script>
 
@@ -68,6 +126,17 @@ defineExpose({ requestClose })
         role="status"
         >{{ message }}</span
       >
+      <AppButton
+        size="sm"
+        :title="t('发送选中内容给 AI 助手，未选中时发送整个文件')"
+        :disabled="busy || !remote || !draft.trim()"
+        @click="analyzeWithAgent"
+      >
+        <AppIcon
+          name="lucide:sparkles"
+          :size="12"
+        />{{ t('让 AI 分析') }}
+      </AppButton>
       <AppButton
         variant="primary"
         size="sm"
@@ -113,6 +182,7 @@ defineExpose({ requestClose })
       {{ error }}
     </p>
     <textarea
+      ref="input"
       v-model="draft"
       class="editor-input"
       :disabled="busy || !remote"

@@ -350,8 +350,11 @@ const selection = useGridSelection({
   edit: position => openCell(position.row, position.column),
   clearCells: range => setRangeNull(range),
 })
-// 把多选统计同步到数据库底部状态栏
-usePublishDatabaseSelection(() => toStatusSelection(selection.stats.value))
+// 把多选统计同步到数据库底部状态栏；表格不可见（切走标签、切到结构页）时清掉
+usePublishDatabaseSelection(
+  () => toStatusSelection(selection.stats.value),
+  () => scroller.value
+)
 const canInsert = computed(() => state.detail?.kind === 'table')
 const canEditExisting = computed(
   () => canInsert.value && Boolean(state.detail?.primaryKey.length)
@@ -641,6 +644,7 @@ async function loadRows(): Promise<void> {
     })
     if (revision === pageRevision) {
       page.value = next
+      flashRows.value = new Set()
       resetScroll()
     }
   } catch (error) {
@@ -1114,12 +1118,65 @@ function requestSave(): void {
     })
 }
 
-/** 提交成功后表格闪一下；时长与 grid-commit-flash 动画一致。 */
-const { isPending: commitFlash, start: flashCommit } = useTimeoutFn(
-  () => {},
+/** 提交成功后要闪一下的行号（重新读取后的页内位置）；只含本次更新或新增的行。 */
+const flashRows = shallowRef<ReadonlySet<number>>(new Set())
+/** 闪烁结束后清空行号；时长与 grid-commit-flash 动画一致。 */
+const { start: startRowFlash } = useTimeoutFn(
+  () => {
+    flashRows.value = new Set()
+  },
   800,
   { immediate: false }
 )
+
+/**
+ * 提交后在重新读取的数据里找出本次改动过的行，供提交成功动画只闪这些行。
+ *
+ * 更新：按主键定位，主键本身被改时用改后的值；新增：填了全部主键时按主键定位，
+ * 否则按已填写的字段比对，只有唯一命中才算（避免把相同取值的旧行也闪一遍）。
+ * 删除的行已不在结果里，不处理。值按数据库返回的文本比较，格式不同时宁可不闪。
+ */
+function changedRowIndexes(mutations: RowMutation[]): Set<number> {
+  const rows = page.value?.rows ?? []
+  const indexes = new Set<number>()
+  const columnIndex = new Map(
+    gridColumns.value.map((column, index) => [column.name, index])
+  )
+  const primaryKey = state.detail?.primaryKey ?? []
+  const matching = (values: CellValue[]): number[] => {
+    if (!values.length || values.some(item => !columnIndex.has(item.column)))
+      return []
+    return rows.flatMap((row, index) =>
+      values.every(
+        item => (row[columnIndex.get(item.column)!] ?? null) === item.value
+      )
+        ? [index]
+        : []
+    )
+  }
+
+  for (const mutation of mutations) {
+    if (mutation.type === 'update') {
+      const keys = mutation.keys.map(
+        key =>
+          mutation.changes.find(change => change.column === key.column) ?? key
+      )
+      matching(keys).forEach(index => indexes.add(index))
+    } else if (mutation.type === 'insert') {
+      const keys = primaryKey.map(column =>
+        mutation.values.find(item => item.column === column)
+      )
+      const byKey =
+        keys.length > 0 && keys.every(item => item && item.value !== null)
+      const found = matching(
+        byKey ? (keys as CellValue[]) : mutation.values
+      )
+      if (byKey || found.length === 1)
+        found.forEach(index => indexes.add(index))
+    }
+  }
+  return indexes
+}
 
 async function commitChanges(): Promise<void> {
   const mutations = buildMutations()
@@ -1139,8 +1196,12 @@ async function commitChanges(): Promise<void> {
     const next = afterCommit
     afterCommit = null
     if (next) next()
-    else await loadRows()
-    flashCommit()
+    else {
+      // 提交后接着切页/筛选等操作时数据已换，不再闪烁；原地刷新才标出改动的行
+      await loadRows()
+      flashRows.value = changedRowIndexes(mutations)
+      if (flashRows.value.size) startRowFlash()
+    }
     toast.success(
       t('已提交 {value0} 项改动，影响 {value1} 行（{value2} ms）', {
         value0: mutations.length,
@@ -1868,7 +1929,6 @@ watch(
                 cn(
                   'w-full border-collapse text-left font-mono text-[11px]',
                   resized && 'table-fixed',
-                  commitFlash && 'motion-safe:grid-commit-flash',
                   (state.pageLoading || state.error) && 'stale-dim'
                 )
               "
@@ -1975,6 +2035,7 @@ watch(
                   :columns="gridColumns"
                   :can-edit="canEditExisting"
                   :deleted="deletedRows.has(rowIndex)"
+                  :flash="flashRows.has(rowIndex)"
                   :edits="edits"
                   :editing-column="
                     editing?.row === rowIndex ? editing.column : null

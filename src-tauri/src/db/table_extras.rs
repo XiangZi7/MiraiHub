@@ -155,6 +155,7 @@ pub async fn list_triggers(
                         events: vec![text("EVENT_MANIPULATION")?],
                         body: text("ACTION_STATEMENT")?,
                         function: String::new(),
+                        function_exclusive: false,
                         level: text("ACTION_ORIENTATION")?,
                     })
                 })
@@ -166,7 +167,14 @@ pub async fn list_triggers(
                 SELECT t.tgname AS name,
                        t.tgtype::int AS tgtype,
                        p.prosrc AS body,
-                       quote_ident(pn.nspname) || '.' || quote_ident(p.proname) AS function
+                       quote_ident(pn.nspname) || '.' || quote_ident(p.proname) AS function,
+                       -- 触发函数只被这一个触发器使用、且不属于扩展时，才允许随触发器一起删除。
+                       (NOT EXISTS (SELECT 1 FROM pg_trigger o
+                                    WHERE o.tgfoid = t.tgfoid AND o.oid <> t.oid)
+                        AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                                        WHERE d.classid = 'pg_proc'::regclass
+                                          AND d.objid = p.oid AND d.deptype = 'e'))
+                           AS function_exclusive
                 FROM pg_trigger t
                 JOIN pg_class c ON c.oid = t.tgrelid
                 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -204,6 +212,7 @@ pub async fn list_triggers(
                         events,
                         body: row.try_get("body").unwrap_or_default(),
                         function: row.try_get("function").unwrap_or_default(),
+                        function_exclusive: row.try_get("function_exclusive").unwrap_or(false),
                         level: if kind & 1 != 0 { "ROW" } else { "STATEMENT" }.to_owned(),
                     }
                 })

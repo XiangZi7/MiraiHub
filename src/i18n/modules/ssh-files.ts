@@ -24,4 +24,10 @@ export const en: Record<string, string> = {
     'The remote file has been modified. Overwriting discards the remote changes; reloading discards your local draft.',
   覆盖保存: 'Overwrite',
   重新加载: 'Reload',
+  '已添加到 AI 助手': 'Added to the AI assistant',
+  '已发送到主窗口的 AI 助手': 'Sent to the AI assistant in the main window',
+  '发送选中内容给 AI 助手，未选中时发送整个文件':
+    'Send the selection to the AI assistant, or the whole file if nothing is selected',
+  '（内容过长已截断，仅包含前 {value0} 个字符，共 {value1} 个字符）':
+    '(Content truncated: only the first {value0} of {value1} characters are included)',
 }
