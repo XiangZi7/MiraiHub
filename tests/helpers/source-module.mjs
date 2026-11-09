@@ -1,16 +1,45 @@
-import { readFileSync, existsSync } from 'node:fs'
+import {
+  readFileSync,
+  existsSync,
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { resolve, dirname } from 'node:path'
+import { resolve, dirname, join, basename } from 'node:path'
 import ts from 'typescript'
 import { parse, compileScript } from 'vue/compiler-sfc'
 
+/** 小型边界 mock 保持内联；实际源码模块使用临时文件，避免递归嵌套 data URL。 */
 export const dataModule = source =>
   `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
+
+let moduleDirectory
+let moduleSequence = 0
+
+/** 每个测试进程只创建一个源码沙箱，退出时仅清理本进程新建的临时目录。 */
+function nextModuleUrl() {
+  if (!moduleDirectory) {
+    moduleDirectory = mkdtempSync(join(tmpdir(), 'miraihub-source-modules-'))
+    const directory = moduleDirectory
+    process.once('exit', () => {
+      if (
+        dirname(resolve(directory)) !== resolve(tmpdir()) ||
+        !/^miraihub-source-modules-[^/\\]+$/.test(basename(directory))
+      )
+        return
+      rmSync(directory, { recursive: true, force: true })
+    })
+  }
+  return pathToFileURL(join(moduleDirectory, `${++moduleSequence}.mjs`)).href
+}
 
 /** Node 测试执行实际 TS 模块；仅替换原生/存储边界与无需渲染的 SFC。 */
 export function sourceLoader(overrides = {}, renderedComponents = []) {
   const root = fileURLToPath(new URL('../../', import.meta.url))
   const cache = new Map()
+  /** 先登记模块 URL 再递归解析依赖，复用共享依赖并支持循环导入。 */
   function url(file) {
     const path = resolve(root, file)
     if (cache.has(path)) return cache.get(path)
@@ -19,6 +48,8 @@ export function sourceLoader(overrides = {}, renderedComponents = []) {
       !renderedComponents.some(file => resolve(root, file) === path)
     )
       return dataModule('export default { render() { return null } }')
+    const result = nextModuleUrl()
+    cache.set(path, result)
     let source = readFileSync(path, 'utf8')
     if (path.endsWith('.vue'))
       source = compileScript(parse(source, { filename: path }).descriptor, {
@@ -38,6 +69,7 @@ export function sourceLoader(overrides = {}, renderedComponents = []) {
       true
     )
     const imports = []
+    /** 仅重写静态导入、重导出和字符串形式的动态导入，保留业务源码本身。 */
     function collectImports(node) {
       if (
         (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
@@ -74,10 +106,10 @@ export function sourceLoader(overrides = {}, renderedComponents = []) {
         JSON.stringify(target) +
         output.slice(node.end)
     }
-    const result = dataModule(
+    writeFileSync(
+      fileURLToPath(result),
       output + `\n//# sourceURL=${pathToFileURL(path).href}`
     )
-    cache.set(path, result)
     return result
   }
   return file => import(url(file))

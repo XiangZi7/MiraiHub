@@ -2,31 +2,67 @@
 
 <p align="center"><a href="https://github.com/XiangZi7/MiraiHub/releases/latest"><strong>Download desktop app →</strong></a>　·　<a href="#quick-start">Get started</a>　·　<a href="#documentation">Docs</a>　·　<a href="README.md">简体中文</a></p>
 
-<p align="center"><sub>Windows · macOS · Linux　/　<a href="LICENSE">MIT open source</a></sub></p>
+<p align="center">
+  <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/v/release/XiangZi7/MiraiHub?style=flat-square&amp;color=8b5cf6" alt="GitHub Release" /></a>
+  <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/downloads/XiangZi7/MiraiHub/total?style=flat-square&amp;color=8b5cf6" alt="Downloads" /></a>
+  <a href="https://github.com/XiangZi7/MiraiHub/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/XiangZi7/MiraiHub/release.yml?style=flat-square&amp;label=release" alt="Release Workflow" /></a>
+  <img src="https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square" alt="Windows x64" />
+  <img src="https://img.shields.io/badge/macOS-Intel%20%2F%20Apple%20Silicon-000000?style=flat-square" alt="macOS Intel and Apple Silicon" />
+  <img src="https://img.shields.io/badge/Linux-x64-FCC624?style=flat-square" alt="Linux x64" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-777777?style=flat-square" alt="MIT License" /></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square" alt="Tauri 2" />
+  <img src="https://img.shields.io/badge/Rust-2021-DEA584?style=flat-square" alt="Rust 2021 edition" />
+  <img src="https://img.shields.io/badge/Vue-3-42B883?style=flat-square" alt="Vue 3" />
+  <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square" alt="TypeScript 5.9" />
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square" alt="Vite 8" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square" alt="Tailwind CSS 4" />
+  <a href="https://hub.xerj.org/contributors/XiangZi7"><img src="https://hub.xerj.org/contributors/XiangZi7/badge.svg" alt="XERJ Corpus Hub Contributor" /></a>
+</p>
 
 <br />
 
-## A closer look
+## Screenshots
 
-<a href="docs/images/feature-ssh-dark.png"><img src="docs/images/showcase-ssh-en.png" width="100%" alt="SSH and local terminals · Split views, completion and recording" /></a>
+### SSH terminal & remote files
 
-<a href="docs/images/feature-database-dark.png"><img src="docs/images/showcase-database-en.png" width="100%" alt="Databases · SQL queries, results and export" /></a>
+<a href="docs/images/feature-ssh-dark.png"><img src="docs/images/feature-ssh-dark.png" width="100%" alt="SSH terminal & remote files" /></a>
 
-<sub>MySQL · MariaDB · TiDB · PostgreSQL · SQLite</sub>
+### Database · Dark
 
-<a href="docs/images/feature-files-light.png"><img src="docs/images/showcase-files-en.png" width="100%" alt="Files · Local and remote panes, transfers and sync" /></a>
+<a href="docs/images/feature-database-dark.png"><img src="docs/images/feature-database-dark.png" width="100%" alt="Database · Dark" /></a>
 
-<a href="docs/images/feature-redis-dark.png"><img src="docs/images/showcase-redis-en.png" width="100%" alt="Redis · Prefix groups, value editing and TTL" /></a>
+### Database · Light
 
-<a href="docs/images/feature-ai-dark.png"><img src="docs/images/showcase-ai-en.png" width="100%" alt="AI Agent · Terminal analysis, SQL, files and tool activity" /></a>
+<a href="docs/images/feature-database-light.png"><img src="docs/images/feature-database-light.png" width="100%" alt="Database · Light" /></a>
 
-<a href="docs/images/feature-er-light.png"><img src="docs/images/showcase-er-en.png" width="100%" alt="Database design · ER diagrams, tables and migrations" /></a>
+### Local & remote file panes
 
-<a href="docs/images/feature-monitor-light.png"><img src="docs/images/showcase-monitor-en.png" width="100%" alt="Monitoring · CPU, memory, disk and network" /></a>
+<a href="docs/images/feature-files-light.png"><img src="docs/images/feature-files-light.png" width="100%" alt="Local & remote file panes" /></a>
 
-<a href="docs/images/feature-database-light.png"><img src="docs/images/showcase-appearance-en.png" width="100%" alt="Light and dark · Appearance, themes and table designer preview" /></a>
+### Redis key editor
 
-<sub>Current components with isolated demo data; AI-generated hero. Click a card for the original screenshot. [Image notes and table designer capture](docs/images/README.md)</sub>
+<a href="docs/images/feature-redis-dark.png"><img src="docs/images/feature-redis-dark.png" width="100%" alt="Redis key editor" /></a>
+
+### AI Agent
+
+<a href="docs/images/feature-ai-dark.png"><img src="docs/images/feature-ai-dark.png" width="100%" alt="AI Agent" /></a>
+
+### ER diagram
+
+<a href="docs/images/feature-er-light.png"><img src="docs/images/feature-er-light.png" width="100%" alt="ER diagram" /></a>
+
+### Table designer
+
+<a href="docs/images/feature-designer-light.png"><img src="docs/images/feature-designer-light.png" width="100%" alt="Table designer" /></a>
+
+### Server monitoring
+
+<a href="docs/images/feature-monitor-light.png"><img src="docs/images/feature-monitor-light.png" width="100%" alt="Server monitoring" /></a>
+
+<sub>Current components with isolated demo data. [Image notes](docs/images/README.md)</sub>
 
 <br />
 

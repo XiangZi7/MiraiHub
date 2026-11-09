@@ -165,6 +165,8 @@ Get-FileHash .\MiraiHub_0.2.0_windows_x64_setup.exe -Algorithm SHA256
 - `Could not fetch a valid release JSON from the remote`：更新接口没有返回成功状态，不等同于本机断网。确认 GitHub **Latest 正式版**的附件中有 `latest.json`；旧版缺少清单或发布尚未完成时可能出现。清单恢复后应用会按上述间隔重试，也可手动点“重试”。可运行 `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib updater::tests::published_update_manifest_is_accessible -- --ignored --exact`，使用应用的 Rust HTTP 栈检查已发布清单和安装包地址（不会下载安装）。
 - 提示 `Configure the TAURI_SIGNING_PRIVATE_KEY repository secret`：到仓库 **Settings → Secrets and variables → Actions → Repository secrets** 配置 `TAURI_SIGNING_PRIVATE_KEY`，值为原签名私钥文件的完整内容，不是文件路径或公钥。只补齐 Secret 时，可直接重跑失败任务，无需修改源码或重新生成密钥。
 - 提示 updater 版本不匹配：`@tauri-apps/plugin-updater` 和 Rust `tauri-plugin-updater` 必须使用相同的主、次版本；当前两端限定为 `2.10.x`，升级时一起调整并更新锁文件。若失败标签已包含错误依赖，修复后发布新的补丁版本；重跑旧标签仍会检出旧依赖。本地签名打包使用 `pnpm release:build`，它会自动读取本机私钥。
+- macOS 前端测试出现 `JavaScript heap out of memory` / `SIGABRT`：旧测试加载器把实际源码及其依赖递归编码进 data URL，重复依赖会使字符串体积快速膨胀。现在使用临时 ESM 文件引用依赖，并通过 `--test-concurrency=2` 限制并行测试进程；不跳过测试，也不依赖扩大堆上限。可用 `node --max-old-space-size=2048 --test --test-concurrency=2 tests/*.test.mjs` 在原堆限制下验证。
+- Windows 上传提示 `Unexpected input(s) 'pattern'` 或找不到 `release-input/*`：上传步骤应使用 `name: windows-x64-release` 与 `path: release-output/*`；`pattern` 和 `release-input` 只用于统一发布任务的下载步骤。工作流修复需要提交到新标签，重跑旧标签仍会使用旧版本配置。
 - 构建失败：在 Actions 查看报错。依赖下载等临时失败可用 **Re-run failed jobs** 重试。
 - 标签已存在但未成功发布：也可在 **Actions → Release → Run workflow** 输入这个已推送的标签。工作流文件必须已上传到默认分支才能显示手动运行入口。
 - 附件上传中断：Release 会保持草稿，重试会补齐并替换该草稿的同名附件。

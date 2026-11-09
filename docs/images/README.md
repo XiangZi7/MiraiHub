@@ -17,7 +17,9 @@
 | `feature-designer-light.png` | 字段、类型、约束与注释 | 当前组件 + 演示数据 |
 | `feature-monitor-light.png` | CPU、内存、磁盘、网络与系统信息 | 当前组件 + 固定演示指标 |
 
-`showcase-*-zh.png` / `showcase-*-en.png` 是首页使用的中英文图文卡片，排版为左文右图，统一 1600 × 800。它们由 [readme-showcase.html](../../tests/readme-showcase.html) 直接排版截图，功能区域嵌入上述原始截图，未重绘 UI。`showcase-hero-*` 嵌入 AI 产品图，`showcase-appearance-*` 同时嵌入浅色工作区与表结构设计器。
+首页顶部保留 `showcase-hero-zh.png` / `showcase-hero-en.png` 产品图，左文右图，统一 1600 × 800。它们由 [readme-showcase.html](../../tests/readme-showcase.html) 排版并嵌入 AI 产品图。
+
+下方「界面预览」直接展示九张 `feature-*.png` 原始 UI 截图，只配简短标题。其余 `showcase-*.png` 图文卡片作为历史排版素材保留，不再用于首页的界面预览。
 
 [表结构设计器原图](feature-designer-light.png) · [产品图生成规格](product-visual-prompt.txt)
 
@@ -31,7 +33,7 @@
 pnpm dev
 # 另开终端
 node scripts/capture-readme.mjs
-# 原始截图更新后，重排中英文图文卡片
+# 仅在顶部产品图排版需要更新时重排 showcase 素材
 node scripts/capture-readme.mjs --showcase
 ```
 
@@ -45,4 +47,4 @@ node scripts/capture-readme.mjs --showcase
 
 The current homepage images were refreshed on 2026-11-09 from the v4.0.3 frontend components in an isolated Chromium session. IPC, connections, values, terminal output, monitoring data and AI responses are fixtures; these are feature demonstrations, not connected-service desktop validation. No user connections or credentials are read and no SSH, database or model requests are sent.
 
-The hero is generated with built-in ImageGen using the light/dark database captures and the public app icon. Local HTML composes the original captures into 1600 × 800 Chinese and English showcase cards without redrawing the UI. The original historical screenshots remain available for other guides. Run the capture script above to reproduce the nine feature images and eighteen showcase cards.
+The hero is generated with built-in ImageGen using the light/dark database captures and the public app icon, then composed into the Chinese and English hero layouts with local HTML. The Screenshots section displays the nine original UI captures directly, with short headings. Other showcase cards and historical screenshots remain available as archived assets. The capture commands above reproduce the original UI images and optional showcase layouts.

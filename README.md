@@ -2,31 +2,67 @@
 
 <p align="center"><a href="https://github.com/XiangZi7/MiraiHub/releases/latest"><strong>下载桌面版 →</strong></a>　·　<a href="#快速开始">快速开始</a>　·　<a href="#文档">文档</a>　·　<a href="README.en.md">English</a></p>
 
-<p align="center"><sub>Windows · macOS · Linux　/　<a href="LICENSE">MIT 开源</a></sub></p>
+<p align="center">
+  <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/v/release/XiangZi7/MiraiHub?style=flat-square&amp;color=8b5cf6" alt="GitHub Release" /></a>
+  <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/downloads/XiangZi7/MiraiHub/total?style=flat-square&amp;color=8b5cf6" alt="Downloads" /></a>
+  <a href="https://github.com/XiangZi7/MiraiHub/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/XiangZi7/MiraiHub/release.yml?style=flat-square&amp;label=release" alt="Release Workflow" /></a>
+  <img src="https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square" alt="Windows x64" />
+  <img src="https://img.shields.io/badge/macOS-Intel%20%2F%20Apple%20Silicon-000000?style=flat-square" alt="macOS Intel and Apple Silicon" />
+  <img src="https://img.shields.io/badge/Linux-x64-FCC624?style=flat-square" alt="Linux x64" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-777777?style=flat-square" alt="MIT License" /></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square" alt="Tauri 2" />
+  <img src="https://img.shields.io/badge/Rust-2021-DEA584?style=flat-square" alt="Rust 2021 edition" />
+  <img src="https://img.shields.io/badge/Vue-3-42B883?style=flat-square" alt="Vue 3" />
+  <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square" alt="TypeScript 5.9" />
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square" alt="Vite 8" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square" alt="Tailwind CSS 4" />
+  <a href="https://hub.xerj.org/contributors/XiangZi7"><img src="https://hub.xerj.org/contributors/XiangZi7/badge.svg" alt="XERJ Corpus Hub Contributor" /></a>
+</p>
 
 <br />
 
 ## 界面预览
 
-<a href="docs/images/feature-ssh-dark.png"><img src="docs/images/showcase-ssh-zh.png" width="100%" alt="SSH 与本地终端 · 分屏、命令补全与录制回放" /></a>
+### SSH 终端与远端文件
 
-<a href="docs/images/feature-database-dark.png"><img src="docs/images/showcase-database-zh.png" width="100%" alt="数据库 · SQL 查询、结果浏览与导出" /></a>
+<a href="docs/images/feature-ssh-dark.png"><img src="docs/images/feature-ssh-dark.png" width="100%" alt="SSH 终端与远端文件" /></a>
 
-<sub>MySQL · MariaDB · TiDB · PostgreSQL · SQLite</sub>
+### 数据库 · 深色
 
-<a href="docs/images/feature-files-light.png"><img src="docs/images/showcase-files-zh.png" width="100%" alt="文件 · 本地与远端双栏、传输与目录同步" /></a>
+<a href="docs/images/feature-database-dark.png"><img src="docs/images/feature-database-dark.png" width="100%" alt="数据库 · 深色" /></a>
 
-<a href="docs/images/feature-redis-dark.png"><img src="docs/images/showcase-redis-zh.png" width="100%" alt="Redis · 前缀分组、键值编辑与 TTL" /></a>
+### 数据库 · 浅色
 
-<a href="docs/images/feature-ai-dark.png"><img src="docs/images/showcase-ai-zh.png" width="100%" alt="AI Agent · 终端分析、SQL、文件任务与操作记录" /></a>
+<a href="docs/images/feature-database-light.png"><img src="docs/images/feature-database-light.png" width="100%" alt="数据库 · 浅色" /></a>
 
-<a href="docs/images/feature-er-light.png"><img src="docs/images/showcase-er-zh.png" width="100%" alt="数据库设计 · ER 图、表结构与迁移" /></a>
+### 本地与远端双栏文件
 
-<a href="docs/images/feature-monitor-light.png"><img src="docs/images/showcase-monitor-zh.png" width="100%" alt="监控 · CPU、内存、磁盘与网络" /></a>
+<a href="docs/images/feature-files-light.png"><img src="docs/images/feature-files-light.png" width="100%" alt="本地与远端双栏文件" /></a>
 
-<a href="docs/images/feature-database-light.png"><img src="docs/images/showcase-appearance-zh.png" width="100%" alt="浅色与深色 · 外观选择、主题与表结构设计预览" /></a>
+### Redis 键值编辑
 
-<sub>当前组件与独立演示数据；产品图由 AI 生成。点击卡片可看原始截图。[素材说明与表结构原图](docs/images/README.md)</sub>
+<a href="docs/images/feature-redis-dark.png"><img src="docs/images/feature-redis-dark.png" width="100%" alt="Redis 键值编辑" /></a>
+
+### AI Agent
+
+<a href="docs/images/feature-ai-dark.png"><img src="docs/images/feature-ai-dark.png" width="100%" alt="AI Agent" /></a>
+
+### ER 关系图
+
+<a href="docs/images/feature-er-light.png"><img src="docs/images/feature-er-light.png" width="100%" alt="ER 关系图" /></a>
+
+### 表结构设计
+
+<a href="docs/images/feature-designer-light.png"><img src="docs/images/feature-designer-light.png" width="100%" alt="表结构设计" /></a>
+
+### 服务器监控
+
+<a href="docs/images/feature-monitor-light.png"><img src="docs/images/feature-monitor-light.png" width="100%" alt="服务器监控" /></a>
+
+<sub>当前组件与独立演示数据。[素材说明](docs/images/README.md)</sub>
 
 <br />
 

@@ -269,3 +269,20 @@ test('Unix packaging preserves native artifacts and refuses missing signatures o
     )
   }
 })
+
+test('Windows build uploads the package directory under the name expected by release assembly', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/release.yml', import.meta.url),
+    'utf8'
+  )
+  const windows = workflow.slice(
+    workflow.indexOf('  build-windows:'),
+    workflow.indexOf('  build-unix:')
+  )
+  const upload = windows.slice(
+    windows.indexOf('      - name: Upload release files')
+  )
+  assert.match(upload, /name: windows-x64-release/)
+  assert.match(upload, /path: release-output\/\*/)
+  assert.doesNotMatch(upload, /pattern:|release-input/)
+})
