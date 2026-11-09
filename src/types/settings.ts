@@ -1,3 +1,5 @@
+import { DEFAULT_LOCAL_SHELL } from '@/utils/platform'
+
 export type SettingValue = string | boolean
 
 /**
@@ -62,7 +64,7 @@ export const DEFAULT_SETTINGS = {
   folderUploadConcurrency: '12',
   transferBufferSizeKb: '128',
 
-  terminalShell: 'powershell',
+  terminalShell: DEFAULT_LOCAL_SHELL,
   terminalFont: 'jetbrains-mono',
   terminalFontSize: '13',
   terminalCursor: 'block',

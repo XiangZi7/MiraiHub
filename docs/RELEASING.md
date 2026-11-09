@@ -8,7 +8,7 @@
 pnpm release
 ```
 
-脚本默认递增补丁版本，依次检查工作区和远程分支、读取本地与远程版本标签、同步四个版本文件、创建 `chore(release): vX.Y.Z` 提交和附注标签，然后将当前分支与新标签一起推送到 `origin`。GitHub Actions 接着自动测试、构建安装版和免安装版、上传附件并公开 Release，无需手动填写版本号或创建 Release。
+脚本默认递增补丁版本，依次检查工作区和远程分支、读取本地与远程版本标签、同步四个版本文件、创建 `chore(release): vX.Y.Z` 提交和附注标签，然后将当前分支与新标签一起推送到 `origin`。GitHub Actions 接着自动测试 Windows / macOS / Linux、构建各平台安装包、上传附件并公开 Release，无需手动填写版本号或创建 Release。
 
 | 命令                                   | 用途                                                     |
 | -------------------------------------- | -------------------------------------------------------- |
@@ -70,13 +70,13 @@ pnpm release
 
 ## 自动更新：首次配置
 
-应用的 Windows x64 安装版默认在启动 15 秒后、此后每 6 小时检查 GitHub 最新正式版。发现新版后自动下载，Tauri 使用内置公钥验证安装包签名。下载完成后每 10 秒检查是否可以安装：所有连接标签已关闭、没有排队/运行/暂停的文件传输、没有可见的设置/连接/编辑窗口，也没有未保存的远端编辑内容。满足条件便自动启动安装器，显示进度，完成后重新打开应用。
+应用的 Windows x64 安装版、macOS 应用和 Linux AppImage 默认在启动 15 秒后、此后每 6 小时检查 GitHub 最新正式版。发现新版后自动下载，Tauri 使用内置公钥验证安装包签名。下载完成后每 10 秒检查是否可以安装：所有连接标签已关闭、没有排队/运行/暂停的文件传输、没有可见的设置/连接/编辑窗口，也没有未保存的远端编辑内容。满足条件便自动启动安装器，显示进度，完成后重新打开应用。
 
 检查失败时按 1 分钟、5 分钟、15 分钟重试，连续失败后回到 6 小时间隔；联网恢复或重新开启自动更新会立即重试检查。下载、签名校验和安装失败保持 6 小时检查间隔，也可手动重试；每次重新获取并校验安装包，校验失败绝不安装。更新请求支持系统代理，保持 HTTPS 和签名校验。主窗口提示可通过右上角关闭；同类检查失败的重试不会重新弹出，新的下载、下载就绪或安装状态会再次提示，完整状态始终可在“设置 → 关于”查看。
 
 “设置 → 关于”可以关闭自动更新、手动检查下载、查看进度或重试。下载就绪时，关于页与主窗口提示都显示“立即更新”和“暂不更新”。“立即更新”直接安装已经下载并校验的安装包，不要求提前关闭连接标签或其他窗口，关闭自动更新后也可使用。“暂不更新”暂停本次自动安装并收起主窗口提示，之后可在关于页选择“立即更新”。安装版的连接配置与用户数据保存在原应用数据目录，更新不删除它们。
 
-更新地址为 `https://github.com/XiangZi7/MiraiHub/releases/latest/download/latest.json`。预发布版本不替换 Latest，不会推送给正式版用户。开发模式、其他平台和免安装版不运行自动更新；免安装版从 Releases 下载新 ZIP 后手动替换。
+更新地址为 `https://github.com/XiangZi7/MiraiHub/releases/latest/download/latest.json`。预发布版本不替换 Latest，不会推送给正式版用户。开发模式、未发布目标、Windows 免安装版与 Linux DEB 不运行应用内更新；请从 Releases 手动更新。macOS 应先从 DMG 复制到「应用程序」，Linux AppImage 需保留 APPIMAGE 环境与文件写入权限。安装成功后 macOS/Linux 请求应用重启，Windows 由安装器处理。
 
 本次接入已生成公钥并写入 `src-tauri/tauri.conf.json`。私钥保存在本机 `.tauri/updater.key`，这个目录已被 Git 忽略；请另行备份，不能提交到仓库或附加到 Release。
 
@@ -129,7 +129,7 @@ pnpm version:check
 
 推送代码到 `master` 时，**Actions → Release** 会提前运行前端测试、类型检查、Rust 测试和不带安装包的生产编译，把 pnpm 依赖和 Rust 测试 / 发布依赖缓存保存在默认分支。仅修改 Markdown、`docs/` 或 `LICENSE` 不触发预热；同一分支有新的推送时，会取消尚未完成的旧构建。预热不需要签名私钥，也不会发布 Release。
 
-GitHub 的缓存按分支和标签隔离：不同版本标签不能直接读取彼此的缓存，但都能读取默认分支的缓存。因此只在 `v*` 标签上保存缓存，下一次发版仍可能重新编译大量 Rust 依赖。此流程复用同一个 Windows 环境、Rust 版本和构建任务，让标签构建能够读取 `master` 已保存的依赖缓存。主分支需要继续作为 GitHub 默认分支；若修改默认分支名，也要同步调整工作流的 `push.branches`。
+GitHub 的缓存按分支和标签隔离：不同版本标签不能直接读取彼此的缓存，但都能读取默认分支的缓存。因此只在 `v*` 标签上保存缓存，下一次发版仍可能重新编译大量 Rust 依赖。每个桌面目标复用各自的原生环境、Rust 版本和构建任务，让标签构建能够读取 `master` 已保存的依赖缓存。主分支需要继续作为 GitHub 默认分支；若修改默认分支名，也要同步调整工作流的 `push.branches`。
 
 想让下一次发版复用缓存，先推送源码到 `master`，等该分支的 **Release** 工作流成功完成，再运行 `pnpm release`。也可以在 **Actions → Release → Run workflow** 选择 `master`，将 `tag` 留空，手动预热。源码分支与版本标签同时推送时，两个任务可能同时启动，新标签只能使用当时已经保存的缓存，不会等待本次预热。
 
@@ -139,16 +139,16 @@ GitHub 的缓存按分支和标签隔离：不同版本标签不能直接读取�
 
 ## 工作流与下载
 
-推送标签后，在 **Actions → Release** 查看进度。流程依次运行版本校验、前端工具测试、Rust 测试、Vue 类型检查与生产构建、Tauri NSIS 打包。只有全部成功才进入发布任务。
+推送标签后，在 **Actions → Release** 查看进度。流程依次运行版本校验、前端工具测试、Rust 测试、Vue 类型检查与生产构建、Tauri 原生打包。Windows x64、macOS x64、macOS ARM64、Linux x64 四个原生任务全部成功后才进入统一发布任务。
 
 发布任务检查 SHA-256、源码提交与远程标签，先准备草稿并上传所有附件，再公开 Release。正式版发布到仓库的 **Releases** 页面：
 
 - `MiraiHub_0.2.0_windows_x64_setup.exe`：Windows x64 安装程序。
 - `MiraiHub_0.2.0_windows_x64_portable.zip`：解压后运行 `miraihub.exe`；系统需有 WebView2 Runtime，用户数据仍保存在应用数据目录。
 - `SHA256SUMS.txt`：下载文件的 SHA-256。
-- `version.json`：版本、标签、源码 commit、平台与架构。
+- `version.json`：版本、标签、源码 commit 与全部构建目标。
 - `MiraiHub_0.2.0_windows_x64_setup.exe.sig`：安装包的更新签名。
-- `latest.json`：供应用检查的版本、Windows x64 下载地址及签名。
+- `latest.json`：供应用检查的版本及四个目标的不可变附件地址和签名。
 
 构建附件也会在该次 Actions 运行中保留 14 天；Release 附件不会因这个保留期自动删除。
 
@@ -188,6 +188,36 @@ pnpm release:build
 
 脚本需要 PowerShell 7，结果位于 `release-output`。如该目录已存在，先将它移动到其他位置再重新打包。归档仅收集编译产物，不会收集连接配置或用户文件。
 
-当前工作流打包 Windows x64 并发布签名自动更新附件；macOS/Linux 构建和 Windows 代码签名证书暂未配置。
+当前工作流覆盖 Windows x64、macOS Intel / Apple Silicon、Linux x64，统一发布签名更新附件。Windows Authenticode 证书暂未配置；macOS 默认使用临时签名，可配置下方 Apple Secrets 进行开发者签名与公证。
 
 实现参考：[Tauri GitHub 分发文档](https://v2.tauri.app/distribute/pipelines/github/)、[GitHub 标签推送事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)、[GitHub CLI Release](https://cli.github.com/manual/gh_release_create)。
+
+
+## 三平台构建与发布
+
+`release.yml` 保留 Windows 原生任务，并增加 macOS Intel（`macos-15-intel`）、Apple Silicon（`macos-15`）和 Linux（`ubuntu-22.04`）原生任务。Linux 安装 WebKitGTK 4.1、DBus、托盘与 AppImage 构建依赖；Rust 测试在临时 DBus / Xvfb 会话中运行。macOS/Linux 的真实 PTY 测试不依赖 Windows Shell。
+
+所有平台继续使用同一个 `TAURI_SIGNING_PRIVATE_KEY` 和可选的 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。不要更换现有更新密钥。`build-release.mjs` 根据宿主系统选择 NSIS、APP/DMG 或 DEB/AppImage；`RELEASE_TARGET` 可指定 Rust 目标，编译与打包始终使用相同目标。临时网络错误只重试打包。
+
+`package-unix.mjs` 收集 macOS/Linux 安装包、更新包和签名，各任务独立上传附件。`assemble-release.mjs` 在任何发布操作前检查四个平台的版本、源码提交、必需文件与 SHA-256；缺少一个平台、构建版本混用或文件被修改都会阻止发布。合并成功后生成唯一的 `latest.json`、`version.json` 和 `SHA256SUMS.txt`，再按原流程完成草稿附件上传及公开。
+
+| 目标 | 版本附件（`<version>` 为实际版本） | README 固定下载名 |
+| --- | --- | --- |
+| Windows x64 | `MiraiHub_<version>_windows_x64_setup.exe` / `portable.zip` | `MiraiHub_windows_x64_setup.exe` / `MiraiHub_windows_x64_portable.zip` |
+| macOS Intel | `MiraiHub_<version>_macos_x64.dmg` | `MiraiHub_macos_x64.dmg` |
+| macOS Apple Silicon | `MiraiHub_<version>_macos_arm64.dmg` | `MiraiHub_macos_arm64.dmg` |
+| Linux x64 | `MiraiHub_<version>_linux_x64.deb` / `.AppImage` | `MiraiHub_linux_x64.deb` / `.AppImage` |
+
+macOS 另有 `MiraiHub_<version>_macos_<arch>.app.tar.gz` 和签名供更新器使用。Windows EXE 与 Linux AppImage 直接作为更新包。固定下载名是同一文件的副本，也列入校验清单；更新器始终使用包含版本的文件地址。较早的 Release 没有新目标和别名，新下载表从包含本次改动的新 Release 起生效。
+
+### Apple 签名与公证
+
+无需 Apple Secrets 即可构建临时签名的 DMG，但不会获得 Apple 公证。需要开发者签名时配置 `APPLE_CERTIFICATE`（证书 P12 的 Base64）、`APPLE_CERTIFICATE_PASSWORD` 和 `APPLE_SIGNING_IDENTITY`。需要公证时再配置 `APPLE_ID`、`APPLE_PASSWORD`（应用专用密码）和 `APPLE_TEAM_ID`。空的可选 Secret 会在启动 CLI 前移除，避免误触发证书导入或公证。Apple 代码签名与 Tauri 更新签名相互独立。
+
+### macOS/Linux 本地开发
+
+macOS 安装 Xcode Command Line Tools；Linux 安装工作流中列出的系统依赖。然后执行 `pnpm install --frozen-lockfile`、`pnpm tauri dev`。已配置更新签名密钥后，可用 `pnpm release:build` 构建当前系统安装包。
+
+macOS/Linux 的 AI 配置、聊天与附件使用 AES-256-GCM，主密钥分别放在 macOS Keychain 或 Linux Secret Service。开发版与正式版使用不同的密钥条目。Linux 需要桌面会话中可用且已解锁的 Secret Service；没有服务时返回明确错误，不回退明文。Windows 继续使用原有 DPAPI，现有加密数据无须迁移。
+
+首批目标不包含 Windows ARM64、Linux ARM64、移动端和 Web。macOS/Linux 的实际构建结果以对应原生 Actions 任务为准。

@@ -151,9 +151,9 @@ fn registry_command() -> std::process::Command {
     command
 }
 
-/// 写入或移除当前用户的 Windows 开机启动项。
+/// 写入或移除当前用户的开机启动项，Windows 保留原有注册表登记。
 #[tauri::command]
-pub async fn set_launch_at_startup(enabled: bool) -> AppResult<()> {
+pub async fn set_launch_at_startup(_app: AppHandle, enabled: bool) -> AppResult<()> {
     #[cfg(windows)]
     {
         let status = if enabled {
@@ -182,15 +182,26 @@ pub async fn set_launch_at_startup(enabled: bool) -> AppResult<()> {
         }
     }
 
-    #[cfg(not(windows))]
-    let _ = enabled;
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let manager = _app.autolaunch();
+        let result = if enabled {
+            manager.enable()
+        } else {
+            manager.disable()
+        };
+        result.map_err(|error| {
+            crate::error::AppError::internal(format!("更新开机启动项失败：{error}"))
+        })?;
+    }
 
     Ok(())
 }
 
 /// 查询当前用户是否已登记开机启动。
 #[tauri::command]
-pub async fn launch_at_startup_enabled() -> AppResult<bool> {
+pub async fn launch_at_startup_enabled(_app: AppHandle) -> AppResult<bool> {
     #[cfg(windows)]
     {
         Ok(registry_command()
@@ -199,6 +210,11 @@ pub async fn launch_at_startup_enabled() -> AppResult<bool> {
             .success())
     }
 
-    #[cfg(not(windows))]
-    Ok(false)
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        _app.autolaunch().is_enabled().map_err(|error| {
+            crate::error::AppError::internal(format!("读取开机启动项失败：{error}"))
+        })
+    }
 }

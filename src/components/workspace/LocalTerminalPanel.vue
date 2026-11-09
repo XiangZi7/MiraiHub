@@ -10,6 +10,8 @@ import { onTerminalTargetRequest } from '@/composables/useTerminalInsert'
 import { toast } from '@/composables/useToast'
 import type { LocalConnectionSettings } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
+import { LOCAL_SHELL_OPTIONS } from '@/constants/connection'
+import { normalizeLocalShell } from '@/utils/platform'
 import '@xterm/xterm/css/xterm.css'
 
 const { t } = useI18n()
@@ -29,13 +31,12 @@ const { term, status, sessionId, error, mount, connect, disconnect, resize } =
   useLocalTerminal()
 let mounted = false
 
-const shellLabel = computed(
-  () =>
-    ({
-      powershell: 'Windows PowerShell',
-      cmd: 'Command Prompt',
-      'git-bash': 'Git Bash',
-    })[props.settings.shell]
+const shellLabel = computed(() =>
+  t(
+    LOCAL_SHELL_OPTIONS.find(
+      option => option.value === normalizeLocalShell(props.settings.shell)
+    )?.label ?? '系统默认 Shell'
+  )
 )
 
 // 工具条上的状态文案与配色

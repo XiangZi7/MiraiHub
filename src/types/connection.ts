@@ -30,7 +30,8 @@ export interface ConnectionTagDefinition {
   createdAt: number
 }
 
-export type LocalShellKind = 'powershell' | 'cmd' | 'git-bash'
+export type LocalShellKind =
+  'powershell' | 'cmd' | 'git-bash' | 'system' | 'bash' | 'zsh'
 
 /** 侧边栏分组按 SSH / 数据库两棵树隔离。 */
 export type ConnectionGroupKind = 'ssh' | 'database'

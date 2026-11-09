@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>MiraiHub · README artwork</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: #1d1d1f;
+        background: #fff;
+        font-family: Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        position: relative;
+        width: 1600px;
+        height: 800px;
+        overflow: hidden;
+        background: #f5f5f7;
+        border-radius: 32px;
+      }
+      .copy {
+        position: absolute;
+        left: 64px;
+        top: 50%;
+        width: 450px;
+        transform: translateY(-50%);
+        z-index: 2;
+      }
+      .eyebrow {
+        color: #86868b;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 2px;
+        margin: 0 0 24px;
+      }
+      h1 {
+        font-size: 74px;
+        letter-spacing: -3px;
+        line-height: 1;
+        margin: 24px 0 32px;
+      }
+      h2 {
+        font-size: 47px;
+        font-weight: 650;
+        letter-spacing: -1.8px;
+        line-height: 1.25;
+        margin: 0 0 28px;
+      }
+      p {
+        margin: 0;
+        color: #6e6e73;
+        font-size: 24px;
+        line-height: 1.65;
+        letter-spacing: -0.3px;
+      }
+      .screen {
+        position: absolute;
+        left: 540px;
+        top: 82px;
+        width: 1020px;
+        height: 637.5px;
+        object-fit: contain;
+        border-radius: 18px;
+        box-shadow:
+          0 22px 45px #1d1d1f1a,
+          0 2px 8px #1d1d1f0a;
+      }
+      .hero {
+        background: #fafafa;
+      }
+      .hero .copy {
+        width: 520px;
+      }
+      .hero h2 {
+        font-size: 45px;
+        letter-spacing: -1.5px;
+      }
+      .hero .logo {
+        width: 70px;
+        height: 70px;
+      }
+      .hero .screen {
+        left: 560px;
+        top: 10px;
+        width: 1040px;
+        height: 780px;
+        border-radius: 0;
+        box-shadow: none;
+        mix-blend-mode: multiply;
+        mask-image:
+          linear-gradient(
+            to right,
+            transparent,
+            #000 56px,
+            #000 calc(100% - 32px),
+            transparent
+          ),
+          linear-gradient(
+            to bottom,
+            transparent,
+            #000 40px,
+            #000 calc(100% - 40px),
+            transparent
+          );
+        mask-composite: intersect;
+      }
+      .appearance .screen {
+        top: 60px;
+        left: 580px;
+        width: 960px;
+        height: 600px;
+      }
+      .secondary {
+        display: none;
+        position: absolute;
+        left: 510px;
+        top: 450px;
+        width: 500px;
+        border-radius: 12px;
+        box-shadow: 0 16px 36px #1d1d1f26;
+      }
+      .appearance .secondary {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="copy">
+        <img
+          class="logo"
+          hidden
+          src="/logo-app-icon.png"
+          alt=""
+        />
+        <div class="eyebrow"></div>
+        <h1 hidden>MiraiHub</h1>
+        <h2></h2>
+        <p></p>
+      </div>
+      <img
+        class="screen"
+        alt=""
+      />
+      <img
+        class="secondary"
+        src="/docs/images/feature-designer-light.png"
+        alt=""
+      />
+    </main>
+    <script type="module">
+      const params = new URLSearchParams(location.search)
+      const view = params.get('view') || 'hero'
+      const en = params.get('lang') === 'en'
+      const cards = {
+        hero: [
+          'WORK BETTER. TOGETHER.',
+          '开发与运维。<br>尽在一处。',
+          'Your infrastructure.<br>One workspace.',
+          '终端、文件、数据库与 AI，<br>在这里，连成一体。',
+          'Terminals, files, databases and AI.<br>Better together.',
+          'overview.png',
+        ],
+        ssh: [
+          'SSH & TERMINAL',
+          '连接，<br>井然有序。',
+          'Connected.<br>Organized.',
+          'SSH 与本地终端，随时切换。<br>分屏、补全与录制回放，<br>让日常操作更顺手。',
+          'SSH and local terminals.<br>Split views, command completion<br>and session recording.',
+          'feature-ssh-dark.png',
+        ],
+        database: [
+          'DATABASE',
+          '数据，<br>一目了然。',
+          'Data,<br>in focus.',
+          '从 SQL 查询到结果导出，<br>在同一处完成。',
+          'Write SQL, browse results<br>and export your work.',
+          'feature-database-dark.png',
+        ],
+        files: [
+          'FILES & SYNC',
+          '文件，<br>两边都顺手。',
+          'Files,<br>side by side.',
+          '本地与远端并排浏览。<br>拖拽传输、远程编辑，<br>同步前先看目录差异。',
+          'Browse local and remote files.<br>Transfer, edit and preview<br>differences before syncing.',
+          'feature-files-light.png',
+        ],
+        redis: [
+          'REDIS',
+          'Redis，<br>直接上手。',
+          'Redis,<br>within reach.',
+          '按前缀整理键。<br>查看与编辑内容，调整 TTL，<br>随时打开命令面板。',
+          'Group keys by prefix.<br>Edit values, set TTLs<br>or open the command console.',
+          'feature-redis-dark.png',
+        ],
+        ai: [
+          'AI AGENT',
+          'AI，就在<br>上下文里。',
+          'AI,<br>in context.',
+          '分析终端输出，编写 SQL。<br>处理文件与运维任务，<br>每一步，清晰可见。',
+          'Understand output. Write SQL.<br>Work with files and servers.<br>Follow every operation.',
+          'feature-ai-dark.png',
+        ],
+        er: [
+          'DATABASE DESIGN',
+          '结构，<br>看得更清楚。',
+          'See the<br>connections.',
+          '用 ER 图梳理表间关系。<br>设计字段、对比结构，<br>生成迁移 SQL 与数据字典。',
+          'Explore ER diagrams.<br>Design tables, compare schemas<br>and generate migration SQL.',
+          'feature-er-light.png',
+        ],
+        monitor: [
+          'MONITORING',
+          '状态，<br>心中有数。',
+          'Know<br>your server.',
+          'CPU、内存、磁盘与网络，<br>通过 SSH 随时查看。<br>无需额外安装 Agent。',
+          'CPU, memory, disk and network.<br>Available over SSH.<br>No server-side agent required.',
+          'feature-monitor-light.png',
+        ],
+        appearance: [
+          'MAKE IT YOURS',
+          '浅色，深色。<br>由你选择。',
+          'Light or dark.<br>Make it yours.',
+          '跟随系统，或选择喜欢的外观。<br>还有主题皮肤与自定义配色。',
+          'Follow your system, or choose<br>your own appearance.<br>Themes. Colors. Your workspace.',
+          'feature-database-light.png',
+        ],
+      }
+      const [label, zhTitle, enTitle, zhCopy, enCopy, source] = cards[view]
+      document.querySelector('main').className = view
+      document.querySelector('.eyebrow').textContent = label
+      document.querySelector('h2').innerHTML = en ? enTitle : zhTitle
+      document.querySelector('p').innerHTML = en ? enCopy : zhCopy
+      document.querySelector('.screen').src = `/docs/images/${source}`
+      if (view === 'hero') {
+        document.querySelector('h1').hidden = false
+        document.querySelector('.logo').hidden = false
+        document.querySelector('.eyebrow').hidden = true
+      }
+      document.documentElement.dataset.showcaseReady = 'true'
+    </script>
+  </body>
+</html>

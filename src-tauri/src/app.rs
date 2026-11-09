@@ -49,6 +49,18 @@ fn register_plugins(builder: Builder<Wry>) -> Builder<Wry> {
         show_main_window(app);
     }));
 
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    let builder = {
+        let startup = tauri_plugin_autostart::Builder::new().app_name(if cfg!(dev) {
+            "MiraiHub Dev"
+        } else {
+            "MiraiHub"
+        });
+        #[cfg(target_os = "macos")]
+        let startup = startup.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
+        builder.plugin(startup.build())
+    };
+
     builder
         // 系统原生文件选择器：SSH 私钥输入框通过它选择一个或多个密钥文件。
         .plugin(tauri_plugin_dialog::init())
@@ -181,6 +193,12 @@ fn show_main_window(app: &AppHandle) {
 /// 应用级事件。
 fn on_run_event(app: &AppHandle, event: RunEvent) {
     use tauri::Manager;
+
+    // macOS 点击 Dock 图标时重新显示已隐藏的主窗口。
+    #[cfg(target_os = "macos")]
+    if matches!(event, RunEvent::Reopen { .. }) {
+        show_main_window(app);
+    }
 
     // Native editor drafts outlive the main webview. Tray quit must also respect them.
     if let RunEvent::ExitRequested { ref api, .. } = event {

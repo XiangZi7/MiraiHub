@@ -18,6 +18,19 @@ import { en as dbux } from './dbux'
 import { en as dbOps } from './db-ops'
 import { en as connectionState } from './connection-state'
 export default {
+  '系统默认 Shell': 'System default shell',
+  '使用当前用户的登录 Shell': "Use the current user's login shell",
+  '启动 Bash 登录终端': 'Start a Bash login terminal',
+  '启动 Zsh 登录终端（需已安装）':
+    'Start a Zsh login terminal (installation required)',
+  '登录系统后自动运行 MiraiHub': 'Start MiraiHub when you sign in',
+  '使用系统安全存储，不进入聊天或普通设置备份。':
+    'Protected by the system secure store; excluded from chats and regular settings backups.',
+  '当前安装方式不支持应用内更新，请从 Releases 下载':
+    'This installation does not support in-app updates. Download updates from Releases.',
+  '自动更新支持 Windows 安装版、macOS 应用和 Linux AppImage':
+    'In-app updates support Windows installers, macOS apps, and Linux AppImages.',
+
   数据导入完成: 'Data import completed',
   数据导入失败: 'Data import failed',
   导入数据: 'Import data',

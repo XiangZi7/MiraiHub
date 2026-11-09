@@ -164,7 +164,7 @@ function connection(value: unknown): SavedConnection {
       settings: {
         shell: choice(
           s.shell,
-          ['powershell', 'cmd', 'git-bash'],
+          ['powershell', 'cmd', 'git-bash', 'system', 'bash', 'zsh'],
           i18n.global.t('本地终端')
         ),
         workingDirectory: optional(

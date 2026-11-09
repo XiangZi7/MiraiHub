@@ -114,9 +114,17 @@ pub fn set_window_material(window: &WebviewWindow, material: &str, light: bool) 
     window.set_effects(effects).map_err(to_app_error)
 }
 
-/// 非 Windows 平台没有对应材质，只同步窗口主题。
+/// macOS 同步窗口主题，Linux 使用不透明背景以兼容 WebKitGTK 与不同窗口管理器。
 #[cfg(not(windows))]
 pub fn set_window_material(window: &WebviewWindow, _material: &str, light: bool) -> AppResult<()> {
+    #[cfg(target_os = "linux")]
+    window
+        .set_background_color(Some(if light {
+            tauri::webview::Color(252, 250, 254, 255)
+        } else {
+            tauri::webview::Color(23, 22, 31, 255)
+        }))
+        .map_err(to_app_error)?;
     let _ = window.set_theme(Some(if light {
         tauri::Theme::Light
     } else {
@@ -157,9 +165,11 @@ pub fn enable_window_shadow(window: &WebviewWindow) {
     }
 }
 
-/// 非 Windows 平台：系统自带无边框窗口阴影，无需处理。
+/// macOS 恢复原生窗口阴影；Linux 不支持的窗口管理器会忽略此设置。
 #[cfg(not(windows))]
-pub fn enable_window_shadow(_window: &WebviewWindow) {}
+pub fn enable_window_shadow(window: &WebviewWindow) {
+    let _ = window.set_shadow(true);
+}
 
 /// 打开连接配置窗口。
 ///
@@ -220,11 +230,11 @@ pub fn open_connection_window(
             .maximizable(false)
             .decorations(false)
             // 原生材质需要窗口层和 WebView 都透明，内容区再用半透明 UI 分层保证可读性。
-            .transparent(true)
+            .transparent(!cfg!(target_os = "linux"))
             .background_color(tauri::webview::Color(0, 0, 0, 0))
             // 与主窗口一致：关闭 Tauri 自带阴影，构建后统一交给
             // enable_window_shadow() 用 DWM 绘制，避免无边框窗口出现亮色描边。
-            .shadow(false)
+            .shadow(!cfg!(windows))
             .skip_taskbar(true)
             .visible(false)
             .center();
@@ -286,9 +296,9 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
     .maximizable(true)
     .decorations(false)
     // 与主窗口一致：透明 WebView 透出 Windows Blur / Acrylic。
-    .transparent(true)
+    .transparent(!cfg!(target_os = "linux"))
     .background_color(tauri::webview::Color(0, 0, 0, 0))
-    .shadow(false)
+    .shadow(!cfg!(windows))
     .skip_taskbar(true)
     .visible(false)
     .center();

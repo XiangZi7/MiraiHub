@@ -155,7 +155,14 @@ export function generateReleaseNotes(root, { tag, repository, releases }) {
   lines.push(
     '## 下载与安装',
     '',
-    'Windows x64：setup.exe 为安装版；portable.zip 解压后运行 miraihub.exe（需要 WebView2 Runtime）。SHA256SUMS.txt 用于校验下载文件，version.json 记录版本与源码提交。',
+    '| 架构 | Windows | macOS | Linux / Ubuntu |',
+    '| --- | --- | --- | --- |',
+    `| x86-64（64 位） | [EXE](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_windows_x64_setup.exe) · [ZIP](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_windows_x64_portable.zip) | [DMG（Intel）](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_macos_x64.dmg) | [DEB](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_linux_x64.deb) · [AppImage](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_linux_x64.AppImage) |`,
+    `| AArch64（ARM64） | — | [DMG（Apple Silicon）](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_macos_arm64.dmg) | — |`,
+    '',
+    'Windows ZIP 需要 WebView2 Runtime；macOS 请先将应用移入「应用程序」。Linux AppImage 需添加执行权限；DEB 请用包管理器安装。SHA256SUMS.txt 校验附件，version.json 记录版本、源码提交与目标。',
+    'macOS 默认临时签名，未配置 Apple 开发者签名与公证时，首次打开可能需在「隐私与安全性」允许。Linux AI 安全存储需要已解锁的 Secret Service。',
+
     '',
     previous
       ? `**Full Changelog**: [${previous}...${tag}](${url}/compare/${previous}...${tag})`

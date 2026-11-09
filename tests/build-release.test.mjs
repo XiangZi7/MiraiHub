@@ -25,6 +25,8 @@ function simulate(results) {
     messages,
     run: () =>
       buildRelease({
+        platform: 'win32',
+        target: '',
         environment: { TAURI_SIGNING_PRIVATE_KEY: 'test-only-key' },
         run: async (args, options) => {
           calls.push({ args, env: options.env })
@@ -167,6 +169,8 @@ test('real child processes stream diagnostics and retry the installer without re
   const waits = []
   const status = await buildRelease({
     projectRoot: root,
+    platform: 'win32',
+    target: '',
     environment: { ...process.env, TAURI_SIGNING_PRIVATE_KEY: 'test-only-key' },
     wait: async milliseconds => {
       waits.push(milliseconds)

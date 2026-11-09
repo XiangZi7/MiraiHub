@@ -358,7 +358,12 @@ pub(super) fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
         Ok(data)
     }
 }
-#[cfg(not(windows))]
+/// macOS 与 Linux 通过系统密钥存储保护配置、聊天和附件。
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(super) fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
+    crate::platform::secure_storage::protect(bytes, encrypt)
+}
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub(super) fn protect(_bytes: &[u8], _encrypt: bool) -> AppResult<Vec<u8>> {
     Err(AppError::invalid_input(
         "此平台尚未接入系统密钥存储，AI 配置暂不可保存",

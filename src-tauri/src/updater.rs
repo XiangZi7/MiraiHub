@@ -87,26 +87,64 @@ pub struct Environment {
     reason: &'static str,
 }
 
+/// 仅为已发布的桌面目标启用更新，Linux DEB 与 Windows 便携版继续手动更新。
 #[tauri::command]
 pub fn updater_environment() -> Environment {
+    let executable = std::env::current_exe().ok();
+    let installed_windows = executable
+        .as_ref()
+        .and_then(|exe| exe.parent())
+        .is_some_and(|dir| dir.join("uninstall.exe").is_file());
+    let installed_macos = executable.as_ref().is_some_and(|exe| {
+        exe.parent()
+            .is_some_and(|dir| dir.ends_with("Contents/MacOS"))
+            && !exe.starts_with("/Volumes")
+    });
+    let appimage =
+        std::env::var_os("APPIMAGE").is_some_and(|path| std::path::Path::new(&path).is_file());
     let reason = if cfg!(debug_assertions) {
         "development"
-    } else if !cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        "platform"
-    } else if !std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("uninstall.exe").is_file()))
-        .unwrap_or(false)
-    {
-        // A portable archive must never silently become an installed copy.
-        "portable"
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        if installed_windows {
+            ""
+        } else {
+            "portable"
+        }
+    } else if cfg!(all(
+        target_os = "macos",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )) {
+        if installed_macos {
+            ""
+        } else {
+            "package"
+        }
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        if appimage {
+            ""
+        } else {
+            "package"
+        }
     } else {
-        ""
+        "platform"
     };
     Environment {
         supported: reason.is_empty(),
         reason,
     }
+}
+
+/// macOS/Linux 替换完程序后重启；Windows 的安装器自行退出并重启应用。
+#[tauri::command]
+pub fn updater_restart(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    if window.label() != "main" || !updater_environment().supported {
+        return Err("当前窗口或安装方式不支持应用更新".to_owned());
+    }
+    #[cfg(not(windows))]
+    app.request_restart();
+    #[cfg(windows)]
+    let _ = app;
+    Ok(())
 }
 
 #[tauri::command]

@@ -41,15 +41,31 @@ export function isTransientBundleError(output) {
   )
 }
 
-// 前端与 Rust 只编译一次，NSIS 打包最多尝试三次，临时下载失败时复用已编译的程序。
+// 按平台编译一次，打包最多尝试三次，临时下载失败时复用已编译程序。
 export async function buildRelease({
   projectRoot = root,
+  platform = process.platform,
+  target = process.env.RELEASE_TARGET || '',
   environment = process.env,
   run = runTauri,
   wait = delay,
   log = console.log,
 } = {}) {
+  const bundles = { win32: 'nsis', darwin: 'app,dmg', linux: 'deb,appimage' }[
+    platform
+  ]
+  if (!bundles) throw new Error('Unsupported desktop build platform')
+  const targetArgs = target ? ['--target', target] : []
   const env = { ...environment }
+  // Actions 未配置的可选 Apple Secrets 是空字符串；移除它们，避免触发无效证书导入或公证。
+  for (const key of [
+    'APPLE_CERTIFICATE',
+    'APPLE_CERTIFICATE_PASSWORD',
+    'APPLE_ID',
+    'APPLE_PASSWORD',
+    'APPLE_TEAM_ID',
+  ])
+    if (!env[key]?.trim()) delete env[key]
   const key = resolve(projectRoot, '.tauri/updater.key')
   if (!env.TAURI_SIGNING_PRIVATE_KEY && existsSync(key))
     env.TAURI_SIGNING_PRIVATE_KEY = key
@@ -59,12 +75,18 @@ export async function buildRelease({
     )
   env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= ''
   const options = { cwd: projectRoot, env }
-  const build = await run(['build', '--no-bundle', '--', '--locked'], options)
+  const build = await run(
+    ['build', ...targetArgs, '--no-bundle', '--', '--locked'],
+    options
+  )
   if (build.status !== 0) return build.status
 
   for (let attempt = 1; attempt <= 3; attempt++) {
-    log(`生成 NSIS 安装包（第 ${attempt}/3 次）`)
-    const bundle = await run(['bundle', '--bundles', 'nsis'], options)
+    log(`生成 ${bundles} 安装包（第 ${attempt}/3 次）`)
+    const bundle = await run(
+      ['bundle', ...targetArgs, '--bundles', bundles],
+      options
+    )
     if (
       bundle.status === 0 ||
       attempt === 3 ||

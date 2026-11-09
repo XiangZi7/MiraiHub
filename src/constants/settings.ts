@@ -40,7 +40,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           {
             key: 'launchAtStartup',
             label: '开机时自动启动',
-            description: '登录 Windows 后自动运行 MiraiHub',
+            description: '登录系统后自动运行 MiraiHub',
             control: 'switch',
           },
           {

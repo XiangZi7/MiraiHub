@@ -4,6 +4,8 @@ pub mod column_tags;
 pub mod commands;
 pub mod locale;
 pub mod skins;
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+pub mod secure_storage;
 pub mod window;
 
 pub mod remote_editor;

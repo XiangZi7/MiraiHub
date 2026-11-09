@@ -117,9 +117,9 @@ pub async fn open_column_tags_window(
     .maximizable(false)
     .decorations(false)
     // 与其他子窗口一致：透明 WebView 透出系统材质，阴影交给 DWM。
-    .transparent(true)
+    .transparent(!cfg!(target_os = "linux"))
     .background_color(tauri::webview::Color(0, 0, 0, 0))
-    .shadow(false)
+    .shadow(!cfg!(windows))
     .skip_taskbar(true)
     .visible(false)
     .center();

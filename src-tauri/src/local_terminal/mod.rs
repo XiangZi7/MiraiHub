@@ -34,6 +34,9 @@ pub enum LocalShell {
     Powershell,
     Cmd,
     GitBash,
+    System,
+    Bash,
+    Zsh,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,6 +57,7 @@ pub struct LocalTerminalSession {
 }
 
 impl LocalTerminalSession {
+    /// 按当前桌面平台创建 PTY，空工作目录默认进入当前用户目录。
     fn spawn(config: &LocalTerminalConfig) -> AppResult<(Self, Box<dyn Read + Send>)> {
         validate_config(config)?;
 
@@ -67,11 +71,13 @@ impl LocalTerminalSession {
             })
             .map_err(|error| AppError::internal(format!("创建本地 PTY 失败：{error}")))?;
 
-        let mut command = shell_command(config.shell);
+        let mut command = shell_command(config.shell)?;
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
         if !config.working_directory.trim().is_empty() {
             command.cwd(config.working_directory.trim());
+        } else if let Some(home) = dirs::home_dir() {
+            command.cwd(home);
         }
 
         let child = pair
@@ -284,23 +290,60 @@ fn validate_config(config: &LocalTerminalConfig) -> AppResult<()> {
     Ok(())
 }
 
-fn shell_command(shell: LocalShell) -> CommandBuilder {
-    match shell {
-        LocalShell::Powershell => {
+/// 在 Windows 创建对应终端，系统默认项兼容从其他桌面平台导入的连接。
+#[cfg(windows)]
+fn shell_command(shell: LocalShell) -> AppResult<CommandBuilder> {
+    Ok(match shell {
+        LocalShell::Powershell | LocalShell::System => {
             let mut command = CommandBuilder::new("powershell.exe");
             command.args(["-NoLogo", "-NoExit"]);
             command
         }
         LocalShell::Cmd => CommandBuilder::new("cmd.exe"),
-        LocalShell::GitBash => {
+        LocalShell::GitBash | LocalShell::Bash => {
             let executable = git_bash_path().unwrap_or_else(|| PathBuf::from("bash.exe"));
             let mut command = CommandBuilder::new(executable);
             command.args(["--login", "-i"]);
             command
         }
-    }
+        LocalShell::Zsh => {
+            return Err(AppError::invalid_input(
+                "Windows 请使用 PowerShell、CMD 或 Git Bash",
+            ))
+        }
+    })
 }
 
+/// macOS/Linux 使用登录 Shell 初始化 PATH，旧 Windows 连接回退到当前用户的 Shell。
+#[cfg(not(windows))]
+fn shell_command(shell: LocalShell) -> AppResult<CommandBuilder> {
+    let executable = match shell {
+        LocalShell::Bash => PathBuf::from("/bin/bash"),
+        LocalShell::Zsh => PathBuf::from("/bin/zsh"),
+        _ => std::env::var_os("SHELL")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute() && path.is_file())
+            .unwrap_or_else(|| {
+                PathBuf::from(if cfg!(target_os = "macos") {
+                    "/bin/zsh"
+                } else {
+                    "/bin/sh"
+                })
+            }),
+    };
+    if !executable.is_file() {
+        return Err(AppError::invalid_input(format!(
+            "本地 Shell 未安装：{}",
+            executable.display()
+        )));
+    }
+    let mut command = CommandBuilder::new(executable);
+    command.args(["-l", "-i"]);
+    Ok(command)
+}
+
+/// 优先查找常见 Git for Windows 安装位置，再由 PATH 查找 bash.exe。
+#[cfg(windows)]
 fn git_bash_path() -> Option<PathBuf> {
     let candidates = [
         PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
@@ -310,7 +353,6 @@ fn git_bash_path() -> Option<PathBuf> {
             .unwrap_or_default()
             .join(r"Programs\Git\bin\bash.exe"),
     ];
-
     candidates.into_iter().find(|path| path.is_file())
 }
 
@@ -392,14 +434,18 @@ mod tests {
         assert!(validate_config(&config).is_ok());
     }
 
-    #[cfg(windows)]
+    /// 验证各桌面系统的真实 PTY 能启动登录终端并回传输出。
     #[test]
-    fn cmd_pty_round_trips_output() {
+    fn native_pty_round_trips_output() {
         use std::sync::mpsc;
         use std::time::Duration;
 
         let config = LocalTerminalConfig {
-            shell: LocalShell::Cmd,
+            shell: if cfg!(windows) {
+                LocalShell::Cmd
+            } else {
+                LocalShell::System
+            },
             working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
             cols: 80,
             rows: 24,

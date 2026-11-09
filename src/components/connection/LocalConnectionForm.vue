@@ -19,6 +19,7 @@ import type {
 } from '@/types/connection'
 import { isLocalConnection } from '@/types/connection'
 import { IS_TAURI } from '@/utils/window'
+import { normalizeLocalShell } from '@/utils/platform'
 import ConnectionTagEditor from './ConnectionTagEditor.vue'
 import StartupCommandPresetField from './StartupCommandPresetField.vue'
 
@@ -61,6 +62,7 @@ const shellOptions = computed(() =>
 
 const ready = computed(() => Boolean(form.name.trim()))
 
+// 编辑跨系统导入的本地连接时，保留其他配置并回退到本机可用的 Shell。
 onMounted(async () => {
   if (!props.connectionId) return
 
@@ -73,7 +75,7 @@ onMounted(async () => {
     Object.assign(form, {
       name: connection.name,
       group: connection.group,
-      shell: connection.settings.shell,
+      shell: normalizeLocalShell(connection.settings.shell),
       workingDirectory: connection.settings.workingDirectory,
       startupCommand: connection.settings.startupCommand ?? '',
       tags: connection.tags.join(', '),

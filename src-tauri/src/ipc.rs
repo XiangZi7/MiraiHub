@@ -21,6 +21,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         crate::updater::updater_environment,
         crate::updater::updater_check_source,
         crate::updater::updater_can_install,
+        crate::updater::updater_restart,
         crate::backup::connection_backup_write,
         crate::backup::connection_backup_read,
         ssh::config_transfer::ssh_config_backup_preview,

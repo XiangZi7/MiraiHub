@@ -132,7 +132,7 @@ function normalizePrice(field: keyof AgentPricing): void {
         id="ai-key-help"
         class="text-txt-4 text-[10px] leading-[1.6] wrap-anywhere"
       >
-        {{ t('Windows 用户级加密存储，不进入聊天或普通设置备份。') }}
+        {{ t('使用系统安全存储，不进入聊天或普通设置备份。') }}
       </p>
     </div>
     <AppCheckbox

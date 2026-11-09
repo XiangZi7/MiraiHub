@@ -75,7 +75,9 @@ const label = computed(() => {
     case 'unsupported':
       return state.value.reason === 'portable'
         ? t('免安装版请从 Releases 下载更新')
-        : t('自动更新仅支持 Windows x64 正式安装版')
+        : state.value.reason === 'package'
+          ? t('当前安装方式不支持应用内更新，请从 Releases 下载')
+          : t('自动更新支持 Windows 安装版、macOS 应用和 Linux AppImage')
     default:
       return t('从 GitHub Releases 获取最新正式版')
   }

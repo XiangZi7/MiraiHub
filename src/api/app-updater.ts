@@ -14,7 +14,18 @@ async function checkSource(prefix: string): Promise<UpdatePackage | null> {
     'updater_check_source',
     { prefix }
   )
-  return metadata ? new Update(metadata) : null
+  if (!metadata) return null
+  const update = new Update(metadata)
+  return {
+    version: update.version,
+    download: (report, options) => update.download(report, options),
+    /** 安装成功后由原生命令完成 macOS/Linux 重启，失败时继续保留错误状态。 */
+    install: async () => {
+      await update.install()
+      await invoke('updater_restart')
+    },
+    close: () => update.close(),
+  }
 }
 
 /** 按所选线路检查；下载失败后切换同一版本的备用资源，不混用版本或绕过签名校验。 */

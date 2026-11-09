@@ -196,10 +196,10 @@ pub async fn open_remote_editor_window(
     .resizable(true)
     .minimizable(true)
     .maximizable(true)
-    .transparent(true)
+    .transparent(!cfg!(target_os = "linux"))
     .background_color(tauri::webview::Color(0, 0, 0, 0))
     .theme(Some(tauri::Theme::Dark))
-    .shadow(false)
+    .shadow(!cfg!(windows))
     .visible(false)
     .center()
     .build();

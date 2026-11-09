@@ -8,6 +8,7 @@ import { useXterm } from '@/composables/useXterm'
 import type { LocalConnectionSettings } from '@/types/connection'
 import type { LocalTerminalStatusEvent } from '@/types/local-terminal'
 import type { SshSessionStatus } from '@/types/ssh'
+import { normalizeLocalShell } from '@/utils/platform'
 
 export function useLocalTerminal() {
   const { term, fitAddon, open, stopSettingsWatch } = useXterm(() => resize())
@@ -30,6 +31,7 @@ export function useLocalTerminal() {
     })
   }
 
+  /** 创建本机兼容的终端会话，跨系统导入的连接自动选用系统默认 Shell。 */
   async function connect(settings: LocalConnectionSettings): Promise<void> {
     const terminal = term.value
     if (!terminal) throw new Error(i18n.global.t('终端尚未挂载'))
@@ -67,7 +69,7 @@ export function useLocalTerminal() {
       })
       const id = await localTerminal.create(
         {
-          shell: settings.shell,
+          shell: normalizeLocalShell(settings.shell),
           workingDirectory: settings.workingDirectory,
           cols: terminal.cols,
           rows: terminal.rows,
