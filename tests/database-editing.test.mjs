@@ -58,14 +58,18 @@ const renderer = createRenderer({
     el.props[key] = value
   },
   parentNode: el => el.parent,
-  nextSibling: () => null,
+  // 插槽切换会删除 Fragment，宿主需返回真实兄弟节点并支持节点移动。
+  nextSibling: el =>
+    el.parent?.children[el.parent.children.indexOf(el) + 1] ?? null,
   insert(el, parent, anchor) {
+    if (el.parent) el.parent.children.splice(el.parent.children.indexOf(el), 1)
     el.parent = parent
     const index = anchor ? parent.children.indexOf(anchor) : -1
     parent.children.splice(index < 0 ? parent.children.length : index, 0, el)
   },
   remove(el) {
     el.parent?.children.splice(el.parent.children.indexOf(el), 1)
+    el.parent = null
   },
 })
 const all = el => [el, ...el.children.flatMap(all)]
@@ -93,8 +97,11 @@ test('新增行第一次填写字段就启用提交，预览包含当前字段�
   app.config.errorHandler = error => errors.push(error)
   app.use(i18n).mount(root)
   t.after(() => {
-    app.unmount()
-    assert.deepEqual(errors, [])
+    try {
+      app.unmount()
+    } finally {
+      assert.deepEqual(errors, [])
+    }
   })
   await flush()
   const button = label =>

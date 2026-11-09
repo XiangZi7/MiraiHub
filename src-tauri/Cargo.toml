@@ -77,6 +77,9 @@ uuid = "1"
 rust_decimal = "1"
 redis = { version = "0.32.7", default-features = false, features = ["tokio-rustls-comp", "tls-rustls-webpki-roots"] }
 
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 [target.'cfg(windows)'.dependencies]
 # 与 tauri 内部同版本（Cargo.lock windows 0.61.x），保证 window.hwnd() 的 HWND 类型直接兼容。
 # 仅用于给无边框主窗补 DWM 原生阴影，见 platform/window.rs 的 enable_window_shadow。

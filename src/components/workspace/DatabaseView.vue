@@ -1874,17 +1874,6 @@ registerDatabaseCommandSource(
 </script>
 
 <template>
-  <DefineDatabaseStatus v-slot="{ tab, visible, embedded }">
-    <DatabaseStatusBar
-      :connection-name="connection?.name ?? ''"
-      :session="session ?? null"
-      :connected="connected && active !== false && visible !== false"
-      :database="tab ? tabDatabase(tab) : browsedDatabase"
-      :running-queries="runningQueryCount"
-      :selection="embedded ? null : statusSelection"
-      :embedded="embedded"
-    />
-  </DefineDatabaseStatus>
   <div
     v-if="!connection"
     class="pane flex-1 items-center justify-center"
@@ -1930,7 +1919,18 @@ registerDatabaseCommandSource(
       {{ safetyBand.label }}
     </div>
     <DatabaseGuardDialog />
-    <!-- 工具栏模板放在根元素内，让父级 v-show 能正确隐藏缓存的连接视图。 -->
+    <!-- 可复用模板放在根元素内，让父级 v-show 能正确隐藏缓存的连接视图。 -->
+    <DefineDatabaseStatus v-slot="{ tab, visible, embedded }">
+      <DatabaseStatusBar
+        :connection-name="connection?.name ?? ''"
+        :session="session ?? null"
+        :connected="connected && active !== false && visible !== false"
+        :database="tab ? tabDatabase(tab) : browsedDatabase"
+        :running-queries="runningQueryCount"
+        :selection="embedded ? null : statusSelection"
+        :embedded="embedded"
+      />
+    </DefineDatabaseStatus>
     <DefineDatabaseActions v-slot="{ tab }">
       <div
         class="scroll-none flex max-w-full min-w-0 items-center gap-1.5 overflow-x-auto"

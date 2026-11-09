@@ -29,6 +29,12 @@ pub fn run() {
 
 /// 注册插件。
 fn register_plugins(builder: Builder<Wry>) -> Builder<Wry> {
+    // 单例插件最先注册，避免重复启动时初始化其他插件。
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        show_main_window(app);
+    }));
+
     builder
         // 系统原生文件选择器：SSH 私钥输入框通过它选择一个或多个密钥文件。
         .plugin(tauri_plugin_dialog::init())
@@ -143,6 +149,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// 托盘打开或重复启动时，恢复并聚焦已有主窗口。
 fn show_main_window(app: &AppHandle) {
     use tauri::Manager;
 
