@@ -13,15 +13,20 @@ const settingsModule = dataModule(`
 const webglModule = dataModule(`
   export class WebglAddon {
     static created = 0
+    disposed = false
     constructor() { WebglAddon.created++ }
-    onContextLoss() {}
-    dispose() {}
+    onContextLoss(handler) { this.contextLoss = handler }
+    dispose() { this.disposed = true }
   }
 `)
 const load = sourceLoader({
   '@vueuse/core': dataModule(`
+    import { onScopeDispose } from ${JSON.stringify(import.meta.resolve('vue'))}
     export const useDebounceFn = fn => fn
-    export function useEventListener() {}
+    export function useEventListener(target, event, handler) {
+      target.addEventListener(event, handler)
+      onScopeDispose(() => target.removeEventListener(event, handler))
+    }
   `),
   '@tauri-apps/plugin-opener': dataModule('export async function openUrl() {}'),
   '@xterm/addon-fit': dataModule('export class FitAddon { fit() {} }'),
@@ -34,10 +39,11 @@ const load = sourceLoader({
       unicode = {}
       cleared = 0
       refreshed = 0
+      addons = []
       element = { isConnected: true }
       constructor(options) { this.options = options }
       open() {}
-      loadAddon() {}
+      loadAddon(addon) { this.addons.push(addon) }
       onSelectionChange() {}
       clearTextureAtlas() { this.cleared++ }
       refresh() { this.refreshed++ }
@@ -59,12 +65,13 @@ const { useXterm } = await load('src/composables/useXterm.ts')
 const { settings } = await import(settingsModule)
 const { WebglAddon } = await import(webglModule)
 
-/** 提供可控的字体下载时机，验证字体到达和用户切换设置的竞态。 */
-function fixture(t) {
+/** 提供可控的字体下载与主题切换，验证渲染器、字体到达和用户设置的竞态。 */
+function fixture(t, scheme = 'dark') {
   const previous = { window: globalThis.window, document: globalThis.document }
   const pending = []
   globalThis.window = new EventTarget()
   globalThis.document = {
+    documentElement: { dataset: { skinScheme: scheme } },
     fonts: {
       check: () => false,
       load: font => new Promise(resolve => pending.push({ font, resolve })),
@@ -88,7 +95,7 @@ function fixture(t) {
 
 /** 等待字体 Promise 和动态插件导入完成，不依赖固定时间延迟。 */
 async function finishFonts(pending) {
-  for (const item of pending) item.resolve([])
+  for (const item of pending.splice(0)) item.resolve([])
   await new Promise(resolve => setImmediate(resolve))
 }
 
@@ -103,8 +110,54 @@ test('慢字体到达前不缓存 WebGL 字形，到达后重新测量并重绘�
   await finishFonts(pending)
   assert.equal(terminal.cleared, 1)
   assert.equal(terminal.refreshed, 1)
-  assert.equal(changes(), 1)
+  assert.equal(changes(), 2)
   assert.equal(WebglAddon.created, created + 1)
+})
+
+test('浅色终端保留透明背景并用 DOM 绘字，深浅切换只替换渲染插件', async t => {
+  const created = WebglAddon.created
+  const { terminal, pending } = fixture(t, 'light')
+  assert.equal(terminal.options.allowTransparency, true)
+  assert.equal(terminal.options.fontWeight, 400)
+  await finishFonts(pending)
+  assert.equal(WebglAddon.created, created)
+
+  document.documentElement.dataset.skinScheme = 'dark'
+  window.dispatchEvent(new Event('skin-change'))
+  await finishFonts(pending)
+  const addon = terminal.addons.find(addon => addon instanceof WebglAddon)
+  assert.ok(addon)
+  assert.equal(WebglAddon.created, created + 1)
+
+  document.documentElement.dataset.skinScheme = 'light'
+  window.dispatchEvent(new Event('skin-change'))
+  assert.equal(addon.disposed, true)
+  await finishFonts(pending)
+  assert.equal(WebglAddon.created, created + 1)
+
+  document.documentElement.dataset.skinScheme = 'dark'
+  window.dispatchEvent(new Event('skin-change'))
+  await finishFonts(pending)
+  assert.equal(WebglAddon.created, created + 2)
+})
+
+test('字体迟到与连续主题切换不会在浅色加载 WebGL 或重复创建渲染器', async t => {
+  const created = WebglAddon.created
+  const { terminal, pending } = fixture(t)
+  document.documentElement.dataset.skinScheme = 'light'
+  window.dispatchEvent(new Event('skin-change'))
+  await finishFonts(pending)
+  assert.equal(WebglAddon.created, created)
+
+  document.documentElement.dataset.skinScheme = 'dark'
+  window.dispatchEvent(new Event('skin-change'))
+  window.dispatchEvent(new Event('skin-change'))
+  await finishFonts(pending)
+  assert.equal(WebglAddon.created, created + 1)
+
+  const addon = terminal.addons.find(addon => addon instanceof WebglAddon)
+  addon.contextLoss()
+  assert.equal(addon.disposed, true)
 })
 
 test('切换字体后旧下载不会覆盖新字体，关闭后的字体也不会触发重绘', async t => {

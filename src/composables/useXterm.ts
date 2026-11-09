@@ -11,6 +11,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import type { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/xterm'
 import { i18n } from '@/i18n'
 import { currentTerminalTheme } from '@/constants/terminal'
@@ -41,23 +42,6 @@ export function terminalFontFamily(): string {
 }
 
 /**
- * 用 WebGL 渲染终端，持续大量输出时比 DOM 渲染省得多。
- * 显卡不支持或上下文丢失（驱动重置、休眠唤醒）时卸载插件，xterm 自动退回 DOM 渲染。
- */
-async function enableWebgl(terminal: Terminal): Promise<void> {
-  try {
-    const { WebglAddon } = await import('@xterm/addon-webgl')
-    // 终端可能在插件加载期间已经关闭。
-    if (!terminal.element?.isConnected) return
-    const webgl = new WebglAddon()
-    webgl.onContextLoss(() => webgl.dispose())
-    terminal.loadAddon(webgl)
-  } catch {
-    /* 不支持 WebGL2 时保留 DOM 渲染。 */
-  }
-}
-
-/**
  * 终端里的网址按 Ctrl/⌘+单击打开：普通单击常用于定位或拖选，直接跳浏览器容易误触。
  */
 function loadWebLinks(terminal: Terminal): void {
@@ -82,6 +66,7 @@ function loadWebLinks(terminal: Terminal): void {
 }
 
 /**
+ * 管理 SSH 与本地终端的字体、渲染器和设置联动，不重建底层会话。
  * @param onOptionsChange 字体、字号等设置变化后调用，调用方借此重新 fit 并同步远端尺寸。
  */
 export function useXterm(onOptionsChange: () => void) {
@@ -90,10 +75,56 @@ export function useXterm(onOptionsChange: () => void) {
   // 被 Vue 深度代理会显著拖慢渲染
   const term = shallowRef<Terminal>()
   const fitAddon = shallowRef<FitAddon>()
+  let webglAddon: WebglAddon | undefined
+  let rendererRevision = 0
 
+  // 皮肤变化时同步配色与渲染器，沿用当前缓冲区、选区和 SSH 会话。
   useEventListener(window, SKIN_CHANGE_EVENT, () => {
-    if (term.value) term.value.options.theme = currentTerminalTheme()
+    const terminal = term.value
+    if (!terminal) return
+    terminal.options.theme = currentTerminalTheme()
+    void refreshRenderer(terminal)
   })
+
+  /**
+   * 浅色透明终端用 DOM 绘字，避免 WebGL 的透明字形边缘变细、发虚；深色保留 GPU 渲染。
+   * 切换皮肤时只替换绘制插件并重新适配网格；字体或插件迟到时忽略过期的切换。
+   */
+  async function refreshRenderer(terminal: Terminal): Promise<void> {
+    const revision = ++rendererRevision
+    if (typeof document === 'undefined') return
+    const light = document.documentElement.dataset.skinScheme === 'light'
+    if (light && webglAddon) {
+      webglAddon.dispose()
+      webglAddon = undefined
+      onOptionsChange()
+    }
+    // 两种渲染器都需等待内置字体；WebGL 必须在字体就绪后才创建字形图集。
+    await refreshFont(terminal)
+    if (light || webglAddon || revision !== rendererRevision) return
+    try {
+      const { WebglAddon } = await import('@xterm/addon-webgl')
+      if (
+        revision !== rendererRevision ||
+        term.value !== terminal ||
+        !terminal.element?.isConnected
+      )
+        return
+      const addon = new WebglAddon()
+      // 驱动重置或休眠唤醒后回退到 DOM，并按新的字宽重新适配。
+      addon.onContextLoss(() => {
+        if (webglAddon !== addon) return
+        webglAddon = undefined
+        addon.dispose()
+        onOptionsChange()
+      })
+      terminal.loadAddon(addon)
+      webglAddon = addon
+      onOptionsChange()
+    } catch {
+      /* 不支持 WebGL2 时保留 DOM 渲染。 */
+    }
+  }
 
   /**
    * 首次打开或切换字体时主动加载常规与粗体字形，完成后重新测量网格。
@@ -172,8 +203,7 @@ export function useXterm(onOptionsChange: () => void) {
 
     term.value = terminal
     fitAddon.value = fit
-    // 先等内置字体就绪再创建 WebGL 字形图集，避免首屏缓存系统回退字体。
-    void refreshFont(terminal).then(() => enableWebgl(terminal))
+    void refreshRenderer(terminal)
     return terminal
   }
 
@@ -196,7 +226,7 @@ export function useXterm(onOptionsChange: () => void) {
       terminal.options.cursorBlink = settings.terminalCursorBlink
       terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
       onOptionsChange()
-      void refreshFont(terminal)
+      void refreshRenderer(terminal)
     }
   )
 
