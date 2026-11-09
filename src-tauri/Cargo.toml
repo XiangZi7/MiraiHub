@@ -22,7 +22,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # protocol-asset：让 WebView 通过 asset:// 直接读取安装目录里的皮肤图片与样式。
-tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+# Tauri 构建校验只读取公共 tauri 声明；macos-private-api 必须与公共配置一同声明，其他桌面平台不会启用 macOS API。
+tauri = { version = "2", features = ["tray-icon", "protocol-asset", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-log = "2"
 tauri-plugin-updater = { version = "~2.10.1", default-features = false, features = ["rustls-tls"] }
@@ -94,7 +95,6 @@ windows = { version = "0.61", features = [
 windows-version = "0.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
 keyring = { version = "3.6.3", features = ["apple-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

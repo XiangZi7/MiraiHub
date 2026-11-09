@@ -286,3 +286,38 @@ test('Windows build uploads the package directory under the name expected by rel
   assert.match(upload, /path: release-output\/\*/)
   assert.doesNotMatch(upload, /pattern:|release-input/)
 })
+
+test('Tauri manifest validation sees the configured macOS feature in the common dependency', () => {
+  const manifest = readFileSync(
+    new URL('../src-tauri/Cargo.toml', import.meta.url),
+    'utf8'
+  )
+  const common =
+    manifest.split(/^\[dependencies\]\s*$/m)[1]?.split(/^\[/m)[0] ?? ''
+  const features =
+    common.match(/^tauri\s*=.*features\s*=\s*\[([^\]]+)\]/m)?.[1] ?? ''
+  const base = JSON.parse(
+    readFileSync(
+      new URL('../src-tauri/tauri.conf.json', import.meta.url),
+      'utf8'
+    )
+  )
+  for (const name of ['windows', 'macos', 'linux']) {
+    const config =
+      name === 'windows'
+        ? {}
+        : JSON.parse(
+            readFileSync(
+              new URL(`../src-tauri/tauri.${name}.conf.json`, import.meta.url),
+              'utf8'
+            )
+          )
+    const enabled =
+      config.app?.macOSPrivateApi ?? base.app.macOSPrivateApi ?? false
+    assert.equal(
+      features.includes('"macos-private-api"'),
+      enabled,
+      `${name}: Tauri CLI and cargo test must see matching features`
+    )
+  }
+})
