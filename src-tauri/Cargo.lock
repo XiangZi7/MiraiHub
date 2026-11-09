@@ -3064,7 +3064,7 @@ dependencies = [
 
 [[package]]
 name = "miraihub"
-version = "4.0.0"
+version = "4.0.1"
 dependencies = [
  "aes-gcm",
  "argon2",
