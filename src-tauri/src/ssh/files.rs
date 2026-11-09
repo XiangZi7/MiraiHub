@@ -1670,11 +1670,13 @@ mod tests {
 #[cfg(test)]
 mod resume_tests {
     use super::*;
+    /// macOS 的系统临时目录经过 /var 符号链接；先定位真实测试根目录，再验证文件覆盖与类型防护。
     #[test]
     fn downloads_require_explicit_overwrite_and_matching_local_types() {
         let root =
             std::env::temp_dir().join(format!("miraihub-download-{}", rand::random::<u64>()));
         std::fs::create_dir(&root).unwrap();
+        let root = std::fs::canonicalize(root).unwrap();
         let file = root.join("existing.txt");
         std::fs::write(&file, b"keep").unwrap();
         assert!(validate_local_download_target(&file, false, false).is_err());
@@ -1687,6 +1689,37 @@ mod resume_tests {
         std::fs::remove_file(file).unwrap();
         std::fs::remove_dir(root).unwrap();
     }
+    /// 使用真实临时根目录后，下载仍必须拒绝用户目录内的文件链接和目录链接。
+    #[cfg(unix)]
+    #[test]
+    fn downloads_still_reject_file_and_directory_symlinks() {
+        use std::os::unix::fs::symlink;
+        let root =
+            std::env::temp_dir().join(format!("miraihub-download-links-{}", rand::random::<u64>()));
+        std::fs::create_dir(&root).unwrap();
+        let root = std::fs::canonicalize(root).unwrap();
+        let directory = root.join("actual");
+        std::fs::create_dir(&directory).unwrap();
+        let target = directory.join("existing.txt");
+        std::fs::write(&target, b"keep").unwrap();
+        let directory_link = root.join("linked-directory");
+        let file_link = root.join("linked-file.txt");
+        symlink(&directory, &directory_link).unwrap();
+        symlink(&target, &file_link).unwrap();
+        assert!(validate_local_download_target(&target, true, false).is_ok());
+        assert!(validate_local_download_target(&file_link, true, false).is_err());
+        assert!(
+            validate_local_download_target(&directory_link.join("new.txt"), false, false).is_err()
+        );
+        assert!(validate_local_download_target(&directory_link, true, true).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"keep");
+        std::fs::remove_file(file_link).unwrap();
+        std::fs::remove_file(directory_link).unwrap();
+        std::fs::remove_file(target).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[test]
     fn directory_sync_preserves_modified_time_for_repeat_scans() {
         let path =
