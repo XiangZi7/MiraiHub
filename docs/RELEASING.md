@@ -148,6 +148,7 @@ Get-FileHash .\MiraiHub_0.2.0_windows_x64_setup.exe -Algorithm SHA256
 
 ## 失败重试
 
+- 提示 `the --slurp option is not supported with --jq or --template`：读取已发布版本列表的 CLI 参数冲突。工作流已改为 `gh api --paginate --slurp ... | jq ...`，由独立的 `jq` 合并分页并提取日志所需字段。提交修复到默认分支后，从 **Actions → Release → Run workflow** 选择默认分支并输入尚未公开的原标签（例如 `v4.0.0`）；直接重跑旧记录仍使用原事件的提交和工作流。若版本已公开，请发布新的补丁标签，不移动旧标签。
 - `Could not fetch a valid release JSON from the remote`：更新接口没有返回成功状态，不等同于本机断网。确认 GitHub **Latest 正式版**的附件中有 `latest.json`；旧版缺少清单或发布尚未完成时可能出现。清单恢复后应用会按上述间隔重试，也可手动点“重试”。可运行 `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib updater::tests::published_update_manifest_is_accessible -- --ignored --exact`，使用应用的 Rust HTTP 栈检查已发布清单和安装包地址（不会下载安装）。
 - 提示 `Configure the TAURI_SIGNING_PRIVATE_KEY repository secret`：到仓库 **Settings → Secrets and variables → Actions → Repository secrets** 配置 `TAURI_SIGNING_PRIVATE_KEY`，值为原签名私钥文件的完整内容，不是文件路径或公钥。只补齐 Secret 时，可直接重跑失败任务，无需修改源码或重新生成密钥。
 - 提示 updater 版本不匹配：`@tauri-apps/plugin-updater` 和 Rust `tauri-plugin-updater` 必须使用相同的主、次版本；当前两端限定为 `2.10.x`，升级时一起调整并更新锁文件。若失败标签已包含错误依赖，修复后发布新的补丁版本；重跑旧标签仍会检出旧依赖。本地签名打包使用 `pnpm release:build`，它会自动读取本机私钥。

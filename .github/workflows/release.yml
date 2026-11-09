@@ -183,7 +183,7 @@ jobs:
 
           # Use published releases as the baseline so failed tags cannot hide changes.
           gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" \
-            --jq 'add | map({tag_name, draft, prerelease})' > "$RUNNER_TEMP/published-releases.json"
+            | jq 'add // [] | map({tag_name, draft, prerelease})' > "$RUNNER_TEMP/published-releases.json"
           node ../scripts/release-notes.mjs "$RELEASE_TAG" "$GH_REPO" \
             "$RUNNER_TEMP/release-notes.md" "$RUNNER_TEMP/published-releases.json"
 

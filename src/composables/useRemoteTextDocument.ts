@@ -5,7 +5,9 @@ import * as api from '@/api/operations'
 import { isAppError } from '@/api/ssh'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
 import { textMetrics } from '@/utils/text-metrics'
+import { toast } from '@/composables/useToast'
 
+/** 管理远端文本草稿、保存冲突与关闭确认，保存完成后才允许关闭编辑窗口。 */
 export function useRemoteTextDocument(
   request: RemoteEditRequest,
   standalone: boolean,
@@ -22,10 +24,10 @@ export function useRemoteTextDocument(
     busy: false,
     // 最近一次读写错误
     error: '',
-    // 保存结果或窗口关闭提示
-    message: '',
     // 待确认的放弃草稿动作
     discard: '' as '' | 'close',
+    // 用户选择保存并关闭，发生冲突时保留意图直到处理完成或取消。
+    closeAfterSave: false,
     // 保存时发现远端文件已被他人修改，等待用户选择覆盖、重新加载或取消
     conflict: false,
   })
@@ -39,7 +41,6 @@ export function useRemoteTextDocument(
     if (state.busy) return
     state.busy = true
     state.error = ''
-    state.message = ''
     state.conflict = false
     try {
       const doc = await api.openText(request.sessionId, request.path)
@@ -57,28 +58,37 @@ export function useRemoteTextDocument(
       state.busy = false
     }
   }
-  // 保存草稿；force 为 true 时跳过远端变更检测直接覆盖
+  // 保存草稿；force 跳过远端变更检测，关闭意图仅在保存成功并解除忙碌状态后执行。
   async function save(force = false): Promise<void> {
     if (!dirty.value || !state.document || state.busy) return
     if (textMetrics(state.draft).bytes > 1024 * 1024) {
+      state.closeAfterSave = false
       state.error = i18n.global.t('草稿超过 1 MB，请缩短后再保存')
       return
     }
     const text = state.draft
     state.busy = true
     state.error = ''
-    state.message = ''
     state.conflict = false
+    let saved = false
     try {
       const doc = await api.saveText(state.document.id, text, force)
       state.document = doc
       state.draft = doc.text
-      state.message = i18n.global.t('已保存')
+      saved = true
+      toast.success(i18n.global.t('已保存'))
     } catch (error) {
       if (isAppError(error) && error.kind === 'conflict') state.conflict = true
-      else state.error = api.errorMessage(error)
+      else {
+        state.closeAfterSave = false
+        state.error = api.errorMessage(error)
+      }
     } finally {
       state.busy = false
+    }
+    if (saved && state.closeAfterSave) {
+      state.closeAfterSave = false
+      onClose()
     }
   }
   // 冲突时用户选择覆盖远端修改
@@ -87,26 +97,41 @@ export function useRemoteTextDocument(
   }
   // 冲突时放弃本地草稿并重新读取远端内容
   function reloadRemote(): void {
+    state.closeAfterSave = false
     state.conflict = false
     void load()
   }
   // 关闭冲突提示，保留草稿稍后处理
   function dismissConflict(): void {
+    state.closeAfterSave = false
     state.conflict = false
   }
+  // 关闭时只检查当前草稿；有改动则打开二次确认，读写期间保留窗口。
   function requestClose(): void {
     if (state.busy) {
-      state.message = i18n.global.t('正在读取或保存，请稍后再关闭窗口。')
+      toast.info(i18n.global.t('正在读取或保存，请稍后再关闭窗口。'))
       return
     }
-    if (!state.busy) {
-      if (dirty.value) state.discard = 'close'
-      else onClose()
-    }
+    if (dirty.value) state.discard = 'close'
+    else onClose()
   }
+  // 二次确认选择保存并关闭；写入失败保留草稿，冲突交给现有覆盖/重载流程处理。
+  async function saveAndClose(): Promise<void> {
+    if (state.discard !== 'close' || state.busy) return
+    state.discard = ''
+    if (!dirty.value) {
+      onClose()
+      return
+    }
+    state.closeAfterSave = true
+    await save()
+  }
+  // 用户明确放弃草稿后关闭，不写入远端文件。
   function confirmDiscard(): void {
+    if (state.busy) return
     const action = state.discard
     state.discard = ''
+    state.closeAfterSave = false
     if (action === 'close') onClose()
   }
   useEventListener(window, 'keydown', (event: KeyboardEvent) => {
@@ -140,6 +165,7 @@ export function useRemoteTextDocument(
     dirty,
     requestClose,
     confirmDiscard,
+    saveAndClose,
     save,
     overwriteRemote,
     reloadRemote,

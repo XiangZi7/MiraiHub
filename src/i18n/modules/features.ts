@@ -566,6 +566,9 @@ export const en = {
   '支持 1 MB 以内的 UTF-8 普通文件。保存前检查冲突并备份原内容；保留基本权限、所有者及换行格式。特殊 ACL、扩展属性和硬链接关系不保留。':
     'Supports regular UTF-8 files up to 1 MB. Checks for conflicts and backs up original content before saving. Preserves basic permissions, ownership, and line endings, but not special ACLs, extended attributes, or hard links.',
   '关闭未保存的文件？': 'Close unsaved file?',
+  '当前文件有未保存的修改，是否保存后关闭？':
+    'This file has unsaved changes. Save before closing?',
+  保存并关闭: 'Save and close',
   '当前修改尚未保存，关闭后将丢失。':
     'Unsaved changes will be lost when you close this file.',
   '放弃草稿并重新加载？': 'Discard draft and reload?',

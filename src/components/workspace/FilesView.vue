@@ -81,7 +81,8 @@ const {
 } = useRemoteFiles(toRef(props, 'sessionId'))
 
 const { save: saveSettings } = useSettings()
-const dualPane = shallowRef(false)
+// 由机器面板标题栏控制双栏，独立挂载文件视图时仍默认单栏。
+const dualPane = defineModel<boolean>('dualPane', { default: false })
 const filterText = shallowRef('')
 const createMenuTrigger = shallowRef<HTMLElement | null>(null)
 function toggleHidden(): void {
@@ -815,15 +816,6 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     @dragleave.prevent="handleDragLeave"
     @drop.prevent="handleBrowserDrop"
   >
-    <div class="border-line-soft flex shrink-0 justify-end border-b px-2">
-      <IconButton
-        icon="lucide:columns-2"
-        :size="14"
-        :title="t('本地与远端双栏')"
-        :class="dualPane && 'text-accent'"
-        @click="dualPane = !dualPane"
-      />
-    </div>
     <div class="flex min-h-0 flex-1">
       <LocalFilePane
         v-if="dualPane"

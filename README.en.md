@@ -34,24 +34,34 @@ Manage development, test, and server environments in one place: inspect services
 
 | | Feature | Description |
 | :-: | --- | --- |
-| 🖥️ | **SSH & local terminals** | Multiple connection tabs, password / key auth, terminal search, reorderable saved commands, and startup presets |
-| 📁 | **Remote files** | Browse, create files and folders, drag-and-drop upload, and download over SFTP with a unified transfer center; edit and save remote text directly |
-| 🗄️ | **Database workspace** | MySQL / PostgreSQL: object tree, data editing, table designer, SQL and import / export, PostgreSQL schema switching; Redis: key scanning, value editing, TTL and command console |
-| 📈 | **Server monitoring** | CPU, memory, disk, network, and uptime collected over SSH, no agent to install on the server |
-| 🤖 | **AI Agent** | Chat inside SSH, database, and Redis workspaces with image and file attachments, history, tool timelines, context compression, and token usage; switch approval modes from the composer |
+| 🖥️ | **SSH & local terminals** | Password / private-key / ssh-agent authentication, keyboard-interactive and second-factor prompts, host fingerprint confirmation, multi-hop jump hosts; PowerShell, CMD, and Git Bash locally |
+| ⏺️ | **Terminal productivity** | Command search and completion, variable-based snippets, startup presets, SSH output recording and asciicast v2 playback, optional reconnect after unexpected disconnects |
+| 📁 | **Dual-pane file manager** | Browse local and remote files side by side, drag or batch transfer, preview directory differences and sync in one direction, edit permissions, delete directories recursively, and resolve remote text save conflicts |
+| 🗄️ | **Multiple database engines** | MySQL, MariaDB, TiDB, PostgreSQL, and SQLite: object browsing, data editing, table design, SQL, and import / export; PostgreSQL schema switching |
+| 🧩 | **Database design & operations** | ER diagrams, schema comparison and migration SQL, CHECK / trigger design, execution plans, backup / restore, session monitoring, and user / privilege management, depending on the engine |
+| ✨ | **SQL & data AI tools** | Generate / rewrite SQL, repair errors, explain and optimize queries, optional inline completion, result Q&A and charts, test-data rules, and Markdown / HTML data dictionaries |
+| 🔑 | **Redis workspace** | SCAN and colon-based groups, create and edit six key types, rename keys, manage TTL, preview pattern-based batch deletion, command completion and history |
+| 📈 | **Server monitoring** | CPU, memory, disk, network, uptime, and resource threshold alerts over SSH, with an option to ask AI for analysis; no server-side agent required |
+| 🤖 | **AI Agent** | Chat in SSH, database, and Redis workspaces with prompt templates, image / file attachments, encrypted history, tool timelines, context compression, and token usage; search and read large text attachments in chunks |
 | 🔌 | **MCP extensions** | Connect local stdio or remote Streamable HTTP servers, expose tools by connection type, and review tool arguments before approval |
-| 🛠️ | **Server operations** | Local port forwarding, batch commands, SSH key management, connection groups and tags, encrypted backup and restore |
+| 🛠️ | **Connections & operations** | Local / remote / dynamic SOCKS5 tunnels, database connections over SSH, OpenSSH config import, public-key deployment, batch commands, groups and tags, encrypted connection backups |
 | 🪟 | **Tabbed split views** | Drag connection tabs to workspace edges, switch connections independently in each pane, and retain session and editor state |
 | 🎨 | **Personalization** | Chinese / English with system detection, light / dark / system appearance, theme skins, custom colors and backgrounds, UI scaling |
 
-## v3 workflows
+## Recent additions & workflows
 
-- **Arrange connections around your task**: Open connections in tabs and drag them to workspace edges for side-by-side views. SSH workspaces also offer terminals, remote files, monitoring, and AI panels.
+- **Connect more database engines**: Open SQLite files or select MariaDB / TiDB over the MySQL protocol. Remote databases can reuse a saved SSH connection for tunneling. Development / testing / production labels and read-only connections help distinguish targets; dangerous production operations require typing the database name.
+- **Write and troubleshoot SQL**: Generate or rewrite SQL from natural language, review the proposed changes, repair failing statements, and inspect execution plans. Snippets support placeholder navigation; parameterized queries accept `:name`, `?`, and `$1`. Query tabs retain recent results and let you pin them.
+- **Deliver database structure**: Inspect foreign-key relationships in an ER diagram, compare source and target databases, and copy migration SQL. Generate Markdown / HTML data dictionaries or ask AI for test-data rules, preview the rows locally, then insert them.
+- **Manage database operations**: Use `mysqldump` / `pg_dump` for backups and `mysql` / `psql` for restore, with built-in SQL import / export as a fallback. SQLite supports database-file backups. MySQL / PostgreSQL also offer session monitoring and user / privilege management.
+- **Connect, transfer, and replay**: Import `~/.ssh/config`, configure jump hosts, and confirm host fingerprints. Preview local / remote directory differences and sync selected new or changed files. Fill command variables, request inline AI suggestions, or record and replay SSH output.
+- **Edit Redis collections directly**: Manage Hash, List, Set, Sorted Set, and Stream entries, create and rename keys, and edit TTL. Batch deletion starts with a scan preview and confirmation; the console adds completion and history.
+- **Arrange connections around your task**: Open connections in tabs and drag them to workspace edges for side-by-side views. SSH workspaces also offer terminals, remote files, monitoring, and AI panels. Launching the desktop app again focuses the existing instance.
 - **Export query results directly**: Export tables and query results as SQL, Excel, CSV, JSON, TXT, or an HTML data dictionary. Table exports can use the current page or the filtered dataset; track progress and cancel from the transfer center.
-- **Control AI task capacity**: Set request limits, local message capacity, the model context window, and maximum output per profile. Standard / extended / deep presets provide 4 / 16 / 64 MB of local text capacity. View usage and switch approval modes while chatting.
+- **Control AI context**: Attach up to 16 files per message, including at most four images. Text / Office attachments are encrypted locally; the model receives previews and can search or read relevant chunks. Configure request limits, token windows, and output limits per profile; standard / extended / deep presets provide 4 / 16 / 64 MB of local text context.
 - **Update in the app**: Check for updates in **Settings → About**, then download and install the available version, or download manually from Releases.
 
-These descriptions follow the current v3.0.9 repository source; individual release packages may differ. Local message capacity and the model's token window are separate settings. Increasing local capacity does not expand the model service's context window.
+These additions cover changes since the previous README update and were checked against **v4.0.0 source on 2026-11-09**; they were not all introduced in v4.0.0. Individual release packages may differ. See the [database guide](docs/database.md) for engine-specific limits. Local message capacity and the model's token window are separate settings; increasing local capacity does not expand the model window.
 
 ## Screenshots
 
@@ -121,7 +131,7 @@ Existing users can also check for app updates in **Settings → About**.
 
 ## Quick start
 
-1. **Add a connection**: Create an SSH, local terminal, or database connection from the sidebar. Enter the address, port, and credentials; organize with groups and tags.
+1. **Add a connection**: Create an SSH, local terminal, or database connection from the sidebar. Import SSH hosts from `~/.ssh/config`, select a local file for SQLite, or enter the address, port, and credentials for other connections. Organize them with groups and tags.
 2. **Open a workspace**: After connecting over SSH, use the terminal, file panel, and server overview. For databases, browse objects, edit data, or run SQL.
 3. **Configure AI (optional)**: In **Settings → AI Agent**, add a service URL, API format, model ID, and API key, then save and test.
 4. **Work with the agent**: Open the AI Agent tab or split view, choose an approval mode in the composer, and review proposed commands or SQL according to that mode.
@@ -132,12 +142,17 @@ AI features require your own model service with tool-calling support. Presets fo
 
 | Action | Default shortcut |
 | --- | --- |
-| Command palette | `Ctrl+K` |
+| Command palette (outside the SQL editor) | `Ctrl+K` |
 | New local terminal | `Ctrl+T` |
 | Search | `Ctrl+Shift+F` |
 | Remote file panel | `Ctrl+O` |
 | Search terminal contents | `Ctrl+F` |
 | Run SQL / Redis command | `Ctrl+Enter` |
+| Run SQL statement at the cursor | `Ctrl+Shift+Enter` |
+| Generate / rewrite SQL with AI (inside the editor) | `Ctrl+K` |
+| Inspect SQL execution plan (inside the editor) | `Ctrl+E` |
+| Format SQL | `Shift+Alt+F` |
+| Inline SSH command suggestion (when AI is available) | `Ctrl+I` |
 | Enter / exit fullscreen | `F11` / `Esc` |
 
 Global shortcuts can be changed in **Settings → Shortcuts**. Terminal and query shortcuts apply within their workspace.
@@ -147,15 +162,15 @@ Global shortcuts can be changed in **Settings → Shortcuts**. Terminal and quer
 | Module | Supported | Limits |
 | --- | --- | --- |
 | Desktop | Windows x64 | The release workflow builds Windows only; macOS / Linux builds are not published yet |
-| SSH | Passwords, private keys, SOCKS5 / HTTP CONNECT proxies, local port forwarding | Forwarding binds to local loopback; reverse and dynamic SOCKS forwarding are not available |
-| Relational databases | MySQL, PostgreSQL | SQL editing, table design, and SQL import / export apply to these engines |
-| Redis | Single node, logical DB switching, SCAN, previews for six common data types | No Cluster routing or Sentinel discovery; String editing requires Redis 6.0+ and suitable permissions |
+| SSH | Passwords, private keys, ssh-agent, keyboard-interactive auth, jump hosts, proxies, three tunnel types | At most five jump hosts; jump chains cannot be combined with a target proxy. All tunnel listeners are loopback-only; dynamic SOCKS5 supports unauthenticated CONNECT only |
+| Relational databases | MySQL, MariaDB / TiDB over MySQL, PostgreSQL, SQLite | Design and operations vary by engine. SQLite uses local files, has no server session / user management or database alteration / deletion, and some schema migrations require manual work |
+| Redis | Single node, logical DB switching, six editable key types, batch deletion, command console | No Cluster routing or Sentinel discovery. TTL-preserving String editing requires Redis 6.0+; collection editing needs the relevant commands and EVAL permission |
 | Server monitoring | System and resource metrics over SSH | Requires permission to run the relevant system commands; no monitoring agent installation |
 | AI Agent | Three API formats, tool calling, MCP extensions | Bring your own model service with support for the selected format and tool calling |
 
 ## Privacy & security
 
-- **Model requests**: Conversations, attachments you add, and tool results are sent to the model service you configure. SSH passwords, private keys, and terminal buffers are not read automatically.
+- **Model requests**: Conversations, attachment previews / requested chunks, and tool results go to your configured model service. SSH Agent can read recent output from connected sessions with `read_terminal`, defaulting to the current session; inline command suggestions send recent terminal context. SQL AI sends the SQL, schema, errors, or result samples needed by the feature. SSH passwords and private-key files are not read automatically.
 - **Local storage**: On Windows, AI settings and chat history are encrypted with DPAPI for the current user. Connection settings, plus any passwords or key passphrases you choose to save, live in local WebView storage.
 - **Connection backups**: Credentials are excluded by default; including them requires a separate backup password.
 - **Action approval**: AI actions follow the selected permission mode. External MCP tools require individual confirmation in both per-action and auto read-only modes. Stopping a task does not roll back completed operations.
@@ -222,9 +237,10 @@ The guides below are written in Simplified Chinese unless noted.
 
 | Guide | Topics |
 | --- | --- |
-| [AI Agent](docs/ai-agent.md) | Model configuration, chat history, action confirmation, data handling |
-| [Redis workspace](docs/redis.md) | Connections, key previews, TTL, command console, AI tools |
-| [SSH operations](docs/ssh-operations.md) | Port forwarding, remote editing, batch commands, connection backups |
+| [Database workspace](docs/database.md) | Engines, data editing, SQL / AI, table design, ER diagrams, schema comparison, backup and operations |
+| [AI Agent](docs/ai-agent.md) | Profiles, prompt templates, attachment search, SQL / terminal assistance, approvals and data handling |
+| [Redis workspace](docs/redis.md) | Six editable key types, TTL, batch deletion, command history, AI tools, monitoring integration status |
+| [SSH operations](docs/ssh-operations.md) | Jump hosts, authentication, three tunnel types, file sync, terminal recording, batch commands and backups |
 | [Theme skins](docs/theme-skins.md) | Themes, custom backgrounds, colors, split layouts |
 | [Interface languages](docs/languages.md) | Chinese / English switching and system language detection |
 | [Frontend architecture](docs/FRONTEND_ARCHITECTURE.md) | Directory responsibilities, routing, session caching, store conventions |

@@ -78,10 +78,12 @@ const target = computed(() => ({
 }))
 // 响应式状态
 const state = reactive({
+  // 文件双栏开关放在标题栏，切换文件与 Agent 时保留当前布局。
+  dualPane: false,
   // 从文件浏览器显式附加到 AI 的配置原文
   fileContext: null as AgentContextRequest | null,
 })
-const { fileContext } = toRefs(state)
+const { dualPane, fileContext } = toRefs(state)
 function contextConsumed(id: string): void {
   if (state.fileContext?.id === id) state.fileContext = null
   emit('contextConsumed', id)
@@ -149,6 +151,15 @@ watch(
       <div class="flex-1" />
 
       <IconButton
+        v-if="view === 'files'"
+        icon="lucide:columns-2"
+        :size="14"
+        :title="t('本地与远端双栏')"
+        :class="dualPane && 'text-accent'"
+        :aria-pressed="dualPane"
+        @click="dualPane = !dualPane"
+      />
+      <IconButton
         icon="lucide:panel-right-close"
         :size="14"
         :title="t('收起机器面板')"
@@ -163,6 +174,7 @@ watch(
     >
       <FilesView
         ref="filesView"
+        v-model:dual-pane="dualPane"
         :session-id="sessionId"
         @ask-agent="askAgentFile"
         :connection-name="

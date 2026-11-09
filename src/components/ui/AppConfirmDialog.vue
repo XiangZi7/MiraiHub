@@ -101,20 +101,22 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             <slot />
           </div>
           <footer class="col-span-2 mt-2 flex justify-end gap-2">
-            <AppButton
-              size="sm"
-              autofocus
-              @click="emit('close')"
-            >
-              {{ t('取消') }}
-            </AppButton>
-            <AppButton
-              size="sm"
-              :class="danger ? 'app-confirm-danger-button' : ''"
-              @click="emit('confirm')"
-            >
-              {{ confirmLabel || t('确认') }}
-            </AppButton>
+            <slot name="actions">
+              <AppButton
+                size="sm"
+                autofocus
+                @click="emit('close')"
+              >
+                {{ t('取消') }}
+              </AppButton>
+              <AppButton
+                size="sm"
+                :class="danger ? 'app-confirm-danger-button' : ''"
+                @click="emit('confirm')"
+              >
+                {{ confirmLabel || t('确认') }}
+              </AppButton>
+            </slot>
           </footer>
         </section>
       </div>
