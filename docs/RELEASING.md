@@ -125,6 +125,18 @@ pnpm version:check
 
 版本升级幅度由你决定：修复用修订版本、新功能用次版本、不兼容变化用主版本。`pnpm release` 在本地按所选幅度递增，GitHub 工作流使用推送的标签，不会再次递增。Windows 文件属性中的数值版本受系统格式限制；应用内和发行文件名保留完整的测试版后缀。
 
+## 构建提速与缓存
+
+推送代码到 `master` 时，**Actions → Release** 会提前运行前端测试、类型检查、Rust 测试和不带安装包的生产编译，把 pnpm 依赖和 Rust 测试 / 发布依赖缓存保存在默认分支。仅修改 Markdown、`docs/` 或 `LICENSE` 不触发预热；同一分支有新的推送时，会取消尚未完成的旧构建。预热不需要签名私钥，也不会发布 Release。
+
+GitHub 的缓存按分支和标签隔离：不同版本标签不能直接读取彼此的缓存，但都能读取默认分支的缓存。因此只在 `v*` 标签上保存缓存，下一次发版仍可能重新编译大量 Rust 依赖。此流程复用同一个 Windows 环境、Rust 版本和构建任务，让标签构建能够读取 `master` 已保存的依赖缓存。主分支需要继续作为 GitHub 默认分支；若修改默认分支名，也要同步调整工作流的 `push.branches`。
+
+想让下一次发版复用缓存，先推送源码到 `master`，等该分支的 **Release** 工作流成功完成，再运行 `pnpm release`。也可以在 **Actions → Release → Run workflow** 选择 `master`，将 `tag` 留空，手动预热。源码分支与版本标签同时推送时，两个任务可能同时启动，新标签只能使用当时已经保存的缓存，不会等待本次预热。
+
+首次预热、Rust 工具链变更、依赖变更或缓存被回收时，仍可能需要较长时间。命中缓存后仍会重新编译 MiraiHub 自身，并执行测试、链接、安装包压缩及签名，实际提速以 Actions 各步骤耗时为准。正式发版继续使用 `pnpm release`；手动填写版本标签则构建并发布该标签对应的版本。
+
+缓存隔离规则见 [GitHub 缓存访问限制](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)。
+
 ## 工作流与下载
 
 推送标签后，在 **Actions → Release** 查看进度。流程依次运行版本校验、前端工具测试、Rust 测试、Vue 类型检查与生产构建、Tauri NSIS 打包。只有全部成功才进入发布任务。
