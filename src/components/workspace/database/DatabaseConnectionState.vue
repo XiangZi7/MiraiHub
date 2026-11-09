@@ -523,7 +523,7 @@ onMounted(() => {
           aria-hidden="true"
         />
         <div
-          class="border-line-soft bg-card/60 text-txt-3 flex shrink-0 items-center gap-2 border-t px-3 py-2 text-[11px]"
+          class="border-line-soft bg-panel text-txt-3 flex h-6 shrink-0 items-center gap-3 overflow-hidden border-t px-2.5 text-[10.5px] whitespace-nowrap select-none"
         >
           <AppIcon
             name="lucide:loader-circle"
@@ -566,8 +566,8 @@ onMounted(() => {
             </span>
             <AppButton
               v-if="cancellable"
-              variant="ghost"
-              size="sm"
+              variant="bare"
+              class="hover:bg-hover hover:text-txt-2 focus-visible:outline-accent h-5 rounded px-1.5 focus-visible:outline-2"
               @click="cancel"
             >
               {{ t('取消') }}

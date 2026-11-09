@@ -128,7 +128,12 @@ pub async fn set_minimize_to_tray(
 #[cfg(windows)]
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 #[cfg(windows)]
-const RUN_VALUE: &str = "MiraiHub";
+// 启动时会同步开机启动偏好，开发版使用独立登记，避免覆盖正式版的启动项。
+const RUN_VALUE: &str = if cfg!(dev) {
+    "MiraiHub Dev"
+} else {
+    "MiraiHub"
+};
 
 /// 后台读写启动项时不要创建控制台；主程序的 GUI 子系统设置不会传给子进程。
 #[cfg(windows)]

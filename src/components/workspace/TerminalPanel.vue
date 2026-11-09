@@ -22,9 +22,9 @@ import { useSettings } from '@/composables/useSettings'
 import SessionErrorNotice from '@/components/ui/SessionErrorNotice.vue'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
-import TerminalSuggestions from './TerminalSuggestions.vue'
-import TerminalActions from './TerminalActions.vue'
-import TerminalInlineAi from './terminal-inline-ai.vue'
+import TerminalSuggestions from '@/components/workspace/TerminalSuggestions.vue'
+import TerminalActions from '@/components/workspace/TerminalActions.vue'
+import TerminalInlineAi from '@/components/workspace/terminal-inline-ai.vue'
 
 const { t } = useI18n()
 
@@ -226,11 +226,7 @@ function askFix(): void {
   const output: string[] = []
   for (let index = start; index <= end; index++)
     output.push(buffer.getLine(index)?.translateToString(true) ?? '')
-  emit(
-    'askAgent',
-    `$ ${lastCommand}\n${output.join('\n').trimEnd()}`,
-    'fix'
-  )
+  emit('askAgent', `$ ${lastCommand}\n${output.join('\n').trimEnd()}`, 'fix')
 }
 
 // 选区交给 AI 解释
@@ -302,8 +298,6 @@ const statusMeta = computed(() => {
         tone: 'text-success',
         dot: 'success' as const,
       }
-    case 'connecting':
-      return { text: t('连接中…'), tone: 'text-amber', dot: 'amber' as const }
     default:
       return { text: t('已断开'), tone: 'text-txt-3', dot: 'txt-3' as const }
   }
@@ -314,20 +308,6 @@ const endpoint = computed(() => {
   if (!props.config) return t('未选择服务器')
 
   return props.title || `${props.config.username}@${props.config.host}`
-})
-
-/**
- * 连接提示是瞬时界面状态，不写入 xterm 缓冲区。
- * 这样连接完成后提示会真正移除，重连也不会把它夹在远端输出中间。
- */
-const connectingText = computed(() => {
-  if (!props.config) return ''
-
-  return t('正在连接 {value0}@{value1}:{value2} …', {
-    value0: props.config.username,
-    value1: props.config.host,
-    value2: props.config.port,
-  })
 })
 
 /**
@@ -560,12 +540,16 @@ defineExpose({
 </script>
 
 <template>
-  <section class="terminal-pane pane bg-terminal min-w-0 flex-1">
+  <section
+    class="terminal-pane pane bg-terminal min-w-0 flex-1"
+    :aria-busy="status === 'connecting'"
+  >
     <!-- 会话工具条 -->
     <div
       class="terminal-header border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
     >
       <span
+        v-if="status !== 'connecting'"
         :class="[
           'flex shrink-0 items-center gap-1.5 text-[11px]',
           statusMeta.tone,
@@ -669,6 +653,7 @@ defineExpose({
       <div
         ref="terminal"
         class="absolute inset-0 p-2"
+        :class="status === 'connecting' && 'invisible'"
       />
       <Transition
         enter-active-class="transition-opacity duration-150 motion-reduce:transition-none"
@@ -679,7 +664,7 @@ defineExpose({
         <button
           v-if="selectedText.trim() && status === 'connected'"
           type="button"
-          class="border-accent text-accent hover:bg-card focus-visible:outline-accent absolute top-2.5 right-4.5 z-20 flex cursor-pointer items-center gap-1.5 rounded-lg border bg-panel px-2.5 py-1.5 text-[11px] shadow-[0_3px_12px_#0003] focus-visible:outline-2 focus-visible:outline-offset-2"
+          class="border-accent text-accent hover:bg-card focus-visible:outline-accent bg-panel absolute top-2.5 right-4.5 z-20 flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] shadow-[0_3px_12px_#0003] focus-visible:outline-2 focus-visible:outline-offset-2"
           @pointerdown.prevent
           @click="askExplain(selectedText)"
         >
@@ -697,7 +682,7 @@ defineExpose({
       >
         <div
           v-if="fixVisible && !inlineAiOpen"
-          class="border-accent absolute right-4 bottom-3 z-20 flex items-center overflow-hidden rounded-full border bg-panel text-[11px] shadow-[0_3px_12px_#0003]"
+          class="border-accent bg-panel absolute right-4 bottom-3 z-20 flex items-center overflow-hidden rounded-full border text-[11px] shadow-[0_3px_12px_#0003]"
         >
           <button
             type="button"
@@ -738,21 +723,12 @@ defineExpose({
         @retry="reconnect"
         @dismiss="showError = false"
       />
-      <Transition
-        enter-active-class="transition-opacity duration-200 motion-reduce:transition-none"
-        enter-from-class="opacity-0"
-        leave-active-class="transition-opacity duration-150 motion-reduce:transition-none"
-        leave-to-class="opacity-0"
-      >
-        <p
-          v-if="status === 'connecting'"
-          class="text-txt-3 pointer-events-none absolute top-2 left-2 z-10 font-mono text-xs leading-[1.4]"
-          role="status"
-          aria-live="polite"
-        >
-          {{ connectingText }}
-        </p>
-      </Transition>
+      <div
+        v-if="status === 'connecting'"
+        class="progress-indeterminate"
+        role="progressbar"
+        :aria-label="t('连接中…')"
+      />
       <Transition name="terminal-completion">
         <TerminalSuggestions
           v-if="completion.open.value"

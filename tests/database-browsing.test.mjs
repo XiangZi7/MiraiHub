@@ -20,6 +20,7 @@ const api = dataModule(`
   export const useDatabase = (...args) => call('useDatabase', args)
   export const execute = (...args) => call('execute', args)
   export const completionColumns = (...args) => call('completionColumns', args)
+  export const ping = (...args) => call('ping', args)
   export const errorMessage = error => error.message ?? String(error)
   export const isAppError = () => false
 `)
@@ -93,6 +94,7 @@ const load = sourceLoader(
     'src/components/workspace/database/DatabaseTableOverview.vue',
     'src/components/workspace/database/DatabaseConnectingSkeleton.vue',
     'src/components/workspace/database/DatabaseConnectionState.vue',
+    'src/components/workspace/database/DatabaseStatusBar.vue',
     'src/components/ui/AppButton.vue',
   ]
 )
@@ -301,6 +303,39 @@ test('MySQL initially shows no tables or metadata requests, including configured
   }
 })
 
+test('连接中不重复显示底栏，连接后仅保留库名和版本且不再探测延迟', async t => {
+  const connected = deferred()
+  const view = await fixture(t, {
+    handlers: { connect: () => connected.promise, ping: async () => 318 },
+  })
+  const statusBars = () =>
+    all(view.root).filter(el => el.props['aria-label'] === '数据库状态栏')
+  assert.equal(statusBars().length, 0)
+  assert.ok(
+    all(view.root).some(el => el.type === 'button' && textOf(el) === '取消')
+  )
+  assert.match(textOf(view.root), /正在连接 Fixture connection/)
+  connected.resolve({
+    ...session('alpha'),
+    serverVersion: '5.7.44-txsql-log',
+    environment: 'development',
+  })
+  await flush()
+  assert.equal(statusBars().length, 1)
+  const status = textOf(statusBars()[0])
+  assert.match(status, /alpha/)
+  assert.match(status, /5\.7\.44-txsql-log/)
+  assert.doesNotMatch(status, /Fixture connection|开发环境|318 ms/)
+  assert.equal(
+    mock.calls.some(([name]) => name === 'ping'),
+    false
+  )
+  assert.equal(
+    all(view.root).some(el => el.type === 'button' && textOf(el) === '取消'),
+    false
+  )
+})
+
 test('打开数据库保留恢复的 SQL 草稿，但不自动弹出查询编辑页', async t => {
   const view = await fixture(t, {
     queryWorkspace: {
@@ -353,8 +388,9 @@ test('unloaded databases spin their collapsed arrow and expand only after metada
   // 连接中只有底栏一处转圈，并点名连接目标
   assert.match(textOf(view.root), /正在连接 Fixture connection…/)
   assert.equal(
-    all(view.root).filter(el => el.props['data-icon'] === 'lucide:loader-circle')
-      .length,
+    all(view.root).filter(
+      el => el.props['data-icon'] === 'lucide:loader-circle'
+    ).length,
     1
   )
   connected.resolve(session(''))

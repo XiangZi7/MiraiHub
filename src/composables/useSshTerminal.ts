@@ -10,7 +10,7 @@ import { translateNativeMessage } from '@/i18n/native'
  * 事件订阅、生命周期清理都在这里收口。
  */
 
-import { onBeforeUnmount, reactive, toRefs } from 'vue'
+import { nextTick, onBeforeUnmount, reactive, toRefs } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import * as ssh from '@/api/ssh'
@@ -26,6 +26,7 @@ interface TerminalConnectOptions {
 type InputInterceptor = (data: string) => boolean
 type SubmitHandler = (line: string) => void
 
+/** 管理一块 SSH 终端的连接、输出隔离与卸载清理。 */
 export function useSshTerminal() {
   const { term, fitAddon, open, stopSettingsWatch } = useXterm(() => resize())
 
@@ -55,7 +56,7 @@ export function useSshTerminal() {
 
   /**
    * 挂载 xterm 到容器。
-   * 与 connect 分开：先把终端画出来，用户能看到"正在连接"，而不是一片空白。
+   * 与 connect 分开：先建立终端容器，再由面板展示连接进度。
    */
   function mount(container: HTMLElement): void {
     const terminal = open(container)
@@ -77,7 +78,7 @@ export function useSshTerminal() {
     })
   }
 
-  /** 建立连接并打开交互式 shell */
+  /** 建立新 shell 前立即清空终端，隔离旧会话的输出与尚未完成的连接流程。 */
   async function connect(
     config: SshConfig,
     options: TerminalConnectOptions = {}
@@ -85,19 +86,24 @@ export function useSshTerminal() {
     const terminal = term.value
     if (!terminal) throw new Error(i18n.global.t('终端尚未挂载'))
 
-    // 配置在独立窗口里可能被修改后重新打开同一标签。
-    // 先清掉旧会话，避免一个终端同时订阅两条连接的输出。
-    if (state.sessionId) await disconnect()
-
     const currentOperation = ++operation
+    const previousSessionId = state.sessionId
+    // 先取消旧订阅并进入连接态，旧会话关闭较慢时也不保留上一屏内容。
+    cleanup()
     state.route = []
     state.status = 'connecting'
     state.error = ''
     state.inputLine = ''
+    terminal.reset()
+    // 已排入 xterm 队列的旧输出仍可能到达，队尾再放一次复位，保证新输出从空屏开始。
+    terminal.write('\x1bc')
 
     let id = ''
 
     try {
+      if (previousSessionId) await discardSession(previousSessionId)
+      if (!isActive(currentOperation)) return
+
       id = await ssh.connect(config, progress => {
         if (isActive(currentOperation)) state.route[progress.hop] = progress
       })
@@ -172,6 +178,8 @@ export function useSshTerminal() {
       const startupCommand = options.startupCommand?.trim()
       if (startupCommand) await ssh.writeToShell(id, `${startupCommand}\r`)
 
+      // 面板会在连接中隐藏输出层，等待 Vue 恢复可见后再聚焦输入。
+      await nextTick()
       if (isActive(currentOperation)) terminal.focus()
     } catch (err) {
       // 关闭标签/改配置导致的过期流程不应覆盖新连接的状态或打印伪错误。
@@ -188,7 +196,7 @@ export function useSshTerminal() {
       // TCP 已连上但订阅、PTY 或启动命令失败时，后端会话已经登记进管理器；
       // 只清前端订阅会把它永久留在会话表里，所以这里也要主动断开。
       // 订阅可能已部分建立，清掉避免泄漏
-      await cleanup()
+      cleanup()
 
       if (id) await discardSession(id)
 
@@ -247,7 +255,7 @@ export function useSshTerminal() {
     operation += 1
     const id = state.sessionId
 
-    await cleanup()
+    cleanup()
     state.status = 'disconnected'
     state.inputLine = ''
 
@@ -265,7 +273,7 @@ export function useSshTerminal() {
   }
 
   /** 取消所有事件订阅，重置会话 id */
-  async function cleanup(): Promise<void> {
+  function cleanup(): void {
     for (const unlisten of unlisteners) unlisten()
 
     unlisteners = []

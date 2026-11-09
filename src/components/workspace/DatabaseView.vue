@@ -479,10 +479,9 @@ const databaseOptions = computed(() =>
 const [DefineDatabaseActions, DatabaseActions] = createReusableTemplate<{
   tab?: WorkspaceTab
 }>({ inheritAttrs: false })
-// 同一份连接信息嵌入数据分页栏，其他面板保留一行状态，分屏按各自标签显示库名。
+// 当前库与版本信息嵌入数据分页栏，分屏按各自标签显示库名。
 const [DefineDatabaseStatus, DatabaseStatus] = createReusableTemplate<{
   tab?: WorkspaceTab
-  visible?: boolean
   embedded?: boolean
 }>({ inheritAttrs: false })
 
@@ -1920,11 +1919,9 @@ registerDatabaseCommandSource(
     </div>
     <DatabaseGuardDialog />
     <!-- 可复用模板放在根元素内，让父级 v-show 能正确隐藏缓存的连接视图。 -->
-    <DefineDatabaseStatus v-slot="{ tab, visible, embedded }">
+    <DefineDatabaseStatus v-slot="{ tab, embedded }">
       <DatabaseStatusBar
-        :connection-name="connection?.name ?? ''"
         :session="session ?? null"
-        :connected="connected && active !== false && visible !== false"
         :database="tab ? tabDatabase(tab) : browsedDatabase"
         :running-queries="runningQueryCount"
         :selection="embedded ? null : statusSelection"
@@ -2253,7 +2250,7 @@ registerDatabaseCommandSource(
               />
               <DatabaseStatus />
             </template>
-            <template #default="{ tab, visible }">
+            <template #default="{ tab }">
               <div
                 v-if="tab.kind === 'query'"
                 class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center border-b px-2.5 py-1"
@@ -2299,7 +2296,6 @@ registerDatabaseCommandSource(
                 <template #status="{ embedded }">
                   <DatabaseStatus
                     :tab="tab"
-                    :visible="visible"
                     :embedded="embedded"
                   />
                 </template>
@@ -2327,7 +2323,6 @@ registerDatabaseCommandSource(
                 <template #status="{ embedded }">
                   <DatabaseStatus
                     :tab="tab"
-                    :visible="visible"
                     :embedded="embedded"
                   />
                 </template>
@@ -2371,11 +2366,9 @@ registerDatabaseCommandSource(
                     tab.object.kind !== 'view')
                 "
                 :tab="tab"
-                :visible="visible"
               />
             </template>
           </DatabaseTabWorkspace>
-          <DatabaseStatus v-if="!connected" />
         </div>
       </div>
       <AppSidePane

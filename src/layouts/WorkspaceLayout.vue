@@ -72,6 +72,7 @@ import {
 } from '@/utils/window'
 
 const { t } = useI18n()
+const isDevelopment = import.meta.env.DEV
 
 const settingsStore = useSettingsStore()
 const settings = settingsStore.values
@@ -324,6 +325,14 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         class="flex-1"
         data-tauri-drag-region
       />
+
+      <span
+        v-if="isDevelopment"
+        class="bg-success/12 text-success pointer-events-none shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-4 select-none"
+        data-tauri-drag-region
+      >
+        {{ t('开发环境') }}
+      </span>
 
       <SearchField
         ref="search"

@@ -15,6 +15,8 @@ use crate::{agent, db, ipc, local_terminal, platform, redis_db, ssh};
 
 /// 组装并启动应用。
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    configure_environment(context.config_mut(), cfg!(dev));
     let builder = Builder::default();
     let builder = register_plugins(builder);
     let builder = register_state(builder);
@@ -22,9 +24,21 @@ pub fn run() {
     builder
         .setup(setup)
         .invoke_handler(ipc::handler())
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("构建 Tauri 应用失败")
         .run(on_run_event);
+}
+
+/// 开发模式使用独立的应用标识和窗口标题，单实例插件按环境分别复用窗口。
+/// 采用 Tauri 的 dev 标记，确保 tauri dev --release 也属于开发环境。
+fn configure_environment(config: &mut tauri::Config, development: bool) {
+    if !development {
+        return;
+    }
+    config.identifier.push_str(".dev");
+    for window in &mut config.app.windows {
+        window.title.push_str(" (Dev)");
+    }
 }
 
 /// 注册插件。
@@ -115,7 +129,11 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .text("quit", if chinese { "退出" } else { "Quit" })
         .build()?;
     let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip("MiraiHub")
+        .tooltip(if cfg!(dev) {
+            "MiraiHub (Dev)"
+        } else {
+            "MiraiHub"
+        })
         .menu(&tray_menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -215,5 +233,49 @@ const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 async fn bounded_shutdown(name: &str, task: impl std::future::Future<Output = ()>) {
     if tokio::time::timeout(SHUTDOWN_TIMEOUT, task).await.is_err() {
         log::warn!("退出时关闭{name}超时，已跳过");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::configure_environment;
+    use tauri::{
+        test::{mock_builder, mock_context, noop_assets},
+        Manager,
+    };
+
+    /// 验证正式版配置不变，开发版在真实路径解析中使用独立的应用身份。
+    #[test]
+    fn development_and_production_have_independent_app_identities() {
+        let original: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let mut production = mock_context(noop_assets());
+        *production.config_mut() = original.clone();
+        configure_environment(production.config_mut(), false);
+        assert_eq!(
+            serde_json::to_value(production.config()).unwrap(),
+            serde_json::to_value(&original).unwrap()
+        );
+
+        let mut development = mock_context(noop_assets());
+        *development.config_mut() = original.clone();
+        configure_environment(development.config_mut(), true);
+        assert_ne!(
+            development.config().identifier,
+            production.config().identifier
+        );
+        assert!(development
+            .config()
+            .app
+            .windows
+            .iter()
+            .all(|window| window.title.ends_with(" (Dev)")));
+
+        let development = mock_builder().build(development).unwrap();
+        let production = mock_builder().build(production).unwrap();
+        assert_ne!(
+            development.path().app_data_dir().unwrap(),
+            production.path().app_data_dir().unwrap()
+        );
     }
 }
