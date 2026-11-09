@@ -148,6 +148,7 @@ Get-FileHash .\MiraiHub_0.2.0_windows_x64_setup.exe -Algorithm SHA256
 
 ## 失败重试
 
+- 编译成功后下载 `nsis_tauri_utils.dll` / NSIS 时出现 `http status: 504`：这是安装包工具下载的网关超时，不是 Rust 编译错误。`pnpm release:build` 先执行 `tauri build --no-bundle -- --locked`，再单独执行 `tauri bundle --bundles nsis`；打包遇到 408 / 425 / 429 / 5xx、超时或连接中断时最多尝试 3 次，分别等待 10 秒、20 秒，重试不重新编译。配置、签名和校验失败等错误直接中止。Actions 额外缓存 `%LOCALAPPDATA%\tauri` 中的打包工具，并在任务失败后保存 Rust 依赖缓存；上游持续不可用时仍会报错，可稍后重跑。使用新的脚本重试逻辑，需要发布包含此修复的新版本标签；手动运行旧标签仍会检出旧的打包脚本。
 - 提示 `the --slurp option is not supported with --jq or --template`：读取已发布版本列表的 CLI 参数冲突。工作流已改为 `gh api --paginate --slurp ... | jq ...`，由独立的 `jq` 合并分页并提取日志所需字段。提交修复到默认分支后，从 **Actions → Release → Run workflow** 选择默认分支并输入尚未公开的原标签（例如 `v4.0.0`）；直接重跑旧记录仍使用原事件的提交和工作流。若版本已公开，请发布新的补丁标签，不移动旧标签。
 - `Could not fetch a valid release JSON from the remote`：更新接口没有返回成功状态，不等同于本机断网。确认 GitHub **Latest 正式版**的附件中有 `latest.json`；旧版缺少清单或发布尚未完成时可能出现。清单恢复后应用会按上述间隔重试，也可手动点“重试”。可运行 `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib updater::tests::published_update_manifest_is_accessible -- --ignored --exact`，使用应用的 Rust HTTP 栈检查已发布清单和安装包地址（不会下载安装）。
 - 提示 `Configure the TAURI_SIGNING_PRIVATE_KEY repository secret`：到仓库 **Settings → Secrets and variables → Actions → Repository secrets** 配置 `TAURI_SIGNING_PRIVATE_KEY`，值为原签名私钥文件的完整内容，不是文件路径或公钥。只补齐 Secret 时，可直接重跑失败任务，无需修改源码或重新生成密钥。
