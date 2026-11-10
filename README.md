@@ -62,7 +62,7 @@
 
 <a href="docs/images/feature-monitor-light.png"><img src="docs/images/feature-monitor-light.png" width="100%" alt="服务器监控" /></a>
 
-<sub>当前组件与独立演示数据。[素材说明](docs/images/README.md)</sub>
+<sub>使用 pnpm tauri dev 启动的 v4.0.7 桌面软件实拍，包含深浅色界面与预设演示数据，敏感信息已打码；AI 面板为未配置模型的真实状态。[素材说明](docs/images/README.md)</sub>
 
 <br />
 

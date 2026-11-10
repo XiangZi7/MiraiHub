@@ -14,7 +14,8 @@ if (!browserPath)
   throw new Error('Set README_BROWSER to a Chromium executable.')
 const profile = resolve('test-results', `readme-browser-${Date.now()}`)
 await mkdir(profile, { recursive: true })
-await mkdir('docs/images', { recursive: true })
+// 历史浏览器 fixture 截图只输出到隔离目录，避免覆盖 README 的真实桌面截图。
+await mkdir('output/readme-fixtures', { recursive: true })
 const browser = spawn(
   browserPath,
   [
@@ -257,7 +258,7 @@ try {
         format: 'png',
         captureBeyondViewport: false,
       })
-      const filename = `docs/images/feature-${view}-${theme}.png`
+      const filename = `output/readme-fixtures/feature-${view}-${theme}.png`
       await writeFile(filename, Buffer.from(screenshot.data, 'base64'))
       await writeFile(
         `test-results/readme-${view}-${theme}.json`,

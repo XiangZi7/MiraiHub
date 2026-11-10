@@ -1,0 +1,36 @@
+{
+  "width": 1818,
+  "height": 900,
+  "color": [50, 51, 61],
+  "common": [
+    { "kind": "私人连接名称", "rect": [83, 55, 70, 20] }
+  ],
+  "images": {
+    "feature-ai-dark.png": [],
+    "feature-database-dark.png": [],
+    "feature-database-light.png": [],
+    "feature-designer-light.png": [],
+    "feature-er-light.png": [],
+    "feature-files-light.png": [
+      { "kind": "终端用户名和主机名", "rect": [68, 143, 191, 20] },
+      { "kind": "文件所属用户和组", "rect": [164, 210, 88, 228] },
+      { "kind": "终端用户名和主机名", "rect": [68, 442, 177, 21] },
+      { "kind": "本机绝对路径", "rect": [694, 183, 350, 20] }
+    ],
+    "feature-monitor-light.png": [
+      { "kind": "私人连接名称", "rect": [170, 104, 63, 20] },
+      { "kind": "终端用户名和主机名", "rect": [68, 143, 178, 20] },
+      { "kind": "终端用户名和主机名", "rect": [68, 648, 178, 23] },
+      { "kind": "系统主机标识", "rect": [489, 361, 165, 19] }
+    ],
+    "feature-redis-dark.png": [
+      { "kind": "服务器地址、端口、SSH 用户名", "rect": [333, 870, 330, 19] }
+    ],
+    "feature-ssh-dark.png": [
+      { "kind": "私人连接名称", "rect": [170, 104, 63, 20] },
+      { "kind": "终端用户名和主机名", "rect": [68, 142, 178, 20] },
+      { "kind": "文件所属用户和组", "rect": [155, 188, 74, 226] },
+      { "kind": "终端用户名和主机名", "rect": [68, 417, 159, 22] }
+    ]
+  }
+}

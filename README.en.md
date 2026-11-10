@@ -62,7 +62,7 @@
 
 <a href="docs/images/feature-monitor-light.png"><img src="docs/images/feature-monitor-light.png" width="100%" alt="Server monitoring" /></a>
 
-<sub>Current components with isolated demo data. [Image notes](docs/images/README.md)</sub>
+<sub>Captured from the v4.0.7 desktop app running with pnpm tauri dev, with dark/light themes and seeded demo data. Sensitive information is redacted. The AI panel shows its actual unconfigured state. [Image notes](docs/images/README.md)</sub>
 
 <br />
 
