@@ -28,6 +28,7 @@ defineProps<{ closeWarning: (ids: string[]) => string }>()
 const emit = defineEmits<{
   add: []
   closeMany: [ids: string[]]
+  closeOverview: [id: string]
   action: [id: string, action: string]
 }>()
 const workspace = useWorkspaceStore()
@@ -79,6 +80,7 @@ function activate(id: string): void {
       @activate="activate"
       @add="emit('add')"
       @close-many="emit('closeMany', $event)"
+      @close-overview="emit('closeOverview', $event)"
       @action="(id, action) => emit('action', id, action)"
     />
     <!-- 分类没有打开的连接时，空状态独占内容区；原分屏只隐藏，保留会话。 -->

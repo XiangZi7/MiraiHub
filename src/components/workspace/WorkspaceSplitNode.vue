@@ -23,6 +23,7 @@ const emit = defineEmits<{
   activate: [id: string]
   add: []
   closeMany: [ids: string[]]
+  closeOverview: [id: string]
   action: [id: string, action: string]
 }>()
 const layout = injectWorkspaceTabSplit()!
@@ -90,6 +91,7 @@ function closeSplit(): void {
           @activate="activate"
           @add="emit('add')"
           @close-many="emit('closeMany', $event)"
+          @close-overview="emit('closeOverview', $event)"
           @action="(id, action) => emit('action', id, action)"
         />
       </div>
@@ -122,6 +124,7 @@ function closeSplit(): void {
         @update:active="activate"
         @add="emit('add')"
         @close-many="emit('closeMany', $event)"
+        @close-overview="emit('closeOverview', $event)"
         @action="(id, action) => emit('action', id, action)"
         @reorder="(from, to) => layout.reorder(node.id, from, to)"
         @tab-drag-move="layout.preview"

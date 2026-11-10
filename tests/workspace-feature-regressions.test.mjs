@@ -28,7 +28,7 @@ const load = sourceLoader(
       `import {h} from ${vue}; export default {props:['keyword'],emits:['update:keyword'],setup:(props,{emit})=>()=>h('input',{'data-search':true,value:props.keyword,onInput:value=>emit('update:keyword',value)})}`
     ),
     '@/components/ui/TabBar.vue': dataModule(
-      `import {h} from ${vue}; export default {props:['tabs','active','contextItems'],emits:['update:active','add','close','closeMany','reorder'],setup:(props,{emit})=>()=>h('nav',{'data-main-tabs':true,items:props.tabs,active:props.active,onSelect:id=>emit('update:active',id),onAdd:()=>emit('add'),onClose:id=>emit('close',id),onReorder:(a,b)=>emit('reorder',a,b)})}`
+      `import {h} from ${vue}; export default {props:['tabs','active','contextItems'],emits:['update:active','add','close','closeMany','reorder'],setup:(props,{emit})=>()=>h('nav',{'data-main-tabs':true,items:props.tabs,active:props.active,onSelect:id=>emit('update:active',id),onAdd:()=>emit('add'),onClose:id=>emit('close',id),onCloseMany:ids=>emit('closeMany',ids),onReorder:(a,b)=>emit('reorder',a,b)})}`
     ),
   },
   [
@@ -341,6 +341,150 @@ test('database content is shown in main tabs with connection-specific identity a
   nav().props.onSelect('two')
   await nextTick()
   assert.equal(records.two.active, '')
+})
+
+test('关闭数据库总览只移除入口，其他分屏的表和未保存查询继续保留', async t => {
+  const connections = reactive([
+    {
+      id: 'db',
+      connection: connection('db', '数据库'),
+      status: 'connected',
+      sessionId: 'original-session',
+    },
+  ])
+  const record = reactive({
+    active: 'table',
+    tabs: [
+      { id: 'table', label: 'Users', closable: true },
+      { id: 'query', label: 'SQL 草稿', closable: true },
+    ],
+  })
+  const closedContents = [],
+    closedConnections = [],
+    hidden = [],
+    warnings = []
+  const root = mount(
+    {
+      setup() {
+        const registry = provideDatabaseWorkspaceTabs()
+        registry.set('db', {
+          tabs: () => record.tabs,
+          activeId: () => record.active,
+          select: id => {
+            record.active = id
+          },
+          add() {},
+          close: ids => {
+            closedContents.push(ids)
+          },
+          reorder() {},
+          contextItems: () => [],
+          action: async () => {},
+        })
+        return () =>
+          h(WorkspaceTabBar, {
+            // 当前分屏只有总览；表和查询位于其他分屏，关闭时仍须检查全局注册表。
+            tabs: workspaceViewTabs(connections, registry).filter(
+              tab => !tab.contentId
+            ),
+            active: 'db',
+            closeWarning: ids => {
+              warnings.push(ids)
+              return ids.length ? '有未保存草稿' : ''
+            },
+            onCloseOverview: id => {
+              hidden.push(id)
+              connections[0].databaseOverviewClosed = true
+            },
+            onCloseMany: ids => {
+              closedConnections.push(ids)
+            },
+          })
+      },
+    },
+    t
+  )
+  all(root)
+    .find(el => el.props['data-main-tabs'])
+    .props.onClose('db')
+  await nextTick()
+  assert.deepEqual(hidden, ['db'])
+  assert.deepEqual(closedConnections, [])
+  assert.deepEqual(closedContents, [])
+  assert.deepEqual(warnings, [[]])
+  assert.equal(connections[0].sessionId, 'original-session')
+  assert.equal(record.active, 'table')
+  assert.equal(record.tabs.length, 2)
+  assert.deepEqual(
+    all(root).find(el => el.props['data-main-tabs']).props.items,
+    []
+  )
+})
+
+test('批量关闭总览及部分表时只关闭选中的内容，关闭全部标签时释放连接', async t => {
+  const record = reactive({
+    tabs: [
+      { id: 'a', label: 'Table A', closable: true },
+      { id: 'b', label: 'Table B', closable: true },
+    ],
+  })
+  const closedContents = [],
+    closedConnections = [],
+    hidden = []
+  const root = mount(
+    {
+      setup() {
+        const registry = provideDatabaseWorkspaceTabs()
+        registry.set('db', {
+          tabs: () => record.tabs,
+          activeId: () => 'a',
+          select() {},
+          add() {},
+          reorder() {},
+          close: ids => {
+            closedContents.push(ids)
+            record.tabs = record.tabs.filter(tab => !ids.includes(tab.id))
+          },
+          contextItems: () => [],
+          action: async () => {},
+        })
+        return () =>
+          h(WorkspaceTabBar, {
+            tabs: workspaceViewTabs(
+              [
+                {
+                  id: 'db',
+                  connection: connection('db', '数据库'),
+                  status: 'connected',
+                  sessionId: 'session',
+                },
+              ],
+              registry
+            ),
+            active: 'db',
+            closeWarning: () => '',
+            onCloseOverview: id => hidden.push(id),
+            onCloseMany: ids => closedConnections.push(ids),
+          })
+      },
+    },
+    t
+  )
+  const nav = () => all(root).find(el => el.props['data-main-tabs'])
+  nav().props.onCloseMany(['db', databaseWorkspaceTabId('db', 'a')])
+  await nextTick()
+  assert.deepEqual(hidden, ['db'])
+  assert.deepEqual(closedContents, [['a']])
+  assert.deepEqual(
+    record.tabs.map(tab => tab.id),
+    ['b']
+  )
+  assert.deepEqual(closedConnections, [])
+
+  nav().props.onCloseMany(['db', databaseWorkspaceTabId('db', 'b')])
+  await nextTick()
+  assert.deepEqual(closedConnections, [['db']])
+  assert.deepEqual(closedContents, [['a']])
 })
 
 test('virtual file list selection supports Ctrl, Shift, drag range and offscreen autoscroll', async t => {

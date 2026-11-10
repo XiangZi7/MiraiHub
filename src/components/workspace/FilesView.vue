@@ -935,7 +935,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         />
 
         <RemoteFileList
-          :files="visibleEntries"
+          :files="loading ? [] : visibleEntries"
           :drag-session-id="dualPane ? sessionId : undefined"
           :selected="selected"
           :selection="selection"

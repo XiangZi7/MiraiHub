@@ -176,6 +176,7 @@ async function fixture(
     handlers = {},
     savedQueries = [],
     queryWorkspace = null,
+    secondConnection = false,
   } = {}
 ) {
   const originalWindow = globalThis.window
@@ -239,10 +240,22 @@ async function fixture(
     setup() {
       mainTabs = provideDatabaseWorkspaceTabs()
       return () =>
-        h(DatabaseView, {
-          connection,
-          active: active.value,
-        })
+        h('main', [
+          h(DatabaseView, {
+            connection,
+            active: active.value,
+          }),
+          secondConnection
+            ? h(DatabaseView, {
+                connection: {
+                  ...connection,
+                  id: 'browse-second',
+                  host: 'second.invalid',
+                },
+                active: !active.value,
+              })
+            : null,
+        ])
     },
   })
   app.config.errorHandler = error => errors.push(error)
@@ -259,12 +272,20 @@ async function fixture(
   return {
     root,
     active,
-    mainTabs: () => mainTabs.get('browse-test'),
-    overview: () =>
-      all(root).find(el => el.props['aria-label'] === '当前数据库的表'),
-    tree: () => all(root).find(el => el.props['aria-label'] === '数据库对象'),
-    async select(name) {
-      const button = all(root).find(
+    mainTabs: (id = 'browse-test') => mainTabs.get(id),
+    overview: (index = 0) =>
+      all(root).filter(el => el.props['aria-label'] === '当前数据库的表')[
+        index
+      ],
+    tree: (index = 0) =>
+      all(root).filter(
+        el => el.type === 'nav' && el.props['aria-label'] === '数据库对象'
+      )[index],
+    async select(name, index = 0) {
+      const tree = all(root).filter(
+        el => el.type === 'nav' && el.props['aria-label'] === '数据库对象'
+      )[index]
+      const button = all(tree).find(
         el =>
           el.type === 'button' &&
           el.props['aria-expanded'] !== undefined &&
@@ -598,6 +619,50 @@ test('table tabs move to the main registry and remain mounted across database sw
   )
 })
 
+test('两个数据库连接分别缓存表和搜索状态，反复切换不会重建表或重复读取目录', async t => {
+  const view = await fixture(t, { secondConnection: true })
+  await view.select('alpha', 0)
+  await view.select('beta', 1)
+  const openTables = [view.overview(0), view.overview(1)].map(overview =>
+    all(overview).find(el => el.props.onDblclick)
+  )
+  assert.ok(openTables.every(Boolean), '两条连接均显示自己已加载的表')
+  for (let index = 0; index < 2; index++) {
+    openTables[index].props.onDblclick()
+    await flush()
+    all(view.tree(index))
+      .find(el => el.props['data-tree-search'])
+      .props.onInput(index === 0 ? 'alpha' : 'beta')
+  }
+  await flush()
+  const trees = [view.tree(0), view.tree(1)]
+  const tables = all(view.root).filter(el => el.props['data-table-marker'])
+  const requests = mock.calls.length
+  assert.equal(mock.mounts, 2)
+  assert.equal(mock.calls.filter(([name]) => name === 'connect').length, 2)
+  for (let i = 0; i < 4; i++) {
+    view.active.value = !view.active.value
+    await flush()
+  }
+  assert.equal(mock.calls.length, requests)
+  assert.deepEqual([view.tree(0), view.tree(1)], trees)
+  assert.deepEqual(
+    all(view.root).filter(el => el.props['data-table-marker']),
+    tables
+  )
+  assert.deepEqual(
+    trees.map(
+      tree => all(tree).find(el => el.props['data-tree-search']).props.value
+    ),
+    ['alpha', 'beta']
+  )
+  assert.match(view.mainTabs().tabs()[0].label, /alpha_table @alpha/)
+  assert.match(
+    view.mainTabs('browse-second').tabs()[0].label,
+    /beta_table @beta/
+  )
+})
+
 test('rapid database changes serialize pool switches and keep the last selection', async t => {
   const firstSwitch = deferred()
   const view = await fixture(t, {
@@ -821,7 +886,7 @@ test('saved queries do not resurrect cached database names during connection or 
   )
 })
 
-test('returning to a database resets sidebar state and reads fresh catalog without reconnecting or losing SQL', async t => {
+test('切换数据库连接保留目录、搜索和查询结果，仅手动刷新才重新读取目录', async t => {
   const refreshed = deferred()
   let reads = 0
   const view = await fixture(t, {
@@ -846,22 +911,41 @@ test('returning to a database resets sidebar state and reads fresh catalog witho
     .find(el => el.props['data-tree-search'])
     .props.onInput('alpha')
   await flush()
-  view.active.value = false
-  await flush()
-  view.active.value = true
-  await flush()
-  assert.equal(reads, 2)
+  const tree = view.tree()
+  const requests = mock.calls.length
+  for (let i = 0; i < 3; i++) {
+    view.active.value = false
+    await flush()
+    view.active.value = true
+    await flush()
+  }
+  assert.equal(reads, 1)
+  assert.equal(mock.calls.length, requests)
+  assert.equal(view.tree(), tree)
   assert.equal(
     all(view.tree()).find(el => el.props['data-tree-search']).props.value,
-    ''
+    'alpha'
   )
   assert.equal(
-    all(view.tree()).filter(
-      el => el.type === 'button' && el.props['aria-expanded'] !== undefined
-    ).length,
-    0
+    all(view.tree()).find(
+      el =>
+        el.type === 'button' &&
+        el.props['aria-expanded'] !== undefined &&
+        textOf(el) === 'alpha'
+    ).props['aria-expanded'],
+    true
   )
-  assert.ok(all(view.tree()).some(el => el.props.role === 'status'))
+  assert.match(textOf(view.tree()), /alpha_table/)
+  assert.equal(
+    all(view.tree()).some(el => el.props.role === 'status'),
+    false
+  )
+  // 显式刷新仍获取最新目录，并清理服务器上已经移除的库。
+  all(view.tree())
+    .find(el => el.props.title === '刷新对象树')
+    .props.onClick({ stopPropagation() {} })
+  await flush()
+  assert.equal(reads, 2)
   refreshed.resolve(['beta'])
   await flush()
   assert.doesNotMatch(textOf(view.tree()), /kept_query/)
@@ -874,6 +958,10 @@ test('returning to a database resets sidebar state and reads fresh catalog witho
     ),
     false
   )
+  all(view.tree())
+    .find(el => el.props['data-tree-search'])
+    .props.onInput('')
+  await flush()
   const beta = all(view.tree()).find(
     el => el.props['aria-expanded'] !== undefined && textOf(el) === 'beta'
   )
@@ -888,23 +976,23 @@ test('returning to a database resets sidebar state and reads fresh catalog witho
   assert.equal(mock.calls.filter(([name]) => name === 'disconnect').length, 0)
 })
 
-test('a catalog response from before sidebar initialization cannot replace the fresh database list', async t => {
-  const oldList = deferred(),
-    newList = deferred()
+test('加载目录期间切换连接不会重复请求，原请求完成后正常显示结果', async t => {
+  const pending = deferred()
   let reads = 0
   const view = await fixture(t, {
     handlers: {
-      listDatabases: () => (++reads === 1 ? oldList.promise : newList.promise),
+      listDatabases: () => {
+        reads++
+        return pending.promise
+      },
     },
   })
   view.active.value = false
   await flush()
   view.active.value = true
   await flush()
-  assert.equal(reads, 2)
-  newList.resolve(['beta'])
-  await flush()
-  oldList.resolve(['stale_database'])
+  assert.equal(reads, 1)
+  pending.resolve(['beta'])
   await flush()
   const names = all(view.tree())
     .filter(
@@ -914,7 +1002,7 @@ test('a catalog response from before sidebar initialization cannot replace the f
   assert.deepEqual(names, ['beta'])
 })
 
-test('returning during a query hides old sidebar data and initializes after the existing query finishes', async t => {
+test('后台查询期间来回切换连接保留目录和查询，完成后不触发额外刷新', async t => {
   const execution = deferred()
   let reads = 0
   const view = await fixture(t, {
@@ -944,19 +1032,31 @@ test('returning during a query hides old sidebar data and initializes after the 
   await flush()
   assert.equal(reads, 1)
   assert.equal(
-    all(view.tree()).filter(
-      el => el.type === 'button' && el.props['aria-expanded'] !== undefined
-    ).length,
-    0
+    all(view.tree()).find(
+      el =>
+        el.type === 'button' &&
+        el.props['aria-expanded'] !== undefined &&
+        textOf(el) === 'alpha'
+    ).props['aria-expanded'],
+    true
   )
-  assert.ok(all(view.tree()).some(el => el.props.role === 'status'))
+  assert.equal(
+    all(view.tree()).some(el => el.props.role === 'status'),
+    false
+  )
   execution.resolve({
-    statements: [{ columns: [], rows: [['background result']], error: null }],
+    statements: [
+      {
+        columns: [{ name: 'result', dataType: 'text' }],
+        rows: [['background result']],
+        error: null,
+      },
+    ],
     elapsedMs: 1,
     cancelled: false,
   })
   await flush()
-  assert.equal(reads, 2)
+  assert.equal(reads, 1)
   assert.match(textOf(query), /background result/)
   assert.equal(mock.calls.filter(([name]) => name === 'disconnect').length, 0)
 })

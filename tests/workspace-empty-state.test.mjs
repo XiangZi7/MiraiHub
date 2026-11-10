@@ -278,6 +278,65 @@ test('数据库跨屏显示时新增表不搬走目录树，只有拖动连接�
   assert.equal(original.props['data-workspace-host'], 'db')
 })
 
+test('关闭数据库总览后表继续使用原连接实例，重新打开总览不会重建会话', async t => {
+  const saved = connection('db', 'mysql')
+  const f = await fixture(t, [saved])
+  const record = reactive({
+    active: 'table',
+    tabs: [{ id: 'table', label: 'Users' }],
+  })
+  f.databaseTabs.set('db', {
+    tabs: () => record.tabs,
+    activeId: () => record.active,
+    select: id => {
+      record.active = id
+    },
+    add() {},
+    close() {},
+    reorder() {},
+    contextItems: () => [],
+    action: async () => {},
+  })
+  f.workspace.setStatus('db', 'connected', 'original-session')
+  await flush()
+  const content = databaseWorkspaceTabId('db', 'table')
+  const group = f.layout.groupForTab('db').id
+  const target = {
+    type: 'pane',
+    props: {},
+    style: {},
+    children: [],
+    parent: null,
+  }
+  f.layout.setTarget(group, target)
+  f.layout.activate(content)
+  await flush()
+  const shell = () =>
+    descendants(target).find(node => node.props['data-session'] === 'db')
+  const original = shell()
+  assert.ok(original)
+
+  f.workspace.hideDatabaseOverview('db')
+  await flush()
+  assert.equal(shell(), original)
+  assert.equal(original.props['data-workspace-host'], content)
+  assert.equal(f.workspace.tabs[0].sessionId, 'original-session')
+  assert.equal(f.layout.groupForTab('db'), undefined)
+  assert.equal(f.layout.isVisible(content), true)
+  assert.deepEqual(
+    workspaceViewTabs(f.workspace.tabs, f.databaseTabs).map(tab => tab.id),
+    [content]
+  )
+
+  f.workspace.open(saved)
+  await flush()
+  assert.equal(shell(), original)
+  assert.equal(f.workspace.tabs[0].sessionId, 'original-session')
+  assert.equal(f.workspace.tabs[0].status, 'connected')
+  assert.ok(f.layout.groupForTab('db'))
+  assert.equal(record.tabs.length, 1)
+})
+
 test('切换服务器与数据库分类始终保留已打开标签、会话和分屏', async t => {
   const f = await fixture(t, [connection('ssh-a'), connection('ssh-b')])
   f.layout.moveTab('ssh-a', f.layout.tree.value.id, 'right')

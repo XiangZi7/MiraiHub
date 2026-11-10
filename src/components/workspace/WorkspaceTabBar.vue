@@ -13,6 +13,7 @@ import type { TabDragEvent } from '@/composables/useTabReorder'
 import {
   type WorkspaceViewTab,
   useDatabaseWorkspaceTabs,
+  databaseWorkspaceTabId,
 } from '@/composables/useDatabaseWorkspaceTabs'
 
 const { t } = useI18n()
@@ -26,6 +27,7 @@ const emit = defineEmits<{
   'update:active': [id: string]
   add: []
   closeMany: [ids: string[]]
+  closeOverview: [id: string]
   reorder: [from: number, to: number]
   action: [id: string, action: string]
   tabDragMove: [drag: TabDragEvent]
@@ -187,41 +189,48 @@ async function action(id: string, action: string): Promise<void> {
   }
   emit('action', id, action)
 }
-// 按标签类型关闭；内容标签沿用未保存草稿确认，连接仍使用连接级确认。
+/** 判断关闭总览后是否还有未选中的内容标签，跨分屏也保留这些表和查询。 */
+function keepsDatabaseContents(id: string, closingIds: string[]): boolean {
+  return (
+    databaseTabs
+      ?.get(id)
+      ?.tabs()
+      .some(tab => !closingIds.includes(databaseWorkspaceTabId(id, tab.id))) ??
+    false
+  )
+}
+
+// 仅在整条连接确实被关闭时提示连接级草稿；单独关闭总览不影响现有内容。
 function requestClose(ids: string[]): void {
-  let current = ids.filter(id => items.value.some(tab => tab.id === id))
-  if (current.length > 1)
-    current = current.filter(
-      id =>
-        contentTargets.value.has(id) ||
-        ![...contentTargets.value].some(
-          ([contentId, target]) =>
-            target.connectionId === id && !current.includes(contentId)
-        )
-    )
+  const current = ids.filter(id => items.value.some(tab => tab.id === id))
   if (!current.length) return
   const warning = props.closeWarning(
-    current.filter(id => !contentTargets.value.has(id))
+    current.filter(
+      id => !contentTargets.value.has(id) && !keepsDatabaseContents(id, current)
+    )
   )
   if (warning) {
     state.closingIds = current
     state.warning = warning
   } else closeItems(current)
 }
-// 关闭连接时由连接卸载统一释放内容；仅关闭查询时保留同连接的其他标签。
+// 总览与内容独立关闭；只有本次选中了全部内容时才整体释放连接。
 function closeItems(ids: string[]): void {
   const connections = ids.filter(id => !contentTargets.value.has(id))
+  const retained = connections.filter(id => keepsDatabaseContents(id, ids))
+  const closing = connections.filter(id => !retained.includes(id))
   for (const connectionId of new Set(
     props.tabs.map(tab => tab.connection.id)
   )) {
-    if (connections.includes(connectionId)) continue
+    if (closing.includes(connectionId)) continue
     const contentIds = ids.flatMap(id => {
       const target = contentTargets.value.get(id)
       return target?.connectionId === connectionId ? [target.tabId] : []
     })
     if (contentIds.length) databaseTabs?.get(connectionId)?.close(contentIds)
   }
-  if (connections.length) emit('closeMany', connections)
+  for (const id of retained) emit('closeOverview', id)
+  if (closing.length) emit('closeMany', closing)
 }
 function cancelClose(): void {
   state.closingIds = []

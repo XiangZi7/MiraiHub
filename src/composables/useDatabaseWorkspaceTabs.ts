@@ -79,13 +79,13 @@ export function databaseWorkspaceTabTarget(
   }
 }
 
-// 将数据库内容展开为真正的主标签，供分屏树逐项移动，避免拖表时带走整条连接。
+// 将数据库内容展开为主标签；关闭总览后仍保留该连接的内容入口与会话实例。
 export function workspaceViewTabs(
   tabs: readonly WorkspaceTab[],
   registry: Registry | null
 ): WorkspaceViewTab[] {
   return tabs.flatMap(connection => [
-    connection,
+    ...(connection.databaseOverviewClosed ? [] : [connection]),
     ...(registry?.get(connection.id)?.tabs() ?? []).map(tab => ({
       ...connection,
       id: databaseWorkspaceTabId(connection.id, tab.id),

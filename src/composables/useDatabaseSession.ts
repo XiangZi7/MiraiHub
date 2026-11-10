@@ -105,7 +105,7 @@ export function useDatabaseSession(
     }
   }
 
-  // 初始化侧栏的库、对象和字段缓存，使旧会话及旧初始化请求的响应失效。
+  /** 连接重建或断开时清理目录缓存，并使旧会话的元数据响应失效。 */
   function resetBrowserData(): void {
     metadataGeneration++
     objectsRequest++
@@ -122,27 +122,13 @@ export function useDatabaseSession(
     state.inspectingKeys.clear()
   }
 
-  // 连接重建或断开时同时清理元数据和本轮查询；侧栏重新进入只清理元数据。
+  /** 连接重建或断开时清理元数据与查询结果；普通标签切换保留当前状态。 */
   function resetData(): void {
     databaseSwitch = Promise.resolve()
     resetBrowserData()
     state.queryExecution = null
     state.queryLoading = false
     state.queryError = ''
-  }
-
-  // 重新进入工作区时从当前连接读取新目录，保留连接、执行中的 Agent 和查询结果。
-  async function initializeBrowser(): Promise<void> {
-    const sessionId = state.sessionId
-    if (!sessionId) return
-    resetBrowserData()
-    const version = metadataGeneration
-    state.databasesLoading = true
-    await databaseSwitch
-    if (state.sessionId !== sessionId || version !== metadataGeneration) return
-    if (connection.value?.kind !== 'mysql')
-      state.selectedDatabase = state.session?.database ?? ''
-    await Promise.all([refreshDatabases(), refreshObjects()])
   }
 
   async function connect(password?: string): Promise<void> {
@@ -320,7 +306,7 @@ export function useDatabaseSession(
     }
   }
 
-  // 字段请求绑定本次元数据初始化，返回工作区后忽略上一次目录的迟到结果。
+  // 字段请求绑定当前会话的目录缓存，连接重建后忽略旧会话的迟到结果。
   async function inspectObject(object: DatabaseObject): Promise<void> {
     const sessionId = state.sessionId
     const version = metadataGeneration
@@ -421,7 +407,6 @@ export function useDatabaseSession(
     disconnect,
     refreshObjects,
     refreshDatabases,
-    initializeBrowser,
     switchDatabase,
     inspectObject,
     executeSql,

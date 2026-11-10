@@ -189,12 +189,15 @@ function handleTitleBarDblClick(event: MouseEvent): void {
 function addConnection(): void {
   openConnectionWindow(activeNav.value === 'databases' ? 'database' : 'ssh')
 }
-// 关闭连接时连同其内容标签一起计算后继焦点，保留其他分屏的活动内容。
+/** 释放连接及其内容，并把焦点交给仍打开的标签，兼容已隐藏总览的连接。 */
 function closeTabs(ids: string[]): void {
   const wasActive = ids.includes(activeId.value)
-  const closingViews = viewTabs.value
-    .filter(tab => ids.includes(tab.connection.id))
-    .map(tab => tab.id)
+  const closingViews = [
+    ...ids,
+    ...viewTabs.value
+      .filter(tab => ids.includes(tab.connection.id))
+      .map(tab => tab.id),
+  ]
   const preferred = tabSplit.preferredAfterClose(closingViews)
   workspace.closeMany(ids)
   if (preferred) {
@@ -205,6 +208,37 @@ function closeTabs(ids: string[]): void {
   }
   if (wasActive) void followActiveTab()
 }
+
+/** 关闭数据库总览时只移除它的标签入口，表、查询和未保存编辑仍使用原会话。 */
+function closeDatabaseOverview(id: string): void {
+  const wasActive = activeId.value === id
+  const preferred = tabSplit.preferredAfterClose([id])
+  workspace.hideDatabaseOverview(id)
+  if (preferred) {
+    const target = databaseWorkspaceTabTarget(preferred)
+    databaseWorkspaceTabs
+      .get(target?.connectionId ?? preferred)
+      ?.select(target?.tabId ?? '')
+    workspace.activate(target?.connectionId ?? preferred)
+  }
+  if (wasActive) void followActiveTab()
+}
+
+// 总览已关闭的连接在最后一个内容标签真正关闭后释放；取消草稿确认时仍保留会话。
+watch(
+  () =>
+    openTabs
+      .filter(
+        tab =>
+          tab.databaseOverviewClosed &&
+          databaseWorkspaceTabs.has(tab.id) &&
+          !databaseWorkspaceTabs.get(tab.id)!.tabs().length
+      )
+      .map(tab => tab.id),
+  ids => {
+    if (ids.length) closeTabs(ids)
+  }
+)
 function closeWarning(ids: string[]): string {
   return controllers.get('databases')?.closeWarning?.(ids) ?? ''
 }
@@ -408,6 +442,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
             :close-warning="closeWarning"
             @add="addConnection"
             @close-many="closeTabs"
+            @close-overview="closeDatabaseOverview"
             @action="tabAction"
           />
           <RouterView v-slot="{ Component, route }">

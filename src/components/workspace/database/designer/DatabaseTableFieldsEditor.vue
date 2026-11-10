@@ -116,16 +116,17 @@ const inherit = computed(() =>
     : t('跟随表默认')
 )
 const charsetOptions = computed(() => [
-  { value: '', label: inherit.value },
+  { value: '', label: t('跟随表默认'), description: inherit.value },
   ...[...new Set(collations.value.map(item => item.charset))].map(value => ({
     value,
     label: value,
   })),
 ])
+/** 为字段排序规则提供当前字符集的选项，并在默认项说明中保留继承值。 */
 function collationOptions(column: TableDesignerColumn) {
   const charset = column.charset || props.tableCollation?.split('_')[0] || ''
   return [
-    { value: '', label: inherit.value },
+    { value: '', label: t('跟随表默认'), description: inherit.value },
     ...collations.value
       .filter(item => !charset || item.charset === charset)
       .map(item => ({ value: item.name, label: item.name })),
@@ -852,26 +853,30 @@ defineExpose({ add: () => void addColumn() })
 
     <div
       v-if="activeColumn"
-      class="border-line-soft bg-card/60 grid shrink-0 grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-x-3 gap-y-2 border-t px-3 py-2.5 text-[10px]"
+      class="border-line-soft bg-card/60 scroll-thin flex min-w-0 shrink-0 items-center gap-4 overflow-x-auto border-t px-3 py-2 text-[10px] whitespace-nowrap"
     >
       <p
-        class="text-txt-2 col-span-full flex items-center gap-1.5 font-mono text-[10.5px]"
+        class="text-txt-2 flex shrink-0 items-center gap-1.5 font-mono text-[10.5px]"
+        :title="t('字段属性')"
       >
         <AppIcon
           name="lucide:settings-2"
           :size="11"
           class="text-violet"
         />{{ activeColumn.name || t('未命名字段') }}
-        <span class="text-txt-4 font-sans">{{ t('字段属性') }}</span>
+        <span class="sr-only">{{ t('字段属性') }}</span>
         <span
           v-if="rowErrors(activeColumn).length"
-          class="text-danger ml-2 truncate font-sans"
+          class="text-danger ml-2 max-w-64 truncate font-sans"
+          :title="rowErrors(activeColumn).join('\n')"
           >{{ rowErrors(activeColumn)[0] }}</span
         >
       </p>
-      <div class="text-txt-4 grid gap-1">
+      <div class="text-txt-4 flex shrink-0 items-center gap-2">
         <span>{{ t('默认值') }}</span>
         <AppSelect
+          class="min-w-0"
+          :class="defaultMode(activeColumn) === 'current' ? 'w-44' : 'w-28'"
           :model-value="defaultMode(activeColumn)"
           :label="t('默认值类型')"
           :options="defaultModeOptions"
@@ -884,45 +889,47 @@ defineExpose({ add: () => void addColumn() })
           @update:model-value="setDefaultMode(activeColumn, $event)"
         />
       </div>
-      <label
+      <div
         v-if="columnTypeTraits(activeColumn.dataType, databaseKind).onUpdate"
-        class="text-txt-3 flex items-center gap-2 self-end pb-1.5"
+        class="text-txt-3 shrink-0"
       >
         <AppCheckbox
           :model-value="Boolean(activeColumn.onUpdateCurrentTimestamp)"
           :label="t('更新时自动设为当前时间')"
-          hide-label
           :disabled="Boolean(activeColumn.generatedExpression)"
           @update:model-value="
             updateColumn(activeColumn.id, {
               onUpdateCurrentTimestamp: $event,
             })
           "
-        />{{ t('更新时自动设为当前时间') }}
-      </label>
-      <label
+        />
+      </div>
+      <div
         v-if="columnTypeTraits(activeColumn.dataType, databaseKind).zerofill"
-        class="text-txt-3 flex items-center gap-2 self-end pb-1.5"
+        class="text-txt-3 shrink-0"
       >
         <AppCheckbox
           :model-value="Boolean(activeColumn.zerofill)"
           :label="t('零填充')"
-          hide-label
           @update:model-value="
             updateColumn(activeColumn.id, { zerofill: $event })
           "
-        />{{ t('零填充') }}
-      </label>
+        />
+      </div>
       <div
         v-if="columnTypeTraits(activeColumn.dataType, databaseKind).charset"
-        class="text-txt-4 grid gap-1"
+        class="text-txt-4 flex shrink-0 items-center gap-2"
       >
         <span>{{ t('字符集') }}</span>
         <AppSelect
           v-if="collations.length"
+          class="w-28 min-w-0"
           :model-value="activeColumn.charset ?? ''"
           :label="t('字符集')"
+          :title="activeColumn.charset || inherit"
           :options="charsetOptions"
+          :menu-min-width="280"
+          wrap-descriptions
           hide-label
           compact
           searchable
@@ -935,27 +942,37 @@ defineExpose({ add: () => void addColumn() })
             })
           "
         />
-        <AppInput
+        <div
           v-else
-          :model-value="activeColumn.charset ?? ''"
-          size="sm"
-          monospace
-          :placeholder="inherit"
-          @update:model-value="
-            updateColumn(activeColumn.id, { charset: $event })
-          "
-        />
+          class="w-28 min-w-0"
+        >
+          <AppInput
+            :model-value="activeColumn.charset ?? ''"
+            size="sm"
+            monospace
+            :aria-label="t('字符集')"
+            :placeholder="t('跟随表默认')"
+            :title="activeColumn.charset || inherit"
+            @update:model-value="
+              updateColumn(activeColumn.id, { charset: $event })
+            "
+          />
+        </div>
       </div>
       <div
         v-if="columnTypeTraits(activeColumn.dataType, databaseKind).collation"
-        class="text-txt-4 grid gap-1"
+        class="text-txt-4 flex shrink-0 items-center gap-2"
       >
         <span>{{ t('排序规则') }}</span>
         <AppSelect
           v-if="collations.length"
+          class="w-48 min-w-0"
           :model-value="activeColumn.collation ?? ''"
           :label="t('排序规则')"
+          :title="activeColumn.collation || inherit"
           :options="collationOptions(activeColumn)"
+          :menu-min-width="280"
+          wrap-descriptions
           hide-label
           compact
           searchable
@@ -963,25 +980,34 @@ defineExpose({ add: () => void addColumn() })
             updateColumn(activeColumn.id, { collation: $event })
           "
         />
-        <AppInput
+        <div
           v-else
-          :model-value="activeColumn.collation ?? ''"
-          size="sm"
-          monospace
-          :placeholder="mysql ? inherit : 'C / en_US.utf8'"
-          @update:model-value="
-            updateColumn(activeColumn.id, { collation: $event })
-          "
-        />
-      </div>
-      <div class="text-txt-4 col-span-2 grid gap-1">
-        <span>{{ t('生成列表达式') }}</span>
-        <div class="flex gap-1.5">
+          class="w-48 min-w-0"
+        >
           <AppInput
+            :model-value="activeColumn.collation ?? ''"
+            size="sm"
+            monospace
+            :aria-label="t('排序规则')"
+            :placeholder="mysql ? t('跟随表默认') : 'C / en_US.utf8'"
+            :title="activeColumn.collation || inherit"
+            @update:model-value="
+              updateColumn(activeColumn.id, { collation: $event })
+            "
+          />
+        </div>
+      </div>
+      <div class="text-txt-4 flex min-w-88 flex-1 items-center gap-2">
+        <span>{{ t('生成列表达式') }}</span>
+        <div class="flex min-w-0 flex-1 items-center gap-1.5">
+          <AppInput
+            class="flex-1"
             :model-value="activeColumn.generatedExpression ?? ''"
             size="sm"
             monospace
-            :placeholder="t('留空表示普通字段，如 price * qty')"
+            :aria-label="t('生成列表达式')"
+            placeholder="price * qty"
+            :title="t('留空表示普通字段，如 price * qty')"
             @update:model-value="
               updateColumn(activeColumn.id, {
                 generatedExpression: $event,

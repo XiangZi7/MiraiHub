@@ -297,7 +297,7 @@ onBeforeUnmount(() => {
       @navigate="load"
     />
     <RemoteFileList
-      :files="visibleEntries"
+      :files="loading ? [] : visibleEntries"
       :drag-session-id="sessionId || undefined"
       :selected="state.selected"
       :selection="state.selection"

@@ -19,6 +19,8 @@ export interface WorkspaceTab {
    * 而那两个面板是终端的兄弟节点，只能通过这份共享状态拿到。
    */
   sessionId: string
+  /** 数据库总览标签已关闭时，继续为仍打开的表和查询保留会话。 */
+  databaseOverviewClosed?: boolean
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
@@ -87,6 +89,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (existing) {
       // 连接配置可能被改过（改了端口、换了密钥），用最新的覆盖
       existing.connection = connection
+      existing.databaseOverviewClosed = false
       state.activeId = existing.id
       return
     }
@@ -109,6 +112,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    */
   function close(id: string): void {
     closeMany([id])
+  }
+
+  /** 仅隐藏数据库总览标签；内容标签仍由当前连接实例持有，显式重新打开连接时恢复总览。 */
+  function hideDatabaseOverview(id: string): void {
+    const tab = state.tabs.find(tab => tab.id === id)
+    if (tab) tab.databaseOverviewClosed = true
   }
 
   /** 一次更新集合，避免连续关闭时短暂激活即将被移除的标签。 */
@@ -208,6 +217,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     active,
     open,
     close,
+    hideDatabaseOverview,
     closeMany,
     activate,
     reorder,
