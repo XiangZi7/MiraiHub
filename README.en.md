@@ -126,3 +126,5 @@ AI messages, attachment excerpts and tool results are sent to your configured mo
 [Report an issue](https://github.com/XiangZi7/MiraiHub/issues) · [Contribute](https://github.com/XiangZi7/MiraiHub/pulls) · [MIT License](LICENSE)
 
 <sub>Made by <a href="https://github.com/XiangZi7">XiangZi</a></sub>
+
+<sub>Community: <a href="https://linux.do/">LINUX DO</a></sub>

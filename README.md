@@ -126,3 +126,5 @@ AI 对话、附件片段和工具结果会发送到你配置的模型服务，�
 [反馈问题](https://github.com/XiangZi7/MiraiHub/issues) · [参与贡献](https://github.com/XiangZi7/MiraiHub/pulls) · [MIT License](LICENSE)
 
 <sub>Made by <a href="https://github.com/XiangZi7">XiangZi</a></sub>
+
+<sub>社区交流：<a href="https://linux.do/">LINUX DO</a></sub>
