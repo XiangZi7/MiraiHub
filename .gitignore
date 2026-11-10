@@ -14,7 +14,7 @@ dist-ssr
 *.local
 .tauri/
 release-output/
-
+.vscode
 output/
 
 # pdf.js 运行时资源：由 scripts/sync-pdfjs-assets.mjs 从 node_modules 复制（约 4MB 第三方产物）
