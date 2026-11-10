@@ -4,7 +4,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { injectWorkspaceTabSplit } from '@/composables/useWorkspaceTabSplit'
 import { isDatabaseConnection } from '@/types/connection'
-import WorkspaceSplitNode from './WorkspaceSplitNode.vue'
+import WorkspaceSplitNode from '@/components/workspace/WorkspaceSplitNode.vue'
 import {
   useDatabaseWorkspaceTabs,
   workspaceViewTabs,
@@ -19,10 +19,10 @@ const DatabaseView = defineAsyncComponent(
 )
 
 const ServersPage = defineAsyncComponent(
-  () => import('@/pages/workspace/ServersPage.vue')
+  () => import('@/pages/servers/index.vue')
 )
 const DatabasesPage = defineAsyncComponent(
-  () => import('@/pages/workspace/DatabasesPage.vue')
+  () => import('@/pages/databases/index.vue')
 )
 defineProps<{ closeWarning: (ids: string[]) => string }>()
 const emit = defineEmits<{

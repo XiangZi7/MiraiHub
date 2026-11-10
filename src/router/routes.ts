@@ -1,6 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router'
 import type { NavId } from '@/types'
-import type { WindowSurface } from './window-entry'
+import type { WindowSurface } from '@/router/window-entry'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -20,13 +20,13 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'servers/:connectionId?',
         name: 'servers',
-        component: () => import('@/pages/workspace/ServersPage.vue'),
+        component: () => import('@/pages/servers/index.vue'),
         meta: { nav: 'servers', title: '服务器' },
       },
       {
         path: 'databases/:connectionId?',
         name: 'databases',
-        component: () => import('@/pages/workspace/DatabasesPage.vue'),
+        component: () => import('@/pages/databases/index.vue'),
         meta: { nav: 'databases', title: '数据库' },
       },
     ],
@@ -34,13 +34,13 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/settings/:section?',
     name: 'settings',
-    component: () => import('@/pages/windows/SettingsPage.vue'),
+    component: () => import('@/pages/settings/index.vue'),
     meta: { surface: 'settings', title: '设置' },
   },
   {
     path: '/connection/:kind?',
     name: 'connection',
-    component: () => import('@/pages/windows/ConnectionPage.vue'),
+    component: () => import('@/pages/connection/index.vue'),
     props: route => ({
       kind: route.params.kind,
       connectionId:
@@ -54,24 +54,24 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/remote-editor',
     name: 'remote-editor',
-    component: () => import('@/pages/windows/RemoteEditorPage.vue'),
+    component: () => import('@/pages/remote-editor.vue'),
     meta: { surface: 'remote-editor', title: '远端文件编辑' },
   },
   {
     path: '/column-tags',
     name: 'column-tags',
-    component: () => import('@/pages/windows/ColumnTagsPage.vue'),
+    component: () => import('@/pages/column-tags.vue'),
     meta: { surface: 'column-tags', title: '标签化显示' },
   },
   {
     path: '/splash',
     name: 'splash',
-    component: () => import('@/pages/windows/SplashPage.vue'),
+    component: () => import('@/pages/splash.vue'),
     meta: { surface: 'splash', title: '正在启动' },
   },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
-    component: () => import('@/pages/NotFoundPage.vue'),
+    component: () => import('@/pages/not-found.vue'),
   },
 ]

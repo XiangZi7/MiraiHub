@@ -3,7 +3,7 @@ import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import { useI18n } from 'vue-i18n'
 
-import { onMounted, shallowRef, useTemplateRef } from 'vue'
+import { onMounted, reactive, toRefs, useTemplateRef } from 'vue'
 import { useClipboard } from '@vueuse/core'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -17,8 +17,8 @@ import type { GenerateKeyRequest } from '@/types/ssh'
 import { formatDate, formatRelative } from '@/utils/time'
 import { cn } from '@/utils/cn'
 import { scheduleClipboardClear } from '@/utils/clipboard'
-import GenerateKeyDialog from './GenerateKeyDialog.vue'
-import DeployKeyDialog from './DeployKeyDialog.vue'
+import GenerateKeyDialog from '@/pages/ssh-keys/components/generate-key-dialog.vue'
+import DeployKeyDialog from '@/pages/ssh-keys/components/deploy-key-dialog.vue'
 
 const { t } = useI18n()
 
@@ -43,13 +43,19 @@ const {
 const { defaultPath: defaultPrivateKey, setDefault: setDefaultPrivateKey } =
   usePrivateKeys()
 
+// 首次进入密钥管理时扫描本机密钥，失败统一通过公共通知反馈。
 onMounted(refreshKeys)
 
-// 生成密钥对话框是否打开
-const generateOpen = shallowRef(false)
-const pendingDelete = shallowRef<{ id: string; label: string } | null>(null)
-// 待部署到服务器的密钥；非空时打开部署对话框
-const pendingDeploy = shallowRef<{ id: string; label: string } | null>(null)
+// 响应式状态
+const state = reactive({
+  // 生成密钥对话框是否打开
+  generateOpen: false,
+  // 等待用户确认删除的密钥
+  pendingDelete: null as { id: string; label: string } | null,
+  // 待部署到服务器的密钥；非空时打开部署对话框
+  pendingDeploy: null as { id: string; label: string } | null,
+})
+const { generateOpen, pendingDelete, pendingDeploy } = toRefs(state)
 // 拿到对话框实例，生成失败时把错误回传给它显示在表单里
 const dialogRef =
   useTemplateRef<InstanceType<typeof GenerateKeyDialog>>('generateDialog')
@@ -61,12 +67,13 @@ const publicKeyClip = useClipboard({ copiedDuring: 1600 })
 
 /** 删除前确认：密钥删掉就找不回来了，且远端的 authorized_keys 还留着废条目 */
 function requestDelete(keyId: string, label: string): void {
-  pendingDelete.value = { id: keyId, label }
+  state.pendingDelete = { id: keyId, label }
 }
 
+/** 用户确认后删除指定密钥，清理确认状态并通知删除结果。 */
 async function confirmDelete(): Promise<void> {
-  const target = pendingDelete.value
-  pendingDelete.value = null
+  const target = state.pendingDelete
+  state.pendingDelete = null
   if (!target) return
 
   try {
@@ -80,12 +87,14 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
+/** 扫描并刷新本机 SSH 密钥，扫描失败时显示公共错误通知。 */
 async function refreshKeys(): Promise<void> {
   await refresh()
   if (error.value)
     toast.error({ title: t('扫描 SSH 密钥失败'), description: error.value })
 }
 
+/** 复制当前密钥指纹，并按项目策略安排剪贴板清理。 */
 async function copyFingerprint(): Promise<void> {
   if (!current.value) return
   await fingerprintClip.copy(current.value.fingerprint)
@@ -93,6 +102,7 @@ async function copyFingerprint(): Promise<void> {
   toast.success(t('SSH 指纹已复制'))
 }
 
+/** 复制当前密钥公钥，更新复制反馈并安排剪贴板清理。 */
 async function copyPublicKey(): Promise<void> {
   if (!current.value) return
   await publicKeyClip.copy(current.value.publicKey)
@@ -102,9 +112,10 @@ async function copyPublicKey(): Promise<void> {
 
 // 打开“部署到服务器”对话框（ssh-copy-id）
 function requestDeploy(keyId: string, label: string): void {
-  pendingDeploy.value = { id: keyId, label }
+  state.pendingDeploy = { id: keyId, label }
 }
 
+/** 将当前私钥设为新建 SSH 连接使用的默认私钥。 */
 function makeDefault(path: string): void {
   setDefaultPrivateKey(path)
   toast.success(t('默认私钥已更新'))
@@ -119,7 +130,7 @@ function makeDefault(path: string): void {
 async function handleGenerate(request: GenerateKeyRequest): Promise<void> {
   try {
     await generate(request)
-    generateOpen.value = false
+    state.generateOpen = false
     toast.success(t('SSH 密钥“{value0}”已生成', { value0: request.label }))
   } catch (err) {
     // Tauri 的结构化 AppError 是普通对象，String(err) 只会得到 [object Object]。

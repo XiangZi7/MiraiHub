@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, reactive, shallowRef, toRefs } from 'vue'
+import { computed, reactive, toRefs } from 'vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import SearchField from '@/components/ui/SearchField.vue'
 import { useConnections } from '@/composables/useConnections'
+import { useWorkspaceNavigation } from '@/composables/useWorkspaceNavigation'
 import { settingNumber, useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import {
@@ -32,12 +33,8 @@ const { settings } = useSettings()
  * 在那之前"最近用过哪些连接"已经能满足主要用途：快速回到刚才那台机器。
  */
 
-const emit = defineEmits<{
-  /** 请求重新打开某条连接 */
-  open: [connection: SavedConnection]
-}>()
-
 const { connections, update } = useConnections()
+const { openConnection } = useWorkspaceNavigation()
 
 // 响应式状态
 const state = reactive({
@@ -45,10 +42,11 @@ const state = reactive({
   filter: 'all' as RecentFilter['id'],
   // 搜索关键词
   keyword: '',
+  // 清空最近会话前的确认弹窗
+  clearConfirmOpen: false,
 })
 
-const { filter, keyword } = toRefs(state)
-const clearConfirmOpen = shallowRef(false)
+const { filter, keyword, clearConfirmOpen } = toRefs(state)
 
 /** 连接类型 → 会话类型。数据库的三种协议在这里都归为 database */
 function kindOf(connection: SavedConnection): SessionKind {
@@ -116,14 +114,15 @@ const total = computed(() =>
 /** 一条都没用过 vs 只是被筛掉了，两种空状态的出路不一样 */
 const hasHistory = computed(() => usedConnections.value.length > 0)
 
+/** 从最近记录重新打开已保存连接，并通过工作区导航同步活动标签。 */
 function reopen(id: string): void {
   const connection = connections.find(item => item.id === id)
-  if (connection) emit('open', connection)
+  if (connection) void openConnection(connection)
 }
 
 /** 清空记录：把 lastUsedAt 归零，连接本身保留 */
 async function clearHistory(): Promise<void> {
-  clearConfirmOpen.value = false
+  state.clearConfirmOpen = false
   try {
     await Promise.all(
       usedConnections.value.map(item => update(item.id, { lastUsedAt: 0 }))

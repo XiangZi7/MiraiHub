@@ -98,9 +98,12 @@ async function deploy(): Promise<void> {
   <AppDialog
     :title="t('部署到服务器')"
     :description="
-      t('将“{value0}”的公钥追加到远端 ~/.ssh/authorized_keys，已存在时不会重复添加。', {
-        value0: keyLabel,
-      })
+      t(
+        '将“{value0}”的公钥追加到远端 ~/.ssh/authorized_keys，已存在时不会重复添加。',
+        {
+          value0: keyLabel,
+        }
+      )
     "
     @close="emit('close')"
   >

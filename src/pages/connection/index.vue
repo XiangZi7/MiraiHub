@@ -7,9 +7,9 @@ import BrandLogo from '@/components/ui/BrandLogo.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { closeWindow, IS_TAURI } from '@/utils/window'
-import DatabaseConnectionForm from '@/components/connection/DatabaseConnectionForm.vue'
-import LocalConnectionForm from '@/components/connection/LocalConnectionForm.vue'
-import SshConnectionForm from '@/components/connection/SshConnectionForm.vue'
+import DatabaseConnectionForm from '@/pages/connection/components/database-connection-form.vue'
+import LocalConnectionForm from '@/pages/connection/components/local-connection-form.vue'
+import SshConnectionForm from '@/pages/connection/components/ssh-connection-form.vue'
 
 const { t } = useI18n()
 
@@ -19,7 +19,9 @@ const props = withDefaults(
 )
 const isDatabase = computed(() => props.kind === 'database')
 const isLocal = computed(() => props.kind === 'local')
-const databaseKind = shallowRef<'mysql' | 'postgresql' | 'sqlite' | 'redis'>('mysql')
+const databaseKind = shallowRef<'mysql' | 'postgresql' | 'sqlite' | 'redis'>(
+  'mysql'
+)
 const title = computed(() =>
   props.connectionId
     ? isDatabase.value
@@ -34,6 +36,7 @@ const title = computed(() =>
         : 'Add SSH Connection'
 )
 
+/** 关闭连接配置窗口，桌面端走原生窗口入口，浏览器预览关闭当前窗口。 */
 function closeDialog(): void {
   if (IS_TAURI) {
     closeWindow()
@@ -43,6 +46,7 @@ function closeDialog(): void {
   window.close()
 }
 
+// 配置窗口支持 Esc 关闭；监听随页面卸载自动清理。
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key === 'Escape') closeDialog()
 })

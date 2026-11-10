@@ -62,11 +62,15 @@ for (const file of [
   })
 }
 
-for (const name of ['TerminalPanel', 'LocalTerminalPanel']) {
+for (const [name, file] of [
+  ['TerminalPanel', 'src/components/workspace/TerminalPanel.vue'],
+  [
+    'LocalTerminalPanel',
+    'src/pages/servers/components/local-terminal-panel.vue',
+  ],
+]) {
   test(`${name} 的透明终端底色在生产压缩后仍优先于 xterm 的黑底`, () => {
-    const filename = fileURLToPath(
-      new URL(`../src/components/workspace/${name}.vue`, import.meta.url)
-    )
+    const filename = fileURLToPath(new URL(`../${file}`, import.meta.url))
     const { descriptor, errors } = parse(readFileSync(filename, 'utf8'))
     assert.deepEqual(errors, [])
     const compiled = compileStyle({

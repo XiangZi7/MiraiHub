@@ -16,7 +16,7 @@ const components = [
   'src/components/agent/AgentApprovalCard.vue',
   'src/components/agent/AgentMarkdown.vue',
   'src/components/agent/AgentRetryStatus.vue',
-  'src/components/settings/AiCapacityFields.vue',
+  'src/pages/settings/components/ai-capacity-fields.vue',
   // 容量输入框改用公共 AppInput；需真实渲染才能断言 input 的 id/min/max/step。
   'src/components/ui/AppInput.vue',
 ]
@@ -86,7 +86,7 @@ test('ready updates show Update now and Not now in About and the floating notice
     export const openUrl = async () => {};
   `)
   const { state, values, commands } = await import(boundary)
-  const file = 'src/components/settings/AppUpdateStatus.vue'
+  const file = 'src/pages/settings/components/app-update-status.vue'
   const updateLoad = sourceLoader(
     {
       '@/stores/app-updater': boundary,

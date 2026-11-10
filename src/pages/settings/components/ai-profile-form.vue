@@ -10,8 +10,8 @@ import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
-import AiModelField from './AiModelField.vue'
-import AiCapacityFields from './AiCapacityFields.vue'
+import AiModelField from '@/pages/settings/components/ai-model-field.vue'
+import AiCapacityFields from '@/pages/settings/components/ai-capacity-fields.vue'
 
 const { t } = useI18n()
 defineProps<{ disabled: boolean }>()

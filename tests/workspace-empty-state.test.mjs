@@ -52,29 +52,29 @@ const load = sourceLoader(
     '@/composables/useWorkspaceControllers': dataModule(
       'export function registerWorkspaceController() {}'
     ),
-    './WorkspaceSplitNode.vue': dataModule(
+    '@/components/workspace/WorkspaceSplitNode.vue': dataModule(
       `export { Split as default } from ${JSON.stringify(markersUrl)}`
     ),
-    '@/components/workspace/SshTerminalWorkspace.vue': dataModule(
+    '@/pages/servers/components/ssh-terminal-workspace.vue': dataModule(
       `export { Ssh as default } from ${JSON.stringify(markersUrl)}`
     ),
     '@/components/workspace/TerminalPanel.vue': dataModule(
       `export { Terminal as default } from ${JSON.stringify(markersUrl)}`
     ),
-    '@/components/workspace/LocalTerminalPanel.vue': dataModule(
+    '@/pages/servers/components/local-terminal-panel.vue': dataModule(
       `export { Ssh as default } from ${JSON.stringify(markersUrl)}`
     ),
     '@/components/workspace/DatabaseView.vue': dataModule(
       `export { Database as default } from ${JSON.stringify(markersUrl)}`
     ),
-    '@/components/workspace/RedisView.vue': dataModule(
+    '@/pages/databases/components/redis-view.vue': dataModule(
       `export { Database as default } from ${JSON.stringify(markersUrl)}`
     ),
   },
   [
     'src/components/workspace/WorkspaceConnectionViews.vue',
-    'src/pages/workspace/ServersPage.vue',
-    'src/pages/workspace/DatabasesPage.vue',
+    'src/pages/servers/index.vue',
+    'src/pages/databases/index.vue',
   ]
 )
 const { route } = await import(navigationUrl)
@@ -95,8 +95,8 @@ const { default: Views } = await load(
   'src/components/workspace/WorkspaceConnectionViews.vue'
 )
 // Preload the cache hosts so only Vue's async-component scheduling remains in the fixture.
-await load('src/pages/workspace/ServersPage.vue')
-await load('src/pages/workspace/DatabasesPage.vue')
+await load('src/pages/servers/index.vue')
+await load('src/pages/databases/index.vue')
 
 const flush = async () => {
   for (let i = 0; i < 8; i++) {

@@ -15,9 +15,9 @@ import type {
   SettingsValues,
 } from '@/types/settings'
 import { IS_TAURI } from '@/utils/window'
-import ScaleControl from './ScaleControl.vue'
-import ShortcutRecorder from './ShortcutRecorder.vue'
-import AppUpdateStatus from './AppUpdateStatus.vue'
+import ScaleControl from '@/pages/settings/components/scale-control.vue'
+import ShortcutRecorder from '@/pages/settings/components/shortcut-recorder.vue'
+import AppUpdateStatus from '@/pages/settings/components/app-update-status.vue'
 
 const { t } = useI18n()
 

@@ -32,8 +32,8 @@ import type {
   DatabaseSslMode,
   MysqlFlavor,
 } from '@/types/database'
-import ConnectionFilePathField from './ConnectionFilePathField.vue'
-import ConnectionGroupSelect from './ConnectionGroupSelect.vue'
+import ConnectionFilePathField from '@/pages/connection/components/connection-file-path-field.vue'
+import ConnectionGroupSelect from '@/pages/connection/components/connection-group-select.vue'
 
 const { t } = useI18n()
 
@@ -226,7 +226,6 @@ function validateTunnel(): string {
     return t('请选择 SSH 私钥文件')
   return ''
 }
-
 
 const isReady = computed<boolean>(
   () =>

@@ -210,9 +210,9 @@
       const { i18n } = await import('/src/i18n/index.ts')
       const { pinia } = await import('/src/stores')
       const { default: RedisView } =
-        await import('/src/components/workspace/RedisView.vue')
+        await import('/src/pages/databases/components/redis-view.vue')
       const { default: DatabaseConnectionForm } =
-        await import('/src/components/connection/DatabaseConnectionForm.vue')
+        await import('/src/pages/connection/components/database-connection-form.vue')
       i18n.global.locale.value = 'zh-CN'
       const connection = {
         id: 'redis-preview',

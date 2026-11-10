@@ -10,11 +10,12 @@ import {
   useTemplateRef,
 } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import RemoteTextEditor from './RemoteTextEditor.vue'
+import RemoteTextEditor from '@/components/operations/RemoteTextEditor.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import WindowControls from '@/components/ui/WindowControls.vue'
 import * as api from '@/api/operations'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
+import { toast } from '@/composables/useToast'
 
 const { t } = useI18n()
 
@@ -22,12 +23,12 @@ const { t } = useI18n()
 const state = reactive({
   // 当前原生窗口在 Rust 中绑定的目标，不从 URL 或本地存储读取
   target: null as RemoteEditRequest | null,
-  // 初始化或原生窗口操作的错误
-  error: '',
+  // 初始化失败时显示失败状态，异常详情统一交给公共通知。
+  loadFailed: false,
   // 正在释放编辑会话并关闭窗口
   closing: false,
 })
-const { target, error, closing } = toRefs(state)
+const { target, loadFailed, closing } = toRefs(state)
 const caption = computed(() => {
   if (!state.target) return 'MiraiHub'
   const name = state.target.path.split('/').pop() || t('远端文件')
@@ -37,14 +38,19 @@ const editor = useTemplateRef<InstanceType<typeof RemoteTextEditor>>('editor')
 let alive = true
 let unlisten: (() => void) | undefined
 let statusQueue = Promise.resolve()
+/** 按发生顺序向原生窗口同步未保存与忙碌状态，避免连续保存和重载覆盖关闭保护。 */
 function updateStatus(dirty: boolean, busy: boolean): void {
-  // Preserve update ordering when save and reload change state in quick succession.
   statusQueue = statusQueue
     .then(() => api.remoteEditorStatus(dirty, busy))
     .catch(error => {
-      if (alive && !state.closing) state.error = api.errorMessage(error)
+      if (alive && !state.closing)
+        toast.error({
+          title: t('操作失败'),
+          description: api.errorMessage(error),
+        })
     })
 }
+/** 等待状态同步后释放远端编辑会话并关闭窗口；失败时允许用户再次关闭。 */
 async function finish(): Promise<void> {
   if (state.closing) return
   state.closing = true
@@ -52,10 +58,11 @@ async function finish(): Promise<void> {
     await statusQueue
     await api.finishRemoteEditor()
   } catch (error) {
-    state.error = api.errorMessage(error)
     state.closing = false
+    toast.error({ title: t('操作失败'), description: api.errorMessage(error) })
   }
 }
+// 挂载时订阅原生关闭请求，再读取编辑目标；卸载后的异步结果不再回写状态。
 onMounted(async () => {
   try {
     const stop = await getCurrentWindow().listen(
@@ -75,11 +82,16 @@ onMounted(async () => {
     if (alive && !state.closing) state.target = target
   } catch (error) {
     if (alive) {
-      state.error = api.errorMessage(error)
+      state.loadFailed = true
+      toast.error({
+        title: t('无法打开远端编辑窗口'),
+        description: api.errorMessage(error),
+      })
       updateStatus(false, false)
     }
   }
 })
+// 卸载后停止原生窗口订阅，并阻止未完成的初始化继续更新页面。
 onBeforeUnmount(() => {
   alive = false
   unlisten?.()
@@ -102,13 +114,6 @@ onBeforeUnmount(() => {
       </span>
       <WindowControls />
     </header>
-    <p
-      v-if="error"
-      role="alert"
-      class="window-error"
-    >
-      {{ error }}
-    </p>
     <RemoteTextEditor
       v-if="target"
       ref="editor"
@@ -121,7 +126,9 @@ onBeforeUnmount(() => {
       v-else
       class="window-loading"
     >
-      <p>{{ error ? t('无法打开远端编辑窗口') : t('正在打开远端编辑器…') }}</p>
+      <p>
+        {{ loadFailed ? t('无法打开远端编辑窗口') : t('正在打开远端编辑器…') }}
+      </p>
       <AppButton
         :disabled="closing"
         @click="finish"
@@ -161,15 +168,6 @@ onBeforeUnmount(() => {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.window-error {
-  flex: none;
-  max-height: 100px;
-  overflow: auto;
-  padding: 10px 18px;
-  color: var(--color-danger);
-  font-size: 12px;
-  overflow-wrap: anywhere;
 }
 .window-loading {
   display: flex;

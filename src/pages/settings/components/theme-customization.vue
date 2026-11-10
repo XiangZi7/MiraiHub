@@ -3,7 +3,7 @@ import { computed, reactive, toRefs, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
-import ThemeColorControls from './ThemeColorControls.vue'
+import ThemeColorControls from '@/pages/settings/components/theme-color-controls.vue'
 import AppSlider from '@/components/ui/AppSlider.vue'
 import {
   readBackgroundImage,

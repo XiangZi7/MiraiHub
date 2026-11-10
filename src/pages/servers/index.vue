@@ -12,9 +12,9 @@ import {
   toSshConfig,
   type LocalConnectionSettings,
 } from '@/types/connection'
-import LocalTerminalPanel from '@/components/workspace/LocalTerminalPanel.vue'
+import LocalTerminalPanel from '@/pages/servers/components/local-terminal-panel.vue'
 import TerminalPanel from '@/components/workspace/TerminalPanel.vue'
-import SshTerminalWorkspace from '@/components/workspace/SshTerminalWorkspace.vue'
+import SshTerminalWorkspace from '@/pages/servers/components/ssh-terminal-workspace.vue'
 
 const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
@@ -22,6 +22,7 @@ const { activeId, active: activeTab } = storeToRefs(workspace)
 const layout = useWorkspaceLayoutStore()
 const { activeNav } = useWorkspaceNavigation()
 const tabSplit = injectWorkspaceTabSplit()
+/** 按当前分屏或活动标签判断会话是否可见，切换标签时保留已挂载的终端。 */
 function visible(id: string): boolean {
   return tabSplit ? tabSplit.isVisible(id) : activeId.value === id
 }
@@ -33,6 +34,7 @@ const localTerminals =
   useTemplateRef<Array<InstanceType<typeof LocalTerminalPanel>>>(
     'localTerminals'
   )
+/** 接收 SSH 或本地终端的会话状态，同步工作区标签与会话标识。 */
 const handleSshStatus = (
   id: string,
   status: SshSessionStatus,
@@ -79,6 +81,7 @@ const activeTerminalTab = computed(() => {
     : undefined
 })
 
+/** 将工作区菜单操作交给对应终端实例，文件操作同时展开目标连接的文件面板。 */
 async function action(id: string, action: string): Promise<void> {
   if (action === 'files' || action === 'upload') {
     if (!openTabs.some(tab => tab.id === id && tab.connection.kind === 'ssh'))

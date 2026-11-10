@@ -8,7 +8,7 @@ import { injectWorkspaceTabSplit } from '@/composables/useWorkspaceTabSplit'
 import { isDatabaseConnection } from '@/types/connection'
 import type { SshSessionStatus } from '@/types/ssh'
 import DatabaseView from '@/components/workspace/DatabaseView.vue'
-import RedisView from '@/components/workspace/RedisView.vue'
+import RedisView from '@/pages/databases/components/redis-view.vue'
 import {
   useDatabaseWorkspaceTabs,
   databaseWorkspaceTabId,
@@ -19,6 +19,7 @@ const { activeId, active: activeTab } = storeToRefs(workspace)
 const { activeNav } = useWorkspaceNavigation()
 const tabSplit = injectWorkspaceTabSplit()
 const databaseTabs = useDatabaseWorkspaceTabs()
+/** 根据分屏或当前活动标签判断数据库视图可见性，隐藏时保留连接与草稿。 */
 function visible(id: string): boolean {
   return tabSplit ? tabSplit.isVisible(id) : activeId.value === id
 }
@@ -26,6 +27,7 @@ const views =
   useTemplateRef<
     Array<InstanceType<typeof DatabaseView> | InstanceType<typeof RedisView>>
   >('databaseViews')
+/** 将数据库连接及其 SSH 隧道的会话状态同步到工作区标签。 */
 const handleSshStatus = (
   id: string,
   status: SshSessionStatus,
@@ -57,18 +59,22 @@ const databaseTabViews = computed(() =>
 )
 
 registerWorkspaceController('databases', {
+  /** 汇总待关闭连接的未保存内容，供工作区统一进行关闭确认。 */
   closeWarning: ids =>
     (views.value ?? [])
       .map(view => view.closeWarningFor(ids))
       .filter(Boolean)
       .join('；'),
+  /** 将侧栏刷新请求交给持有该连接的数据库视图。 */
   refreshDatabase: id => {
     for (const view of views.value ?? []) view.refreshForConnection(id)
   },
+  /** 在指定数据库连接中创建查询，并等待对应视图完成处理。 */
   newQuery: async (id, database) => {
     for (const view of views.value ?? [])
       await view.newQueryForConnection(id, database)
   },
+  /** 将工作区菜单的重连或断开操作交给对应数据库或 Redis 视图。 */
   action: async (id, action) => {
     for (const view of views.value ?? []) {
       if (action === 'reconnect') await view.reconnectFor(id)

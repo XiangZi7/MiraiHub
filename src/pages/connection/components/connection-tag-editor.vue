@@ -7,7 +7,7 @@ import type {
   ConnectionTagColor,
   ConnectionTagDefinition,
 } from '@/types/connection'
-import ConnectionTagBadge from './ConnectionTagBadge.vue'
+import ConnectionTagBadge from '@/components/connection/ConnectionTagBadge.vue'
 
 const { t } = useI18n()
 

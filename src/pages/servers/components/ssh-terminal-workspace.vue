@@ -20,9 +20,9 @@ import {
   onTerminalTargetRequest,
   sshPaste,
 } from '@/composables/useTerminalInsert'
-import TerminalPanel from './TerminalPanel.vue'
-import MachinePanel from './MachinePanel.vue'
-import ServerStatusBar from './ServerStatusBar.vue'
+import TerminalPanel from '@/components/workspace/TerminalPanel.vue'
+import MachinePanel from '@/components/workspace/MachinePanel.vue'
+import ServerStatusBar from '@/components/workspace/ServerStatusBar.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppSidePane from '@/components/ui/AppSidePane.vue'
@@ -318,9 +318,7 @@ defineExpose({
             @status="
               (status, session) => statusChanged(pane.id, status, session)
             "
-            @ask-agent="
-              (content, intent) => askAgent(pane.id, content, intent)
-            "
+            @ask-agent="(content, intent) => askAgent(pane.id, content, intent)"
             @input="broadcastInput(pane.id, $event)"
           >
             <template

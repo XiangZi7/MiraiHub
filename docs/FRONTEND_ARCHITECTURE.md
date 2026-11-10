@@ -2,31 +2,35 @@
 
 MiraiHub 每个 WebView 先安装 Pinia，再安装 Vue Router，等待首条路由就绪后挂载 App。主窗口布局挂载后才发送 `app_ready`，启动画面会等到首屏可以显示。
 
-| 目录 | 职责 |
-| --- | --- |
-| `src/router` | 具名路由、懒加载、参数校验、原生窗口入口转换、窗口范围守卫 |
-| `src/pages/workspace` | 服务器、数据库、SSH 密钥、最近连接页面 |
-| `src/pages/windows` | 设置、连接配置、远端编辑器、启动窗口的页面入口 |
-| `src/layouts` | 工作区标题栏、侧栏、标签栏、全局快捷键与 RouterView |
-| `src/stores` | 当前 WebView 的共享应用状态、派生值和业务动作 |
-| `src/components` | 页面内部的领域组件及可复用 UI，不负责解析浏览器地址 |
-| `src/composables` | 会话生命周期、组件交互逻辑、按连接过滤以及 Store 的只读适配接口 |
-| `src/api` | IPC、持久化和跨窗口订阅，不依赖路由组件 |
+| 目录                          | 职责                                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| `src/router`                  | 具名路由、懒加载、参数校验、原生窗口入口转换、窗口范围守卫                              |
+| `src/pages`                   | 页面直接按业务命名，不加 `Page` 后缀；没有专属组件的页面使用 `业务名.vue`               |
+| `src/pages/业务名/index.vue`  | 有专属组件的页面入口，例如 `servers`、`databases`、`settings`、`connection`、`ssh-keys` |
+| `src/pages/业务名/components` | 当前页面专属面板、表单及弹窗，文件名使用 kebab-case                                     |
+| `src/layouts`                 | 工作区标题栏、侧栏、标签栏、全局快捷键与 RouterView                                     |
+| `src/stores`                  | 当前 WebView 的共享应用状态、派生值和业务动作                                           |
+| `src/components`              | 公共 UI、工作区基础能力与跨页面业务组件，不负责解析浏览器地址                           |
+| `src/composables`             | 会话生命周期、组件交互逻辑、按连接过滤以及 Store 的只读适配接口                         |
+| `src/api`                     | IPC、持久化和跨窗口订阅，不依赖路由组件                                                 |
+
+页面状态与交互尽量集中在所属业务内，页面内部使用 `reactive` 组织相关状态，模板通过 `toRefs` 访问。源码引用使用 `@/` 别名，方法定义上方写中文用途注释。页面专属组件只在所属页面内引用；连接图标、标签徽标、终端与数据库基础能力等共享实现继续放在公共组件目录。远端编辑器、启动画面和最近连接的完整实现直接放在页面入口中，避免只有转发作用的中间组件。
 
 ## 路由
 
 使用 Hash History，打包后的静态资源与浏览器预览都支持刷新和直达，无需服务端重写规则。
 
-| 路径 | 路由名 | 用途 |
-| --- | --- | --- |
-| `#/servers/:connectionId?` | `servers` | SSH / 本地终端，可直达指定连接 |
-| `#/databases/:connectionId?` | `databases` | 数据库连接工作区 |
-| `#/ssh-keys` | `ssh-keys` | SSH 密钥 |
-| `#/recent` | `recent` | 最近连接 |
-| `#/settings/:section` | `settings` | 如 `general`、`appearance`、`ai`、`backup` |
-| `#/connection/:kind?connectionId=...` | `connection` | `ssh`、`local`、`database` 的新建/编辑窗口 |
-| `#/remote-editor` | `remote-editor` | 原生远端编辑器，目标由 Rust 窗口注册表提供 |
-| `#/splash` | `splash` | Vue 启动画面入口；桌面首次启动仍使用独立 `splash.html` |
+| 路径                                  | 路由名          | 用途                                                   |
+| ------------------------------------- | --------------- | ------------------------------------------------------ |
+| `#/servers/:connectionId?`            | `servers`       | SSH / 本地终端，可直达指定连接                         |
+| `#/databases/:connectionId?`          | `databases`     | 数据库连接工作区                                       |
+| `#/settings/:section`                 | `settings`      | 如 `general`、`appearance`、`ai`、`backup`             |
+| `#/connection/:kind?connectionId=...` | `connection`    | `ssh`、`local`、`database` 的新建/编辑窗口             |
+| `#/remote-editor`                     | `remote-editor` | 原生远端编辑器，目标由 Rust 窗口注册表提供             |
+| `#/column-tags`                       | `column-tags`   | 列标签设置窗口，目标及保存结果由 Rust 转交             |
+| `#/splash`                            | `splash`        | Vue 启动画面入口；桌面首次启动仍使用独立 `splash.html` |
+
+`recent.vue` 与 `ssh-keys/index.vue` 保留原有页面实现，当前未注册路由，也未新增侧栏入口。
 
 侧栏使用 RouterLink；命令面板、连接标签使用 `useWorkspaceNavigation`。当前主视图只从 `route.meta.nav` 派生，不再保存第二份 `activeNav` 状态。连接 ID 会校验是否存在、协议类型是否匹配。无效路径回到当前窗口的默认页，设置的非法分类回到通用设置。
 
@@ -36,7 +40,7 @@ MiraiHub 每个 WebView 先安装 Pinia，再安装 Vue Router，等待首条路
 
 ## 页面缓存与会话
 
-工作区 RouterView 内使用 KeepAlive，以路由名作为缓存 key，最多对应四个工作区页面。不能改成 `fullPath` 或连接 ID，否则会重复创建连接实例。服务器与数据库页内部继续按连接 ID 渲染会话组件；只有关闭连接标签或关闭窗口才卸载这些组件。
+服务器与数据库页面由 `WorkspaceConnectionViews` 持续挂载，会话组件通过 Teleport 投放到对应分屏；切换分类或移动标签只改变可见性与 DOM 位置，只有关闭连接标签或关闭窗口才卸载会话。工作区 RouterView 排除这两个页面，避免重复创建连接实例；其他工作区页面沿用 KeepAlive，并以路由名作为缓存 key，不使用 `fullPath` 或连接 ID。
 
 路由导航激活已有标签时保持连接配置对象的身份，避免数据库的配置 watcher 因引用替换而重连。通过侧栏显式重新打开连接时才采用最新配置。设置页同一实例处理分类参数变化，常规设置草稿在分类切换中保留；AI API Key 继续只留在 AI 面板，离开该面板即清空。
 

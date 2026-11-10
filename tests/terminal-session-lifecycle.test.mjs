@@ -108,16 +108,16 @@ const load = sourceLoader(
     '@xterm/xterm/css/xterm.css': dataModule('export {}'),
   },
   [
-    'src/pages/workspace/ServersPage.vue',
-    'src/components/workspace/SshTerminalWorkspace.vue',
+    'src/pages/servers/index.vue',
+    'src/pages/servers/components/ssh-terminal-workspace.vue',
     // 终端面板现在挂在分屏组的插槽里，这层不真实渲染就拿不到会话
     'src/components/ui/SplitPaneGroup.vue',
     'src/components/workspace/TerminalPanel.vue',
-    'src/components/workspace/LocalTerminalPanel.vue',
+    'src/pages/servers/components/local-terminal-panel.vue',
   ]
 )
 const { default: ServersPage } = await load(
-  'src/pages/workspace/ServersPage.vue'
+  'src/pages/servers/index.vue'
 )
 const { useWorkspaceStore } = await load('src/stores/workspace.ts')
 const { useWorkspaceLayoutStore } = await load('src/stores/workspace-layout.ts')

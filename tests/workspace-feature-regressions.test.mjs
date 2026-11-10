@@ -33,7 +33,7 @@ const load = sourceLoader(
   },
   [
     'src/components/workspace/SidebarProjects.vue',
-    'src/components/connection/ConnectionTagEditor.vue',
+    'src/pages/connection/components/connection-tag-editor.vue',
     'src/components/workspace/WorkspaceTabBar.vue',
     'src/components/workspace/WorkspaceSplitNode.vue',
     'src/components/ui/IconButton.vue',
@@ -46,7 +46,7 @@ const { default: SidebarProjects } = await load(
   'src/components/workspace/SidebarProjects.vue'
 )
 const { default: ConnectionTagEditor } = await load(
-  'src/components/connection/ConnectionTagEditor.vue'
+  'src/pages/connection/components/connection-tag-editor.vue'
 )
 const { default: WorkspaceTabBar } = await load(
   'src/components/workspace/WorkspaceTabBar.vue'

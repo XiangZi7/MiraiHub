@@ -16,10 +16,10 @@ import { toast } from '@/composables/useToast'
 import type { ConnectionTagColor, NewConnection } from '@/types/connection'
 import { isSshConnection } from '@/types/connection'
 import type { SshAuthMethod, SshConfig, SshProxyConfig } from '@/types/ssh'
-import ConnectionTagEditor from './ConnectionTagEditor.vue'
-import ConnectionGroupSelect from './ConnectionGroupSelect.vue'
-import PrivateKeySelector from './PrivateKeySelector.vue'
-import StartupCommandPresetField from './StartupCommandPresetField.vue'
+import ConnectionTagEditor from '@/pages/connection/components/connection-tag-editor.vue'
+import ConnectionGroupSelect from '@/pages/connection/components/connection-group-select.vue'
+import PrivateKeySelector from '@/pages/connection/components/private-key-selector.vue'
+import StartupCommandPresetField from '@/pages/connection/components/startup-command-preset-field.vue'
 
 const { t } = useI18n()
 

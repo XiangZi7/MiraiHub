@@ -6,6 +6,7 @@ import {
   onBeforeUnmount,
   onMounted,
   reactive,
+  toRefs,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -30,19 +31,19 @@ import type {
 import { closeWindow, IS_TAURI, toggleMaximizeWindow } from '@/utils/window'
 import { applyZoom } from '@/utils/settings-runtime'
 import { applyWindowBackgroundOpacity } from '@/utils/window-appearance'
-import SettingsPanel from '@/components/settings/SettingsPanel.vue'
-import SettingsSidebar from '@/components/settings/SettingsSidebar.vue'
-import ThemeSkinPanel from '@/components/settings/ThemeSkinPanel.vue'
+import SettingsPanel from '@/pages/settings/components/settings-panel.vue'
+import SettingsSidebar from '@/pages/settings/components/settings-sidebar.vue'
+import ThemeSkinPanel from '@/pages/settings/components/theme-skin-panel.vue'
 import { useSkinPreview } from '@/composables/useSkinPreview'
 import packageInfo from '../../../package.json'
 
 const { t } = useI18n()
 
 const AiSettingsPanel = defineAsyncComponent(
-  () => import('@/components/settings/AiSettingsPanel.vue')
+  () => import('@/pages/settings/components/ai-settings-panel.vue')
 )
 const ConnectionBackupPanel = defineAsyncComponent(
-  () => import('@/components/settings/ConnectionBackupPanel.vue')
+  () => import('@/pages/settings/components/connection-backup-panel.vue')
 )
 
 const { settings, save, defaults } = useSettings()
@@ -51,33 +52,41 @@ const aiPanel = useTemplateRef<InstanceType<typeof AiSettingsPanel>>('aiPanel')
 
 const route = useRoute()
 const router = useRouter()
+/** 设置分类以路由为准，侧栏切换同时进入浏览器导航历史。 */
 const activePageId = computed<SettingsPageId>({
   get: () => route.params.section as SettingsPageId,
   set: section => {
     void router.push({ name: 'settings', params: { section } })
   },
 })
-const draft = reactive<SettingsValues>({ ...settings })
-const skinPreview = useSkinPreview(draft, settings)
+// 响应式状态
+const state = reactive({
+  // 常规设置草稿；切换分类时保留，保存前统一校验和归一化。
+  draft: { ...settings } as SettingsValues,
+  // 关于页面展示的应用版本、Tauri 版本与运行平台。
+  runtimeValues: {
+    version: packageInfo.version,
+    tauriVersion: IS_TAURI ? t('读取中…') : t('浏览器预览'),
+    platform: describePlatform(),
+  } as Record<string, string>,
+})
+const { draft, runtimeValues } = toRefs(state)
+const skinPreview = useSkinPreview(state.draft, settings)
 // 界面缩放仅在设置窗口预览。
 watch(
-  () => draft.uiScale,
+  () => state.draft.uiScale,
   value => void applyZoom(value)
 )
+// 背景透明度随草稿即时预览，首次挂载也同步到当前设置窗口。
 watch(
-  () => draft.windowBackgroundOpacity,
+  () => state.draft.windowBackgroundOpacity,
   value => applyWindowBackgroundOpacity(value),
   { immediate: true }
 )
+// 关闭或重建设置窗口时恢复已保存的外观，撤销未提交的预览。
 onBeforeUnmount(() => {
   void applyZoom(settings.uiScale)
   applyWindowBackgroundOpacity(settings.windowBackgroundOpacity)
-})
-
-const runtimeValues = reactive<Record<string, string>>({
-  version: packageInfo.version,
-  tauriVersion: IS_TAURI ? t('读取中…') : t('浏览器预览'),
-  platform: describePlatform(),
 })
 
 const activePage = computed(
@@ -86,7 +95,9 @@ const activePage = computed(
 )
 
 const isDirty = computed(() =>
-  (Object.keys(draft) as SettingKey[]).some(key => draft[key] !== settings[key])
+  (Object.keys(state.draft) as SettingKey[]).some(
+    key => state.draft[key] !== settings[key]
+  )
 )
 
 /** 数值输入逐项校验；只对带 range 的文本框生效。 */
@@ -98,7 +109,7 @@ const errors = computed<Partial<Record<SettingKey, string>>>(() => {
       for (const field of group.fields) {
         if (field.control !== 'text' || !field.range) continue
 
-        const raw = String(draft[field.key]).trim()
+        const raw = String(state.draft[field.key]).trim()
         const value = Number(raw)
         if (
           !raw ||
@@ -114,6 +125,7 @@ const errors = computed<Partial<Record<SettingKey, string>>>(() => {
   return result
 })
 
+/** 识别当前运行平台，供关于页面展示；未知平台保留浏览器提供的标识。 */
 function describePlatform(): string {
   const agent = navigator.userAgent
   if (/Windows NT 10\.0/.test(agent)) return 'Windows 10 / 11'
@@ -123,6 +135,7 @@ function describePlatform(): string {
   return navigator.platform || '—'
 }
 
+/** 按设置字段查找所属分类，校验失败时将用户带回对应设置面板。 */
 function pageOf(key: SettingKey): SettingsPageId | undefined {
   return SETTINGS_PAGES.find(page =>
     page.groups.some(group =>
@@ -133,6 +146,7 @@ function pageOf(key: SettingKey): SettingsPageId | undefined {
   )?.id
 }
 
+/** 结束皮肤预览并恢复已保存的缩放，然后关闭原生设置窗口或浏览器预览。 */
 async function closeDialog(): Promise<void> {
   await skinPreview.finish()
   void applyZoom(settings.uiScale)
@@ -144,15 +158,18 @@ async function closeDialog(): Promise<void> {
   window.close()
 }
 
+/** 将设置面板发出的字段更新合并到本地草稿，等待用户应用或保存。 */
 function updateSetting(key: SettingKey, value: SettingValue): void {
-  Object.assign(draft, { [key]: value })
+  Object.assign(state.draft, { [key]: value })
 }
 
+/** 将常规设置草稿重置为默认值，并提示用户保存后才会生效。 */
 function resetToDefaults(): void {
-  Object.assign(draft, defaults())
+  Object.assign(state.draft, defaults())
   toast.info(t('已恢复默认值，保存后生效'))
 }
 
+/** 校验并归一化常规设置草稿后保存；失败保留草稿，成功同步已持久化的值。 */
 function persistDraft(): boolean {
   const firstInvalid = (Object.keys(errors.value) as SettingKey[])[0]
   if (firstInvalid) {
@@ -166,13 +183,13 @@ function persistDraft(): boolean {
   }
 
   // 数值型文本框统一按整数存，避免 "30 " 这类带空白的值流到消费方
-  const normalized = { ...draft }
+  const normalized = { ...state.draft }
   for (const page of SETTINGS_PAGES) {
     for (const group of page.groups) {
       for (const field of group.fields) {
         if (field.control === 'text' && field.range)
           Object.assign(normalized, {
-            [field.key]: String(Number(String(draft[field.key]).trim())),
+            [field.key]: String(Number(String(state.draft[field.key]).trim())),
           })
       }
     }
@@ -192,15 +209,17 @@ function persistDraft(): boolean {
   }
 
   // 应用后窗口继续存在，草稿必须跟随已归一化的持久值，避免误报未保存。
-  Object.assign(draft, settings)
+  Object.assign(state.draft, settings)
   return true
 }
 
+/** 保存有效的常规设置并显示应用成功通知，保留设置窗口。 */
 function applySettings(): void {
   if (!persistDraft()) return
   toast.success(t('设置已应用'))
 }
 
+/** 按当前分类保存设置：AI 面板自行保存，常规设置保存成功后关闭窗口。 */
 function submit(): void {
   if (activePageId.value === 'backup') return
   if (activePageId.value === 'ai') {
@@ -212,6 +231,7 @@ function submit(): void {
   void closeDialog()
 }
 
+// 桌面窗口挂载后读取实际版本，浏览器预览继续使用包版本与预览标识。
 onMounted(async () => {
   if (!IS_TAURI) return
 
@@ -220,14 +240,15 @@ onMounted(async () => {
       getVersion(),
       getTauriVersion(),
     ])
-    runtimeValues.version = version
-    runtimeValues.tauriVersion = tauriVersion
+    state.runtimeValues.version = version
+    state.runtimeValues.tauriVersion = tauriVersion
   } catch (error) {
-    runtimeValues.tauriVersion = '—'
+    state.runtimeValues.tauriVersion = '—'
     console.warn('读取版本信息失败：', error)
   }
 })
 
+// 设置窗口支持 Esc 取消和 Ctrl/Cmd+S 保存，监听随页面卸载清理。
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.key === 'Escape') closeDialog()
   else if (

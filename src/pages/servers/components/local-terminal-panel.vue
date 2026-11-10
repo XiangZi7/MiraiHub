@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 
 import { computed, useTemplateRef, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
-import TerminalActions from './TerminalActions.vue'
+import TerminalActions from '@/components/workspace/TerminalActions.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useLocalTerminal } from '@/composables/useLocalTerminal'
 import { onTerminalTargetRequest } from '@/composables/useTerminalInsert'

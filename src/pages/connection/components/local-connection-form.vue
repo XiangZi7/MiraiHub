@@ -20,8 +20,8 @@ import type {
 import { isLocalConnection } from '@/types/connection'
 import { IS_TAURI } from '@/utils/window'
 import { normalizeLocalShell } from '@/utils/platform'
-import ConnectionTagEditor from './ConnectionTagEditor.vue'
-import StartupCommandPresetField from './StartupCommandPresetField.vue'
+import ConnectionTagEditor from '@/pages/connection/components/connection-tag-editor.vue'
+import StartupCommandPresetField from '@/pages/connection/components/startup-command-preset-field.vue'
 
 const { t } = useI18n()
 
