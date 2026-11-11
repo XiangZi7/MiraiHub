@@ -86,12 +86,12 @@
 
 ## Download & install
 
-Automated builds target Windows x64, macOS Intel / Apple Silicon, and Linux x64. Stable download links below become available in a new release containing these changes. For older versions, check the [actual assets](https://github.com/XiangZi7/MiraiHub/releases/latest).
+Automated builds target Windows x64, macOS Intel / Apple Silicon, and Linux x64. Open the [latest stable release](https://github.com/XiangZi7/MiraiHub/releases/latest) and download the versioned asset for your OS, architecture, and preferred format below.
 
 | Architecture | Windows | macOS | Linux / Ubuntu |
 | --- | --- | --- | --- |
-| x86-64 (64-bit) | [EXE](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_windows_x64_setup.exe) · [ZIP](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_windows_x64_portable.zip) | [DMG (Intel)](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_macos_x64.dmg) | [DEB](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_linux_x64.deb) · [AppImage](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_linux_x64.AppImage) |
-| AArch64 (ARM64) | — | [DMG (Apple Silicon)](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_macos_arm64.dmg) | — |
+| x86-64 (64-bit) | EXE (installer) · ZIP (portable) | DMG (Intel) | DEB · AppImage |
+| AArch64 (ARM64) | — | DMG (Apple Silicon) | — |
 
 Windows ZIP requires [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). On macOS 11+, drag the app into **Applications** first. Builds use ad-hoc signing without Apple notarization by default; allow the first launch in **Privacy & Security** if required. Linux targets Ubuntu 22.04+ / compatible WebKitGTK 4.1 distributions; AppImages need execute permission. Encrypted AI storage requires an unlocked Secret Service on Linux.
 

@@ -204,14 +204,14 @@ pnpm release:build
 
 `package-unix.mjs` 收集 macOS/Linux 安装包、更新包和签名，各任务独立上传附件。`assemble-release.mjs` 在任何发布操作前检查四个平台的版本、源码提交、必需文件与 SHA-256；缺少一个平台、构建版本混用或文件被修改都会阻止发布。合并成功后生成唯一的 `latest.json`、`version.json` 和 `SHA256SUMS.txt`，再按原流程完成草稿附件上传及公开。
 
-| 目标 | 版本附件（`<version>` 为实际版本） | README 固定下载名 |
-| --- | --- | --- |
-| Windows x64 | `MiraiHub_<version>_windows_x64_setup.exe` / `portable.zip` | `MiraiHub_windows_x64_setup.exe` / `MiraiHub_windows_x64_portable.zip` |
-| macOS Intel | `MiraiHub_<version>_macos_x64.dmg` | `MiraiHub_macos_x64.dmg` |
-| macOS Apple Silicon | `MiraiHub_<version>_macos_arm64.dmg` | `MiraiHub_macos_arm64.dmg` |
-| Linux x64 | `MiraiHub_<version>_linux_x64.deb` / `.AppImage` | `MiraiHub_linux_x64.deb` / `.AppImage` |
+| 目标 | 版本附件（`<version>` 为实际版本） |
+| --- | --- |
+| Windows x64 | `MiraiHub_<version>_windows_x64_setup.exe` / `MiraiHub_<version>_windows_x64_portable.zip` |
+| macOS Intel | `MiraiHub_<version>_macos_x64.dmg` |
+| macOS Apple Silicon | `MiraiHub_<version>_macos_arm64.dmg` |
+| Linux x64 | `MiraiHub_<version>_linux_x64.deb` / `MiraiHub_<version>_linux_x64.AppImage` |
 
-macOS 另有 `MiraiHub_<version>_macos_<arch>.app.tar.gz` 和签名供更新器使用。Windows EXE 与 Linux AppImage 直接作为更新包。固定下载名是同一文件的副本，也列入校验清单；更新器始终使用包含版本的文件地址。较早的 Release 没有新目标和别名，新下载表从包含本次改动的新 Release 起生效。
+macOS 另有 `MiraiHub_<version>_macos_<arch>.app.tar.gz` 和签名供更新器使用。Windows EXE 与 Linux AppImage 直接作为更新包。安装包和更新包仅发布带版本号的附件；README 链接到最新正式版页面，供用户按系统与架构选择下载。`latest.json`、`version.json`、`SHA256SUMS.txt` 保留固定名称；更新器通过 `latest.json` 获取包含版本号的更新包地址与签名，现有客户端可继续检查与安装更新。
 
 ### Apple 签名与公证
 

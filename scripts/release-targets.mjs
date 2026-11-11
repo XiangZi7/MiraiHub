@@ -34,8 +34,9 @@ export const releaseTargets = {
   },
 }
 
-/** 生成不可变版本附件名和供 README 使用的固定下载别名。 */
-export function assetName(target, extension, version = '') {
+/** 为安装包与更新包生成包含版本号的发布附件名。 */
+export function assetName(target, extension, version) {
+  if (!version) throw new Error('Missing release asset version')
   if (
     !Object.values(releaseTargets).includes(target) ||
     ![...target.downloads, target.updateFile].includes(extension)
@@ -43,5 +44,5 @@ export function assetName(target, extension, version = '') {
     throw new Error('Unsupported release asset')
   const separator =
     extension === 'setup.exe' || extension === 'portable.zip' ? '_' : '.'
-  return `MiraiHub_${version ? `${version}_` : ''}${target.platform}_${target.arch}${separator}${extension}`
+  return `MiraiHub_${version}_${target.platform}_${target.arch}${separator}${extension}`
 }

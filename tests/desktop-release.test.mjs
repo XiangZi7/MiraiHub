@@ -72,7 +72,7 @@ function fixture(t) {
   return { input, output, tag, commit, repository }
 }
 
-test('all desktop builds merge into one signed manifest with stable README downloads', t => {
+test('all desktop builds publish only versioned packages with working signed update URLs', t => {
   const options = fixture(t)
   assembleRelease(options)
   const manifest = JSON.parse(
@@ -80,21 +80,40 @@ test('all desktop builds merge into one signed manifest with stable README downl
   )
   assert.equal(manifest.version, version)
   assert.equal(Object.keys(manifest.platforms).length, 4)
-  for (const target of Object.values(releaseTargets)) {
+  for (const [id, target] of Object.entries(releaseTargets)) {
+    const directory = join(options.input, `${id}-release`)
     const update = manifest.platforms[target.updater]
-    assert.ok(update.signature)
+    const updateName = assetName(target, target.updateFile, version)
+    assert.equal(
+      update.signature,
+      readFileSync(join(options.output, `${updateName}.sig`), 'utf8').trim()
+    )
     assert.equal(
       update.url,
       `https://github.com/${repository}/releases/download/${tag}/${assetName(target, target.updateFile, version)}`
     )
+    assert.deepEqual(
+      readFileSync(
+        join(options.output, new URL(update.url).pathname.split('/').at(-1))
+      ),
+      readFileSync(join(directory, updateName))
+    )
     for (const extension of target.downloads)
       assert.deepEqual(
-        readFileSync(join(options.output, assetName(target, extension))),
         readFileSync(
           join(options.output, assetName(target, extension, version))
+        ),
+        readFileSync(
+          join(directory, assetName(target, extension, version))
         )
       )
   }
+  for (const name of readdirSync(options.output))
+    assert.ok(
+      ['latest.json', 'version.json', 'SHA256SUMS.txt'].includes(name) ||
+        name.startsWith(`MiraiHub_${version}_`),
+      `Unexpected unversioned release asset: ${name}`
+    )
   for (const line of readFileSync(
     join(options.output, 'SHA256SUMS.txt'),
     'utf8'

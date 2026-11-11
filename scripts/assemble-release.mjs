@@ -12,7 +12,7 @@ import { parseReleaseTag } from './release-version.mjs'
 import { releaseTargets, assetName } from './release-targets.mjs'
 import { updaterManifest } from './updater-manifest.mjs'
 
-/** 校验每个平台的测试产物、提交与校验值，全部齐全后再合并为可发布附件。 */
+/** 校验每个平台的产物、提交与校验值，汇总带版本号的包、签名与更新元数据。 */
 export function assembleRelease({ input, output, tag, commit, repository }) {
   const release = parseReleaseTag(tag)
   if (!/^[0-9a-f]{40}$/.test(commit))
@@ -67,15 +67,6 @@ export function assembleRelease({ input, output, tag, commit, repository }) {
         throw new Error(`Missing checked release asset: ${id}/${name}`)
       if (name !== 'version.json')
         files.push({ source: resolve(directory, name), name })
-    }
-    for (const extension of target.downloads) {
-      files.push({
-        source: resolve(
-          directory,
-          assetName(target, extension, release.version)
-        ),
-        name: assetName(target, extension),
-      })
     }
     entries.push({
       targetId: id,

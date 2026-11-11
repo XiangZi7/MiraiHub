@@ -86,12 +86,12 @@
 
 ## 下载与安装
 
-自动构建目标为 Windows x64、macOS Intel / Apple Silicon、Linux x64。下表使用最新正式版的固定文件名；新平台与链接从包含本次改动的新 Release 起提供，旧版本请查看 [实际附件](https://github.com/XiangZi7/MiraiHub/releases/latest)。
+自动构建目标为 Windows x64、macOS Intel / Apple Silicon、Linux x64。请到 [最新正式版](https://github.com/XiangZi7/MiraiHub/releases/latest)，按下表选择系统、架构和格式，下载带版本号的附件。
 
 | 架构 | Windows | macOS | Linux / Ubuntu |
 | --- | --- | --- | --- |
-| x86-64（64 位） | [EXE](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_windows_x64_setup.exe) · [ZIP](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_windows_x64_portable.zip) | [DMG（Intel）](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_macos_x64.dmg) | [DEB](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_linux_x64.deb) · [AppImage](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_linux_x64.AppImage) |
-| AArch64（ARM64） | — | [DMG（Apple Silicon）](https://github.com/XiangZi7/MiraiHub/releases/latest/download/MiraiHub_macos_arm64.dmg) | — |
+| x86-64（64 位） | EXE（安装版） · ZIP（免安装版） | DMG（Intel） | DEB · AppImage |
+| AArch64（ARM64） | — | DMG（Apple Silicon） | — |
 
 Windows ZIP 需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。macOS 11+ 请先将应用拖入「应用程序」；默认临时签名、未配置 Apple 公证，首次打开可能需要在「隐私与安全性」允许。Linux 面向 Ubuntu 22.04+ / 兼容 WebKitGTK 4.1 的发行版；AppImage 需执行权限。AI 安全存储在 Linux 需要已解锁的 Secret Service。
 
