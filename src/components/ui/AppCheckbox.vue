@@ -26,17 +26,18 @@ const descriptionId = useId()
   <label
     :for="inputId"
     :class="[
-      'app-checkbox inline-flex cursor-pointer items-start gap-2',
+      'app-checkbox relative inline-flex cursor-pointer items-start gap-2',
       disabled && 'pointer-events-none opacity-45',
     ]"
   >
+    <!-- 原生输入框覆盖可见标签，避免聚焦时按隐藏坐标滚动外层面板。 -->
     <input
       :id="inputId"
       v-model="model"
       type="checkbox"
       :disabled="disabled"
       :aria-describedby="description ? descriptionId : undefined"
-      class="app-checkbox-input sr-only"
+      class="app-checkbox-input absolute inset-0 m-0 size-full cursor-[inherit] opacity-0"
     />
     <span
       :class="[
