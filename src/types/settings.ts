@@ -67,7 +67,7 @@ export const DEFAULT_SETTINGS = {
   terminalShell: DEFAULT_LOCAL_SHELL,
   terminalFont: 'jetbrains-mono',
   terminalFontSize: '13',
-  terminalCursor: 'block',
+  terminalCursor: 'bar',
   terminalCursorBlink: true,
   terminalScrollback: '5000',
   terminalCopyOnSelect: false,

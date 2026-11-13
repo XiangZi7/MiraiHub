@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import TerminalActions from '@/components/workspace/TerminalActions.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
@@ -27,6 +27,23 @@ const emit = defineEmits<{
 }>()
 
 const containerRef = useTemplateRef<HTMLElement>('terminal')
+
+/** 底部状态栏展示的终端网格尺寸（列 × 行），随 xterm resize 更新 */
+const termSize = ref('')
+let resizeDisposable: { dispose: () => void } | undefined
+watch(term, terminal => {
+  resizeDisposable?.dispose()
+  resizeDisposable = undefined
+  if (!terminal) return
+  termSize.value = `${terminal.cols} × ${terminal.rows}`
+  resizeDisposable = terminal.onResize(({ cols, rows }) => {
+    termSize.value = `${cols} × ${rows}`
+  })
+})
+onBeforeUnmount(() => resizeDisposable?.dispose())
+
+/** 顶栏主机色块上的首字母，取标题第一个字符 */
+const hostInitial = computed(() => props.title.charAt(0).toUpperCase() || 'L')
 const { term, status, sessionId, error, mount, connect, disconnect, resize } =
   useLocalTerminal()
 let mounted = false
@@ -100,10 +117,15 @@ defineExpose({
 </script>
 
 <template>
-  <section class="pane bg-terminal min-w-0 flex-1">
+  <section class="local-terminal-pane pane bg-terminal min-w-0 flex-1">
     <div
       class="border-line-soft flex h-9 shrink-0 items-center gap-2.5 border-b px-3"
     >
+      <span
+        class="bg-accent grid size-5 shrink-0 place-items-center rounded-md text-[11px] font-semibold text-white select-none"
+        aria-hidden="true"
+        >{{ hostInitial }}</span
+      >
       <span :class="['flex items-center gap-1.5 text-[11px]', statusMeta.tone]">
         <StatusDot
           :tone="statusMeta.dot"
@@ -112,9 +134,7 @@ defineExpose({
         />
         <span>{{ statusMeta.text }}</span>
       </span>
-      <span
-        class="border-line bg-card text-txt-2 rounded border px-1.5 py-0.5 text-[10px] font-medium"
-      >
+      <span class="text-txt-4 shrink-0 text-[10px] font-medium tracking-wider">
         LOCAL
       </span>
       <span class="text-txt-2 truncate text-[11px]">{{ title }}</span>
@@ -133,8 +153,19 @@ defineExpose({
     </div>
     <div
       ref="terminal"
-      class="bg-terminal min-h-0 flex-1 p-2"
+      class="bg-terminal min-h-0 flex-1 px-4 py-3"
     />
+    <!-- 底部状态栏：与 SSH 面板同一规格，展示 shell 与网格尺寸等真实数据 -->
+    <div
+      class="border-line-soft text-txt-3 flex h-6 shrink-0 items-center gap-3 border-t px-3 font-mono text-[10px]"
+    >
+      <span class="truncate">{{ shellLabel }}</span>
+      <div class="flex-1" />
+      <span v-if="termSize">{{ termSize }}</span>
+      <span :class="status === 'connected' && 'text-success'">{{
+        statusMeta.text
+      }}</span>
+    </div>
   </section>
 </template>
 
@@ -145,8 +176,13 @@ defineExpose({
   background-color: transparent;
 }
 
+/* 滚动条只在指针悬停面板时出现，与 SSH 面板同一规格 */
 :deep(.xterm-viewport) {
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.local-terminal-pane:hover :deep(.xterm-viewport) {
   scrollbar-color: var(--color-line-strong) transparent;
 }
 </style>
