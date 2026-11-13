@@ -849,6 +849,61 @@ const savedQuery = (database, name) => ({
   updatedAt: 1,
 })
 
+// 覆盖截图中的 fr 搜索：SQL 的 FROM 和跨库引用不能把无关数据库带入结果。
+test('对象树按库名、对象名和查询名称搜索，不匹配已保存查询的 SQL 正文', async t => {
+  const databaseNames = ['freeclip', 'freeclip-test', 'ttminis', 'ttminis-test']
+  const view = await fixture(t, {
+    savedQueries: [
+      {
+        ...savedQuery('freeclip', '审核人员'),
+        sql: 'SELECT * FROM request_log',
+      },
+      {
+        ...savedQuery('ttminis', 'test222'),
+        sql: 'SELECT * FROM freeclip.request_log',
+      },
+      {
+        ...savedQuery('ttminis-test', 'test333'),
+        sql: 'SELECT * FROM archive',
+      },
+    ],
+    handlers: {
+      listDatabases: async () => databaseNames,
+      listObjects: async () => [
+        object('freeclip', 'request_log'),
+        object('ttminis', 'users'),
+      ],
+    },
+  })
+  await view.select('ttminis')
+  await view.select('freeclip')
+  const requests = mock.calls.length
+  for (const [term, expected] of [
+    [' FR ', ['freeclip', 'freeclip-test']],
+    [' TeSt222 ', ['ttminis']],
+    ['request_log', ['freeclip']],
+    [' users ', ['ttminis']],
+    ['from', []],
+    [' ', databaseNames],
+  ]) {
+    all(view.tree())
+      .find(el => el.props['data-tree-search'])
+      .props.onInput(term)
+    await flush()
+    const names = all(view.tree())
+      .filter(el => el.props['aria-level'] === '1')
+      .map(el => el.props['data-tree-label'])
+    assert.deepEqual(names, expected, `搜索 ${JSON.stringify(term)}`)
+    if (!expected.length)
+      assert.match(textOf(view.tree()), /没有可显示的数据库对象/)
+  }
+  assert.equal(
+    mock.calls.length,
+    requests,
+    '搜索仅过滤本地目录，不重新请求数据库'
+  )
+})
+
 test('saved queries do not resurrect cached database names during connection or catalog loading', async t => {
   const connected = deferred(),
     databases = deferred()

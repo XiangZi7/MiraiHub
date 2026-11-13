@@ -125,6 +125,7 @@ function emptySchema(name: string): SchemaGroup {
   }
 }
 
+// 按库名、对象信息、已加载列名和查询名称筛选树节点，避免 SQL 正文造成无关库误匹配。
 const schemas = computed<SchemaGroup[]>(() => {
   if (props.ready === false) return []
   const term = search.value.trim().toLocaleLowerCase()
@@ -160,8 +161,7 @@ const schemas = computed<SchemaGroup[]>(() => {
       !props.databaseNames.includes(query.database)
     )
       continue
-    const searchable =
-      `${query.database}.${query.name} ${query.sql}`.toLocaleLowerCase()
+    const searchable = `${query.database}.${query.name}`.toLocaleLowerCase()
     if (term && !searchable.includes(term)) continue
     const group = groups.get(query.database) ?? emptySchema(query.database)
     group.queries.push(query)
