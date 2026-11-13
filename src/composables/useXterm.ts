@@ -168,9 +168,11 @@ export function useXterm(onOptionsChange: () => void) {
       fontSize: settingNumber('terminalFontSize', 13),
       fontWeight: 400,
       fontWeightBold: 700,
-      lineHeight: 1.4,
+      lineHeight: 1.5,
       cursorStyle: settings.terminalCursor as CursorStyle,
       cursorBlink: settings.terminalCursorBlink,
+      // 失焦时只剩描边，焦点在哪一眼可辨，也不和输入光标抢注意力
+      cursorInactiveStyle: 'outline',
       // 回滚缓冲给足：排查日志时经常要往回翻很多屏
       scrollback: settingNumber('terminalScrollback', 5000),
       theme: currentTerminalTheme(),

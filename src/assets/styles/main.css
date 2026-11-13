@@ -76,10 +76,10 @@
   --text-agent-small: 11px;
 
   /* ---------- 终端语法色 ---------- */
-  --color-term-fg: oklch(88% 0.005 285);
-  --color-term-green: oklch(84% 0.18 148);
-  --color-term-blue: oklch(76% 0.13 245);
-  --color-term-cyan: oklch(82% 0.12 195);
+  --color-term-fg: oklch(87% 0.012 286);
+  --color-term-green: oklch(72% 0.13 132);
+  --color-term-blue: oklch(71% 0.09 253);
+  --color-term-cyan: oklch(72% 0.09 184);
   --color-term-dim: oklch(60% 0.01 285);
 
   /* ---------- 圆角 ----------
