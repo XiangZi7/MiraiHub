@@ -88,10 +88,11 @@
 
 自动构建目标为 Windows x64、macOS Intel / Apple Silicon、Linux x64。请到 [最新正式版](https://github.com/XiangZi7/MiraiHub/releases/latest)，按下表选择系统、架构和格式，下载带版本号的附件。
 
-| 架构 | Windows | macOS | Linux / Ubuntu |
-| --- | --- | --- | --- |
-| x86-64（64 位） | EXE（安装版） · ZIP（免安装版） | DMG（Intel） | DEB · AppImage |
-| AArch64（ARM64） | — | DMG（Apple Silicon） | — |
+| OS | Download |
+| --- | --- |
+| **Windows** | [![Setup x64](https://img.shields.io/badge/Setup-x64-0078D4?style=flat-square)](https://github.com/XiangZi7/MiraiHub/releases/latest) [![Portable ZIP x64](https://img.shields.io/badge/Portable%20ZIP-x64-0078D4?style=flat-square)](https://github.com/XiangZi7/MiraiHub/releases/latest) |
+| **macOS** | [![DMG Apple Silicon](https://img.shields.io/badge/DMG-Apple%20Silicon-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/XiangZi7/MiraiHub/releases/latest) [![DMG Intel x64](https://img.shields.io/badge/DMG-Intel%20x64-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/XiangZi7/MiraiHub/releases/latest) |
+| **Linux** | [![AppImage x64](https://img.shields.io/badge/AppImage-x64-FCC624?style=flat-square&logo=linux&logoColor=FCC624)](https://github.com/XiangZi7/MiraiHub/releases/latest) [![DebPackage x64](https://img.shields.io/badge/DebPackage-x64-D70A53?style=flat-square&logo=debian&logoColor=white)](https://github.com/XiangZi7/MiraiHub/releases/latest) |
 
 Windows ZIP 需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。macOS 11+ 请先将应用拖入「应用程序」；默认临时签名、未配置 Apple 公证，首次打开可能需要在「隐私与安全性」允许。Linux 面向 Ubuntu 22.04+ / 兼容 WebKitGTK 4.1 的发行版；AppImage 需执行权限。AI 安全存储在 Linux 需要已解锁的 Secret Service。
 
@@ -150,5 +151,4 @@ AI 对话、附件片段和工具结果会发送到你配置的模型服务，�
 <!-- 将两份 README 中所有 https://qm.qq.com/q/QQ_GROUP_INVITE_CODE 替换为 QQ 群 442179941「分享群聊」生成的完整加群链接。 -->
 
 - QQ 群号：**442179941**
-- 加群链接：[点击加入 QQ 群（链接待填写）](https://qm.qq.com/q/QQ_GROUP_INVITE_CODE)
 - 社区：<a href="https://linux.do/">LINUX DO</a>

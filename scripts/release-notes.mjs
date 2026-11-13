@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assetName, releaseTargets } from './release-targets.mjs'
 import { parseReleaseTag } from './release-version.mjs'
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url))
@@ -72,6 +73,31 @@ function previousReleaseTag(root, tag, releases) {
 // 将提交标题作为普通文本输出，防止 Markdown 标记破坏更新条目和链接。
 function escapeMarkdown(value) {
   return value.replace(/([\\`*_[\]<>])/g, '\\$1')
+}
+
+// 为下载表生成方形徽章，复用打包命名规则直达当前版本的实际附件。
+function downloadBadge(url, tag, targetId, extension) {
+  const target = releaseTargets[targetId]
+  const [label, color, logo, logoColor = 'white'] = {
+    'setup.exe': ['Setup', '0078D4'],
+    'portable.zip': ['Portable ZIP', '0078D4'],
+    dmg: ['DMG', '000000', 'apple'],
+    AppImage: ['AppImage', 'FCC624', 'linux', 'FCC624'],
+    deb: ['DebPackage', 'D70A53', 'debian'],
+  }[extension]
+  const architecture =
+    target.platform === 'macos'
+      ? target.arch === 'arm64'
+        ? 'Apple Silicon'
+        : 'Intel x64'
+      : target.arch
+  const query = new URLSearchParams({
+    style: 'flat-square',
+    ...(logo ? { logo, logoColor } : {}),
+  })
+  const badge = `https://img.shields.io/badge/${encodeURIComponent(label)}-${encodeURIComponent(architecture)}-${color}?${query}`
+  const download = `${url}/releases/download/${tag}/${assetName(target, extension, tag.slice(1))}`
+  return `[![${label} ${architecture}](${badge})](${download})`
 }
 
 // 根据实际提交生成中文更新说明，保留正文细节与链接，供新建及重试发布草稿使用。
@@ -155,10 +181,11 @@ export function generateReleaseNotes(root, { tag, repository, releases }) {
   lines.push(
     '## 下载与安装',
     '',
-    '| 架构 | Windows | macOS | Linux / Ubuntu |',
-    '| --- | --- | --- | --- |',
-    `| x86-64（64 位） | [EXE](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_windows_x64_setup.exe) · [ZIP](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_windows_x64_portable.zip) | [DMG（Intel）](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_macos_x64.dmg) | [DEB](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_linux_x64.deb) · [AppImage](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_linux_x64.AppImage) |`,
-    `| AArch64（ARM64） | — | [DMG（Apple Silicon）](${url}/releases/download/${tag}/MiraiHub_${tag.slice(1)}_macos_arm64.dmg) | — |`,
+    '| OS | Download |',
+    '| --- | --- |',
+    `| **Windows** | ${downloadBadge(url, tag, 'windows-x64', 'setup.exe')} ${downloadBadge(url, tag, 'windows-x64', 'portable.zip')} |`,
+    `| **macOS** | ${downloadBadge(url, tag, 'macos-arm64', 'dmg')} ${downloadBadge(url, tag, 'macos-x64', 'dmg')} |`,
+    `| **Linux** | ${downloadBadge(url, tag, 'linux-x64', 'AppImage')} ${downloadBadge(url, tag, 'linux-x64', 'deb')} |`,
     '',
     'Windows ZIP 需要 WebView2 Runtime；macOS 请先将应用移入「应用程序」。Linux AppImage 需添加执行权限；DEB 请用包管理器安装。SHA256SUMS.txt 校验附件，version.json 记录版本、源码提交与目标。',
     'macOS 默认临时签名，未配置 Apple 开发者签名与公证时，首次打开可能需在「隐私与安全性」允许。Linux AI 安全存储需要已解锁的 Secret Service。',
