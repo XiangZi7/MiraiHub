@@ -47,6 +47,7 @@ function search() {
     @submit.prevent="search"
   >
     <AppSelect
+      icon="lucide:search"
       v-model="mode"
       class="w-22 shrink-0"
       :label="t('键搜索方式')"

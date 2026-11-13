@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, useTemplateRef, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import TerminalActions from '@/components/workspace/TerminalActions.vue'
+import TerminalStatusBar from '@/components/workspace/terminal-status-bar.vue'
+import { useTerminalPresentation } from '@/composables/useTerminalPresentation'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useLocalTerminal } from '@/composables/useLocalTerminal'
 import { onTerminalTargetRequest } from '@/composables/useTerminalInsert'
@@ -28,24 +30,12 @@ const emit = defineEmits<{
 
 const containerRef = useTemplateRef<HTMLElement>('terminal')
 
-/** 底部状态栏展示的终端网格尺寸（列 × 行），随 xterm resize 更新 */
-const termSize = ref('')
-let resizeDisposable: { dispose: () => void } | undefined
-watch(term, terminal => {
-  resizeDisposable?.dispose()
-  resizeDisposable = undefined
-  if (!terminal) return
-  termSize.value = `${terminal.cols} × ${terminal.rows}`
-  resizeDisposable = terminal.onResize(({ cols, rows }) => {
-    termSize.value = `${cols} × ${rows}`
-  })
-})
-onBeforeUnmount(() => resizeDisposable?.dispose())
-
-/** 顶栏主机色块上的首字母，取标题第一个字符 */
-const hostInitial = computed(() => props.title.charAt(0).toUpperCase() || 'L')
 const { term, status, sessionId, error, mount, connect, disconnect, resize } =
   useLocalTerminal()
+const { v4, directory, branch, position, size } = useTerminalPresentation(
+  term,
+  sessionId
+)
 let mounted = false
 
 const shellLabel = computed(() =>
@@ -103,6 +93,7 @@ onTerminalTargetRequest(tabId =>
     : undefined
 )
 
+/** 重新启动当前本地连接，沿用其 Shell 与工作目录。 */
 function reconnect(): void {
   void connect(props.settings).catch(() => {})
 }
@@ -117,15 +108,15 @@ defineExpose({
 </script>
 
 <template>
-  <section class="local-terminal-pane pane bg-terminal min-w-0 flex-1">
+  <section
+    class="local-terminal-pane pane bg-terminal min-w-0 flex-1"
+    :class="{ 'terminal-v4': v4 }"
+    :aria-busy="status === 'connecting'"
+  >
+    <!-- 本地终端顶栏：两种样式共用原有连接状态、名称和 Shell 信息。 -->
     <div
       class="border-line-soft flex h-9 shrink-0 items-center gap-2.5 border-b px-3"
     >
-      <span
-        class="bg-accent grid size-5 shrink-0 place-items-center rounded-md text-[11px] font-semibold text-white select-none"
-        aria-hidden="true"
-        >{{ hostInitial }}</span
-      >
       <span :class="['flex items-center gap-1.5 text-[11px]', statusMeta.tone]">
         <StatusDot
           :tone="statusMeta.dot"
@@ -134,7 +125,9 @@ defineExpose({
         />
         <span>{{ statusMeta.text }}</span>
       </span>
-      <span class="text-txt-4 shrink-0 text-[10px] font-medium tracking-wider">
+      <span
+        class="border-line bg-card text-txt-2 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+      >
         LOCAL
       </span>
       <span class="text-txt-2 truncate text-[11px]">{{ title }}</span>
@@ -142,6 +135,7 @@ defineExpose({
         shellLabel
       }}</span>
       <div class="flex-1" />
+      <!-- 经典顶栏操作区：复用同一终端操作组件。 -->
       <TerminalActions
         :terminal="term"
         :status="status"
@@ -151,25 +145,30 @@ defineExpose({
         @disconnect="disconnect"
       />
     </div>
+    <!-- 本地终端内容区：切换样式只调整内边距，保留挂载节点与会话。 -->
     <div
       ref="terminal"
-      class="bg-terminal min-h-0 flex-1 px-4 py-3"
+      class="terminal-output bg-terminal min-h-0 flex-1"
+      :class="v4 ? 'px-4 py-3' : 'p-2'"
     />
-    <!-- 底部状态栏：与 SSH 面板同一规格，展示 shell 与网格尺寸等真实数据 -->
-    <div
-      class="border-line-soft text-txt-3 flex h-6 shrink-0 items-center gap-3 border-t px-3 font-mono text-[10px]"
-    >
-      <span class="truncate">{{ shellLabel }}</span>
-      <div class="flex-1" />
-      <span v-if="termSize">{{ termSize }}</span>
-      <span :class="status === 'connected' && 'text-success'">{{
-        statusMeta.text
-      }}</span>
-    </div>
+    <!-- 本地终端底栏：共用 v4 状态组件，路径优先读取实际 Shell 提示符。 -->
+    <TerminalStatusBar
+      v-if="v4"
+      :kind="shellLabel"
+      :directory="directory || settings.workingDirectory"
+      :branch="branch"
+      :position="position"
+      :size="size"
+    />
   </section>
 </template>
 
 <style scoped>
+.local-terminal-pane {
+  container-type: inline-size;
+  container-name: terminal;
+}
+
 /* 盖掉 xterm 自带的 #000 底色，选择器带 .xterm 提一级特异性，
    见 TerminalPanel 里的同一处注释。 */
 :deep(.xterm .xterm-viewport) {

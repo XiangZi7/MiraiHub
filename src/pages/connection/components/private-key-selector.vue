@@ -46,7 +46,9 @@ const isDefault = computed({
 
 <template>
   <div class="grid gap-3.5">
+    <!-- 已保存私钥选择：在当前值和候选项中显示图标。 -->
     <AppSelect
+      icon="lucide:key-round"
       v-model="model"
       :label="t('Saved Private Keys')"
       :options="options"

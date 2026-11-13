@@ -5,7 +5,7 @@
  * 字体、光标、回滚缓冲、皮肤配色和设置联动都一样，统一放在这里。
  */
 
-import { shallowRef, watch } from 'vue'
+import { onScopeDispose, shallowRef, watch } from 'vue'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { FitAddon } from '@xterm/addon-fit'
@@ -19,6 +19,7 @@ import { toast } from '@/composables/useToast'
 import { copyText } from '@/utils/clipboard'
 import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
 import { IS_TAURI } from '@/utils/window'
+import { createTerminalOutputFormatter } from '@/utils/terminal-output'
 import {
   settingNumber,
   settingsSnapshot,
@@ -77,12 +78,35 @@ export function useXterm(onOptionsChange: () => void) {
   const fitAddon = shallowRef<FitAddon>()
   let webglAddon: WebglAddon | undefined
   let rendererRevision = 0
+  const output = createTerminalOutputFormatter(
+    () => settings.terminalStyle === 'v4' && settings.terminalCommandBlocks
+  )
+  let outputTimer: ReturnType<typeof setTimeout> | undefined
+
+  /** 输出只经过一次 xterm 绘制；v4 在识别到提示符时补留白，不叠加另一层命令文字。 */
+  function writeOutput(data: string | Uint8Array): void {
+    clearTimeout(outputTimer)
+    const value = output.write(data)
+    if (value) term.value?.write(value)
+    if (output.hasPending())
+      outputTimer = setTimeout(() => {
+        const pending = output.flush()
+        if (pending) term.value?.write(pending)
+      }, 24)
+  }
+
+  /** 重连和卸载时取消尚未放行的旧输出，防止混入新会话。 */
+  function resetOutput(): void {
+    clearTimeout(outputTimer)
+    output.reset()
+  }
+  onScopeDispose(resetOutput)
 
   // 皮肤变化时同步配色与渲染器，沿用当前缓冲区、选区和 SSH 会话。
   useEventListener(window, SKIN_CHANGE_EVENT, () => {
     const terminal = term.value
     if (!terminal) return
-    terminal.options.theme = currentTerminalTheme()
+    terminal.options.theme = currentTerminalTheme(settings.terminalStyle)
     void refreshRenderer(terminal)
   })
 
@@ -175,7 +199,7 @@ export function useXterm(onOptionsChange: () => void) {
       cursorInactiveStyle: 'outline',
       // 回滚缓冲给足：排查日志时经常要往回翻很多屏
       scrollback: settingNumber('terminalScrollback', 5000),
-      theme: currentTerminalTheme(),
+      theme: currentTerminalTheme(settings.terminalStyle),
       // 程序自带的浅灰、白色和真彩色在浅色皮肤下也应保持可读。
       minimumContrastRatio: 4.5,
       allowTransparency: true,
@@ -218,6 +242,7 @@ export function useXterm(onOptionsChange: () => void) {
         settings.terminalCursor,
         settings.terminalCursorBlink,
         settings.terminalScrollback,
+        settings.terminalStyle,
       ] as const,
     () => {
       const terminal = term.value
@@ -227,10 +252,11 @@ export function useXterm(onOptionsChange: () => void) {
       terminal.options.cursorStyle = settings.terminalCursor as CursorStyle
       terminal.options.cursorBlink = settings.terminalCursorBlink
       terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
+      terminal.options.theme = currentTerminalTheme(settings.terminalStyle)
       onOptionsChange()
       void refreshRenderer(terminal)
     }
   )
 
-  return { term, fitAddon, open, stopSettingsWatch }
+  return { term, fitAddon, open, stopSettingsWatch, writeOutput, resetOutput }
 }

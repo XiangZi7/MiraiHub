@@ -1,5 +1,18 @@
 /** ssh-terminal 相关文案。中文原文即消息 ID，zh-CN 目录自动按 en 的键生成同名条目。 */
 export const en: Record<string, string> = {
+  '无法读取当前目录的 Git 信息': 'Could not read Git information for the current directory',
+  'Git 信息不可用': 'Git info unavailable',
+  '点击重试': 'Click to retry',
+  '第 {line} 行，第 {column} 列': 'Ln {line}, Col {column}',
+  '纯文本': 'Plain text',
+  终端样式: 'Terminal style',
+  经典: 'Classic',
+  命令分区: 'Command sections',
+  '切换后立即生效，保留当前连接与终端内容':
+    'Applies immediately, keeping the current connection and terminal content',
+  '在 v4 样式中区分命令与输出；Shell 提供时显示耗时和退出码':
+    'Separate commands and output in v4; show duration and exit codes when provided by the shell',
+  终端光标位置: 'Terminal cursor position',
   '按住 Ctrl 或 ⌘ 单击打开链接': 'Ctrl/⌘+click to open link',
   '无法打开链接，请复制地址后在浏览器打开':
     'Could not open the link. Copy the address and open it in a browser',

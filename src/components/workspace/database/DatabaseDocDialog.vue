@@ -62,8 +62,8 @@ const keyOf = (object: DatabaseObject): string =>
   `${object.schema}\u0000${object.name}`
 
 const formatOptions = computed(() => [
-  { value: 'markdown', label: 'Markdown' },
-  { value: 'html', label: 'HTML' },
+  { value: 'markdown', label: 'Markdown', icon: 'lucide:file-text' },
+  { value: 'html', label: 'HTML', icon: 'lucide:file-code-2' },
 ])
 const visible = computed(() => {
   const keyword = state.search.trim().toLowerCase()
@@ -348,6 +348,7 @@ async function saveOutput(): Promise<void> {
         </AppButton>
         <div class="w-32 shrink-0">
           <AppSelect
+            icon="lucide:file-code-2"
             v-model="state.format"
             :label="t('格式')"
             :options="formatOptions"

@@ -32,6 +32,7 @@ const xtermModule = dataModule(`
     const term = shallowRef()
     return {
       term, fitAddon: shallowRef(), stopSettingsWatch() {},
+      writeOutput(data) { term.value.write(data) }, resetOutput() {},
       open() {
         term.value = {
           cols: 80, rows: 24, screen: '', pending: [], focuses: 0,

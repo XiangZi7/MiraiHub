@@ -92,7 +92,9 @@ async function removePreset(): Promise<void> {
     </legend>
 
     <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-end gap-2">
+      <!-- 初始化命令预设选择：在当前值和候选项中显示图标。 -->
       <AppSelect
+        icon="lucide:square-terminal"
         v-model="selectedId"
         :label="t('初始化命令预设')"
         :options="presetOptions"

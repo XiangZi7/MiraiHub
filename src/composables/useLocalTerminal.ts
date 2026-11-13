@@ -11,7 +11,8 @@ import type { SshSessionStatus } from '@/types/ssh'
 import { normalizeLocalShell } from '@/utils/platform'
 
 export function useLocalTerminal() {
-  const { term, fitAddon, open, stopSettingsWatch } = useXterm(() => resize())
+  const { term, fitAddon, open, stopSettingsWatch, writeOutput, resetOutput } =
+    useXterm(() => resize())
   const state = reactive({
     sessionId: '',
     status: 'disconnected' as SshSessionStatus,
@@ -44,6 +45,7 @@ export function useLocalTerminal() {
     const currentOperation = ++operation
     state.status = 'connecting'
     state.error = ''
+    resetOutput()
 
     const pendingStatus: LocalTerminalStatusEvent[] = []
 
@@ -75,7 +77,7 @@ export function useLocalTerminal() {
           rows: terminal.rows,
         },
         data => {
-          if (receiving) terminal.write(data)
+          if (receiving) writeOutput(data)
         }
       )
 

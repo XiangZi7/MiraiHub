@@ -26,12 +26,12 @@ const state = reactive({
 })
 const { type, name, field, value, score, ttl, loading } = toRefs(state)
 const types = [
-  { value: 'string', label: 'String' },
-  { value: 'hash', label: 'Hash' },
-  { value: 'list', label: 'List' },
-  { value: 'set', label: 'Set' },
-  { value: 'zset', label: 'Sorted Set' },
-  { value: 'stream', label: 'Stream' },
+  { value: 'string', label: 'String', icon: 'lucide:type' },
+  { value: 'hash', label: 'Hash', icon: 'lucide:hash' },
+  { value: 'list', label: 'List', icon: 'lucide:list' },
+  { value: 'set', label: 'Set', icon: 'lucide:braces' },
+  { value: 'zset', label: 'Sorted Set', icon: 'lucide:list-ordered' },
+  { value: 'stream', label: 'Stream', icon: 'lucide:workflow' },
 ]
 watch(
   () => props.open,
@@ -127,6 +127,7 @@ async function exists(key: string) {
         >
           <div class="flex gap-2">
             <AppSelect
+              icon="lucide:shapes"
               v-model="type"
               class="w-32 shrink-0"
               :label="t('类型')"

@@ -86,6 +86,7 @@ watch(() => [props.sessionId, state.count], load, { immediate: true })
         :label="t('按耗时排序')"
       />
       <AppSelect
+        icon="lucide:list-ordered"
         v-model="count"
         class="w-20 shrink-0"
         :label="t('读取条数')"

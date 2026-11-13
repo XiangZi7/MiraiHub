@@ -27,6 +27,7 @@ const brandedOptions = computed(() =>
 <template>
   <div class="bg-txt/5 flex min-w-0 items-center rounded-full pl-1">
     <AppSelect
+      icon="lucide:bot"
       class="min-w-0 flex-1"
       :model-value="activeId"
       :options="brandedOptions"

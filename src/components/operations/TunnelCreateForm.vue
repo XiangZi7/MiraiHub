@@ -160,6 +160,7 @@ const targetPortInput = computed({
           {{ t('SSH 连接') }}
         </span>
         <AppSelect
+          icon="lucide:server"
           v-model="sessionId"
           :label="t('SSH 连接')"
           hide-label
@@ -263,6 +264,7 @@ const targetPortInput = computed({
               {{ t('监听地址') }}
             </span>
             <AppSelect
+              icon="lucide:network"
               v-model="remoteBindHost"
               :label="t('监听地址')"
               hide-label

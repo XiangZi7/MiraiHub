@@ -225,6 +225,7 @@ defineExpose({ add: addIndex })
           <div class="text-txt-4 mt-0.5 grid gap-1 text-[9.5px]">
             <span> {{ t('类型') }} </span
             ><AppSelect
+              icon="lucide:key-round"
               :model-value="index.kind"
               :label="t('索引类型')"
               :options="kindOptions"
@@ -236,6 +237,7 @@ defineExpose({ add: addIndex })
           <div class="text-txt-4 mt-0.5 hidden gap-1 text-[9.5px] min-[901px]:grid">
             <span> {{ t('方法') }} </span
             ><AppSelect
+              icon="lucide:list-tree"
               :model-value="index.method"
               :label="t('索引方法')"
               :options="methodOptions"

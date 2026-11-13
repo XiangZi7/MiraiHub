@@ -171,7 +171,9 @@ function displayValue(field: SettingField): string {
                 @update:model-value="emit('update', field.key, $event)"
               />
 
+              <!-- 设置选项选择：在当前值和候选项中显示图标。 -->
               <AppSelect
+                :icon="field.icon"
                 v-else-if="field.control === 'select'"
                 :model-value="stringValue(field.key)"
                 :label="field.label"

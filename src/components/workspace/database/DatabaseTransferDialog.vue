@@ -743,6 +743,7 @@ function formatBytes(bytes: number): string {
               </p>
               <div class="flex items-end gap-2">
                 <AppSelect
+                  icon="lucide:layout-template"
                   v-model="state.templateTarget"
                   :label="t('模板范围')"
                   :options="templateOptions"
@@ -858,6 +859,7 @@ function formatBytes(bytes: number): string {
                   }}</span>
                 </div>
                 <AppSelect
+                  icon="lucide:table-2"
                   :model-value="state.selectedTargets[source.id] || ''"
                   :label="t('目标表')"
                   :options="targetOptions"
@@ -886,6 +888,7 @@ function formatBytes(bytes: number): string {
                         :size="12"
                       />
                       <AppSelect
+                        icon="lucide:columns-3"
                         v-if="state.selectedColumns[source.id]"
                         v-model="state.selectedColumns[source.id]![index]"
                         :label="t('目标字段')"

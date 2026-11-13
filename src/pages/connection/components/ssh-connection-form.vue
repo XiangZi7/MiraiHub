@@ -75,9 +75,9 @@ onMounted(async () => {
 })
 
 const authenticationOptions = [
-  { value: 'password', label: 'Password' },
-  { value: 'private-key', label: 'Private Key' },
-  { value: 'agent', label: 'SSH Agent' },
+  { value: 'password', label: 'Password', icon: 'lucide:lock-keyhole' },
+  { value: 'private-key', label: 'Private Key', icon: 'lucide:key-round' },
+  { value: 'agent', label: 'SSH Agent', icon: 'lucide:contact-round' },
 ] as const
 
 const terminalOptions = [
@@ -87,9 +87,9 @@ const terminalOptions = [
 ] as const
 
 const proxyOptions = [
-  { value: 'none', label: 'No Proxy' },
-  { value: 'socks5', label: 'SOCKS5' },
-  { value: 'http', label: 'HTTP' },
+  { value: 'none', label: 'No Proxy', icon: 'lucide:circle-off' },
+  { value: 'socks5', label: 'SOCKS5', icon: 'lucide:network' },
+  { value: 'http', label: 'HTTP', icon: 'lucide:globe' },
 ] as const
 
 const activeSection = shallowRef<SectionId>('general')
@@ -532,7 +532,9 @@ async function saveConnection(): Promise<void> {
           :available-tags="sharedTags"
         />
 
+        <!-- 认证方式选择：在当前值和候选项中显示图标。 -->
         <AppSelect
+          icon="lucide:key-round"
           v-model="form.authentication"
           :label="t('Authentication Method')"
           :options="
@@ -625,7 +627,9 @@ async function saveConnection(): Promise<void> {
             inputmode="numeric"
           />
         </div>
+        <!-- 终端类型选择：在当前值和候选项中显示图标。 -->
         <AppSelect
+          icon="lucide:square-terminal"
           v-model="form.terminalType"
           :label="t('Terminal Type')"
           :options="terminalOptions"
@@ -669,7 +673,9 @@ async function saveConnection(): Promise<void> {
         <div class="connection-section-copy">
           {{ t('Route this SSH connection through a SOCKS or HTTP proxy.') }}
         </div>
+        <!-- 代理类型选择：在当前值和候选项中显示图标。 -->
         <AppSelect
+          icon="lucide:network"
           v-model="form.proxyType"
           :label="t('Proxy Type')"
           :options="
@@ -683,7 +689,9 @@ async function saveConnection(): Promise<void> {
             :key="index"
             class="flex items-end gap-2"
           >
+            <!-- 跳板主机选择：在当前值和候选项中显示图标。 -->
             <AppSelect
+              icon="lucide:route"
               v-model="form.jumpHostIds[index]"
               class="flex-1"
               :label="t('跳板主机') + ' ' + (index + 1)"

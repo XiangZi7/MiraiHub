@@ -240,6 +240,7 @@ onBeforeUnmount(() => {
           >{{ playing ? t('暂停') : t('播放') }}</AppButton
         >
         <AppSelect
+          icon="lucide:gauge"
           v-model="speedValue"
           class="w-20"
           :label="t('播放速度')"

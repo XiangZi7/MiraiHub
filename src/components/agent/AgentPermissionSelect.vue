@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AgentApprovalMode } from '@/types/agent'
-import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 
 defineProps<{ disabled: boolean }>()
@@ -28,23 +27,14 @@ const options = computed(() => [
     description: t('当前连接的命令与 SQL 自动执行，可修改或删除数据'),
   },
 ])
-const icon = computed(
-  () =>
-    options.value.find(option => option.value === mode.value)?.icon ??
-    'lucide:shield-check'
-)
 </script>
 
 <template>
   <div
-    class="bg-txt/5 text-txt-2 flex min-w-0 items-center gap-0.5 rounded-full pl-2"
+    class="bg-txt/5 text-txt-2 flex min-w-0 items-center rounded-full pl-1"
   >
-    <AppIcon
-      :name="icon"
-      :size="13"
-      class="shrink-0"
-    />
     <AppSelect
+      icon="lucide:shield-check"
       class="min-w-0 flex-1"
       v-model="mode"
       :label="t('AI 操作审批方式')"

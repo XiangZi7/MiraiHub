@@ -198,6 +198,46 @@ export async function exec(
   })
 }
 
+/** 在独立 SSH 通道中按终端当前目录查询 Git 分支；不修改交互 Shell、工作树或用户配置。 */
+export async function readTerminalGitBranch(
+  sessionId: string,
+  directory: string
+): Promise<string> {
+  if (
+    !directory ||
+    (!directory.startsWith('/') &&
+      directory !== '~' &&
+      !directory.startsWith('~/'))
+  )
+    return ''
+  const quoted = `'${(directory.startsWith('~/') ? directory.slice(2) : directory).replace(/'/gu, `'"'"'`)}'`
+  const target =
+    directory === '~'
+      ? '"$HOME"'
+      : directory.startsWith('~/')
+        ? `"$HOME"/${quoted}`
+        : quoted
+  const result = await exec(
+    sessionId,
+    `if cd -- ${target}; then if branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse --short HEAD); then printf '\\n__MIRAI_GIT_BRANCH__:%s\\n' "$branch"; else printf '\\n__MIRAI_GIT_NONE__\\n'; fi; fi`,
+    5
+  )
+  // 兼容旧后端或没有报告 exit-status 的 SSH 服务：以明确的成功标记确认结果。
+  const branch = result.stdout
+    .match(/^__MIRAI_GIT_BRANCH__:(.+)\r?$/mu)?.[1]
+    ?.trim()
+  if (branch && (result.exitCode === 0 || result.exitCode === null))
+    return branch
+  if (
+    result.stdout.includes('__MIRAI_GIT_NONE__') &&
+    /not a git repository/i.test(result.stderr)
+  )
+    return ''
+  if (result.stderr.trim()) throw new Error(result.stderr.trim())
+  if (result.stdout.includes('__MIRAI_GIT_NONE__')) return ''
+  throw new Error(i18n.global.t('无法读取当前目录的 Git 信息'))
+}
+
 /** 查询交互式 shell 当前输入行的命令与路径候选。 */
 export async function completeShell(
   sessionId: string,

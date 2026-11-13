@@ -391,6 +391,7 @@ onMounted(async () => {
             :aria-label="t('存储引擎')"
         /></label>
         <AppSelect
+          icon="lucide:database"
           v-else
           v-model="engine"
           compact
@@ -408,6 +409,7 @@ onMounted(async () => {
             @update:model-value="changeCharset"
         /></label>
         <AppSelect
+          icon="lucide:languages"
           v-else
           :model-value="charset"
           compact
@@ -426,6 +428,7 @@ onMounted(async () => {
             :aria-label="t('排序规则')"
         /></label>
         <AppSelect
+          icon="lucide:arrow-down-a-z"
           v-else
           v-model="collation"
           compact
@@ -434,6 +437,7 @@ onMounted(async () => {
           :options="collationOptions"
         />
         <AppSelect
+          icon="lucide:rows-3"
           v-model="rowFormat"
           compact
           :label="t('行格式')"
@@ -507,6 +511,7 @@ onMounted(async () => {
           >
             <div class="grid grid-cols-[minmax(0,240px)_1fr_28px] items-center gap-2">
               <AppSelect
+                icon="lucide:columns-3"
                 :model-value="change.action"
                 compact
                 hide-label
@@ -619,6 +624,7 @@ onMounted(async () => {
       >
         <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
           <AppSelect
+            icon="lucide:columns-3"
             :model-value="partition?.method ?? ''"
             compact
             :label="t('分区方式')"

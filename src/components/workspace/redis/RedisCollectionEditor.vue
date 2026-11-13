@@ -309,6 +309,7 @@ defineExpose({ reload: () => load(true) })
         </AppButton>
       </div>
       <AppSelect
+        icon="lucide:list-ordered"
         v-model="pageSize"
         class="w-26 shrink-0"
         :label="t('每页条数')"
@@ -391,6 +392,7 @@ defineExpose({ reload: () => load(true) })
               class="px-2 py-1"
             >
               <AppSelect
+                icon="lucide:list-plus"
                 :model-value="draft.head ? 'head' : 'tail'"
                 :label="t('插入位置')"
                 :options="[

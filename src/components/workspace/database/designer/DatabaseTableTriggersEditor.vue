@@ -116,6 +116,7 @@ defineExpose({ add: addTrigger })
             @update:model-value="updateTrigger(trigger.id, { name: $event })"
         /></label>
         <AppSelect
+          icon="lucide:clock-3"
           :model-value="trigger.timing"
           :label="t('触发时机')"
           :options="timingOptions"
@@ -149,6 +150,7 @@ defineExpose({ add: addTrigger })
           </div>
         </div>
         <AppSelect
+          icon="lucide:layers"
           v-if="databaseKind === 'postgresql'"
           :model-value="trigger.level"
           :label="t('触发级别')"

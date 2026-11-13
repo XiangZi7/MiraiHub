@@ -260,6 +260,7 @@ async function runAction(id: string): Promise<void> {
       </button>
       <span aria-hidden="true">{{ t('趋势时间范围') }}</span>
       <AppSelect
+        icon="lucide:chart-line"
         v-model="historyMinutesValue"
         :label="t('趋势时间范围')"
         hide-label

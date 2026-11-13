@@ -74,9 +74,9 @@ const counts = computed(() => ({
   skip: plan.value?.changes.filter(c => c.action === 'skip').length ?? 0,
 }))
 const modeOptions = computed(() => [
-  { value: 'skip', label: t('跳过已有连接（默认）') },
-  { value: 'update', label: t('更新同 ID 连接，保留其他连接') },
-  { value: 'copy', label: t('全部作为新连接导入') },
+  { value: 'skip', label: t('跳过已有连接（默认）'), icon: 'lucide:skip-forward' },
+  { value: 'update', label: t('更新同 ID 连接，保留其他连接'), icon: 'lucide:refresh-cw' },
+  { value: 'copy', label: t('全部作为新连接导入'), icon: 'lucide:copy-plus' },
 ])
 watch(
   () => settings.rememberPasswords,
@@ -254,8 +254,10 @@ function apply(): void {
         @click="preview"
         >{{ busy ? t('处理中…') : t('读取并预览恢复内容') }}</AppButton
       >
-      <template v-if="archive && plan"
-        ><AppSelect
+      <template v-if="archive && plan">
+        <!-- 同 ID 连接的处理方式选择：在当前值和候选项中显示图标。 -->
+        <AppSelect
+          icon="lucide:copy-check"
           v-model="mode"
           :label="t('同 ID 连接的处理方式')"
           :options="modeOptions"

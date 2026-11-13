@@ -226,6 +226,7 @@ async function copySql(): Promise<void> {
     <div class="flex items-end gap-2">
       <div class="min-w-0 flex-1">
         <AppSelect
+          icon="lucide:database"
           v-model="state.source"
           :label="t('源（期望结构）')"
           :options="databaseOptions"
@@ -239,6 +240,7 @@ async function copySql(): Promise<void> {
       />
       <div class="min-w-0 flex-1">
         <AppSelect
+          icon="lucide:database"
           v-model="state.target"
           :label="t('目标（将被修改）')"
           :options="databaseOptions"

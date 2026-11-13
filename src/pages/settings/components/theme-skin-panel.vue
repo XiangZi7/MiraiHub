@@ -380,7 +380,9 @@ watch(
             :aria-label="t('皮肤名称')"
             @update:model-value="rename"
         /></label>
+        <!-- 基础主题选择：在当前值和候选项中显示图标。 -->
         <AppSelect
+          icon="lucide:palette"
           :label="t('基础主题')"
           compact
           :model-value="effective.skinBase"

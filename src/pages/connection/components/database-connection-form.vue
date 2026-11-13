@@ -125,9 +125,9 @@ const availableSslModes = computed(() =>
 )
 
 const environmentOptions = computed(() => [
-  { value: 'development', label: t('开发环境') },
-  { value: 'testing', label: t('测试环境') },
-  { value: 'production', label: t('生产环境') },
+  { value: 'development', label: t('开发环境'), icon: 'lucide:code-2' },
+  { value: 'testing', label: t('测试环境'), icon: 'lucide:flask-conical' },
+  { value: 'production', label: t('生产环境'), icon: 'lucide:rocket' },
 ])
 const savedSshOptions = computed(() =>
   connections
@@ -637,7 +637,9 @@ async function saveConnection(): Promise<void> {
         </div>
 
         <template v-if="kind !== 'redis'">
+          <!-- 环境选择：在当前值和候选项中显示图标。 -->
           <AppSelect
+            icon="lucide:layers"
             v-model="form.environment"
             :label="t('环境')"
             :options="environmentOptions"
@@ -668,7 +670,9 @@ async function saveConnection(): Promise<void> {
           :description="t('连接断开后自动重连，关闭数据库会话时释放隧道')"
         />
         <template v-if="tunnel.enabled">
+          <!-- SSH 服务器选择：在当前值和候选项中显示图标。 -->
           <AppSelect
+            icon="lucide:server"
             v-model="tunnel.source"
             :label="t('SSH 服务器')"
             :options="[
@@ -676,7 +680,9 @@ async function saveConnection(): Promise<void> {
               { value: 'manual', label: t('手动填写') },
             ]"
           />
+          <!-- SSH 连接选择：在当前值和候选项中显示图标。 -->
           <AppSelect
+            icon="lucide:server"
             v-if="tunnel.source === 'saved'"
             v-model="tunnel.connectionId"
             :label="t('SSH 连接')"
@@ -701,12 +707,14 @@ async function saveConnection(): Promise<void> {
               :label="t('SSH 用户名')"
               required
             />
+            <!-- 认证方式选择：在当前值和候选项中显示图标。 -->
             <AppSelect
+              icon="lucide:key-round"
               v-model="tunnel.authType"
               :label="t('认证方式')"
               :options="[
-                { value: 'password', label: t('密码') },
-                { value: 'privateKey', label: t('私钥') },
+                { value: 'password', label: t('密码'), icon: 'lucide:lock-keyhole' },
+                { value: 'privateKey', label: t('私钥'), icon: 'lucide:key-round' },
               ]"
             />
             <AppTextField
@@ -743,7 +751,9 @@ async function saveConnection(): Promise<void> {
           {{ t('connection.sslHelp', { type: databaseLabel }) }}
         </div>
 
+        <!-- SSL 模式选择：在当前值和候选项中显示图标。 -->
         <AppSelect
+          icon="lucide:shield-check"
           v-model="form.sslMode"
           :label="t('SSL Mode')"
           :options="

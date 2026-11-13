@@ -464,7 +464,8 @@ impl SshSession {
                     // ext == 1 是 stderr，其余扩展类型按协议保留，忽略即可
                     ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
                     ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
-                    ChannelMsg::Eof | ChannelMsg::Close => break,
+                    // EOF 只表示不会再有数据；退出码请求可能随后到达，必须等 Close。
+                    ChannelMsg::Close => break,
                     _ => {}
                 }
             }
@@ -1360,6 +1361,13 @@ pub(crate) mod tests {
                 channel,
                 russh::CryptoVec::from_slice(b"routed through two hops"),
             )?;
+            if command == b"eof-before-exit" {
+                // OpenSSH 等服务允许先发 EOF、再报告命令退出码。
+                session.eof(channel)?;
+                session.exit_status_request(channel, 0)?;
+                session.close(channel)?;
+                return Ok(());
+            }
             session.exit_status_request(channel, 0)?;
             session.eof(channel)?;
             session.close(channel)?;
@@ -1716,6 +1724,27 @@ pub(crate) mod tests {
         let (prompter, mut seen) = answer_host_keys(false, false);
         assert!(handshake(port, &path, Some(prompter)).await.0.is_ok());
         assert!(seen.try_recv().is_err());
+        server.abort();
+    }
+
+    // 验证服务器先发送 EOF 时仍保留随后收到的命令退出码。
+    #[tokio::test]
+    async fn exec_keeps_exit_status_sent_after_eof() {
+        let (port, server) = jump_test_server().await;
+        let config = SshConfig {
+            auth: AuthMethod::Password {
+                password: "test".into(),
+            },
+            verify_host_key: false,
+            timeout_secs: 3,
+            ..config_with("127.0.0.1", "test", port)
+        };
+        let session = SshSession::connect("exec-eof-status".into(), config)
+            .await
+            .unwrap();
+        let output = session.exec("eof-before-exit").await.unwrap();
+        assert_eq!(output.stdout, "routed through two hops");
+        assert_eq!(output.exit_code, Some(0));
         server.abort();
     }
 

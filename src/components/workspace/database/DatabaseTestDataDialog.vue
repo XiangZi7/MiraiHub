@@ -536,6 +536,7 @@ function cancelInsert(): void {
           </span>
           <span class="w-28 shrink-0">
             <AppSelect
+              icon="lucide:wand-sparkles"
               :model-value="rule.kind"
               :label="t('生成方式')"
               :options="kindsFor(rule)"
@@ -588,6 +589,7 @@ function cancelInsert(): void {
               @update:model-value="setValues(rule, $event)"
             />
             <AppSelect
+              icon="lucide:type"
               v-else-if="rule.kind === 'faker'"
               :model-value="rule.faker ?? 'word'"
               :label="t('文本类型')"

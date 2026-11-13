@@ -517,6 +517,7 @@ function contentLabel(content: BackupContent): string {
         <div class="flex items-end gap-3">
           <div class="w-52 shrink-0">
             <AppSelect
+              icon="lucide:database"
               v-model="state.database"
               :label="t('数据库')"
               :options="databaseOptions"

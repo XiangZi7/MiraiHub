@@ -33,8 +33,8 @@ const differences = computed(() =>
   state.scan ? directoryDifferences(state.scan, state.direction) : []
 )
 const directionOptions = computed(() => [
-  { value: 'upload', label: t('本地 → 远端') },
-  { value: 'download', label: t('远端 → 本地') },
+  { value: 'upload', label: t('本地 → 远端'), icon: 'lucide:upload' },
+  { value: 'download', label: t('远端 → 本地'), icon: 'lucide:download' },
 ])
 let generation = 0
 watch(
@@ -145,6 +145,7 @@ async function execute(): Promise<void> {
         {{ t('按大小和修改时间比较，选中项目会覆盖目标文件；不会删除文件。') }}
       </p>
       <AppSelect
+        icon="lucide:arrow-left-right"
         v-model="direction"
         :label="t('同步方向')"
         hide-label

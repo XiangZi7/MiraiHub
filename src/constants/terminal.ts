@@ -38,6 +38,31 @@ export const TERMINAL_THEME: ITheme = {
   brightWhite: '#f2f2f5',
 }
 
+/** 经典样式沿用原有 ANSI 色板，供用户随时切回。 */
+const CLASSIC_TERMINAL_THEME: ITheme = {
+  background: '#00000000',
+  foreground: '#dededf',
+  cursor: '#7ee787',
+  cursorAccent: '#0d0d10',
+  selectionBackground: '#ffffff26',
+  black: '#2a2a30',
+  red: '#ff6b62',
+  green: '#7ee787',
+  yellow: '#ffcb6b',
+  blue: '#7cb0ff',
+  magenta: '#d9a3ff',
+  cyan: '#84e0e8',
+  white: '#cfcfd2',
+  brightBlack: '#5b5b63',
+  brightRed: '#ff8a7a',
+  brightGreen: '#9df0a4',
+  brightYellow: '#ffd98a',
+  brightBlue: '#9cc4ff',
+  brightMagenta: '#e6bcff',
+  brightCyan: '#a6ecf2',
+  brightWhite: '#f0f0f2',
+}
+
 /**
  * 浅色底的 ANSI 配色。
  *
@@ -82,11 +107,20 @@ function lightSelectionBackground(opacity: number): string {
   return `rgb(${channels.join(', ')})`
 }
 
-/** 将皮肤令牌转成 xterm 可解析的颜色，并为文字对比度计算保留真实底色。 */
-export function currentTerminalTheme(): ITheme {
+/** 按终端样式选择色板；经典样式跟随皮肤令牌，并为文字对比度保留真实底色。 */
+export function currentTerminalTheme(style = 'classic'): ITheme {
   const light = document.documentElement.dataset.skinScheme === 'light'
+  if (style === 'v4') {
+    return {
+      ...(light ? LIGHT_TERMINAL_THEME : TERMINAL_THEME),
+      // v4 的扁平表面与色板独立于通用玻璃皮肤，避免又被全局高饱和语法色覆盖。
+      background: light ? 'rgba(250, 249, 253, 0)' : 'rgba(15, 16, 17, 0)',
+      selectionBackground: light ? '#ddd2ed' : '#b39ddb30',
+      selectionInactiveBackground: light ? '#ebe5f3' : '#b39ddb18',
+    }
+  }
   return {
-    ...(light ? LIGHT_TERMINAL_THEME : TERMINAL_THEME),
+    ...(light ? LIGHT_TERMINAL_THEME : CLASSIC_TERMINAL_THEME),
     // 保留终端底色的 RGB、只将 alpha 设为 0：视觉仍透明，对比度不再按黑底计算。
     background: rgba('var(--color-terminal)', 0),
     foreground: rgba('var(--color-term-fg)', 1),

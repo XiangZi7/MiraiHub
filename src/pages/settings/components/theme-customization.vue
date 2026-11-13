@@ -22,9 +22,9 @@ const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const state = reactive({ uploading: false, error: '' })
 const { uploading, error } = toRefs(state)
 const styleOptions = computed(() => [
-  { value: 'builtin', label: t('主题内置样式') },
-  { value: 'default', label: t('项目默认样式') },
-  { value: 'custom', label: t('自定义配色') },
+  { value: 'builtin', label: t('主题内置样式'), icon: 'lucide:palette' },
+  { value: 'default', label: t('项目默认样式'), icon: 'lucide:monitor' },
+  { value: 'custom', label: t('自定义配色'), icon: 'lucide:sliders-horizontal' },
 ])
 
 async function upload(event: Event): Promise<void> {
@@ -64,7 +64,9 @@ async function upload(event: Event): Promise<void> {
         <h3>{{ t('界面样式') }}</h3>
         <p>{{ t('搭配主题配色，或保留熟悉的默认外观') }}</p>
       </div>
+      <!-- 界面样式选择：在当前值和候选项中显示图标。 -->
       <AppSelect
+        icon="lucide:palette"
         :label="t('界面样式')"
         hide-label
         compact
@@ -207,25 +209,29 @@ async function upload(event: Event): Promise<void> {
         "
       />
       <div class="background-layout">
+        <!-- 背景显示方式选择：在当前值和候选项中显示图标。 -->
         <AppSelect
+          icon="lucide:image"
           :label="t('背景显示方式')"
           compact
           :options="[
-            { value: 'cover', label: t('铺满窗口') },
-            { value: 'contain', label: t('完整显示') },
+            { value: 'cover', label: t('铺满窗口'), icon: 'lucide:expand' },
+            { value: 'contain', label: t('完整显示'), icon: 'lucide:scan' },
           ]"
           :model-value="values.skinBackgroundFit"
           @update:model-value="emit('update', { skinBackgroundFit: $event })"
         />
+        <!-- 背景对齐位置选择：在当前值和候选项中显示图标。 -->
         <AppSelect
+          icon="lucide:align-center"
           :label="t('背景对齐位置')"
           compact
           :options="[
-            { value: 'center', label: t('居中') },
-            { value: 'top', label: t('顶部') },
-            { value: 'bottom', label: t('底部') },
-            { value: 'left', label: t('左侧') },
-            { value: 'right', label: t('右侧') },
+            { value: 'center', label: t('居中'), icon: 'lucide:align-center' },
+            { value: 'top', label: t('顶部'), icon: 'lucide:arrow-up' },
+            { value: 'bottom', label: t('底部'), icon: 'lucide:arrow-down' },
+            { value: 'left', label: t('左侧'), icon: 'lucide:arrow-left' },
+            { value: 'right', label: t('右侧'), icon: 'lucide:arrow-right' },
           ]"
           :model-value="values.skinBackgroundPosition"
           @update:model-value="

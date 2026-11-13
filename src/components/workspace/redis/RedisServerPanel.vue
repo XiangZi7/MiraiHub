@@ -239,6 +239,7 @@ onScopeDispose(() => clearInterval(timer))
           >{{ new Date(state.updatedAt).toLocaleTimeString() }}</span
         >
         <AppSelect
+          icon="lucide:refresh-cw"
           v-model="interval"
           class="w-28 shrink-0"
           :class="!state.updatedAt && 'ml-auto'"

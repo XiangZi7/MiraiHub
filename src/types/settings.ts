@@ -65,6 +65,8 @@ export const DEFAULT_SETTINGS = {
   transferBufferSizeKb: '128',
 
   terminalShell: DEFAULT_LOCAL_SHELL,
+  terminalStyle: 'v4',
+  terminalCommandBlocks: false,
   terminalFont: 'jetbrains-mono',
   terminalFontSize: '13',
   terminalCursor: 'bar',
@@ -117,6 +119,8 @@ export interface SettingOption {
   value: string
   label: string
   description?: string
+  /** 在选中值和下拉菜单中显示的选项图标。 */
+  icon?: string
 }
 
 /** 数值输入的合法范围，保存时校验。 */
@@ -129,6 +133,8 @@ export interface EditableSettingField {
   key: SettingKey
   label: string
   description?: string
+  /** 同类下拉选项的默认图标，选项专属图标优先。 */
+  icon?: string
   control:
     'switch' | 'select' | 'text' | 'shortcut' | 'directory' | 'scale' | 'slider'
   options?: readonly SettingOption[]

@@ -28,7 +28,8 @@ type SubmitHandler = (line: string) => void
 
 /** 管理一块 SSH 终端的连接、输出隔离与卸载清理。 */
 export function useSshTerminal() {
-  const { term, fitAddon, open, stopSettingsWatch } = useXterm(() => resize())
+  const { term, fitAddon, open, stopSettingsWatch, writeOutput, resetOutput } =
+    useXterm(() => resize())
 
   // 响应式状态
   const state = reactive({
@@ -94,6 +95,7 @@ export function useSshTerminal() {
     state.status = 'connecting'
     state.error = ''
     state.inputLine = ''
+    resetOutput()
     terminal.reset()
     // 已排入 xterm 队列的旧输出仍可能到达，队尾再放一次复位，保证新输出从空屏开始。
     terminal.write('\x1bc')
@@ -161,7 +163,7 @@ export function useSshTerminal() {
         data => {
           if (state.sessionId !== id) return
           recordOutput(terminal, data)
-          terminal.write(data)
+          writeOutput(data)
         }
       )
 

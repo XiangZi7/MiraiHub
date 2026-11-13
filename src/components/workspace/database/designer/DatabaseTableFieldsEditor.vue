@@ -657,6 +657,7 @@ defineExpose({ add: () => void addColumn() })
             </td>
             <td :class="changedCell(column, 'dataType')">
               <AppSelect
+                icon="lucide:type"
                 :model-value="column.dataType"
                 :label="t('字段类型')"
                 :options="typeOptions"
@@ -875,6 +876,7 @@ defineExpose({ add: () => void addColumn() })
       <div class="text-txt-4 flex shrink-0 items-center gap-2">
         <span>{{ t('默认值') }}</span>
         <AppSelect
+          icon="lucide:equal"
           class="min-w-0"
           :class="defaultMode(activeColumn) === 'current' ? 'w-44' : 'w-28'"
           :model-value="defaultMode(activeColumn)"
@@ -922,6 +924,7 @@ defineExpose({ add: () => void addColumn() })
       >
         <span>{{ t('字符集') }}</span>
         <AppSelect
+          icon="lucide:languages"
           v-if="collations.length"
           class="w-28 min-w-0"
           :model-value="activeColumn.charset ?? ''"
@@ -965,6 +968,7 @@ defineExpose({ add: () => void addColumn() })
       >
         <span>{{ t('排序规则') }}</span>
         <AppSelect
+          icon="lucide:arrow-down-a-z"
           v-if="collations.length"
           class="w-48 min-w-0"
           :model-value="activeColumn.collation ?? ''"
@@ -1018,6 +1022,7 @@ defineExpose({ add: () => void addColumn() })
             "
           />
           <AppSelect
+            icon="lucide:hard-drive"
             v-if="mysql"
             class="w-28 shrink-0"
             :model-value="activeColumn.generatedStored ? 'stored' : 'virtual'"

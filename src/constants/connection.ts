@@ -35,6 +35,7 @@ export const LOCAL_SHELL_OPTIONS: readonly {
   value: LocalShellKind
   label: string
   description: string
+  icon: string
 }[] =
   DESKTOP_PLATFORM === 'windows'
     ? [
@@ -42,16 +43,19 @@ export const LOCAL_SHELL_OPTIONS: readonly {
           value: 'powershell',
           label: 'Windows PowerShell',
           description: 'Windows 自带 PowerShell',
+          icon: 'vscode-icons:file-type-powershell',
         },
         {
           value: 'cmd',
           label: 'Command Prompt',
           description: 'Windows 命令提示符',
+          icon: 'lucide:square-terminal',
         },
         {
           value: 'git-bash',
           label: 'Git Bash',
           description: 'Git for Windows 提供的 Bash',
+          icon: 'vscode-icons:file-type-git',
         },
       ]
     : [
@@ -59,12 +63,19 @@ export const LOCAL_SHELL_OPTIONS: readonly {
           value: 'system',
           label: '系统默认 Shell',
           description: '使用当前用户的登录 Shell',
+          icon: 'lucide:square-terminal',
         },
-        { value: 'bash', label: 'Bash', description: '启动 Bash 登录终端' },
+        {
+          value: 'bash',
+          label: 'Bash',
+          description: '启动 Bash 登录终端',
+          icon: 'vscode-icons:file-type-shell',
+        },
         {
           value: 'zsh',
           label: 'Zsh',
           description: '启动 Zsh 登录终端（需已安装）',
+          icon: 'vscode-icons:file-type-shell',
         },
       ]
 

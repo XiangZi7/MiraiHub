@@ -234,6 +234,7 @@ async function run(): Promise<void> {
         />
       </div>
       <AppSelect
+        icon="lucide:scan"
         v-if="loadAll && format !== 'dictionary'"
         v-model="scope"
         :label="t('导出范围')"

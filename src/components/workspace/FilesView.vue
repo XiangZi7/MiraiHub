@@ -969,7 +969,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       </div>
     </div>
     <footer
-      class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px]"
+      class="border-line-soft text-txt-3 flex h-7 shrink-0 items-center gap-3 border-t px-3 text-[11px] leading-none"
     >
       <span class="truncate">{{ connected ? summary : t('未连接') }}</span>
       <span

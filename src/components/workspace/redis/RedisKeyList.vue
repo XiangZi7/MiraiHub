@@ -144,6 +144,7 @@ function closeFilter() {
       <slot name="heading" />
       <div class="ml-auto flex min-w-0 items-center gap-1">
         <AppSelect
+          icon="lucide:folder-tree"
           v-model="depthModel"
           class="w-24 min-w-0"
           :label="t('前缀分组层级')"

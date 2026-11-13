@@ -25,11 +25,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             label: '界面语言',
             description: '默认跟随系统语言，保存后同步到所有窗口',
             control: 'select',
+            icon: 'lucide:languages',
             size: 'lg',
             options: [
-              { value: 'system', label: '跟随系统' },
-              { value: 'zh-CN', label: '简体中文' },
-              { value: 'en-US', label: 'English' },
+              { value: 'system', label: '跟随系统', icon: 'lucide:monitor' },
+              { value: 'zh-CN', label: '简体中文', icon: 'lucide:languages' },
+              { value: 'en-US', label: 'English', icon: 'lucide:languages' },
             ],
           },
         ],
@@ -59,16 +60,18 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'timeFormat',
             label: '时间格式',
             control: 'select',
+            icon: 'lucide:clock-3',
             size: 'md',
             options: [
-              { value: '24-hour', label: '24 小时制' },
-              { value: '12-hour', label: '12 小时制' },
+              { value: '24-hour', label: '24 小时制', icon: 'lucide:clock-4' },
+              { value: '12-hour', label: '12 小时制', icon: 'lucide:clock-12' },
             ],
           },
           {
             key: 'dateFormat',
             label: '日期格式',
             control: 'select',
+            icon: 'lucide:calendar-days',
             size: 'md',
             options: [
               { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' },
@@ -114,11 +117,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             description:
               '深色是默认外观；跟随系统会随操作系统的浅色/深色设置切换。自带配色的皮肤不受此项影响',
             control: 'select',
+            icon: 'lucide:palette',
             size: 'md',
             options: [
-              { value: 'dark', label: '深色' },
-              { value: 'light', label: '浅色' },
-              { value: 'system', label: '跟随系统' },
+              { value: 'dark', label: '深色', icon: 'lucide:moon' },
+              { value: 'light', label: '浅色', icon: 'lucide:sun' },
+              { value: 'system', label: '跟随系统', icon: 'lucide:monitor' },
             ],
           },
           {
@@ -126,11 +130,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             label: '窗口材质',
             description: 'Mica 仅 Windows 11 可用，其他系统会退回到模糊效果',
             control: 'select',
+            icon: 'lucide:layers',
             size: 'md',
             options: [
-              { value: 'acrylic', label: 'Acrylic' },
-              { value: 'mica', label: 'Mica' },
-              { value: 'solid', label: '纯色' },
+              { value: 'acrylic', label: 'Acrylic', icon: 'lucide:layers' },
+              { value: 'mica', label: 'Mica', icon: 'lucide:panels-top-left' },
+              { value: 'solid', label: '纯色', icon: 'lucide:square' },
             ],
           },
           {
@@ -313,6 +318,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'databaseTimeout',
             label: '连接超时时间（秒）',
             control: 'select',
+            icon: 'lucide:timer',
             size: 'sm',
             options: [
               { value: '10', label: '10' },
@@ -324,6 +330,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'maxDatabaseConnections',
             label: '每个连接的连接池上限',
             control: 'select',
+            icon: 'lucide:network',
             size: 'sm',
             options: [
               { value: '5', label: '5' },
@@ -335,6 +342,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'sqlExecutionTimeout',
             label: '单条 SQL 执行超时（秒）',
             control: 'select',
+            icon: 'lucide:timer',
             size: 'sm',
             options: [
               { value: '60', label: '60' },
@@ -358,9 +366,29 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         title: '终端外观',
         fields: [
           {
+            key: 'terminalStyle',
+            label: '终端样式',
+            description: '切换后立即生效，保留当前连接与终端内容',
+            control: 'select',
+            icon: 'lucide:square-terminal',
+            size: 'lg',
+            options: [
+              { value: 'classic', label: '经典', icon: 'lucide:square-terminal' },
+              { value: 'v4', label: 'Mirai v4', icon: 'lucide:panels-top-left' },
+            ],
+          },
+          {
+            key: 'terminalCommandBlocks',
+            label: '命令分区',
+            description:
+              '在 v4 样式中区分命令与输出；Shell 提供时显示耗时和退出码',
+            control: 'switch',
+          },
+          {
             key: 'terminalFont',
             label: '终端字体',
             control: 'select',
+            icon: 'lucide:type',
             size: 'lg',
             options: [
               { value: 'jetbrains-mono', label: 'JetBrains Mono' },
@@ -372,6 +400,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'terminalFontSize',
             label: '字体大小',
             control: 'select',
+            icon: 'lucide:a-large-small',
             size: 'sm',
             options: [
               { value: '12', label: '12' },
@@ -384,11 +413,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'terminalCursor',
             label: '光标样式',
             control: 'select',
+            icon: 'lucide:text-cursor',
             size: 'md',
             options: [
-              { value: 'block', label: '方块' },
-              { value: 'bar', label: '竖线' },
-              { value: 'underline', label: '下划线' },
+              { value: 'block', label: '方块', icon: 'lucide:square' },
+              { value: 'bar', label: '竖线', icon: 'lucide:text-cursor' },
+              { value: 'underline', label: '下划线', icon: 'lucide:minus' },
             ],
           },
           { key: 'terminalCursorBlink', label: '光标闪烁', control: 'switch' },
@@ -402,10 +432,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             label: '默认本地 Shell',
             description: '新建本地终端时预选的 Shell',
             control: 'select',
+            icon: 'lucide:square-terminal',
             size: 'lg',
             options: LOCAL_SHELL_OPTIONS.map(option => ({
               value: option.value,
               label: option.label,
+              icon: option.icon,
             })),
           },
           {
@@ -442,6 +474,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             description:
               '多选或拖入文件时同时上传，超出的任务排队等待；上传和下载共享此上限',
             control: 'select',
+            icon: 'lucide:arrow-left-right',
             size: 'sm',
             options: [
               { value: '1', label: '1' },
@@ -457,6 +490,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             description:
               '每个文件夹内同时上传的文件数量，新上传任务生效；大量小文件时越高越快',
             control: 'select',
+            icon: 'lucide:folders',
             size: 'md',
             options: [
               { value: '1', label: '1（串行）' },
@@ -475,6 +509,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             description:
               '更大的缓冲区能提升大文件吞吐，部分服务器不支持超过 256 KB 的数据包',
             control: 'select',
+            icon: 'lucide:memory-stick',
             size: 'sm',
             options: [
               { value: '32', label: '32' },
@@ -499,11 +534,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'overwriteBehavior',
             label: '上传遇到同名文件时',
             control: 'select',
+            icon: 'lucide:files',
             size: 'md',
             options: [
-              { value: 'ask', label: '每次询问' },
-              { value: 'overwrite', label: '直接覆盖' },
-              { value: 'rename', label: '自动重命名' },
+              { value: 'ask', label: '每次询问', icon: 'lucide:message-circle-question' },
+              { value: 'overwrite', label: '直接覆盖', icon: 'lucide:replace' },
+              { value: 'rename', label: '自动重命名', icon: 'lucide:file-pen-line' },
             ],
           },
         ],
@@ -556,6 +592,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'historyRetention',
             label: '历史保留天数',
             control: 'select',
+            icon: 'lucide:calendar-clock',
             size: 'sm',
             options: [
               { value: '7', label: '7' },
@@ -568,6 +605,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             key: 'maxRecentItems',
             label: '最近会话数量上限',
             control: 'select',
+            icon: 'lucide:history',
             size: 'sm',
             options: [
               { value: '20', label: '20' },
@@ -612,6 +650,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             label: '自动清空剪贴板',
             description: '在应用内复制的内容会在指定时间后从剪贴板清除',
             control: 'select',
+            icon: 'lucide:clipboard-clock',
             size: 'md',
             options: [
               { value: '0', label: '禁用' },
@@ -673,12 +712,13 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             description:
               '自动尝试公共加速线路，失败后回退 GitHub；所有线路均校验安装包签名。',
             control: 'select',
+            icon: 'lucide:download',
             options: [
-              { value: 'auto', label: '自动（优先加速）' },
-              { value: 'github', label: 'GitHub 直连' },
-              { value: 'ghproxy', label: 'GH-Proxy 加速' },
-              { value: 'ghfast', label: 'ghfast 加速' },
-              { value: 'custom', label: '自定义转发' },
+              { value: 'auto', label: '自动（优先加速）', icon: 'lucide:zap' },
+              { value: 'github', label: 'GitHub 直连', icon: 'lucide:git-branch' },
+              { value: 'ghproxy', label: 'GH-Proxy 加速', icon: 'lucide:network' },
+              { value: 'ghfast', label: 'ghfast 加速', icon: 'lucide:zap' },
+              { value: 'custom', label: '自定义转发', icon: 'lucide:settings-2' },
             ],
           },
           {

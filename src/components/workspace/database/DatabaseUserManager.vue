@@ -889,6 +889,7 @@ function scopeLabel(scope: GrantScope): string {
             <div class="flex gap-2">
               <div class="w-36 shrink-0">
                 <AppSelect
+                  icon="lucide:layers"
                   v-model="form.level"
                   :label="t('级别')"
                   :options="levelOptions"
@@ -902,6 +903,7 @@ function scopeLabel(scope: GrantScope): string {
                 class="min-w-0 flex-1"
               >
                 <AppSelect
+                  icon="lucide:database"
                   v-if="databaseOptions.length"
                   v-model="form.database"
                   :label="t('数据库')"
@@ -921,6 +923,7 @@ function scopeLabel(scope: GrantScope): string {
                 class="min-w-0 flex-1"
               >
                 <AppSelect
+                  icon="lucide:folder-tree"
                   v-if="schemaOptions.length"
                   v-model="form.schema"
                   :label="t('模式')"
@@ -938,6 +941,7 @@ function scopeLabel(scope: GrantScope): string {
                 class="min-w-0 flex-1"
               >
                 <AppSelect
+                  icon="lucide:table-2"
                   v-if="tableOptions.length"
                   v-model="form.table"
                   :label="t('表')"
@@ -955,6 +959,7 @@ function scopeLabel(scope: GrantScope): string {
                 class="min-w-0 flex-1"
               >
                 <AppSelect
+                  icon="lucide:users"
                   v-model="form.role"
                   :label="t('角色')"
                   :options="roleOptions"

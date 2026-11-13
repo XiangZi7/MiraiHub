@@ -1922,6 +1922,7 @@ registerDatabaseCommandSource(
           />
           <div class="w-32 shrink-0">
             <AppSelect
+              icon="lucide:list-end"
               v-model="queryRowLimit"
               :label="t('查询返回行数上限')"
               :options="queryRowLimitOptions"
@@ -2020,6 +2021,7 @@ registerDatabaseCommandSource(
           class="w-32 shrink-0"
         >
           <AppSelect
+            icon="lucide:database"
             :model-value="
               tab?.kind === 'query' ? tab.database : browsedDatabase
             "

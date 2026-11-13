@@ -25,7 +25,9 @@ const options = computed(() => {
 </script>
 
 <template>
+  <!-- 连接分组选择：在当前值和候选项中显示图标。 -->
   <AppSelect
+    icon="lucide:folder"
     v-model="model"
     :label="t('Group')"
     :options="options"

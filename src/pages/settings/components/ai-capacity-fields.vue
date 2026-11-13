@@ -71,7 +71,9 @@ function setLimit(key: keyof AgentLimits, value: string): void {
         t('每份 AI 配置独立保存，SSH 与数据库共用。复杂任务可选择增强或深度。')
       }}
     </p>
+    <!-- 容量预设选择：在当前值和候选项中显示图标。 -->
     <AppSelect
+      icon="lucide:gauge"
       v-model="preset"
       :label="t('容量预设')"
       :options="options"

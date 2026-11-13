@@ -52,10 +52,12 @@ const form = reactive({
   description: '',
 })
 
+/** 复用系统支持的 Shell 选项与离线图标，仅翻译说明文字。 */
 const shellOptions = computed(() =>
   LOCAL_SHELL_OPTIONS.map(option => ({
     value: option.value,
     label: option.label,
+    icon: option.icon,
     description: t(option.description),
   }))
 )
@@ -192,7 +194,9 @@ async function save(): Promise<void> {
             :placeholder="t('e.g. Local')"
           />
         </div>
+        <!-- 本地 Shell选择：在当前值和候选项中显示图标。 -->
         <AppSelect
+          icon="lucide:square-terminal"
           v-model="form.shell"
           label="Shell"
           :options="shellOptions"

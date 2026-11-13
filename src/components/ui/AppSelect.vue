@@ -31,6 +31,8 @@ const props = withDefaults(
   defineProps<{
     label: string
     options: readonly SelectOption[]
+    /** 同类选项共用的语义图标；选项自身的图标或品牌图片优先。 */
+    icon?: string
     placeholder?: string
     required?: boolean
     disabled?: boolean
@@ -309,6 +311,7 @@ watch(
       :aria-expanded="open"
       :aria-activedescendant="activeOptionId"
       :aria-required="required"
+      :title="selectedOption?.label"
       :disabled="disabled"
       :class="[
         'app-select-trigger field w-full cursor-pointer justify-between text-left disabled:pointer-events-none',
@@ -328,6 +331,13 @@ watch(
         alt=""
         aria-hidden="true"
         class="size-4 shrink-0 object-contain"
+      />
+      <AppIcon
+        v-else-if="selectedOption?.icon || icon"
+        :name="selectedOption?.icon || icon!"
+        :size="compact ? 14 : 16"
+        class="text-txt-3 shrink-0"
+        aria-hidden="true"
       />
       <span
         :class="[
@@ -422,8 +432,8 @@ watch(
                   class="size-4 shrink-0 object-contain"
                 />
                 <AppIcon
-                  v-else-if="option.icon"
-                  :name="option.icon"
+                  v-else-if="option.icon || icon"
+                  :name="option.icon || icon!"
                   :size="15"
                   :class="model === option.value ? 'text-violet' : 'text-txt-3'"
                   aria-hidden="true"

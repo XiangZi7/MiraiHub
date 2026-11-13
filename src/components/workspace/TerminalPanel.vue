@@ -25,6 +25,9 @@ import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from '@/components/workspace/TerminalSuggestions.vue'
 import TerminalActions from '@/components/workspace/TerminalActions.vue'
 import TerminalInlineAi from '@/components/workspace/terminal-inline-ai.vue'
+import TerminalStatusBar from '@/components/workspace/terminal-status-bar.vue'
+import { useTerminalPresentation } from '@/composables/useTerminalPresentation'
+import { listDirectory, readTerminalGitBranch } from '@/api/ssh'
 
 const { t } = useI18n()
 
@@ -76,9 +79,6 @@ defineSlots<{
 const containerRef = useTemplateRef<HTMLElement>('terminal')
 const terminalAreaRef = useTemplateRef<HTMLElement>('terminalArea')
 
-/** 底部状态栏展示的终端网格尺寸（列 × 行），随 xterm resize 更新 */
-const termSize = ref('')
-
 const {
   term,
   route,
@@ -95,6 +95,19 @@ const {
   setInputInterceptor,
   setSubmitHandler,
 } = useSshTerminal()
+const {
+  v4,
+  directory,
+  branch,
+  gitError,
+  position,
+  size,
+  refreshGit,
+  trackSubmit,
+} = useTerminalPresentation(term, sessionId, {
+  readGitBranch: readTerminalGitBranch,
+  readDirectory: listDirectory,
+})
 
 // 响应式状态
 const state = reactive({
@@ -128,11 +141,7 @@ watch(
   (terminal, _, cleanup) => {
     state.selectedText = ''
     if (!terminal) return
-    termSize.value = `${terminal.cols} × ${terminal.rows}`
     const disposables = [
-      terminal.onResize(({ cols, rows }) => {
-        termSize.value = `${cols} × ${rows}`
-      }),
       terminal.onSelectionChange(() => {
         state.selectedText = terminal.getSelection()
       }),
@@ -316,11 +325,6 @@ const endpoint = computed(() => {
 
   return props.title || `${props.config.username}@${props.config.host}`
 })
-
-/** 顶栏主机色块上的首字母，取连接名或主机名的第一个字符 */
-const hostInitial = computed(() =>
-  (props.title || props.config?.host || 'M').charAt(0).toUpperCase()
-)
 
 /**
  * 挂载并连接。
@@ -539,6 +543,7 @@ function interceptCompletionKey(data: string): boolean {
 
 setInputInterceptor(interceptTerminalInput)
 setSubmitHandler(line => {
+  trackSubmit(line)
   trackCommand(line)
   void completion.trackSubmittedCommand(line)
 })
@@ -554,18 +559,13 @@ defineExpose({
 <template>
   <section
     class="terminal-pane pane bg-terminal min-w-0 flex-1"
+    :class="{ 'terminal-v4': v4 }"
     :aria-busy="status === 'connecting'"
   >
-    <!-- 会话工具条 -->
+    <!-- 会话工具条：两种样式共用原有头部，保留监控信息、布局和全部操作。 -->
     <div
       class="terminal-header border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
     >
-      <span
-        class="bg-accent grid size-5 shrink-0 place-items-center rounded-md text-[11px] font-semibold text-white select-none"
-        aria-hidden="true"
-        >{{ hostInitial }}</span
-      >
-
       <span
         v-if="status !== 'connecting'"
         :class="[
@@ -582,7 +582,7 @@ defineExpose({
       </span>
 
       <span
-        class="terminal-kind text-txt-4 shrink-0 text-[10px] font-medium tracking-wider"
+        class="terminal-kind border-line bg-card text-txt-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium"
       >
         SSH
       </span>
@@ -666,12 +666,15 @@ defineExpose({
     <div
       v-if="config"
       ref="terminalArea"
-      class="bg-terminal relative min-h-0 flex-1 overflow-hidden"
+      class="terminal-output bg-terminal relative min-h-0 flex-1 overflow-hidden"
     >
       <div
         ref="terminal"
-        class="absolute inset-0 px-4 py-3"
-        :class="status === 'connecting' && 'invisible'"
+        class="absolute inset-0"
+        :class="[
+          v4 ? 'px-4 py-3' : 'p-2',
+          status === 'connecting' && 'invisible',
+        ]"
       />
       <Transition
         enter-active-class="transition-opacity duration-150 motion-reduce:transition-none"
@@ -781,18 +784,17 @@ defineExpose({
       </div>
     </div>
 
-    <!-- 底部状态栏：面板窄时顶栏会藏掉端点，这里常驻端点与网格尺寸，都是真实会话数据 -->
-    <div
-      v-if="config"
-      class="border-line-soft text-txt-3 flex h-6 shrink-0 items-center gap-3 border-t px-3 font-mono text-[10px]"
-    >
-      <span class="truncate">SSH · {{ endpoint }}</span>
-      <div class="flex-1" />
-      <span v-if="termSize">{{ termSize }}</span>
-      <span :class="status === 'connected' && 'text-success'">{{
-        statusMeta.text
-      }}</span>
-    </div>
+    <!-- v4 状态栏：目录、分支与光标位置均来自当前终端，未知信息留空。 -->
+    <TerminalStatusBar
+      v-if="v4 && config"
+      kind="ssh"
+      :directory="directory"
+      :branch="branch"
+      :git-error="gitError"
+      :position="position"
+      :size="size"
+      @retry-git="refreshGit"
+    />
   </section>
 </template>
 

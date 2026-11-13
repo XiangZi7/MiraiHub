@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Real terminal components preview</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      mockWindows('terminal-preview')
+      let output,
+        input = '',
+        cwd = '~'
+      const calls = []
+      const files = [
+        { name: 'web', kind: 'directory', permissions: 'rwxr-xr-x' },
+        { name: 'src', kind: 'directory', permissions: 'rwxr-xr-x' },
+        { name: 'run.sh', kind: 'file', permissions: 'rwxr-xr-x' },
+        { name: 'package.json', kind: 'file', permissions: 'rw-r--r--' },
+        {
+          name: 'current',
+          kind: 'symlink',
+          permissions: 'rwxrwxrwx',
+          linkTarget: 'web',
+        },
+      ].map(item => ({
+        path: '/data/miraiTV/' + item.name,
+        size: 128,
+        modifiedAt: Date.now(),
+        owner: 'root',
+        group: 'root',
+        linkTarget: null,
+        ...item,
+      }))
+      const prompt = () => 'root@C202609141460448:' + cwd + '# '
+      const send = data =>
+        output?.onmessage(new TextEncoder().encode(data).buffer)
+      function execute(command) {
+        let result = ''
+        if (command.startsWith('cd ')) {
+          const path = command.slice(3).replace(/\/$/, '')
+          cwd = path.startsWith('/')
+            ? path
+            : (cwd === '~' ? '/root' : cwd) + '/' + path
+        } else if (command === 'ls')
+          result =
+            cwd === '/data'
+              ? 'Monitor-Hub  Solo-Music  miraiTV  mysql-conf  new-api'
+              : 'web  src  run.sh  package.json  current'
+        else if (command.startsWith('ls -'))
+          result =
+            'total 48\r\ndrwxr-xr-x  6 root root 4096 Nov 13 14:02 src\r\n-rwxr-xr-x  1 root root  921 Nov 11 18:20 run.sh\r\n-rw-r--r--  1 root root  812 Nov 13 09:15 package.json\r\nlrwxrwxrwx  1 root root    3 Nov 13 10:05 current -> web'
+        else if (command === 'git pull') result = 'Already up to date.'
+        else if (command === 'cat package.json')
+          result =
+            '{\r\n  "name": "miraihub",\r\n  "private": true,\r\n  "version": "4.0.10",\r\n  "scripts": { "dev": "vite", "port": 1420 }\r\n}'
+        else if (command) result = 'hello from MiraiHub'
+        send((result ? result + '\r\n' : '') + prompt())
+      }
+      mockIPC(
+        (command, args = {}) => {
+          calls.push({ command, args })
+          if (command === 'ssh_connect') return 'preview-session'
+          if (command === 'ssh_open_shell') {
+            output = args.onOutput
+            setTimeout(
+              () => send('Welcome to Ubuntu 24.04.1 LTS\r\n\r\n' + prompt()),
+              100
+            )
+            return
+          }
+          if (command === 'ssh_write') {
+            const data = args.data
+            if (data === '\r' || data === '\n') {
+              const submitted = input
+              input = ''
+              send('\r\n')
+              setTimeout(() => execute(submitted.trim()), 100)
+            } else {
+              input += data
+              send(data)
+            }
+            return
+          }
+          if (command === 'ssh_exec')
+            return args.command.includes('/data/miraiTV')
+              ? {
+                  stdout: 'Login banner\r\n__MIRAI_GIT_BRANCH__:main\n',
+                  stderr: '',
+                  exitCode: null,
+                }
+              : {
+                  stdout: '__MIRAI_GIT_NONE__\n',
+                  stderr: 'fatal: not a git repository',
+                  exitCode: null,
+                }
+          if (command === 'ssh_list_directory')
+            return { path: args.path || '/data/miraiTV', entries: files }
+          if (
+            command === 'ssh_complete_shell' ||
+            command === 'ssh_transfer_list'
+          )
+            return []
+          if (command === 'plugin:window|is_maximized') return false
+        },
+        { shouldMockEvents: true }
+      )
+      const [
+        { createApp, h, reactive },
+        { pinia },
+        { i18n },
+        { useSettingsStore },
+        { default: TerminalPanel },
+        { default: FilesView },
+        { addCollection },
+        { default: icons },
+        { MIRAI_ICONS },
+      ] = await Promise.all([
+        import('vue'),
+        import('/src/stores/index.ts'),
+        import('/src/i18n/index.ts'),
+        import('/src/stores/settings.ts'),
+        import('/src/components/workspace/TerminalPanel.vue'),
+        import('/src/components/workspace/FilesView.vue'),
+        import('@iconify/vue'),
+        import('virtual:mirai-icons'),
+        import('/src/constants/icons.ts'),
+      ])
+      await import('/src/assets/styles/main.css')
+      addCollection(icons)
+      addCollection(MIRAI_ICONS)
+      const scheme =
+        new URLSearchParams(location.search).get('scheme') || 'dark'
+      document.documentElement.dataset.skinScheme = scheme
+      if (scheme === 'light') document.documentElement.classList.add('light')
+      i18n.global.locale.value = 'zh-CN'
+      const store = useSettingsStore(pinia)
+      store.values.terminalStyle =
+        new URLSearchParams(location.search).get('style') || 'v4'
+      store.values.terminalCommandBlocks = true
+      store.values.terminalFontSize = '13'
+      store.values.terminalCursor = 'bar'
+      window.fixture = { store, calls, ready: false }
+      const state = reactive({ connected: false })
+      createApp({
+        setup() {
+          return () =>
+            h(
+              'main',
+              {
+                style:
+                  'height:100vh;padding:20px;display:flex;flex-direction:column;gap:12px',
+              },
+              [
+                h(
+                  'div',
+                  { style: 'display:flex;gap:8px' },
+                  ['classic', 'v4'].map(value =>
+                    h(
+                      'button',
+                      {
+                        class: 'btn',
+                        onClick: () => (store.values.terminalStyle = value),
+                      },
+                      value
+                    )
+                  )
+                ),
+                h(
+                  'div',
+                  { style: 'display:flex;min-height:0;flex:1;gap:10px' },
+                  [
+                    h(
+                      TerminalPanel,
+                      {
+                        config: {
+                          host: 'preview.invalid',
+                          port: 22,
+                          username: 'root',
+                          auth: { type: 'agent' },
+                        },
+                        title: '我独自乐队',
+                        onStatus: status => {
+                          state.connected = status === 'connected'
+                          setTimeout(
+                            () => (window.fixture.ready = state.connected),
+                            200
+                          )
+                        },
+                      },
+                      {
+                        metrics: () =>
+                          h(
+                            'span',
+                            { class: 'text-txt-3 font-mono text-[10px]' },
+                            '52% (2C)　2.7/3.8 GB　17.2/29.3 GB (59%)'
+                          ),
+                      }
+                    ),
+                    h(
+                      'section',
+                      { class: 'pane', style: 'width:320px;flex:none' },
+                      [
+                        h(
+                          'div',
+                          {
+                            class:
+                              'border-line-soft flex h-9 shrink-0 items-center border-b px-3 text-xs',
+                          },
+                          '远端文件'
+                        ),
+                        h(FilesView, {
+                          sessionId: 'preview-session',
+                          connectionName: '我独自乐队',
+                        }),
+                      ]
+                    ),
+                  ]
+                ),
+              ]
+            )
+        },
+      })
+        .use(pinia)
+        .use(i18n)
+        .mount('#app')
+    </script>
+  </body>
+</html>

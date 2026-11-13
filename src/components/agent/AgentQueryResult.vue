@@ -85,6 +85,7 @@ const yOptions = computed(() => [
     <template v-else>
       <div class="query-controls">
         <AppSelect
+          icon="lucide:table-2"
           v-model="view"
           class="query-view"
           :label="t('视图')"
@@ -96,6 +97,7 @@ const yOptions = computed(() => [
           <div class="query-axis">
             <span aria-hidden="true">X</span>
             <AppSelect
+              icon="lucide:arrow-right"
               v-model="xModel"
               class="min-w-0 flex-1"
               :label="t('横轴字段')"
@@ -107,6 +109,7 @@ const yOptions = computed(() => [
           <div class="query-axis">
             <span aria-hidden="true">Y</span>
             <AppSelect
+              icon="lucide:arrow-up"
               v-model="y"
               class="min-w-0 flex-1"
               :label="t('纵轴字段')"

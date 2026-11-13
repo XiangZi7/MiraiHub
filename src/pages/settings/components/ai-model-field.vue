@@ -3,6 +3,7 @@ import { translateNativeMessage } from '@/i18n/native'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, reactive, useId, useTemplateRef, watch } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import { useAgentModels } from '@/composables/useAgentModels'
 import type { AgentApiFormat } from '@/types/agent'
 
@@ -129,6 +130,13 @@ function focusout(event: FocusEvent): void {
   >
     <label :for="id">{{ t('模型名称') }}</label>
     <div class="ai-model-row">
+      <!-- 模型输入与候选列表共用模型图标，保留手动填写能力。 -->
+      <AppIcon
+        name="lucide:bot"
+        :size="15"
+        class="text-txt-4 pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2"
+        aria-hidden="true"
+      />
       <input
         :id="id"
         ref="input"
@@ -174,8 +182,16 @@ function focusout(event: FocusEvent): void {
           @mousedown.prevent
           @click="select(name)"
           @mousemove="state.active = index"
+          class="flex items-center gap-2"
         >
-          {{ name }}
+          <!-- 可用模型候选项图标 -->
+          <AppIcon
+            name="lucide:bot"
+            :size="14"
+            class="text-txt-3"
+            aria-hidden="true"
+          />
+          <span class="min-w-0">{{ name }}</span>
         </li>
         <li
           v-if="!visibleModels.length"
@@ -219,7 +235,7 @@ function focusout(event: FocusEvent): void {
   min-height: 36px;
   border: 1px solid var(--color-line);
   background: var(--color-input, #ffffff04);
-  padding: 9px 10px;
+  padding: 9px 10px 9px 33px;
   border-radius: 6px;
   outline: none;
   font-size: 12px;

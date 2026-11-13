@@ -1557,6 +1557,7 @@ function applyAiComments(): void {
         class="flex w-60 min-w-0 flex-none items-center gap-1.5"
       >
         <AppSelect
+          icon="lucide:copy-plus"
           model-value=""
           :label="t('从模板或现有表复制结构')"
           :placeholder="

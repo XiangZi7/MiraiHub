@@ -217,6 +217,7 @@ defineExpose({ add: addForeignKey })
           <span>{{ t('引用表') }}</span>
           <div class="max-w-[420px]">
             <AppSelect
+              icon="lucide:table-2"
               :model-value="referenceKey(foreignKey)"
               :label="t('引用表')"
               :options="tableSelectOptions"
@@ -244,6 +245,7 @@ defineExpose({ add: addForeignKey })
             class="grid grid-cols-[minmax(140px,1fr)_24px_minmax(140px,1fr)_28px] items-center gap-1.5"
           >
             <AppSelect
+              icon="lucide:columns-3"
               :model-value="column"
               :label="t('本地字段')"
               :options="localColumnOptions"
@@ -260,6 +262,7 @@ defineExpose({ add: addForeignKey })
                 :size="14"
             /></span>
             <AppSelect
+              icon="lucide:link-2"
               :model-value="foreignKey.referencedColumns[index] ?? ''"
               :label="t('引用字段')"
               :options="referencedColumnOptions(foreignKey)"
@@ -304,6 +307,7 @@ defineExpose({ add: addForeignKey })
           <div class="text-txt-4 grid gap-1 text-[9.5px]">
             <span> {{ t('删除时') }} </span
             ><AppSelect
+              icon="lucide:trash-2"
               :model-value="foreignKey.onDelete"
               :label="t('删除时')"
               :options="actionOptions"
@@ -319,6 +323,7 @@ defineExpose({ add: addForeignKey })
           <div class="text-txt-4 grid gap-1 text-[9.5px]">
             <span> {{ t('更新时') }} </span
             ><AppSelect
+              icon="lucide:refresh-cw"
               :model-value="foreignKey.onUpdate"
               :label="t('更新时')"
               :options="actionOptions"

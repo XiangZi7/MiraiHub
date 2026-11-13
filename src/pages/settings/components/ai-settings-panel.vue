@@ -72,7 +72,9 @@ function confirmDelete(): void {
           class="grid min-w-0 gap-3 border-0 p-0"
           :aria-label="t('配置管理')"
         >
+          <!-- 已保存的配置选择：在当前值和候选项中显示图标。 -->
           <AppSelect
+            icon="lucide:bot"
             v-model="selectedId"
             :label="t('已保存的配置')"
             :options="options"
@@ -81,7 +83,9 @@ function confirmDelete(): void {
           />
           <div class="flex items-end gap-2">
             <div class="min-w-0 flex-1">
+              <!-- 添加配置选择：在当前值和候选项中显示图标。 -->
               <AppSelect
+                icon="lucide:circle-plus"
                 v-model="preset"
                 :label="t('添加配置')"
                 :options="

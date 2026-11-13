@@ -32,6 +32,8 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => previous?.focus())
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  // 编辑器已处理的查找关闭与 Tab 缩进不再触发外层窗口操作。
+  if (event.defaultPrevented) return
   if (document.querySelector('[role=alertdialog]')) return
   if (event.key === 'Escape') {
     event.preventDefault()

@@ -1,0 +1,96 @@
+/* v4 自成扁平终端表面；经典样式继续使用工作区的玻璃面板令牌。 */
+.terminal-v4 {
+  --mirai-terminal-surface: #0f1011;
+  --mirai-terminal-accent: #b39ddb;
+  --mirai-terminal-muted: #777782;
+  --mirai-terminal-error: #de7a72;
+  --mirai-terminal-line: #ffffff0a;
+  border-radius: 8px;
+  border-color: #ffffff14;
+  box-shadow: none;
+}
+
+[data-skin-scheme='light'] .terminal-v4 {
+  --mirai-terminal-surface: #faf9fd;
+  --mirai-terminal-accent: #7955ad;
+  --mirai-terminal-muted: #757080;
+  --mirai-terminal-error: #b03030;
+  --mirai-terminal-line: #342c4910;
+  border-color: #342c491c;
+}
+
+.mirai-terminal-footer {
+  color: var(--mirai-terminal-muted);
+  border-color: var(--mirai-terminal-line);
+  background: var(--mirai-terminal-surface);
+}
+
+.terminal-v4 .terminal-output {
+  background: var(--mirai-terminal-surface);
+}
+.mirai-terminal-branch {
+  color: var(--mirai-terminal-accent);
+}
+.terminal-v4 .xterm .xterm-viewport {
+  background: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.terminal-v4:hover .xterm .xterm-viewport {
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+/* xterm 6 使用自绘滚动条；旧版 viewport 规则不足以隐藏这条常驻灰轨。 */
+.terminal-v4 .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  background: transparent;
+}
+.terminal-v4:hover .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  background: var(--color-line-strong);
+}
+
+/* 装饰锚定 xterm marker，随滚动、回滚裁剪和字体网格移动，不拦截输入或选区。 */
+.terminal-v4 .mirai-command-boundary,
+.terminal-v4 .mirai-command-muted,
+.terminal-v4 .mirai-command-meta {
+  pointer-events: none;
+  user-select: none;
+}
+.terminal-v4 .mirai-command-branch {
+  pointer-events: none;
+  user-select: none;
+  color: var(--mirai-terminal-accent);
+  font: 11px var(--font-mono);
+  white-space: nowrap;
+}
+.terminal-v4 .mirai-command-boundary {
+  border-top: 1px solid var(--mirai-terminal-line);
+}
+.terminal-v4 .mirai-command-muted {
+  background: color-mix(
+    in srgb,
+    var(--mirai-terminal-surface) 14%,
+    transparent
+  );
+}
+.terminal-v4 .mirai-command-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--mirai-terminal-muted);
+  font: 10px var(--font-mono);
+  white-space: nowrap;
+}
+.terminal-v4 .mirai-command-meta[data-failed='true'] {
+  color: var(--mirai-terminal-error);
+}
+
+@container terminal (max-width: 440px) {
+  .mirai-terminal-position,
+  .mirai-terminal-encoding {
+    display: none;
+  }
+  .terminal-v4 .mirai-command-meta,
+  .terminal-v4 .mirai-command-branch {
+    display: none;
+  }
+}

@@ -133,7 +133,9 @@ function addSecret(list: McpSecretDraft[]): void {
         :label="t('启用')"
         :disabled="loading || busy || !IS_TAURI"
       />
+      <!-- 连接方式选择：在当前值和候选项中显示图标。 -->
       <AppSelect
+        icon="lucide:plug"
         v-model="draft.transport"
         :label="t('连接方式')"
         :options="transports"

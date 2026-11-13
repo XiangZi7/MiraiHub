@@ -322,6 +322,7 @@ async function copySql(sql: string): Promise<void> {
         />
         <div class="w-20">
           <AppSelect
+            icon="lucide:timer"
             v-model="intervalModel"
             :label="t('刷新间隔')"
             :options="intervalOptions"

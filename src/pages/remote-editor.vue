@@ -27,12 +27,21 @@ const state = reactive({
   loadFailed: false,
   // 正在释放编辑会话并关闭窗口
   closing: false,
+  // 编辑器上报的未保存与忙碌状态，驱动标题栏圆点与保存按钮
+  dirty: false,
+  busy: false,
 })
-const { target, loadFailed, closing } = toRefs(state)
-const caption = computed(() => {
-  if (!state.target) return 'MiraiHub'
-  const name = state.target.path.split('/').pop() || t('远端文件')
-  return `${name} — ${state.target.connectionName} — MiraiHub`
+const { target, loadFailed, closing, dirty, busy } = toRefs(state)
+const fileName = computed(
+  () => state.target?.path.split('/').pop() || t('远端文件')
+)
+/** 文件所在目录，标题栏里弱化展示，给文件名作上下文 */
+const dirPath = computed(() => {
+  const path = state.target?.path || ''
+  const dir = path
+    .slice(0, path.length - fileName.value.length)
+    .replace(/\/$/, '')
+  return dir || '/'
 })
 const editor = useTemplateRef<InstanceType<typeof RemoteTextEditor>>('editor')
 let alive = true
@@ -40,6 +49,8 @@ let unlisten: (() => void) | undefined
 let statusQueue = Promise.resolve()
 /** 按发生顺序向原生窗口同步未保存与忙碌状态，避免连续保存和重载覆盖关闭保护。 */
 function updateStatus(dirty: boolean, busy: boolean): void {
+  state.dirty = dirty
+  state.busy = busy
   statusQueue = statusQueue
     .then(() => api.remoteEditorStatus(dirty, busy))
     .catch(error => {
@@ -106,14 +117,37 @@ onBeforeUnmount(() => {
       class="remote-editor-titlebar"
       data-tauri-drag-region
     >
-      <span
-        class="remote-editor-caption"
+      <div
+        class="remote-editor-heading"
         data-tauri-drag-region
       >
-        {{ caption }}
-      </span>
+        <span class="remote-editor-filename">{{ fileName }}</span>
+        <span
+          v-if="target"
+          class="remote-editor-meta"
+        >
+          {{ dirPath }} · {{ target.connectionName }}
+        </span>
+        <span
+          v-if="dirty"
+          class="remote-editor-dot"
+          :title="t('未保存')"
+        />
+      </div>
+      <!-- 编辑器标题栏：保存沿用当前文档的冲突和关闭保护。 -->
+      <AppButton
+        v-if="target"
+        size="sm"
+        variant="bare"
+        :disabled="!dirty || busy || closing"
+        @click="editor?.save()"
+      >
+        {{ t('保存') }}
+      </AppButton>
+      <!-- 编辑器标题栏：原生窗口控制组件。 -->
       <WindowControls />
     </header>
+    <!-- 编辑器主体：CodeMirror 文档、行号与状态栏。 -->
     <RemoteTextEditor
       v-if="target"
       ref="editor"
@@ -156,18 +190,39 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   flex: none;
-  height: 32px;
+  gap: 8px;
+  height: 36px;
+  padding-left: 14px;
+  border-bottom: 1px solid var(--color-line-soft);
   user-select: none;
 }
-.remote-editor-caption {
+.remote-editor-heading {
+  display: flex;
   flex: 1;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  padding-left: 18px;
   overflow: hidden;
-  color: var(--color-txt-2);
+  white-space: nowrap;
+}
+.remote-editor-filename {
+  color: var(--color-txt);
+  font-size: 13px;
+  font-weight: 600;
+}
+.remote-editor-meta {
+  overflow: hidden;
+  color: var(--color-txt-3);
+  font-family: var(--font-mono);
   font-size: 11px;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.remote-editor-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--color-accent);
 }
 .window-loading {
   display: flex;

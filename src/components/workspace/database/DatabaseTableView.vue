@@ -1676,6 +1676,7 @@ watch(
           >
             <div class="w-32">
               <AppSelect
+                icon="lucide:columns-3"
                 v-model="filterDraft.column"
                 :label="t('筛选字段')"
                 :options="filterColumnOptions"
@@ -1686,6 +1687,7 @@ watch(
             </div>
             <div class="w-28">
               <AppSelect
+                icon="lucide:list-filter"
                 v-model="filterDraft.operator"
                 :label="t('筛选方式')"
                 :options="operatorOptions"
@@ -2181,6 +2183,7 @@ watch(
             />
             <div class="w-25">
               <AppSelect
+                icon="lucide:list-ordered"
                 v-model="pageSizeModel"
                 :label="t('分页大小')"
                 :options="pageSizeOptions"

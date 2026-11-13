@@ -64,7 +64,9 @@ function normalizePrice(field: keyof AgentPricing): void {
         maxlength="80"
       />
     </div>
+    <!-- API 格式选择：在当前值和候选项中显示图标。 -->
     <AppSelect
+      icon="lucide:braces"
       v-model="draft.apiFormat"
       :label="t('API 格式')"
       :options="formats"

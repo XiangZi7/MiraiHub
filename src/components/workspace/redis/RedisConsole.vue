@@ -4,8 +4,9 @@ import { useI18n } from 'vue-i18n'
 import { useStorage } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import RedisCommandGuide from './RedisCommandGuide.vue'
-import DatabaseQueryResizeHandle from '../database/DatabaseQueryResizeHandle.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import RedisCommandGuide from '@/components/workspace/redis/RedisCommandGuide.vue'
+import DatabaseQueryResizeHandle from '@/components/workspace/database/DatabaseQueryResizeHandle.vue'
 import type { RedisCommandResult, RedisKey } from '@/types/redis'
 import {
   REDIS_CONSOLE_HISTORY_KEY,
@@ -98,11 +99,16 @@ function onHistoryKey(event: KeyboardEvent, step: number) {
   historyIndex = next
   command.value = next === -1 ? '' : history.value[next]!
 }
-// 从历史下拉框选取命令
-function pickHistory(event: Event) {
-  const select = event.target as HTMLSelectElement
-  if (select.value) void insertCommand(select.value)
-  select.value = ''
+const historyOptions = computed(() =>
+  history.value.map(value => ({
+    value,
+    label: value.length > 80 ? value.slice(0, 80) + '…' : value,
+    icon: 'lucide:square-terminal',
+  }))
+)
+/** 从带图标的历史下拉框插入命令，并由现有插入流程将焦点还给编辑区。 */
+function pickHistory(value: string): void {
+  if (value) void insertCommand(value)
 }
 // 执行命令并记录到历史（含凭据的命令不记录）
 function run() {
@@ -138,21 +144,19 @@ function run() {
             :size="12"
           />
           <span class="text-txt-3">{{ t('Redis 命令') }}</span>
-          <select
+          <!-- 命令历史使用公共图标下拉，选取后仍只填入编辑区。 -->
+          <AppSelect
             v-if="history.length"
-            class="border-line-soft bg-raised text-txt-3 ml-auto h-6 max-w-48 rounded border px-1 text-[10px] outline-none"
-            :aria-label="t('命令历史')"
-            @change="pickHistory"
-          >
-            <option value="">{{ t('命令历史') }}</option>
-            <option
-              v-for="item in history"
-              :key="item"
-              :value="item"
-            >
-              {{ item.length > 80 ? item.slice(0, 80) + '…' : item }}
-            </option>
-          </select>
+            class="ml-auto w-48 min-w-0"
+            icon="lucide:history"
+            :model-value="''"
+            :label="t('命令历史')"
+            :placeholder="t('命令历史')"
+            :options="historyOptions"
+            hide-label
+            compact
+            @update:model-value="pickHistory"
+          />
           <span :class="!history.length && 'ml-auto'">Ctrl + Enter</span>
           <AppButton
             size="sm"

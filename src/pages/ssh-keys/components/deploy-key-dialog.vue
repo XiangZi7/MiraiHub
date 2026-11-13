@@ -113,7 +113,9 @@ async function deploy(): Promise<void> {
     >
       {{ t('还没有已保存的 SSH 连接') }}
     </p>
+    <!-- 目标服务器选择：在当前值和候选项中显示图标。 -->
     <AppSelect
+      icon="lucide:server"
       v-else
       v-model="connectionId"
       :label="t('目标服务器')"

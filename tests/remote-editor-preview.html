@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Remote CodeMirror editor preview</title>
+  </head>
+  <body>
+    <div
+      id="app"
+      style="height: 100vh"
+    ></div>
+    <script type="module">
+      import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+      mockWindows('remote-editor-preview')
+      const documentState = {
+        id: 'document-1',
+        sessionId: 'session-1',
+        endpoint: 'root@mirai-server',
+        path: '/etc/nginx/conf.d/hub.yxcr.top.conf',
+        text: [
+          '# MiraiHub reverse proxy',
+          'server {',
+          '    listen 443 ssl;',
+          '    server_name mirai.example.com;',
+          '',
+          '    location /api/ {',
+          '        proxy_pass http://127.0.0.1:3000;',
+          '        proxy_set_header Host $host;',
+          '    }',
+          '}',
+        ].join('\n'),
+        lineEnding: 'CRLF',
+        bom: true,
+      }
+      const native = {
+        saved: [],
+        statuses: [],
+        finished: 0,
+        document: documentState,
+      }
+      window.fixture = native
+      mockIPC(
+        async (command, args = {}) => {
+          if (command === 'remote_editor_target')
+            return {
+              sessionId: 'session-1',
+              path: documentState.path,
+              connectionName: 'mirai-server',
+            }
+          if (command === 'ssh_text_open') return { ...documentState }
+          if (command === 'ssh_text_save') {
+            native.saved.push({ ...args })
+            await new Promise(r => setTimeout(r, 100))
+            documentState.text = args.text
+            return { ...documentState }
+          }
+          if (command === 'remote_editor_status') {
+            native.statuses.push(args)
+            return
+          }
+          if (command === 'remote_editor_finish') {
+            native.finished++
+            return
+          }
+          if (command === 'plugin:window|is_maximized') return false
+        },
+        { shouldMockEvents: true }
+      )
+      const [
+        { createApp },
+        { pinia },
+        { i18n },
+        { default: Editor },
+        { addCollection },
+        { default: icons },
+        { MIRAI_ICONS },
+      ] = await Promise.all([
+        import('vue'),
+        import('/src/stores/index.ts'),
+        import('/src/i18n/index.ts'),
+        import('/src/pages/remote-editor.vue'),
+        import('@iconify/vue'),
+        import('virtual:mirai-icons'),
+        import('/src/constants/icons.ts'),
+      ])
+      await import('/src/assets/styles/main.css')
+      addCollection(icons)
+      addCollection(MIRAI_ICONS)
+      const scheme =
+        new URLSearchParams(location.search).get('scheme') || 'dark'
+      document.documentElement.dataset.skinScheme = scheme
+      if (scheme === 'light') document.documentElement.classList.add('light')
+      i18n.global.locale.value = 'zh-CN'
+      createApp(Editor).use(pinia).use(i18n).mount('#app')
+    </script>
+  </body>
+</html>
