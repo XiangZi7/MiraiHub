@@ -76,6 +76,9 @@ defineSlots<{
 const containerRef = useTemplateRef<HTMLElement>('terminal')
 const terminalAreaRef = useTemplateRef<HTMLElement>('terminalArea')
 
+/** 底部状态栏展示的终端网格尺寸（列 × 行），随 xterm resize 更新 */
+const termSize = ref('')
+
 const {
   term,
   route,
@@ -125,7 +128,11 @@ watch(
   (terminal, _, cleanup) => {
     state.selectedText = ''
     if (!terminal) return
+    termSize.value = `${terminal.cols} × ${terminal.rows}`
     const disposables = [
+      terminal.onResize(({ cols, rows }) => {
+        termSize.value = `${cols} × ${rows}`
+      }),
       terminal.onSelectionChange(() => {
         state.selectedText = terminal.getSelection()
       }),
@@ -309,6 +316,11 @@ const endpoint = computed(() => {
 
   return props.title || `${props.config.username}@${props.config.host}`
 })
+
+/** 顶栏主机色块上的首字母，取连接名或主机名的第一个字符 */
+const hostInitial = computed(() =>
+  (props.title || props.config?.host || 'M').charAt(0).toUpperCase()
+)
 
 /**
  * 挂载并连接。
@@ -549,6 +561,12 @@ defineExpose({
       class="terminal-header border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
     >
       <span
+        class="bg-accent grid size-5 shrink-0 place-items-center rounded-md text-[11px] font-semibold text-white select-none"
+        aria-hidden="true"
+        >{{ hostInitial }}</span
+      >
+
+      <span
         v-if="status !== 'connecting'"
         :class="[
           'flex shrink-0 items-center gap-1.5 text-[11px]',
@@ -564,7 +582,7 @@ defineExpose({
       </span>
 
       <span
-        class="terminal-kind border-line bg-card text-txt-2 shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+        class="terminal-kind text-txt-4 shrink-0 text-[10px] font-medium tracking-wider"
       >
         SSH
       </span>
@@ -652,7 +670,7 @@ defineExpose({
     >
       <div
         ref="terminal"
-        class="absolute inset-0 p-2"
+        class="absolute inset-0 px-4 py-3"
         :class="status === 'connecting' && 'invisible'"
       />
       <Transition
@@ -762,6 +780,19 @@ defineExpose({
         </p>
       </div>
     </div>
+
+    <!-- 底部状态栏：面板窄时顶栏会藏掉端点，这里常驻端点与网格尺寸，都是真实会话数据 -->
+    <div
+      v-if="config"
+      class="border-line-soft text-txt-3 flex h-6 shrink-0 items-center gap-3 border-t px-3 font-mono text-[10px]"
+    >
+      <span class="truncate">SSH · {{ endpoint }}</span>
+      <div class="flex-1" />
+      <span v-if="termSize">{{ termSize }}</span>
+      <span :class="status === 'connected' && 'text-success'">{{
+        statusMeta.text
+      }}</span>
+    </div>
   </section>
 </template>
 
@@ -796,8 +827,13 @@ defineExpose({
   background-color: transparent;
 }
 
+/* 滚动条只在指针悬停面板时出现：静止时不让一条灰轨常驻在终端右侧 */
 :deep(.xterm-viewport) {
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.terminal-pane:hover :deep(.xterm-viewport) {
   scrollbar-color: var(--color-line-strong) transparent;
 }
 
@@ -807,6 +843,10 @@ defineExpose({
 
 :deep(.xterm-viewport)::-webkit-scrollbar-thumb {
   border-radius: 4px;
+  background: transparent;
+}
+
+.terminal-pane:hover :deep(.xterm-viewport)::-webkit-scrollbar-thumb {
   background: var(--color-line-strong);
 }
 
