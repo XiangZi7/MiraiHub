@@ -69,7 +69,7 @@ html.reduce-motion .mirai-terminal-cursor {
   animation: none;
 }
 
-/* 终端沿用工作区的灰紫玻璃表面；强调色、边框和阴影随用户皮肤一起更新。 */
+/* 终端外壳跟随工作区皮肤；内容区保持不透明，避免桌面内容穿透。 */
 .terminal-v4 {
   --mirai-terminal-accent: var(--color-accent);
   --mirai-terminal-muted: var(--color-txt-3);
@@ -157,9 +157,9 @@ html.reduce-motion .mirai-terminal-cursor {
   }
 }
 :root {
-  --mirai-terminal-surface: color-mix(
-    in srgb,
-    var(--color-panel) 76%,
-    var(--color-terminal)
-  );
+  --mirai-terminal-surface: #000000;
+}
+
+:root[data-skin-scheme='light'] {
+  --mirai-terminal-surface: #fbfbfa;
 }

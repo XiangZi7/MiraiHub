@@ -11,8 +11,8 @@ import { parseColor, rgba } from '@/utils/color'
  * https://vercel.com/geist/terminal
  * 表面、边框和光标跟随工作区令牌，避免终端与应用的玻璃面板割裂。
  *
- * background 用全透明：终端容器自身已铺了 bg-terminal（半透明底色，
- * 透出系统 acrylic），xterm 再涂一层不透明底会把这个效果盖掉。
+ * background 用全透明，仅由 xterm 绘字，实际底色交给终端容器：
+ * v4 使用不透明的 --mirai-terminal-surface，经典样式使用 bg-terminal。
  */
 export const TERMINAL_THEME: ITheme = {
   background: '#00000000',
