@@ -69,24 +69,16 @@ html.reduce-motion .mirai-terminal-cursor {
   animation: none;
 }
 
-/* v4 自成扁平终端表面；经典样式继续使用工作区的玻璃面板令牌。 */
+/* 终端沿用工作区的灰紫玻璃表面；强调色、边框和阴影随用户皮肤一起更新。 */
 .terminal-v4 {
-  --mirai-terminal-surface: #000000;
   --mirai-terminal-accent: var(--color-accent);
-  --mirai-terminal-muted: #8f8f8f;
-  --mirai-terminal-error: #e5484d;
-  --mirai-terminal-line: #ffffff0f;
-  border-radius: 10px;
-  border-color: #2e2e2e;
-  box-shadow: none;
-}
-
-[data-skin-scheme='light'] .terminal-v4 {
-  --mirai-terminal-surface: #fbfbfa;
-  --mirai-terminal-muted: #656a70;
-  --mirai-terminal-error: #cf2f36;
-  --mirai-terminal-line: #24292f12;
-  border-color: #dce3ec;
+  --mirai-terminal-muted: var(--color-txt-3);
+  --mirai-terminal-error: var(--color-danger);
+  --mirai-terminal-line: var(--color-line-soft);
+  border-radius: var(--radius-pane);
+  border-color: var(--color-line);
+  background: var(--color-pane);
+  box-shadow: var(--shadow-pane);
 }
 
 .mirai-terminal-footer {
@@ -163,4 +155,11 @@ html.reduce-motion .mirai-terminal-cursor {
   .terminal-v4 .mirai-command-branch {
     display: none;
   }
+}
+:root {
+  --mirai-terminal-surface: color-mix(
+    in srgb,
+    var(--color-panel) 76%,
+    var(--color-terminal)
+  );
 }

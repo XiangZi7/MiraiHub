@@ -7,9 +7,9 @@ import { parseColor, rgba } from '@/utils/color'
  * 值写成十六进制而不是引用 main.css 的 --color-term-* 变量：
  * xterm 把颜色取到 canvas 里做像素合成，只认能直接解析的具体色值，
  * 拿不到 CSS 变量，也不接受带透明度的 oklch。
- * v4 直接采用 Vercel 官方 Geist Terminal 的 Dark/Light 16 色板：
+ * v4 以 Vercel Geist Terminal 的语义色为基础，再结合当前皮肤的文字与强调色：
  * https://vercel.com/geist/terminal
- * 表面色需与 terminal.css 同步；光标外观继续遵循用户的主题色设置。
+ * 表面、边框和光标跟随工作区令牌，避免终端与应用的玻璃面板割裂。
  *
  * background 用全透明：终端容器自身已铺了 bg-terminal（半透明底色，
  * 透出系统 acrylic），xterm 再涂一层不透明底会把这个效果盖掉。
@@ -111,15 +111,84 @@ function lightSelectionBackground(opacity: number): string {
   return `rgb(${channels.join(', ')})`
 }
 
+/** 将终端语义色向当前皮肤文字色收敛，保留用途区分并降低与周围 UI 的饱和度差异。 */
+function terminalColor(
+  color: string,
+  neutral: readonly number[],
+  amount: number
+): string {
+  const source = parseColor(color)
+  return (
+    '#' +
+    source
+      .map((channel, index) =>
+        Math.round(channel + (neutral[index]! - channel) * amount)
+          .toString(16)
+          .padStart(2, '0')
+      )
+      .join('')
+  )
+}
+
 /** 按终端样式选择色板；经典样式跟随皮肤令牌，并为文字对比度保留真实底色。 */
 export function currentTerminalTheme(style = 'classic'): ITheme {
   const light = document.documentElement.dataset.skinScheme === 'light'
   if (style === 'v4') {
+    const palette = light ? LIGHT_TERMINAL_THEME : TERMINAL_THEME
+    const foreground = parseColor('var(--color-term-fg)')
+    const accent = parseColor('var(--color-accent)')
+    const amount = light ? 0.18 : 0.38
     return {
-      ...(light ? LIGHT_TERMINAL_THEME : TERMINAL_THEME),
-      // v4 的扁平表面与色板独立于通用玻璃皮肤，避免又被全局高饱和语法色覆盖。
-      background: light ? 'rgba(251, 251, 250, 0)' : 'rgba(0, 0, 0, 0)',
-      selectionInactiveBackground: light ? '#e9edf2' : '#1a1a1a',
+      ...palette,
+      background: rgba('var(--mirai-terminal-surface)', 0),
+      foreground: terminalColor('var(--color-term-fg)', foreground, 0),
+      cursor: terminalColor('var(--color-accent)', accent, 0),
+      cursorAccent: terminalColor(
+        'var(--mirai-terminal-surface)',
+        foreground,
+        0
+      ),
+      brightBlack: terminalColor(palette.brightBlack!, foreground, 0.18),
+      red: terminalColor(palette.red!, foreground, amount),
+      green: terminalColor(palette.green!, foreground, amount),
+      yellow: terminalColor(palette.yellow!, foreground, amount),
+      blue: terminalColor(
+        'var(--color-accent)',
+        foreground,
+        light ? 0.18 : 0.3
+      ),
+      magenta: terminalColor(
+        'var(--color-accent)',
+        foreground,
+        light ? 0.1 : 0.45
+      ),
+      cyan: terminalColor(palette.cyan!, foreground, amount),
+      white: terminalColor(palette.white!, foreground, 0.5),
+      brightRed: terminalColor(palette.brightRed!, foreground, amount),
+      brightGreen: terminalColor(palette.brightGreen!, foreground, amount),
+      brightYellow: terminalColor(palette.brightYellow!, foreground, amount),
+      brightBlue: terminalColor(
+        'var(--color-accent)',
+        foreground,
+        light ? 0.36 : 0.5
+      ),
+      brightMagenta: terminalColor(
+        'var(--color-accent)',
+        foreground,
+        light ? 0.24 : 0.6
+      ),
+      brightCyan: terminalColor(palette.brightCyan!, foreground, amount),
+      selectionBackground: terminalColor(
+        'var(--mirai-terminal-surface)',
+        accent,
+        light ? 0.14 : 0.22
+      ),
+      selectionInactiveBackground: terminalColor(
+        'var(--mirai-terminal-surface)',
+        accent,
+        light ? 0.08 : 0.1
+      ),
+      selectionForeground: undefined,
     }
   }
   return {
