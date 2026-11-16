@@ -298,6 +298,7 @@ export function useSshTerminal() {
     void ssh.writeToShell(state.sessionId, data).catch(handleWriteError)
   }
 
+  /** 同步当前行输入镜像；补全纠正路径大小写时，合并的退格和替换文本也按实际输入更新。 */
   function trackInput(data: string): void {
     if (data === '\r' || data === '\n') {
       const submitted = state.inputLine
@@ -306,8 +307,11 @@ export function useSshTerminal() {
       return
     }
 
-    if (data === '\x7f' || data === '\b') {
-      state.inputLine = [...state.inputLine].slice(0, -1).join('')
+    const replacement = data.match(/^([\x7f\b]+)([^\x00-\x1f\x7f]*)$/u)
+    if (replacement) {
+      state.inputLine =
+        [...state.inputLine].slice(0, -replacement[1]!.length).join('') +
+        replacement[2]!
       return
     }
 

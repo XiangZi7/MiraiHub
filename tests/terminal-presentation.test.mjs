@@ -30,6 +30,17 @@ test('提示符解析支持实际目录、分支和 Windows 路径，普通日�
   assert.equal(parseTerminalPrompt('PS D:\\项目> ls').directory, 'D:\\项目')
   assert.equal(parseTerminalPrompt('fatal: repository not found'), undefined)
   assert.equal(parseTerminalPrompt('hello $ world'), undefined)
+  const account = 'deploy@staging-web'
+  const accountPrompt = parseTerminalPrompt(`${account}:~/app$ `)
+  assert.deepEqual(accountPrompt.segments[0], {
+    start: 0,
+    end: 'deploy'.length,
+    color: 'green',
+  })
+  const host = accountPrompt.segments.find(
+    segment => segment.color === 'foreground'
+  )
+  assert.equal(account.slice(host.start, host.end), 'staging-web')
 })
 
 test('v4 只在提示符前补留白，完整保留 ANSI、已存在的空行和普通输出', () => {
@@ -87,7 +98,12 @@ test('经典样式保留原始字节，全屏程序与光标回写原样转发',
 })
 
 /** 用可控缓冲区和公开事件模拟终端，检查装饰、样式切换和监听清理。 */
-function fixture(t, lines = ['root@server:/data# ls'], readGitBranch) {
+function fixture(
+  t,
+  lines = ['root@server:/data# ls'],
+  readGitBranch,
+  readDirectory
+) {
   const previous = {
     requestAnimationFrame: globalThis.requestAnimationFrame,
     cancelAnimationFrame: globalThis.cancelAnimationFrame,
@@ -198,7 +214,7 @@ function fixture(t, lines = ['root@server:/data# ls'], readGitBranch) {
     sessionId = shallowRef('session-1'),
     term = shallowRef(terminal)
   const api = scope.run(() =>
-    useTerminalPresentation(term, sessionId, { readGitBranch })
+    useTerminalPresentation(term, sessionId, { readGitBranch, readDirectory })
   )
   const emit = (name, data) =>
     [...(handlers.get(name) ?? [])].forEach(fn => fn(data))
@@ -248,6 +264,17 @@ test('普通 Shell 回车到下一提示符的耗时在右侧显示，不覆盖�
     'xterm x=0 会清空 right 样式，导致耗时叠到左侧'
   )
   assert.equal(meta[0].element.dataset.failed, 'false')
+  assert.ok(
+    f
+      .active()
+      .some(
+        item =>
+          item.options.marker.line === 0 &&
+          item.options.x === 0 &&
+          item.options.width === 'root'.length &&
+          item.options.foregroundColor === f.terminal.options.theme.green
+      )
+  )
 })
 
 test('OSC 退出码、目录与光标来自当前会话；样式切换和备用缓冲区不重建终端或输出', async t => {
@@ -320,4 +347,209 @@ test('普通 Bash 没有分支文本时按实际目录查询，切换目录和�
   f.sessionId.value = 'session-2'
   await nextTick()
   assert.equal(f.api.branch.value, '')
+})
+
+test('进入目录就预取文件类型，ls 流式输出和重复执行在下一帧着色，无需等待新提示符或再次查询', async t => {
+  const requests = []
+  const f = fixture(
+    t,
+    ['root@server:/data# ls'],
+    undefined,
+    (id, path) => new Promise(resolve => requests.push({ id, path, resolve }))
+  )
+  await nextTick()
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].path, '/data')
+  requests[0].resolve({
+    path: '/data',
+    entries: [
+      { name: 'src', kind: 'directory', permissions: 'rwxr-xr-x' },
+      { name: 'run.sh', kind: 'file', permissions: 'rwxr-xr-x' },
+    ],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  f.api.trackSubmit('ls')
+  f.lines.push('src  run.sh')
+  f.normal.cursorY = 1
+  f.emit('write')
+  f.render()
+  const coloredAt = (line, color) =>
+    f
+      .active()
+      .some(
+        item =>
+          item.options.marker.line === line &&
+          item.options.foregroundColor === f.terminal.options.theme[color]
+      )
+  assert.ok(coloredAt(1, 'blue'))
+  assert.ok(coloredAt(1, 'green'))
+  assert.equal(requests.length, 1)
+
+  f.lines.push('root@server:/data# ls')
+  f.normal.cursorY = 2
+  f.emit('write')
+  await nextTick()
+  f.api.trackSubmit('ls')
+  f.lines.push('src  run.sh')
+  f.normal.cursorY = 3
+  f.emit('write')
+  f.render()
+  assert.ok(coloredAt(3, 'blue'))
+  assert.ok(coloredAt(3, 'green'))
+  assert.equal(requests.length, 1)
+})
+
+test('预取与 ls 共用慢请求，结果在输出过程中生效，普通命令输出不套用目录颜色', async t => {
+  const requests = []
+  const f = fixture(
+    t,
+    ['root@server:/data# ls'],
+    undefined,
+    (id, path) => new Promise(resolve => requests.push({ id, path, resolve }))
+  )
+  await nextTick()
+  f.api.trackSubmit('ls')
+  f.lines.push('src')
+  f.normal.cursorY = 1
+  f.emit('write')
+  assert.equal(requests.length, 1)
+  requests[0].resolve({
+    path: '/data',
+    entries: [{ name: 'src', kind: 'directory', permissions: 'rwxr-xr-x' }],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  f.render()
+  assert.ok(
+    f
+      .active()
+      .some(
+        item =>
+          item.options.marker.line === 1 &&
+          item.options.foregroundColor === '#82a8d8'
+      )
+  )
+  f.lines.push('root@server:/data# echo src')
+  f.normal.cursorY = 2
+  f.emit('write')
+  f.api.trackSubmit('echo src')
+  f.lines.push('src', 'root@server:/data# ')
+  f.normal.cursorY = 4
+  f.emit('write')
+  await nextTick()
+  f.render()
+  assert.equal(
+    f
+      .active()
+      .some(
+        item =>
+          item.options.marker.line === 3 &&
+          item.options.foregroundColor === '#82a8d8'
+      ),
+    false
+  )
+  assert.equal(
+    requests.length,
+    2,
+    '其他命令结束后刷新目录，避免沿用变更前的类型'
+  )
+})
+
+test('目录变更、重连和卸载不会接受已失效的预取结果，失败请求也不影响原始输出', async t => {
+  const requests = []
+  const f = fixture(
+    t,
+    ['root@server:/data# '],
+    undefined,
+    (id, path) =>
+      new Promise((resolve, reject) =>
+        requests.push({ id, path, resolve, reject })
+      )
+  )
+  await nextTick()
+  f.lines[0] += 'mkdir src'
+  f.api.trackSubmit('mkdir src')
+  f.lines.push('root@server:/data# ls')
+  f.normal.cursorY = 1
+  f.emit('write')
+  await nextTick()
+  assert.equal(requests.length, 2)
+  requests[0].resolve({
+    path: '/data',
+    entries: [{ name: 'src', kind: 'file', permissions: 'rw-r--r--' }],
+  })
+  requests[1].reject(new Error('offline'))
+  await new Promise(resolve => setImmediate(resolve))
+  f.api.trackSubmit('ls')
+  f.lines.push('src')
+  f.normal.cursorY = 2
+  f.emit('write')
+  f.render()
+  assert.equal(
+    f
+      .active()
+      .some(
+        item => item.options.marker.line === 2 && item.options.foregroundColor
+      ),
+    false
+  )
+  const original = [...f.lines]
+  f.sessionId.value = 'session-2'
+  await nextTick()
+  assert.equal(requests.at(-1).id, 'session-2')
+  const last = requests.at(-1)
+  f.scope.stop()
+  last.resolve({
+    path: '/data',
+    entries: [{ name: 'src', kind: 'directory', permissions: 'rwxr-xr-x' }],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(f.active().length, 0)
+  assert.deepEqual(f.lines, original)
+})
+
+test('cd .. 再 cd data 后立即 ls 仍复用目录类型，其他目录的慢请求不会让输出重新变白', async t => {
+  const requests = []
+  const f = fixture(
+    t,
+    ['root@server:/data# ls'],
+    undefined,
+    (id, path) => new Promise(resolve => requests.push({ id, path, resolve }))
+  )
+  await nextTick()
+  requests[0].resolve({
+    path: '/data',
+    entries: [
+      { name: 'Monitor-Hub', kind: 'directory', permissions: 'rwxr-xr-x' },
+    ],
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  f.api.trackSubmit('ls')
+  f.lines.push('Monitor-Hub', 'root@server:/data# cd ..')
+  f.normal.cursorY = 2
+  f.emit('write')
+  f.api.trackSubmit('cd ..')
+  f.lines.push('root@server:/# cd data')
+  f.normal.cursorY = 3
+  f.emit('write')
+  await nextTick()
+  f.api.trackSubmit('cd data')
+  f.lines.push('root@server:/data# ls')
+  f.normal.cursorY = 4
+  f.emit('write')
+  await nextTick()
+  f.api.trackSubmit('ls')
+  f.lines.push('Monitor-Hub')
+  f.normal.cursorY = 5
+  f.emit('write')
+  f.render()
+  assert.equal(requests.filter(request => request.path === '/data').length, 1)
+  assert.ok(
+    f
+      .active()
+      .some(
+        item =>
+          item.options.marker.line === 5 &&
+          item.options.foregroundColor === '#82a8d8'
+      )
+  )
 })

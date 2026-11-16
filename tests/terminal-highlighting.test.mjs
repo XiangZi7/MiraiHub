@@ -17,11 +17,11 @@ test('命令名、参数、字符串、变量和管道不依赖服务端 ANSI', 
       span =>
         command.slice(span.start, span.end) === text && span.color === color
     )
-  assert.ok(has('grep', 'blue'))
+  assert.ok(has('grep', 'foreground'))
   assert.ok(has('--color', 'yellow'))
-  assert.ok(has('cat', 'blue'))
+  assert.ok(has('cat', 'foreground'))
   assert.ok(has('-n', 'yellow'))
-  assert.ok(has('|', 'magenta'))
+  assert.ok(has('|', 'brightBlack'))
   assert.ok(spans.some(span => span.color === 'green'))
   assert.ok(!has('--literal', 'yellow'))
   assert.ok(commandColorSpans('echo $HOME').some(span => span.color === 'cyan'))
@@ -65,7 +65,10 @@ test('Nginx 站点文件按完整目录识别，同名的普通配置不污染�
   assert.equal(codeLanguage('/tmp/' + file).label, '纯文本')
   assert.equal(codeLanguage('/usr/local/nginx/conf/' + file).label, 'Nginx')
   assert.equal(codeLanguage('C:\\nginx\\conf.d\\' + file).label, 'Nginx')
-  assert.equal(codeLanguage('/etc/nginx/sites-enabled/hub.yxcr.top').label, 'Nginx')
+  assert.equal(
+    codeLanguage('/etc/nginx/sites-enabled/hub.yxcr.top').label,
+    'Nginx'
+  )
   assert.equal(codeLanguage('/etc/conf.d/' + file).label, '纯文本')
   const source = 'server {\n  listen 443 ssl;\n  server_name hub.yxcr.top;\n}'
   assert.ok(codeColorSpans(source, '/etc/nginx/conf.d/' + file).length > 2)
@@ -86,6 +89,11 @@ test('无色成功结果、目录、可执行文件和软链按实际类型配�
   assert.equal(outputColorSpans('Already up to date.')[0].color, 'green')
   assert.equal(
     outputColorSpans('bash: ./deploy.sh: Permission denied')[0].color,
+    'red'
+  )
+  assert.equal(
+    outputColorSpans('-bash: cd: miraiaTV/: No such file or directory')[0]
+      .color,
     'red'
   )
   const files = [

@@ -6,7 +6,7 @@ globalThis.requestAnimationFrame = () => 0
 globalThis.cancelAnimationFrame = () => {}
 
 const nativeModule = dataModule(`
-  export const native = { connected: [], closed: [], output: new Map(), status: new Map(), handlers: {} }
+  export const native = { connected: [], closed: [], written: [], output: new Map(), status: new Map(), handlers: {} }
   export async function connect(config) {
     const id = 'ssh-' + (native.connected.length + 1)
     native.connected.push(id)
@@ -22,7 +22,7 @@ const nativeModule = dataModule(`
     return () => native.status.delete(id)
   }
   export async function openShell(id, options, callback) { native.output.set(id, callback) }
-  export async function writeToShell() {}
+  export async function writeToShell(id, data) { native.written.push({id,data}) }
   export async function resizeShell() {}
   export const errorMessage = error => error.message
 `)
@@ -81,6 +81,7 @@ const config = {
 function fixture(t) {
   native.connected.length = 0
   native.closed.length = 0
+  native.written.length = 0
   native.output.clear()
   native.status.clear()
   native.handlers = {}
@@ -159,4 +160,19 @@ test('重叠的连接请求只保留最新会话，旧请求迟到时只回收�
   assert.equal(api.status.value, 'connected')
   assert.equal(api.term.value.screen, 'latest prompt')
   assert.deepEqual(native.closed, ['ssh-1'])
+})
+
+test('补全纠正路径大小写时，合并的退格与替换文本保持输入镜像和提交命令一致', async t => {
+  const api = fixture(t)
+  await api.connect(config)
+  const submitted = []
+  api.setSubmitHandler(line => submitted.push(line))
+  api.sendInput('cd miraitv')
+  const replacement = '\x7f'.repeat(7) + 'miraiTV/'
+  api.sendInput(replacement)
+  assert.equal(api.inputLine.value, 'cd miraiTV/')
+  assert.equal(native.written.at(-1).data, replacement)
+  api.sendInput('\r')
+  assert.deepEqual(submitted, ['cd miraiTV/'])
+  assert.equal(api.inputLine.value, '')
 })

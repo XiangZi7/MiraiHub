@@ -58,6 +58,8 @@ function devSkins(): Plugin {
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue(), tailwindcss(), offlineIcons(), devSkins()],
+  // 所有窗口共用正式入口，避免依赖扫描遍历历史预览、浏览器缓存和 Tauri 构建产物。
+  optimizeDeps: { entries: ['index.html'] },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

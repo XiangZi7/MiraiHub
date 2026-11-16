@@ -71,9 +71,9 @@ export function commandColorSpans(text: string): TerminalColorSpan[] {
     span => span.color === 'green' || span.color === 'brightBlack'
   )
   const patterns: [RegExp, TerminalColorRole][] = [
-    [/(?:^\s*|(?:\|\||&&|[|;])\s*)([\w./~-]+)/gu, 'blue'],
+    [/(?:^\s*|(?:\|\||&&|[|;])\s*)([\w./~-]+)/gu, 'foreground'],
     [/(?:^|\s)(--?[\w][\w-]*)/gu, 'yellow'],
-    [/([|&;<>]+)/gu, 'magenta'],
+    [/([|&;<>]+)/gu, 'brightBlack'],
   ]
   for (const [pattern, color] of patterns)
     for (const match of text.matchAll(pattern)) {
@@ -116,7 +116,7 @@ export function outputColorSpans(
   )
     return [{ start: 0, end: text.length, color: 'green' }]
   if (
-    /^\s*(?:fatal:|error:|\w*sh:.*(?:denied|not found|error)|Traceback|Permission denied|command not found)/iu.test(
+    /^\s*(?:fatal:|error:|-?[\w.]*sh:.*(?:denied|not found|error|no such file|not a directory|cannot|failed)|Traceback|Permission denied|command not found)/iu.test(
       text
     )
   )

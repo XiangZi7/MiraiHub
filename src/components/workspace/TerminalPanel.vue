@@ -25,7 +25,6 @@ import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from '@/components/workspace/TerminalSuggestions.vue'
 import TerminalActions from '@/components/workspace/TerminalActions.vue'
 import TerminalInlineAi from '@/components/workspace/terminal-inline-ai.vue'
-import TerminalStatusBar from '@/components/workspace/terminal-status-bar.vue'
 import { useTerminalPresentation } from '@/composables/useTerminalPresentation'
 import { listDirectory, readTerminalGitBranch } from '@/api/ssh'
 
@@ -95,16 +94,7 @@ const {
   setInputInterceptor,
   setSubmitHandler,
 } = useSshTerminal()
-const {
-  v4,
-  directory,
-  branch,
-  gitError,
-  position,
-  size,
-  refreshGit,
-  trackSubmit,
-} = useTerminalPresentation(term, sessionId, {
+const { v4, trackSubmit } = useTerminalPresentation(term, sessionId, {
   readGitBranch: readTerminalGitBranch,
   readDirectory: listDirectory,
 })
@@ -495,17 +485,20 @@ function currentToken(line: string): string {
   return line.match(/\S+$/)?.[0] ?? ''
 }
 
+/** 接受当前行的有效候选；Linux 路径大小写不同时替换整个 token，随后关闭本轮补全。 */
 function acceptSuggestion(item = completion.activeSuggestion.value): void {
-  if (!item) return
+  if (!item || !completion.open.value) return
 
   const token = currentToken(inputLine.value)
   if (!item.value.toLocaleLowerCase().startsWith(token.toLocaleLowerCase()))
     return
 
-  const suffix =
-    item.value.slice(token.length) + (item.kind === 'directory' ? '' : ' ')
-  sendInput(suffix)
-  emit('input', suffix)
+  const value = item.value + (item.kind === 'directory' ? '' : ' ')
+  const input = item.value.startsWith(token)
+    ? value.slice(token.length)
+    : '\x7f'.repeat([...token].length) + value
+  sendInput(input)
+  emit('input', input)
   completion.close()
   term.value?.focus()
 }
@@ -783,18 +776,6 @@ defineExpose({
         </p>
       </div>
     </div>
-
-    <!-- v4 状态栏：目录、分支与光标位置均来自当前终端，未知信息留空。 -->
-    <TerminalStatusBar
-      v-if="v4 && config"
-      kind="ssh"
-      :directory="directory"
-      :branch="branch"
-      :git-error="gitError"
-      :position="position"
-      :size="size"
-      @retry-git="refreshGit"
-    />
   </section>
 </template>
 

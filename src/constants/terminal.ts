@@ -7,35 +7,38 @@ import { parseColor, rgba } from '@/utils/color'
  * 值写成十六进制而不是引用 main.css 的 --color-term-* 变量：
  * xterm 把颜色取到 canvas 里做像素合成，只认能直接解析的具体色值，
  * 拿不到 CSS 变量，也不接受带透明度的 oklch。
- * 这里的色相与设计令牌保持一致，改令牌时需同步这份。
+ * v4 直接采用 Vercel 官方 Geist Terminal 的 Dark/Light 16 色板：
+ * https://vercel.com/geist/terminal
+ * 表面色需与 terminal.css 同步；光标外观继续遵循用户的主题色设置。
  *
  * background 用全透明：终端容器自身已铺了 bg-terminal（半透明底色，
  * 透出系统 acrylic），xterm 再涂一层不透明底会把这个效果盖掉。
  */
 export const TERMINAL_THEME: ITheme = {
   background: '#00000000',
-  foreground: '#d6d6de',
-  cursor: '#b39ddb',
-  cursorAccent: '#0d0d10',
-  selectionBackground: '#ffffff26',
+  foreground: '#ededed',
+  cursor: '#ededed',
+  cursorAccent: '#000000',
+  selectionBackground: '#2e2e2e',
+  selectionForeground: '#ededed',
 
-  black: '#2a2a31',
-  red: '#de7a72',
-  green: '#8cb369',
-  yellow: '#d9b26a',
-  blue: '#82a8d8',
-  magenta: '#b39ddb',
-  cyan: '#7bb5ad',
-  white: '#c9c9d1',
+  black: '#1a1a1a',
+  red: '#e5484d',
+  green: '#63c174',
+  yellow: '#f1a10d',
+  blue: '#52a9ff',
+  magenta: '#bf7af0',
+  cyan: '#0ac5b3',
+  white: '#a0a0a0',
 
-  brightBlack: '#62626e',
-  brightRed: '#ea938c',
-  brightGreen: '#a3cc8a',
-  brightYellow: '#eac887',
-  brightBlue: '#9dbde6',
-  brightMagenta: '#c6b3e6',
-  brightCyan: '#97ccc4',
-  brightWhite: '#f2f2f5',
+  brightBlack: '#8f8f8f',
+  brightRed: '#fe7573',
+  brightGreen: '#83e293',
+  brightYellow: '#ffc983',
+  brightBlue: '#97c9fe',
+  brightMagenta: '#d7a4ff',
+  brightCyan: '#4be6d3',
+  brightWhite: '#ffffff',
 }
 
 /** 经典样式沿用原有 ANSI 色板，供用户随时切回。 */
@@ -66,33 +69,34 @@ const CLASSIC_TERMINAL_THEME: ITheme = {
 /**
  * 浅色底的 ANSI 配色。
  *
- * 色相跟着 main.css 的浅色令牌走冷调（紫蓝一侧），亮度压在 35%–50%：
- * 深色那套的高亮度值放在白底上基本读不出来。
+ * Vercel Light 原始配色；bright 色在浅色模式加深而非提亮。
  * foreground / cursor / green / blue / cyan 会被 `currentTerminalTheme` 用
  * CSS 令牌覆盖，所以自带配色的皮肤仍能把自己的色相带回来。
  */
 const LIGHT_TERMINAL_THEME: ITheme = {
   ...TERMINAL_THEME,
-  foreground: '#3b3744',
-  cursor: '#6d3fc4',
-  cursorAccent: '#fbfaff',
-  black: '#413d4a',
-  red: '#b03030',
-  green: '#2f7350',
-  yellow: '#8a6514',
-  blue: '#2f5fa8',
-  magenta: '#8c3f99',
-  cyan: '#1f6f80',
-  white: '#8a8696',
+  foreground: '#24292f',
+  cursor: '#24292f',
+  cursorAccent: '#fbfbfa',
+  black: '#24292f',
+  red: '#cf2f36',
+  green: '#18703a',
+  yellow: '#8a5300',
+  blue: '#1a5fb4',
+  magenta: '#7e3ab8',
+  cyan: '#0b7268',
+  white: '#4f5359',
+  selectionBackground: '#dce3ec',
+  selectionForeground: '#24292f',
 
-  brightBlack: '#6f6a7c',
-  brightRed: '#c23a3a',
-  brightGreen: '#357f59',
-  brightYellow: '#96701c',
-  brightBlue: '#3a6cb8',
-  brightMagenta: '#9a48a8',
-  brightCyan: '#257a8c',
-  brightWhite: '#413d4a',
+  brightBlack: '#656a70',
+  brightRed: '#a8242b',
+  brightGreen: '#0f5a2c',
+  brightYellow: '#6b3f00',
+  brightBlue: '#124a8c',
+  brightMagenta: '#622a92',
+  brightCyan: '#085a52',
+  brightWhite: '#171717',
 }
 
 /** 将浅色选区与实际终端底色混合，避免透明背景被 xterm 当作黑色。 */
@@ -114,9 +118,8 @@ export function currentTerminalTheme(style = 'classic'): ITheme {
     return {
       ...(light ? LIGHT_TERMINAL_THEME : TERMINAL_THEME),
       // v4 的扁平表面与色板独立于通用玻璃皮肤，避免又被全局高饱和语法色覆盖。
-      background: light ? 'rgba(250, 249, 253, 0)' : 'rgba(15, 16, 17, 0)',
-      selectionBackground: light ? '#ddd2ed' : '#b39ddb30',
-      selectionInactiveBackground: light ? '#ebe5f3' : '#b39ddb18',
+      background: light ? 'rgba(251, 251, 250, 0)' : 'rgba(0, 0, 0, 0)',
+      selectionInactiveBackground: light ? '#e9edf2' : '#1a1a1a',
     }
   }
   return {

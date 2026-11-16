@@ -50,10 +50,13 @@ const load = sourceLoader({
       output = []
       focuses = 0
       unicode = {}
+      buffer = { active: { type: 'normal' } }
+      parser = { registerCsiHandler() { return { dispose() {} } } }
       constructor(options) { this.options = options }
       loadAddon() {}
       open() {}
       onData() {}
+      onWriteParsed() { return { dispose() {} } }
       onSelectionChange() { return { dispose() {} } }
       write(data) { this.output.push(data) }
       writeln(data) { this.output.push(data) }

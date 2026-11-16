@@ -12,7 +12,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import type { WebglAddon } from '@xterm/addon-webgl'
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type IDisposable } from '@xterm/xterm'
 import { i18n } from '@/i18n'
 import { currentTerminalTheme } from '@/constants/terminal'
 import { toast } from '@/composables/useToast'
@@ -20,6 +20,7 @@ import { copyText } from '@/utils/clipboard'
 import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
 import { IS_TAURI } from '@/utils/window'
 import { createTerminalOutputFormatter } from '@/utils/terminal-output'
+import { createTerminalCursor } from '@/utils/terminal-cursor'
 import {
   settingNumber,
   settingsSnapshot,
@@ -78,6 +79,14 @@ export function useXterm(onOptionsChange: () => void) {
   const fitAddon = shallowRef<FitAddon>()
   let webglAddon: WebglAddon | undefined
   let rendererRevision = 0
+  let cursor: ReturnType<typeof createTerminalCursor>
+  const cursorDisposables: IDisposable[] = []
+  onScopeDispose(() => {
+    cursorDisposables.forEach(item => item.dispose())
+    cursor?.dispose()
+    cursor = undefined
+    cursor = undefined
+  })
   const output = createTerminalOutputFormatter(
     () => settings.terminalStyle === 'v4' && settings.terminalCommandBlocks
   )
@@ -99,6 +108,7 @@ export function useXterm(onOptionsChange: () => void) {
   function resetOutput(): void {
     clearTimeout(outputTimer)
     output.reset()
+    cursor?.reset()
   }
   onScopeDispose(resetOutput)
 
@@ -106,7 +116,8 @@ export function useXterm(onOptionsChange: () => void) {
   useEventListener(window, SKIN_CHANGE_EVENT, () => {
     const terminal = term.value
     if (!terminal) return
-    terminal.options.theme = currentTerminalTheme(settings.terminalStyle)
+    terminal.options.theme = rendererTheme()
+    cursor?.refresh()
     void refreshRenderer(terminal)
   })
 
@@ -185,6 +196,23 @@ export function useXterm(onOptionsChange: () => void) {
     onOptionsChange()
   }
 
+  /** 原生光标交给透明层，避免 DOM/WebGL 的硬切闪烁与圆角光标叠加；文字继续由 xterm 绘制。 */
+  function rendererTheme() {
+    const theme = currentTerminalTheme(settings.terminalStyle)
+    return { ...theme, cursor: '#00000000', cursorAccent: theme.foreground }
+  }
+
+  /** 输出后同步所选形状；闪烁统一由圆角光标层控制，全屏程序退出后恢复用户选项。 */
+  function syncCursor(terminal: Terminal): void {
+    if (terminal.options.cursorBlink) terminal.options.cursorBlink = false
+    if (
+      terminal.buffer.active.type === 'normal' &&
+      terminal.options.cursorStyle !== settings.terminalCursor
+    )
+      terminal.options.cursorStyle = settings.terminalCursor as CursorStyle
+    cursor?.refresh()
+  }
+
   /** 创建终端并挂到容器上，立即按容器尺寸 fit 一次。 */
   function open(container: HTMLElement): Terminal {
     const terminal = new Terminal({
@@ -194,12 +222,13 @@ export function useXterm(onOptionsChange: () => void) {
       fontWeightBold: 700,
       lineHeight: 1.5,
       cursorStyle: settings.terminalCursor as CursorStyle,
-      cursorBlink: settings.terminalCursorBlink,
-      // 失焦时只剩描边，焦点在哪一眼可辨，也不和输入光标抢注意力
-      cursorInactiveStyle: 'outline',
+      cursorBlink: false,
+      cursorWidth: 2,
+      // 失焦状态由统一光标层绘制，保留用户所选形状。
+      cursorInactiveStyle: 'none',
       // 回滚缓冲给足：排查日志时经常要往回翻很多屏
       scrollback: settingNumber('terminalScrollback', 5000),
-      theme: currentTerminalTheme(settings.terminalStyle),
+      theme: rendererTheme(),
       // 程序自带的浅灰、白色和真彩色在浅色皮肤下也应保持可读。
       minimumContrastRatio: 4.5,
       allowTransparency: true,
@@ -208,6 +237,28 @@ export function useXterm(onOptionsChange: () => void) {
       // Unicode 11 宽度表与搜索高亮装饰都属于 proposed API。
       allowProposedApi: true,
     })
+    // xterm 6 的 DECSCUSR 会优先于公开 options。统一由 options 管理光标，
+    // 普通 Shell 遵循用户外观；Vim 等全屏程序仍可切换形状，闪烁始终遵循用户开关。
+    cursorDisposables.push(
+      terminal.parser.registerCsiHandler(
+        { intermediates: ' ', final: 'q' },
+        params => {
+          const style = params[0] ?? 0
+          if (typeof style !== 'number' || style < 0 || style > 6) return false
+          terminal.options.cursorStyle =
+            terminal.buffer.active.type === 'alternate' && style > 0
+              ? style <= 2
+                ? 'block'
+                : style <= 4
+                  ? 'underline'
+                  : 'bar'
+              : (settings.terminalCursor as CursorStyle)
+          syncCursor(terminal)
+          return true
+        }
+      ),
+      terminal.onWriteParsed(() => syncCursor(terminal))
+    )
     const fit = new FitAddon()
     terminal.loadAddon(fit)
     // 默认的 Unicode 6 宽度表会把大部分 emoji 当成单宽，光标与后续字符随之错位。
@@ -216,6 +267,7 @@ export function useXterm(onOptionsChange: () => void) {
     loadWebLinks(terminal)
     terminal.open(container)
     fit.fit()
+    cursor = createTerminalCursor(terminal, () => settings.terminalCursorBlink)
 
     // 拖选过程中选区会连续变化，停稳后再写剪贴板。
     const copySelection = useDebounceFn(() => {
@@ -250,9 +302,10 @@ export function useXterm(onOptionsChange: () => void) {
       terminal.options.fontFamily = terminalFontFamily()
       terminal.options.fontSize = settingNumber('terminalFontSize', 13)
       terminal.options.cursorStyle = settings.terminalCursor as CursorStyle
-      terminal.options.cursorBlink = settings.terminalCursorBlink
+      terminal.options.cursorBlink = false
       terminal.options.scrollback = settingNumber('terminalScrollback', 5000)
-      terminal.options.theme = currentTerminalTheme(settings.terminalStyle)
+      terminal.options.theme = rendererTheme()
+      cursor?.refresh()
       onOptionsChange()
       void refreshRenderer(terminal)
     }

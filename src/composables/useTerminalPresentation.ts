@@ -14,7 +14,7 @@ import {
 interface PromptSegment {
   start: number
   end: number
-  color: 'foreground' | 'blue' | 'magenta'
+  color: 'foreground' | 'brightBlack' | 'green' | 'blue'
 }
 
 interface TerminalPrompt {
@@ -36,6 +36,18 @@ interface CommandSection {
   codeCache?: { text: string; path: string; spans: TerminalColorSpan[] }
 }
 
+interface DirectoryColors {
+  files?: TerminalFileEntry[]
+  updatedAt: number
+  pending?: Promise<TerminalFileEntry[] | undefined>
+}
+
+const DIRECTORY_LIST_COMMAND = /^(?:ls|ll)(?:\s+-[\w-]+(?:=\w+)?)*\s*$/u
+const DIRECTORY_NAVIGATION_COMMAND =
+  /^(?:cd(?:\s+[^;&|<>`$\r\n]+)?|pwd(?:\s+-[LP])?)\s*$/u
+const DIRECTORY_COLORS_TTL = 10_000
+const DIRECTORY_COLORS_LIMIT = 32
+
 interface PresentationOptions {
   readGitBranch?: (sessionId: string, directory: string) => Promise<string>
   readDirectory?: (
@@ -44,12 +56,13 @@ interface PresentationOptions {
   ) => Promise<SshDirectoryListing>
 }
 
-/** 识别常见单行提示符的文字区段，仅用于装饰；不改写远端输出或用户的 Shell 配置。 */
+/** 拆分提示符中的账号、主机、路径与符号层次，仅作配色装饰，不改写远端输出或 Shell 配置。 */
 export function parseTerminalPrompt(text: string): TerminalPrompt | undefined {
   const unix = text.match(/^([\w.-]+@[\w.-]+:)((?:~|\/).*?)([$#%])(?: |$)/u)
   const windows = text.match(/^(PS )?([A-Za-z]:\\[^>\r\n]*)>(?: |$)/u)
   if (unix) {
     const prefix = unix[1]!
+    const accountEnd = prefix.indexOf('@')
     const path = unix[2]!
     const branch = path.match(/\s+[⎇⑂]\s*(\S+)\s*$/u)
     const directory = branch
@@ -60,7 +73,10 @@ export function parseTerminalPrompt(text: string): TerminalPrompt | undefined {
       branch: branch?.[1] ?? '',
       length: unix[0].length,
       segments: [
-        { start: 0, end: prefix.length, color: 'foreground' },
+        { start: 0, end: accountEnd, color: 'green' },
+        { start: accountEnd, end: accountEnd + 1, color: 'brightBlack' },
+        { start: accountEnd + 1, end: prefix.length - 1, color: 'foreground' },
+        { start: prefix.length - 1, end: prefix.length, color: 'brightBlack' },
         {
           start: prefix.length,
           end: prefix.length + directory.length,
@@ -69,7 +85,7 @@ export function parseTerminalPrompt(text: string): TerminalPrompt | undefined {
         {
           start: prefix.length + directory.length,
           end: unix[0].length,
-          color: 'magenta',
+          color: 'brightBlack',
         },
       ],
     }
@@ -86,7 +102,7 @@ export function parseTerminalPrompt(text: string): TerminalPrompt | undefined {
         {
           start: start + windows[2]!.length,
           end: windows[0].length,
-          color: 'magenta',
+          color: 'brightBlack',
         },
       ],
     }
@@ -123,6 +139,7 @@ export function useTerminalPresentation(
   const position = computed(() => `Ln ${state.line}, Col ${state.column}`)
   const size = computed(() => `${state.cols} × ${state.rows}`)
   let activeSection: CommandSection | undefined
+  let prepareFiles: ((section: CommandSection) => void) | undefined
 
   /** 在实际提交链路、发送给远端前计时，兼容快速回显和程序插入的命令。 */
   function trackSubmit(command: string): void {
@@ -130,6 +147,7 @@ export function useTerminalPresentation(
       return
     activeSection.command = command
     activeSection.startedAt ??= performance.now()
+    prepareFiles?.(activeSection)
   }
 
   // 更换底层实例或会话时重建监听；重连后旧命令的标记和计时不会进入新会话。
@@ -149,6 +167,69 @@ export function useTerminalPresentation(
       let renderedTheme = terminal.options.theme
       let alive = true
       let paintMarkers = new Map<number, IMarker>()
+      const directoryColors = new Map<string, DirectoryColors>()
+
+      /** 预取真实目录类型并短暂缓存；同目录请求共用 Promise，迟到结果不进入新会话或已失效的缓存。 */
+      function readDirectoryColors(
+        directory: string
+      ): Promise<TerminalFileEntry[] | undefined> {
+        const id = sessionId.value
+        if (!v4.value || !readDirectory || !id || !directory)
+          return Promise.resolve(undefined)
+        let cached = directoryColors.get(directory)
+        if (cached?.pending) return cached.pending
+        if (cached && Date.now() - cached.updatedAt < DIRECTORY_COLORS_TTL)
+          return Promise.resolve(cached.files)
+        cached ??= { updatedAt: 0 }
+        const context = cached
+        directoryColors.delete(directory)
+        directoryColors.set(directory, context)
+        if (directoryColors.size > DIRECTORY_COLORS_LIMIT)
+          directoryColors.delete(directoryColors.keys().next().value!)
+        context.pending = readDirectory(id, directory)
+          .then(listing => {
+            if (!alive || directoryColors.get(directory) !== context)
+              return undefined
+            context.files = listing.entries
+            return context.files
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            context.updatedAt = Date.now()
+            context.pending = undefined
+          })
+        return context.pending
+      }
+
+      /** ls 立即复用目录类型；单纯切换目录保留缓存，可能修改文件的命令才使缓存失效。 */
+      function prepareDirectoryFiles(section: CommandSection): void {
+        const directory = section.prompt?.directory
+        const command = section.command ?? ''
+        if (!directory) return
+        if (!DIRECTORY_LIST_COMMAND.test(command)) {
+          if (
+            command.trim() &&
+            !DIRECTORY_NAVIGATION_COMMAND.test(command.trim())
+          )
+            directoryColors.delete(directory)
+          return
+        }
+        section.files = directoryColors.get(directory)?.files
+        if (section.files) scheduleRender()
+        void readDirectoryColors(directory).then(files => {
+          if (
+            !alive ||
+            !files ||
+            section.marker.isDisposed ||
+            section.command !== command ||
+            section.prompt?.directory !== directory
+          )
+            return
+          section.files = files
+          scheduleRender()
+        })
+      }
+      prepareFiles = prepareDirectoryFiles
 
       /** 将终端光标与网格尺寸同步到底栏，包括方向键移动和窗口缩放。 */
       function syncPosition(): void {
@@ -184,23 +265,8 @@ export function useTerminalPresentation(
         )
           previous.duration = performance.now() - previous.startedAt
         const section = { marker }
-        // ls 未开启 --color 时，按实际目录项类型补色，不猜测名称代表文件还是目录。
-        if (
-          v4.value &&
-          readDirectory &&
-          previous?.prompt &&
-          /^(?:ls|ll)(?:\s+-[\w-]+(?:=\w+)?)*\s*$/u.test(previous.command ?? '')
-        ) {
-          void readDirectory(sessionId.value, previous.prompt.directory)
-            .then(listing => {
-              if (!alive || previous.marker.isDisposed) return
-              previous.files = listing.entries
-              scheduleRender()
-            })
-            .catch(() => {
-              /* 可选文件配色失败不影响原始输出。 */
-            })
-        }
+        // 没有经过提交拦截器的命令仍可补色，复用已预取的目录信息。
+        if (previous) prepareDirectoryFiles(previous)
         sections.push(section)
         activeSection = section
         state.promptRevision++
@@ -618,11 +684,22 @@ export function useTerminalPresentation(
         },
         { immediate: true, flush: 'post' }
       )
+      // 目录一出现就预取；新提示符会在缓存过期或其他命令修改文件后触发刷新。
+      const stopDirectoryWatch = watch(
+        () => [state.directory, state.promptRevision, v4.value] as const,
+        ([directory]) => {
+          void readDirectoryColors(directory)
+        },
+        { immediate: true, flush: 'post' }
+      )
       scanPrompts()
       cleanup(() => {
         alive = false
+        prepareFiles = undefined
+        directoryColors.clear()
         stopStyleWatch()
         stopContextWatch()
+        stopDirectoryWatch()
         cancelAnimationFrame(frame)
         disposables.forEach(item => item.dispose())
         clearDecorations()

@@ -40,11 +40,25 @@ const load = sourceLoader({
       cleared = 0
       refreshed = 0
       addons = []
-      element = { isConnected: true }
+      element = { isConnected: true, querySelector() { return null } }
+      buffer = { active: { type: 'normal' } }
+      csi = new Map()
+      writes = new Set()
+      parser = {
+        registerCsiHandler: (id, handler) => {
+          const key = (id.intermediates || '') + id.final
+          this.csi.set(key, handler)
+          return { dispose: () => this.csi.delete(key) }
+        }
+      }
       constructor(options) { this.options = options }
       open() {}
       loadAddon(addon) { this.addons.push(addon) }
       onSelectionChange() {}
+      onWriteParsed(handler) {
+        this.writes.add(handler)
+        return { dispose: () => this.writes.delete(handler) }
+      }
       clearTextureAtlas() { this.cleared++ }
       refresh() { this.refreshed++ }
     }
@@ -79,6 +93,8 @@ function fixture(t, scheme = 'dark') {
   }
   settings.terminalFont = 'jetbrains-mono'
   settings.terminalFontSize = '13'
+  settings.terminalCursor = 'bar'
+  settings.terminalCursorBlink = true
   const scope = effectScope()
   let changes = 0
   const api = scope.run(() => useXterm(() => changes++))
@@ -190,4 +206,110 @@ test('浅色终端保持透明，同时把实际底色交给文字对比度计�
   })
   const { currentTerminalTheme } = await themeLoad('src/constants/terminal.ts')
   assert.equal(currentTerminalTheme().background, 'rgba(250, 249, 255, 0)')
+})
+
+test('深浅终端的文字和语义色均达到 4.5:1，浅色高亮通过加深保持清晰', async t => {
+  const previous = globalThis.document
+  globalThis.document = { documentElement: { dataset: { skinScheme: 'dark' } } }
+  t.after(() => {
+    globalThis.document = previous
+  })
+  const themeLoad = sourceLoader({
+    '@/utils/color': dataModule(
+      'export const parseColor = () => [0,0,0]; export const rgba = () => "#000000"'
+    ),
+  })
+  const { currentTerminalTheme } = await themeLoad('src/constants/terminal.ts')
+  /** 将实际色板换算为相对亮度，检查可读性而非固定某个颜色值。 */
+  function luminance(color) {
+    const rgb = color
+      .slice(1)
+      .match(/../g)
+      .map(channel => {
+        const value = parseInt(channel, 16) / 255
+        return value <= 0.04045
+          ? value / 12.92
+          : ((value + 0.055) / 1.055) ** 2.4
+      })
+    return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
+  }
+  for (const [scheme, background] of [
+    ['dark', '#000000'],
+    ['light', '#fbfbfa'],
+  ]) {
+    document.documentElement.dataset.skinScheme = scheme
+    const theme = currentTerminalTheme('v4')
+    for (const role of [
+      'foreground',
+      'brightBlack',
+      'red',
+      'green',
+      'yellow',
+      'blue',
+      'magenta',
+      'cyan',
+      'brightRed',
+      'brightGreen',
+      'brightYellow',
+      'brightBlue',
+      'brightMagenta',
+      'brightCyan',
+    ]) {
+      const text = luminance(theme[role]),
+        surface = luminance(background)
+      const contrast =
+        (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05)
+      assert.ok(
+        contrast >= 4.5,
+        scheme + ' ' + role + ': ' + contrast.toFixed(2)
+      )
+    }
+    if (scheme === 'light')
+      assert.ok(luminance(theme.brightBlue) < luminance(theme.blue))
+  }
+})
+
+test('Shell 控制序列不会覆盖所选光标，全屏程序可切换形状并在退出后恢复', async t => {
+  const { terminal } = fixture(t)
+  const cursor = terminal.csi.get(' q')
+  assert.equal(terminal.options.cursorWidth, 2)
+  assert.equal(terminal.options.cursorInactiveStyle, 'none')
+  for (const style of ['bar', 'block', 'underline']) {
+    settings.terminalCursor = style
+    await nextTick()
+    for (const code of [0, 1, 2, 3, 4, 5, 6]) {
+      assert.equal(cursor([code]), true)
+      assert.equal(terminal.options.cursorStyle, style)
+      assert.equal(terminal.options.cursorBlink, false)
+    }
+    // 原生硬闪烁保持关闭，实际闪烁由统一光标层控制。
+    terminal.options.cursorBlink = true
+    terminal.writes.forEach(handler => handler())
+    assert.equal(terminal.options.cursorBlink, false)
+  }
+  assert.equal(cursor([7]), false)
+  terminal.buffer.active.type = 'alternate'
+  cursor([2])
+  assert.equal(terminal.options.cursorStyle, 'block')
+  assert.equal(terminal.options.cursorBlink, false)
+  cursor([4])
+  assert.equal(terminal.options.cursorStyle, 'underline')
+  terminal.buffer.active.type = 'normal'
+  terminal.writes.forEach(handler => handler())
+  assert.equal(terminal.options.cursorStyle, settings.terminalCursor)
+})
+
+test('关闭闪烁后控制序列无法重新开启，卸载时清理光标监听', async t => {
+  const { terminal } = fixture(t)
+  settings.terminalCursorBlink = false
+  await nextTick()
+  terminal.csi.get(' q')([1])
+  assert.equal(terminal.options.cursorBlink, false)
+  terminal.options.cursorBlink = true
+  terminal.writes.forEach(handler => handler())
+  assert.equal(terminal.options.cursorBlink, false)
+  t.after(() => {
+    assert.equal(terminal.csi.size, 0)
+    assert.equal(terminal.writes.size, 0)
+  })
 })

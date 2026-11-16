@@ -16,6 +16,7 @@ interface UseSshShellCompletionOptions {
   enabled: Ref<boolean>
 }
 
+/** 管理当前输入行的远端补全，接受或关闭后等待用户继续输入，避免子目录自动反复弹出。 */
 export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
   const state = reactive({
     suggestions: [] as ShellSuggestion[],
@@ -23,6 +24,7 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
     loading: false,
     cwd: '',
     dismissedLine: '',
+    resultLine: '',
   })
 
   const { suggestions, activeIndex, loading, cwd } = toRefs(state)
@@ -32,16 +34,23 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
     () =>
       options.enabled.value &&
       state.suggestions.length > 0 &&
+      state.resultLine === options.inputLine.value &&
       state.dismissedLine !== options.inputLine.value
   )
 
   const activeSuggestion = computed(() => state.suggestions[state.activeIndex])
 
+  /** 输入停稳后查询候选，关闭弹层或切换输入、连接后丢弃排队和迟到的结果。 */
   const requestSuggestions = useDebounceFn(async () => {
     const id = options.sessionId.value
     const line = options.inputLine.value
     const token = currentToken(line)
-    if (!id || !options.enabled.value || !token) {
+    if (
+      !id ||
+      !options.enabled.value ||
+      !token ||
+      state.dismissedLine === line
+    ) {
       clear()
       return
     }
@@ -54,11 +63,14 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
       if (
         currentRequest !== requestId ||
         id !== options.sessionId.value ||
-        line !== options.inputLine.value
+        line !== options.inputLine.value ||
+        !options.enabled.value ||
+        state.dismissedLine === line
       )
         return
 
       state.suggestions = items
+      state.resultLine = line
       state.activeIndex = 0
       state.dismissedLine = ''
     } catch {
@@ -68,17 +80,22 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
     }
   }, 140)
 
+  /** 清空旧候选并使在途请求失效，避免新输入仍能选中上一行的内容。 */
   function clear(): void {
     requestId += 1
     state.suggestions = []
     state.activeIndex = 0
     state.loading = false
+    state.resultLine = ''
   }
 
+  /** 记住接受或取消后的完整输入行，排队请求也不能重新打开这一行的弹层。 */
   function close(): void {
     state.dismissedLine = options.inputLine.value
+    clear()
   }
 
+  /** 仅在当前候选范围内循环移动键盘选中项。 */
   function move(step: 1 | -1): void {
     if (!state.suggestions.length) return
 
@@ -110,19 +127,24 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
     }
   }
 
-  watch([options.inputLine, options.enabled], ([line, enabled]) => {
-    if (!enabled || !currentToken(line)) {
+  // 输入一变就撤销旧候选；接受目录后由 close 标记新行，只有继续键入才重新查询。
+  watch(
+    [options.inputLine, options.enabled],
+    ([line, enabled]) => {
       clear()
-      return
-    }
-    state.dismissedLine = ''
-    void requestSuggestions()
-  })
+      if (!enabled || !currentToken(line) || state.dismissedLine === line)
+        return
+      state.dismissedLine = ''
+      void requestSuggestions()
+    },
+    { flush: 'sync' }
+  )
 
   watch(
     options.sessionId,
     async id => {
       clear()
+      state.dismissedLine = ''
       state.cwd = ''
       if (!id) return
 
@@ -152,6 +174,7 @@ export function useSshShellCompletion(options: UseSshShellCompletionOptions) {
   }
 }
 
+/** 仅补全光标末尾的非空 token，结尾空格表示用户已经结束当前参数。 */
 function currentToken(line: string): string {
   if (/\s$/.test(line)) return ''
   return line.match(/\S+$/)?.[0] ?? ''
