@@ -69,16 +69,24 @@ html.reduce-motion .mirai-terminal-cursor {
   animation: none;
 }
 
-/* 终端外壳跟随工作区皮肤；内容区保持不透明，避免桌面内容穿透。 */
+/* v4 自成扁平终端表面；经典样式继续使用工作区的玻璃面板令牌。 */
 .terminal-v4 {
+  --mirai-terminal-surface: #000000;
   --mirai-terminal-accent: var(--color-accent);
-  --mirai-terminal-muted: var(--color-txt-3);
-  --mirai-terminal-error: var(--color-danger);
-  --mirai-terminal-line: var(--color-line-soft);
-  border-radius: var(--radius-pane);
-  border-color: var(--color-line);
-  background: var(--color-pane);
-  box-shadow: var(--shadow-pane);
+  --mirai-terminal-muted: #8f8f8f;
+  --mirai-terminal-error: #e5484d;
+  --mirai-terminal-line: #ffffff0f;
+  border-radius: 10px;
+  /* border-color: #2e2e2e; */
+  /* box-shadow: none; */
+}
+
+[data-skin-scheme='light'] .terminal-v4 {
+  --mirai-terminal-surface: #fbfbfa;
+  --mirai-terminal-muted: #656a70;
+  --mirai-terminal-error: #cf2f36;
+  --mirai-terminal-line: #24292f12;
+  border-color: #dce3ec;
 }
 
 .mirai-terminal-footer {
@@ -155,11 +163,4 @@ html.reduce-motion .mirai-terminal-cursor {
   .terminal-v4 .mirai-command-branch {
     display: none;
   }
-}
-:root {
-  --mirai-terminal-surface: #000000;
-}
-
-:root[data-skin-scheme='light'] {
-  --mirai-terminal-surface: #fbfbfa;
 }

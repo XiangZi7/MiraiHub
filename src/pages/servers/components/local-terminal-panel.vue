@@ -109,13 +109,13 @@ defineExpose({
 
 <template>
   <section
-    class="local-terminal-pane pane bg-terminal min-w-0 flex-1"
+    class="local-terminal-pane bg-terminal border-line-soft min-w-0 flex-1 border-b"
     :class="{ 'terminal-v4': v4 }"
     :aria-busy="status === 'connecting'"
   >
     <!-- 本地终端顶栏：两种样式共用原有连接状态、名称和 Shell 信息。 -->
     <div
-      class="border-line-soft flex h-9 shrink-0 items-center gap-2.5 border-b px-3"
+      class="border-line-soft flex h-10 shrink-0 items-center gap-2.5 border-b px-3"
     >
       <span :class="['flex items-center gap-1.5 text-[11px]', statusMeta.tone]">
         <StatusDot

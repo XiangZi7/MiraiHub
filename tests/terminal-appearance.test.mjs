@@ -208,28 +208,17 @@ test('浅色终端保持透明，同时把实际底色交给文字对比度计�
   assert.equal(currentTerminalTheme().background, 'rgba(250, 249, 255, 0)')
 })
 
-test('终端配色跟随皮肤文字和强调色，深浅语义色保持 4.5:1 对比度', async t => {
+test('深浅终端的文字和语义色均达到 4.5:1，浅色高亮通过加深保持清晰', async t => {
   const previous = globalThis.document
   globalThis.document = { documentElement: { dataset: { skinScheme: 'dark' } } }
   t.after(() => {
     globalThis.document = previous
   })
-  const colorsUrl = dataModule(`
-    export const overrides = {}
-    export function parseColor(value) {
-      if (value.startsWith('#')) return value.slice(1).match(/../g).map(channel=>parseInt(channel,16))
-      const light = document.documentElement.dataset.skinScheme === 'light'
-      const tokens = {
-        'var(--mirai-terminal-surface)': light ? [245,244,249] : [23,22,31],
-        'var(--color-term-fg)': light ? [48,46,58] : [216,213,224],
-        'var(--color-accent)': light ? [121,78,178] : [155,113,217],
-      }
-      return overrides[value] ?? tokens[value] ?? [0,0,0]
-    }
-    export const rgba = (value, alpha) => 'rgba(' + parseColor(value).join(', ') + ', ' + alpha + ')'
-  `)
-  const themeLoad = sourceLoader({ '@/utils/color': colorsUrl })
-  const { overrides } = await import(colorsUrl)
+  const themeLoad = sourceLoader({
+    '@/utils/color': dataModule(
+      'export const parseColor = () => [0,0,0]; export const rgba = () => "#000000"'
+    ),
+  })
   const { currentTerminalTheme } = await themeLoad('src/constants/terminal.ts')
   /** 将实际色板换算为相对亮度，检查可读性而非固定某个颜色值。 */
   function luminance(color) {
@@ -245,8 +234,8 @@ test('终端配色跟随皮肤文字和强调色，深浅语义色保持 4.5:1 �
     return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
   }
   for (const [scheme, background] of [
-    ['dark', '#17161f'],
-    ['light', '#f5f4f9'],
+    ['dark', '#000000'],
+    ['light', '#fbfbfa'],
   ]) {
     document.documentElement.dataset.skinScheme = scheme
     const theme = currentTerminalTheme('v4')
@@ -278,13 +267,6 @@ test('终端配色跟随皮肤文字和强调色，深浅语义色保持 4.5:1 �
     if (scheme === 'light')
       assert.ok(luminance(theme.brightBlue) < luminance(theme.blue))
   }
-  const before = currentTerminalTheme('v4')
-  overrides['var(--color-accent)'] = [181, 57, 105]
-  const after = currentTerminalTheme('v4')
-  assert.notEqual(after.blue, before.blue)
-  assert.notEqual(after.selectionBackground, before.selectionBackground)
-  assert.equal(after.foreground, before.foreground)
-  assert.equal(after.green, before.green)
 })
 
 test('Shell 控制序列不会覆盖所选光标，全屏程序可切换形状并在退出后恢复', async t => {

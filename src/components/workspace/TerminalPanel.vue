@@ -551,13 +551,13 @@ defineExpose({
 
 <template>
   <section
-    class="terminal-pane pane bg-terminal min-w-0 flex-1"
+    class="terminal-pane pane bg-terminal border-line-soft min-w-0 flex-1 border-b"
     :class="{ 'terminal-v4': v4 }"
     :aria-busy="status === 'connecting'"
   >
     <!-- 会话工具条：两种样式共用原有头部，保留监控信息、布局和全部操作。 -->
     <div
-      class="terminal-header border-line-soft flex min-h-9 shrink-0 items-center gap-2.5 border-b px-3"
+      class="terminal-header border-line-soft flex h-10 shrink-0 items-center gap-2.5 border-b px-3"
     >
       <span
         v-if="status !== 'connecting'"
