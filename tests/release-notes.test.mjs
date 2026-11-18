@@ -93,6 +93,27 @@ test('release notes show direct commits, emoji categories, bodies and links with
   assert.match(body, /### 📝 文档更新/)
   assert.match(body, /### 🔧 构建与维护/)
   assert.match(body, /## 下载与安装/)
+  const windowsBadges = [
+    ...body.matchAll(
+      /\[!\[(?:Setup|Portable ZIP) x64\]\((https:\/\/img\.shields\.io\/[^)]+)\)\]\(([^)]+)\)/g
+    ),
+  ]
+  assert.deepEqual(
+    windowsBadges.map(([, , download]) => new URL(download).pathname),
+    [
+      '/XiangZi7/MiraiHub/releases/download/v1.0.1/MiraiHub_1.0.1_windows_x64_setup.exe',
+      '/XiangZi7/MiraiHub/releases/download/v1.0.1/MiraiHub_1.0.1_windows_x64_portable.zip',
+    ]
+  )
+  for (const [, badge] of windowsBadges) {
+    assert.match(
+      new URL(badge).searchParams.get('logo') ?? '',
+      /^data:image\/svg\+xml;base64,/
+    )
+  }
+  assert.match(body, /logo=apple&logoColor=white/)
+  assert.match(body, /logo=linux&logoColor=FCC624/)
+  assert.match(body, /logo=debian&logoColor=white/)
   assert.match(body, /Full Changelog.*\/compare\/v1\.0\.0\.\.\.v1\.0\.1/)
   assert.doesNotMatch(body, /已发布的旧功能|chore\(release\)|### 📦 其他更新/)
 })

@@ -22,10 +22,10 @@ MiraiHub 每个 WebView 先安装 Pinia，再安装 Vue Router，等待首条路
 
 | 路径                                  | 路由名          | 用途                                                   |
 | ------------------------------------- | --------------- | ------------------------------------------------------ |
-| `#/servers/:connectionId?`            | `servers`       | SSH / 本地终端，可直达指定连接                         |
+| `#/servers/:connectionId?`            | `servers`       | SSH、本地终端和 RDP，可直达指定连接                     |
 | `#/databases/:connectionId?`          | `databases`     | 数据库连接工作区                                       |
 | `#/settings/:section`                 | `settings`      | 如 `general`、`appearance`、`ai`、`backup`             |
-| `#/connection/:kind?connectionId=...` | `connection`    | `ssh`、`local`、`database` 的新建/编辑窗口             |
+| `#/connection/:kind?connectionId=...` | `connection`    | `ssh`、`local`、`rdp`、`database` 的新建/编辑窗口       |
 | `#/remote-editor`                     | `remote-editor` | 原生远端编辑器，目标由 Rust 窗口注册表提供             |
 | `#/column-tags`                       | `column-tags`   | 列标签设置窗口，目标及保存结果由 Rust 转交             |
 | `#/splash`                            | `splash`        | Vue 启动画面入口；桌面首次启动仍使用独立 `splash.html` |

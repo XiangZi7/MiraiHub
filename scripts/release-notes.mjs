@@ -6,6 +6,12 @@ import { assetName, releaseTargets } from './release-targets.mjs'
 import { parseReleaseTag } from './release-version.mjs'
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url))
+
+// Windows 徽章使用内嵌图标，GitHub 发布任务无需安装依赖或访问额外资源。
+const windowsIcon =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"><path fill="white" d="M0 0h7v7H0zM9 0h7v7H9zM0 9h7v7H0zM9 9h7v7H9z"/></svg>'
+const windowsLogo = `data:image/svg+xml;base64,${Buffer.from(windowsIcon).toString('base64')}`
+
 const categories = [
   ['features', '✨ 新增功能'],
   ['fixes', '🐛 问题修复'],
@@ -78,12 +84,12 @@ function escapeMarkdown(value) {
 // 为下载表生成方形徽章，复用打包命名规则直达当前版本的实际附件。
 function downloadBadge(url, tag, targetId, extension) {
   const target = releaseTargets[targetId]
-  const [label, color, logo, logoColor = 'white'] = {
-    'setup.exe': ['Setup', '0078D4'],
-    'portable.zip': ['Portable ZIP', '0078D4'],
-    dmg: ['DMG', '000000', 'apple'],
+  const [label, color, logo, logoColor] = {
+    'setup.exe': ['Setup', '0078D4', windowsLogo],
+    'portable.zip': ['Portable ZIP', '0078D4', windowsLogo],
+    dmg: ['DMG', '000000', 'apple', 'white'],
     AppImage: ['AppImage', 'FCC624', 'linux', 'FCC624'],
-    deb: ['DebPackage', 'D70A53', 'debian'],
+    deb: ['DebPackage', 'D70A53', 'debian', 'white'],
   }[extension]
   const architecture =
     target.platform === 'macos'
@@ -93,7 +99,8 @@ function downloadBadge(url, tag, targetId, extension) {
       : target.arch
   const query = new URLSearchParams({
     style: 'flat-square',
-    ...(logo ? { logo, logoColor } : {}),
+    logo,
+    ...(logoColor ? { logoColor } : {}),
   })
   const badge = `https://img.shields.io/badge/${encodeURIComponent(label)}-${encodeURIComponent(architecture)}-${color}?${query}`
   const download = `${url}/releases/download/${tag}/${assetName(target, extension, tag.slice(1))}`

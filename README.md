@@ -3,41 +3,42 @@
 <p align="center"><a href="https://github.com/XiangZi7/MiraiHub/releases/latest"><strong>下载桌面版 →</strong></a>　·　<a href="#快速开始">快速开始</a>　·　<a href="#文档">文档</a>　·　<a href="https://qm.qq.com/q/QQ_GROUP_INVITE_CODE">QQ群</a>　·　<a href="README.en.md">English</a></p>
 
 <p align="center">
-  <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/v/release/XiangZi7/MiraiHub?style=flat-square&amp;color=8b5cf6" alt="GitHub Release" /></a>
-  <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/downloads/XiangZi7/MiraiHub/total?style=flat-square&amp;color=8b5cf6" alt="Downloads" /></a>
-  <a href="https://github.com/XiangZi7/MiraiHub/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/XiangZi7/MiraiHub/release.yml?style=flat-square&amp;label=release" alt="Release Workflow" /></a>
-  <img src="https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square" alt="Windows x64" />
-  <img src="https://img.shields.io/badge/macOS-Intel%20%2F%20Apple%20Silicon-000000?style=flat-square" alt="macOS Intel and Apple Silicon" />
-  <img src="https://img.shields.io/badge/Linux-x64-FCC624?style=flat-square" alt="Linux x64" />
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-777777?style=flat-square" alt="MIT License" /></a>
-  <a href="https://qm.qq.com/q/QQ_GROUP_INVITE_CODE"><img src="https://img.shields.io/badge/QQ%E7%BE%A4-442179941-12B7F5?style=flat-square" alt="QQ群：442179941" /></a>
+  <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/v/release/XiangZi7/MiraiHub?style=flat-square&amp;color=8b5cf6&amp;logo=github&amp;logoColor=white" alt="GitHub Release" /></a>
+  <a href="https://github.com/XiangZi7/MiraiHub/releases"><img src="https://img.shields.io/github/downloads/XiangZi7/MiraiHub/total?style=flat-square&amp;color=8b5cf6&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBkPSJNOCAydjhtLTMtMyAzIDMgMy0zTTIgMTB2NGgxMnYtNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg%3D%3D" alt="Downloads" /></a>
+  <a href="https://github.com/XiangZi7/MiraiHub/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/XiangZi7/MiraiHub/release.yml?style=flat-square&amp;label=release&amp;logo=githubactions&amp;logoColor=white" alt="Release Workflow" /></a>
+  <img src="https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBmaWxsPSJ3aGl0ZSIgZD0iTTAgMGg3djdIMHpNOSAwaDd2N0g5ek0wIDloN3Y3SDB6TTkgOWg3djdIOXoiLz48L3N2Zz4%3D" alt="Windows x64" />
+  <img src="https://img.shields.io/badge/macOS-Intel%20%2F%20Apple%20Silicon-000000?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="macOS Intel and Apple Silicon" />
+  <img src="https://img.shields.io/badge/Linux-x64-FCC624?style=flat-square&amp;logo=linux&amp;logoColor=FCC624" alt="Linux x64" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-777777?style=flat-square&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBkPSJNOCAydjEybS00IDBoOE0yIDVoMTJNNCA1IDIgMTBoNHpNMTIgNWwtMiA1aDR6IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8%2BPC9zdmc%2B" alt="MIT License" /></a>
+  <a href="https://qm.qq.com/q/QQ_GROUP_INVITE_CODE"><img src="https://img.shields.io/badge/QQ%E7%BE%A4-442179941-12B7F5?style=flat-square&amp;logo=qq&amp;logoColor=white" alt="QQ群：442179941" /></a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square" alt="Tauri 2" />
-  <img src="https://img.shields.io/badge/Rust-2021-DEA584?style=flat-square" alt="Rust 2021 edition" />
-  <img src="https://img.shields.io/badge/Vue-3-42B883?style=flat-square" alt="Vue 3" />
-  <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square" alt="TypeScript 5.9" />
-  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square" alt="Vite 8" />
-  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square" alt="Tailwind CSS 4" />
+  <img src="https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square&amp;logo=tauri&amp;logoColor=24C8D8" alt="Tauri 2" />
+  <img src="https://img.shields.io/badge/Rust-2021-DEA584?style=flat-square&amp;logo=rust&amp;logoColor=DEA584" alt="Rust 2021 edition" />
+  <img src="https://img.shields.io/badge/Vue-3-42B883?style=flat-square&amp;logo=vuedotjs&amp;logoColor=42B883" alt="Vue 3" />
+  <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript 5.9" />
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&amp;logo=vite&amp;logoColor=white" alt="Vite 8" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&amp;logo=tailwindcss&amp;logoColor=06B6D4" alt="Tailwind CSS 4" />
   <a href="https://hub.xerj.org/contributors/XiangZi7"><img src="https://hub.xerj.org/contributors/XiangZi7/badge.svg" alt="XERJ Corpus Hub Contributor" /></a>
 </p>
 
 <p align="center">
-  <a href="docs/ssh-operations.md"><img src="https://img.shields.io/badge/SSH-Terminal-4EAA25?style=flat-square" alt="SSH 终端" /></a>
-  <a href="docs/ssh-operations.md"><img src="https://img.shields.io/badge/SFTP-Files-0096C7?style=flat-square" alt="SFTP 文件管理" /></a>
-  <a href="#快速开始"><img src="https://img.shields.io/badge/Local-Terminal-64748B?style=flat-square" alt="本地终端" /></a>
-  <a href="docs/ssh-operations.md"><img src="https://img.shields.io/badge/Server-Monitoring-F59E0B?style=flat-square" alt="服务器监控" /></a>
-  <a href="docs/ai-agent.md"><img src="https://img.shields.io/badge/AI-Agent-8B5CF6?style=flat-square" alt="AI Agent" /></a>
+  <a href="docs/ssh-operations.md"><img src="https://img.shields.io/badge/SSH-Terminal-4EAA25?style=flat-square&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBkPSJNMS41IDNoMTN2MTBoLTEzek00IDZsMiAyLTIgMm00IDBoNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg%3D%3D" alt="SSH 终端" /></a>
+  <a href="docs/ssh-operations.md"><img src="https://img.shields.io/badge/SFTP-Files-0096C7?style=flat-square&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBkPSJNMS41IDR2OWgxM1Y1LjVIOEw2LjUgNHoiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4%3D" alt="SFTP 文件管理" /></a>
+  <a href="#快速开始"><img src="https://img.shields.io/badge/Local-Terminal-64748B?style=flat-square&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBkPSJNMS41IDNoMTN2MTBoLTEzek00IDZsMiAyLTIgMm00IDBoNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg%3D%3D" alt="本地终端" /></a>
+  <a href="#windows-远程桌面"><img src="https://img.shields.io/badge/RDP-Remote%20Desktop-0F6CBD?style=flat-square&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBkPSJNMS41IDIuNWgxM3Y5aC0xM3pNOCAxMS41VjE0bS0zIDBoNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg%3D%3D" alt="Windows 远程桌面 (RDP)" /></a>
+  <a href="docs/ssh-operations.md"><img src="https://img.shields.io/badge/Server-Monitoring-F59E0B?style=flat-square&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBkPSJNMSA4aDNsMi00IDMgOCAyLTRoNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg%3D%3D" alt="服务器监控" /></a>
+  <a href="docs/ai-agent.md"><img src="https://img.shields.io/badge/AI-Agent-8B5CF6?style=flat-square&amp;logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBkPSJNMyA1aDEwdjhIM3pNOCAydjNNMSA4djJtMTQtMnYyTTYgOHYxbTQtMXYxIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8%2BPC9zdmc%2B" alt="AI Agent" /></a>
 </p>
 
 <p align="center">
-  <a href="docs/database.md"><img src="https://img.shields.io/badge/MySQL-supported-4479A1?style=flat-square" alt="支持 MySQL" /></a>
-  <a href="docs/database.md"><img src="https://img.shields.io/badge/MariaDB-compatible-003545?style=flat-square" alt="通过 MySQL 协议兼容 MariaDB" /></a>
-  <a href="docs/database.md"><img src="https://img.shields.io/badge/TiDB-compatible-EF4135?style=flat-square" alt="通过 MySQL 协议兼容 TiDB" /></a>
-  <a href="docs/database.md"><img src="https://img.shields.io/badge/PostgreSQL-supported-4169E1?style=flat-square" alt="支持 PostgreSQL" /></a>
-  <a href="docs/database.md"><img src="https://img.shields.io/badge/SQLite-supported-003B57?style=flat-square" alt="支持 SQLite" /></a>
-  <a href="docs/redis.md"><img src="https://img.shields.io/badge/Redis-supported-DC382D?style=flat-square" alt="支持 Redis" /></a>
+  <a href="docs/database.md"><img src="https://img.shields.io/badge/MySQL-supported-4479A1?style=flat-square&amp;logo=mysql&amp;logoColor=white" alt="支持 MySQL" /></a>
+  <a href="docs/database.md"><img src="https://img.shields.io/badge/MariaDB-compatible-003545?style=flat-square&amp;logo=mariadb&amp;logoColor=white" alt="通过 MySQL 协议兼容 MariaDB" /></a>
+  <a href="docs/database.md"><img src="https://img.shields.io/badge/TiDB-compatible-EF4135?style=flat-square&amp;logo=tidb&amp;logoColor=white" alt="通过 MySQL 协议兼容 TiDB" /></a>
+  <a href="docs/database.md"><img src="https://img.shields.io/badge/PostgreSQL-supported-4169E1?style=flat-square&amp;logo=postgresql&amp;logoColor=white" alt="支持 PostgreSQL" /></a>
+  <a href="docs/database.md"><img src="https://img.shields.io/badge/SQLite-supported-003B57?style=flat-square&amp;logo=sqlite&amp;logoColor=white" alt="支持 SQLite" /></a>
+  <a href="docs/redis.md"><img src="https://img.shields.io/badge/Redis-supported-DC382D?style=flat-square&amp;logo=redis&amp;logoColor=white" alt="支持 Redis" /></a>
 </p>
 
 <br />
@@ -90,7 +91,7 @@
 
 | OS | Download |
 | --- | --- |
-| **Windows** | [![Setup x64](https://img.shields.io/badge/Setup-x64-0078D4?style=flat-square)](https://github.com/XiangZi7/MiraiHub/releases/latest) [![Portable ZIP x64](https://img.shields.io/badge/Portable%20ZIP-x64-0078D4?style=flat-square)](https://github.com/XiangZi7/MiraiHub/releases/latest) |
+| **Windows** | [![Setup x64](https://img.shields.io/badge/Setup-x64-0078D4?style=flat-square&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBmaWxsPSJ3aGl0ZSIgZD0iTTAgMGg3djdIMHpNOSAwaDd2N0g5ek0wIDloN3Y3SDB6TTkgOWg3djdIOXoiLz48L3N2Zz4%3D)](https://github.com/XiangZi7/MiraiHub/releases/latest) [![Portable ZIP x64](https://img.shields.io/badge/Portable%20ZIP-x64-0078D4?style=flat-square&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2Ij48cGF0aCBmaWxsPSJ3aGl0ZSIgZD0iTTAgMGg3djdIMHpNOSAwaDd2N0g5ek0wIDloN3Y3SDB6TTkgOWg3djdIOXoiLz48L3N2Zz4%3D)](https://github.com/XiangZi7/MiraiHub/releases/latest) |
 | **macOS** | [![DMG Apple Silicon](https://img.shields.io/badge/DMG-Apple%20Silicon-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/XiangZi7/MiraiHub/releases/latest) [![DMG Intel x64](https://img.shields.io/badge/DMG-Intel%20x64-000000?style=flat-square&logo=apple&logoColor=white)](https://github.com/XiangZi7/MiraiHub/releases/latest) |
 | **Linux** | [![AppImage x64](https://img.shields.io/badge/AppImage-x64-FCC624?style=flat-square&logo=linux&logoColor=FCC624)](https://github.com/XiangZi7/MiraiHub/releases/latest) [![DebPackage x64](https://img.shields.io/badge/DebPackage-x64-D70A53?style=flat-square&logo=debian&logoColor=white)](https://github.com/XiangZi7/MiraiHub/releases/latest) |
 
@@ -101,7 +102,7 @@ Windows 安装版、macOS 应用与 Linux AppImage 可在「设置 → 关于」
 ## 快速开始
 
 1. 按上方下载表选择系统与架构，下载安装包。
-2. 添加 SSH、本地终端或数据库连接，进入工作区。
+2. 添加 SSH、本地终端、Windows 远程桌面（RDP）或数据库连接，进入工作区。
 3. 需要 AI 时，在「设置 → AI Agent」填入自己的模型服务与 API Key。
 
 免安装版需 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。已安装用户可在「设置 → 关于」检查更新。
@@ -112,6 +113,12 @@ Windows 安装版、macOS 应用与 Linux AppImage 可在「设置 → 关于」
 | 新建本地终端 | `Ctrl+T` |
 | 执行 SQL / Redis 命令 | `Ctrl+Enter` |
 | SQL AI 生成 / 改写 | SQL 编辑器内 `Ctrl+K` |
+
+## Windows 远程桌面
+
+新建「Windows 远程桌面（RDP）」连接，填写主机、端口（默认 `3389`）和 Windows 账号密码。在工作区打开连接后，可切换全屏，并选择跟随窗口或使用固定分辨率。
+
+远端允许剪贴板重定向时，可用 `Ctrl+C` 和 `Ctrl+V` 在本机与远端双向复制粘贴文本和普通文件。每次最多传输 128 个文件，总大小上限为 1 GiB。
 
 ## 文档
 
