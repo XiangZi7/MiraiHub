@@ -19,14 +19,16 @@ import StatusDot from '@/components/ui/StatusDot.vue'
 import { useSshTerminal } from '@/composables/useSshTerminal'
 import { useSshShellCompletion } from '@/composables/useSshShellCompletion'
 import { useSettings } from '@/composables/useSettings'
+import { useTerminalColors } from '@/composables/useTerminalColors'
+import { listDirectory } from '@/api/ssh'
+import { pasteTerminalPaths } from '@/composables/useTerminalInsert'
+import type { FilePaneDrop } from '@/components/workspace/useFilePaneDrag'
 import SessionErrorNotice from '@/components/ui/SessionErrorNotice.vue'
 import type { SshConfig, SshSessionStatus } from '@/types/ssh'
 import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from '@/components/workspace/TerminalSuggestions.vue'
 import TerminalActions from '@/components/workspace/TerminalActions.vue'
 import TerminalInlineAi from '@/components/workspace/terminal-inline-ai.vue'
-import { useTerminalPresentation } from '@/composables/useTerminalPresentation'
-import { listDirectory, readTerminalGitBranch } from '@/api/ssh'
 
 const { t } = useI18n()
 
@@ -94,10 +96,13 @@ const {
   setInputInterceptor,
   setSubmitHandler,
 } = useSshTerminal()
-const { v4, trackSubmit } = useTerminalPresentation(term, sessionId, {
-  readGitBranch: readTerminalGitBranch,
-  readDirectory: listDirectory,
-})
+
+// 从正在使用的 SSH 会话获取真实目录项，仅用于给纯文本列表补色。
+useTerminalColors(
+  term,
+  sessionId,
+  async (id, path) => (await listDirectory(id, path)).entries
+)
 
 // 响应式状态
 const state = reactive({
@@ -534,9 +539,23 @@ function interceptCompletionKey(data: string): boolean {
   return false
 }
 
+/** 将同一 SSH 会话中文件面板拖来的远端路径填入终端。 */
+function receiveFilePaths(event: Event): void {
+  const { detail } = event as CustomEvent<FilePaneDrop>
+  if (
+    status.value !== 'connected' ||
+    detail.source !== 'remote' ||
+    detail.sessionId !== sessionId.value
+  )
+    return
+  pasteTerminalPaths(
+    term.value,
+    detail.files.map(file => file.path)
+  )
+}
+
 setInputInterceptor(interceptTerminalInput)
 setSubmitHandler(line => {
-  trackSubmit(line)
   trackCommand(line)
   void completion.trackSubmittedCommand(line)
 })
@@ -551,14 +570,11 @@ defineExpose({
 
 <template>
   <section
-    class="terminal-pane pane bg-terminal border-line-soft min-w-0 flex-1 border-b"
-    :class="{ 'terminal-v4': v4 }"
+    class="terminal-pane pane"
     :aria-busy="status === 'connecting'"
   >
-    <!-- 会话工具条：两种样式共用原有头部，保留监控信息、布局和全部操作。 -->
-    <div
-      class="terminal-header border-line-soft flex h-10 shrink-0 items-center gap-2.5 border-b px-3"
-    >
+    <!-- 会话工具条：展示连接状态、监控信息、布局和终端操作。 -->
+    <div class="terminal-header">
       <span
         v-if="status !== 'connecting'"
         :class="[
@@ -659,15 +675,17 @@ defineExpose({
     <div
       v-if="config"
       ref="terminalArea"
-      class="terminal-output bg-terminal relative min-h-0 flex-1 overflow-hidden"
+      class="terminal-output"
+      data-file-drop-target="terminal"
+      data-file-terminal-source="remote"
+      :data-file-session-id="status === 'connected' ? sessionId : undefined"
+      @mirai-file-drop="receiveFilePaths"
     >
+    <!-- 终端实例挂载点。 -->
       <div
         ref="terminal"
-        class="absolute inset-0"
-        :class="[
-          v4 ? 'px-4 py-3' : 'p-2',
-          status === 'connecting' && 'invisible',
-        ]"
+        class="terminal-mount"
+        :class="{ invisible: status === 'connecting' }"
       />
       <Transition
         enter-active-class="transition-opacity duration-150 motion-reduce:transition-none"
@@ -780,63 +798,12 @@ defineExpose({
 </template>
 
 <style scoped>
-.terminal-pane {
-  container-type: inline-size;
-  container-name: terminal;
-}
 @container terminal (max-width: 640px) {
   .terminal-endpoint,
   .terminal-metrics {
     display: none;
   }
 }
-@container terminal (max-width: 360px) {
-  .terminal-header {
-    gap: 6px;
-    padding-inline: 8px;
-  }
-  .terminal-state-label,
-  .terminal-kind {
-    display: none;
-  }
-}
-
-/* xterm 自带 .xterm .xterm-viewport{background-color:#000}，而终端主题的 background
-   是全透明，不盖掉它的话终端永远是纯黑 —— 浅色模式下整块黑面糊在白界面中间。
-   选择器必须带上 .xterm 才比它高一级：xterm 的样式表被打包成独立 chunk，
-   仅靠 :deep(.xterm-viewport) 是同特异性，谁生效取决于 chunk 加载顺序。
-   底色交给容器的 bg-terminal（深浅两套令牌），xterm 只负责画字。 */
-:deep(.xterm .xterm-viewport) {
-  background-color: transparent;
-}
-
-/* 滚动条只在指针悬停面板时出现：静止时不让一条灰轨常驻在终端右侧 */
-:deep(.xterm-viewport) {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-.terminal-pane:hover :deep(.xterm-viewport) {
-  scrollbar-color: var(--color-line-strong) transparent;
-}
-
-:deep(.xterm-viewport)::-webkit-scrollbar {
-  width: 8px;
-}
-
-:deep(.xterm-viewport)::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background: transparent;
-}
-
-.terminal-pane:hover :deep(.xterm-viewport)::-webkit-scrollbar-thumb {
-  background: var(--color-line-strong);
-}
-
-:deep(.xterm-viewport)::-webkit-scrollbar-track {
-  background: transparent;
-}
-
 .terminal-completion-enter-active,
 .terminal-completion-leave-active {
   transition:

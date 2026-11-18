@@ -19,7 +19,6 @@ import { toast } from '@/composables/useToast'
 import { copyText } from '@/utils/clipboard'
 import { SKIN_CHANGE_EVENT } from '@/utils/skin-runtime'
 import { IS_TAURI } from '@/utils/window'
-import { createTerminalOutputFormatter } from '@/utils/terminal-output'
 import { createTerminalCursor } from '@/utils/terminal-cursor'
 import {
   settingNumber,
@@ -28,6 +27,8 @@ import {
 } from '@/composables/useSettings'
 
 type CursorStyle = 'block' | 'bar' | 'underline'
+
+const TERMINAL_LINE_HEIGHT = 1.4
 
 const FONT_FAMILIES: Record<string, string> = {
   'jetbrains-mono': '"JetBrains Mono Variable", ui-monospace, monospace',
@@ -67,6 +68,46 @@ function loadWebLinks(terminal: Terminal): void {
   terminal.loadAddon(addon)
 }
 
+/** 微调 xterm 自己的行高，让整行网格尽量填满高度，鼠标和光标仍用同一套坐标。 */
+function fitTerminalRows(terminal: Terminal): void {
+  const element = terminal.element
+  const mount = element?.parentElement
+  const screen = element?.querySelector<HTMLElement>('.xterm-screen')
+  if (!mount?.clientHeight || !screen) return
+
+  const ratio = window.devicePixelRatio || 1
+  const height = Math.floor(mount.clientHeight * ratio)
+  const row = Math.round(
+    (parseFloat(screen.style.height) * ratio) / terminal.rows
+  )
+  if (!row || terminal.rows < 3) return
+
+  // 两种 xterm 渲染器都按设备像素向下取整：行高 = 字符高度 × 行高倍率。
+  const glyph = Math.ceil(
+    row / (terminal.options.lineHeight ?? TERMINAL_LINE_HEIGHT)
+  )
+  const preferred = Math.floor(glyph * TERMINAL_LINE_HEIGHT)
+  let best = preferred
+  let gap = height % preferred
+  // 每行最多调整约 3 个 CSS 像素，优先选留白少、且接近原行高的完整网格。
+  for (
+    let offset = 1;
+    offset <= Math.round(3 * ratio) && gap > ratio;
+    offset++
+  ) {
+    for (const candidate of [preferred - offset, preferred + offset]) {
+      if (candidate < glyph || candidate > height) continue
+      const remaining = height % candidate
+      if (remaining < gap) {
+        best = candidate
+        gap = remaining
+      }
+    }
+  }
+
+  if (best !== row) terminal.options.lineHeight = (best + 0.25) / glyph
+}
+
 /**
  * 管理 SSH 与本地终端的字体、渲染器和设置联动，不重建底层会话。
  * @param onOptionsChange 字体、字号等设置变化后调用，调用方借此重新 fit 并同步远端尺寸。
@@ -76,7 +117,7 @@ export function useXterm(onOptionsChange: () => void) {
   // xterm 实例不参与响应式：它内部持有大量 DOM 与缓冲区，
   // 被 Vue 深度代理会显著拖慢渲染
   const term = shallowRef<Terminal>()
-  const fitAddon = shallowRef<FitAddon>()
+  let fitAddon: FitAddon | undefined
   let webglAddon: WebglAddon | undefined
   let rendererRevision = 0
   let cursor: ReturnType<typeof createTerminalCursor>
@@ -85,32 +126,17 @@ export function useXterm(onOptionsChange: () => void) {
     cursorDisposables.forEach(item => item.dispose())
     cursor?.dispose()
     cursor = undefined
-    cursor = undefined
   })
-  const output = createTerminalOutputFormatter(
-    () => settings.terminalStyle === 'v4' && settings.terminalCommandBlocks
-  )
-  let outputTimer: ReturnType<typeof setTimeout> | undefined
 
-  /** 输出只经过一次 xterm 绘制；v4 在识别到提示符时补留白，不叠加另一层命令文字。 */
+  /** SSH 与本地输出统一原样交给 xterm，保留 ANSI、换行与跨包 UTF-8。 */
   function writeOutput(data: string | Uint8Array): void {
-    clearTimeout(outputTimer)
-    const value = output.write(data)
-    if (value) term.value?.write(value)
-    if (output.hasPending())
-      outputTimer = setTimeout(() => {
-        const pending = output.flush()
-        if (pending) term.value?.write(pending)
-      }, 24)
+    term.value?.write(data)
   }
 
-  /** 重连和卸载时取消尚未放行的旧输出，防止混入新会话。 */
+  /** 重连前重置光标层，避免沿用上一会话的光标位置。 */
   function resetOutput(): void {
-    clearTimeout(outputTimer)
-    output.reset()
     cursor?.reset()
   }
-  onScopeDispose(resetOutput)
 
   // 皮肤变化时同步配色与渲染器，沿用当前缓冲区、选区和 SSH 会话。
   useEventListener(window, SKIN_CHANGE_EVENT, () => {
@@ -198,7 +224,7 @@ export function useXterm(onOptionsChange: () => void) {
 
   /** 原生光标交给透明层，避免 DOM/WebGL 的硬切闪烁与圆角光标叠加；文字继续由 xterm 绘制。 */
   function rendererTheme() {
-    const theme = currentTerminalTheme(settings.terminalStyle)
+    const theme = currentTerminalTheme()
     return { ...theme, cursor: '#00000000', cursorAccent: theme.foreground }
   }
 
@@ -213,6 +239,20 @@ export function useXterm(onOptionsChange: () => void) {
     cursor?.refresh()
   }
 
+  /** 重新适配可见终端；没有可用网格时跳过 PTY 尺寸同步。 */
+  function fit(): boolean {
+    const terminal = term.value
+    if (
+      !terminal?.element?.clientWidth ||
+      !terminal.element.clientHeight ||
+      !fitAddon
+    )
+      return false
+    fitTerminalRows(terminal)
+    fitAddon.fit()
+    return true
+  }
+
   /** 创建终端并挂到容器上，立即按容器尺寸 fit 一次。 */
   function open(container: HTMLElement): Terminal {
     const terminal = new Terminal({
@@ -220,7 +260,7 @@ export function useXterm(onOptionsChange: () => void) {
       fontSize: settingNumber('terminalFontSize', 13),
       fontWeight: 400,
       fontWeightBold: 700,
-      lineHeight: 1.5,
+      lineHeight: TERMINAL_LINE_HEIGHT,
       cursorStyle: settings.terminalCursor as CursorStyle,
       cursorBlink: false,
       cursorWidth: 2,
@@ -259,14 +299,15 @@ export function useXterm(onOptionsChange: () => void) {
       ),
       terminal.onWriteParsed(() => syncCursor(terminal))
     )
-    const fit = new FitAddon()
-    terminal.loadAddon(fit)
+    const addon = new FitAddon()
+    terminal.loadAddon(addon)
     // 默认的 Unicode 6 宽度表会把大部分 emoji 当成单宽，光标与后续字符随之错位。
     terminal.loadAddon(new Unicode11Addon())
     terminal.unicode.activeVersion = '11'
     loadWebLinks(terminal)
     terminal.open(container)
-    fit.fit()
+    fitTerminalRows(terminal)
+    addon.fit()
     cursor = createTerminalCursor(terminal, () => settings.terminalCursorBlink)
 
     // 拖选过程中选区会连续变化，停稳后再写剪贴板。
@@ -280,7 +321,7 @@ export function useXterm(onOptionsChange: () => void) {
     })
 
     term.value = terminal
-    fitAddon.value = fit
+    fitAddon = addon
     void refreshRenderer(terminal)
     return terminal
   }
@@ -294,7 +335,6 @@ export function useXterm(onOptionsChange: () => void) {
         settings.terminalCursor,
         settings.terminalCursorBlink,
         settings.terminalScrollback,
-        settings.terminalStyle,
       ] as const,
     () => {
       const terminal = term.value
@@ -311,5 +351,5 @@ export function useXterm(onOptionsChange: () => void) {
     }
   )
 
-  return { term, fitAddon, open, stopSettingsWatch, writeOutput, resetOutput }
+  return { term, fit, open, stopSettingsWatch, writeOutput, resetOutput }
 }

@@ -11,7 +11,7 @@ import type { SshSessionStatus } from '@/types/ssh'
 import { normalizeLocalShell } from '@/utils/platform'
 
 export function useLocalTerminal() {
-  const { term, fitAddon, open, stopSettingsWatch, writeOutput, resetOutput } =
+  const { term, fit, open, stopSettingsWatch, writeOutput, resetOutput } =
     useXterm(() => resize())
   const state = reactive({
     sessionId: '',
@@ -133,13 +133,7 @@ export function useLocalTerminal() {
     cancelAnimationFrame(fitFrame)
     fitFrame = requestAnimationFrame(() => {
       fitFrame = 0
-      const terminal = term.value
-      const fit = fitAddon.value
-      if (!terminal || !fit) return
-      if (!terminal.element?.clientWidth || !terminal.element?.clientHeight)
-        return
-      fit.fit()
-      syncRemoteSize()
+      if (fit()) syncRemoteSize()
     })
   }
 

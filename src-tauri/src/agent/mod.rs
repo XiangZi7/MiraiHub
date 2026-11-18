@@ -505,6 +505,15 @@ async fn bind(app: &AppHandle, target: &Target) -> AppResult<(String, u64)> {
             }
             Ok((session.config().endpoint(), 0))
         }
+        "local" => {
+            if !target.database.is_empty() {
+                return Err(AppError::invalid_input("本地终端目标不能包含数据库"));
+            }
+            let (shell, _) = app
+                .state::<crate::local_terminal::LocalTerminalManager>()
+                .agent_context(&target.session_id)?;
+            Ok((format!("本地终端 · {shell}"), 0))
+        }
         "database" => {
             let (config, revision) = app
                 .state::<db::DatabaseManager>()
@@ -531,7 +540,7 @@ async fn bind(app: &AppHandle, target: &Target) -> AppResult<(String, u64)> {
                 revision,
             ))
         }
-        _ => Err(AppError::invalid_input("AI 仅支持已连接的 SSH 或数据库")),
+        _ => Err(AppError::invalid_input("AI 仅支持已连接的终端或数据库")),
     }
 }
 async fn validate_target(app: &AppHandle, run: &Run) -> AppResult<()> {
@@ -1276,6 +1285,8 @@ pub async fn ai_start(
                 .await?
                 .kind
         )
+    } else if target.kind == "local" {
+        format!("{} ({})", target_label, std::env::consts::OS)
     } else {
         if target.kind == "redis" {
             "Redis; use redis_scan and redis_inspect for bounded reads, propose_redis for exact commands. SCAN cursors and key ids must be preserved exactly. No SQL; the database is fixed for this turn.".into()
@@ -1285,7 +1296,9 @@ pub async fn ai_start(
     };
     // 结构上下文只给摘要并受字节预算约束；大库提示模型按需检索。
     // Ask 模式下读取元数据也需要审批，因此不自动注入任何结构信息。
-    let schema_hint = if target.kind != "database" {
+    let schema_hint = if target.kind == "local" {
+        "\n\nFor a local terminal, explain user-provided output and recommend commands for the active shell and OS. Put commands in correctly labelled shell code blocks. One command per block is preferred so the user can insert and review it. Do not claim to inspect local files or run commands. Only the conversation attachment tools are available.".into()
+    } else if target.kind != "database" {
         String::new()
     } else if approval_mode.unwrap_or_default() == policy::ApprovalMode::Ask {
         "

@@ -22,8 +22,17 @@ import FileConflictDialog from '@/components/workspace/FileConflictDialog.vue'
 import DirectorySyncDialog from '@/components/workspace/directory-sync-dialog.vue'
 import type { FilePaneDrop } from '@/components/workspace/useFilePaneDrag'
 import type { SshRemoteFile } from '@/types/ssh'
-const props = defineProps<{ sessionId: string; remotePath: string }>()
-const emit = defineEmits<{ upload: [paths: string[]]; refreshed: [] }>()
+const props = defineProps<{
+  sessionId: string
+  remotePath?: string
+  initialPath?: string
+}>()
+const emit = defineEmits<{
+  upload: [paths: string[]]
+  insert: [paths: string[]]
+  refreshed: []
+}>()
+const transferMode = computed(() => props.remotePath !== undefined)
 const { t } = useI18n()
 const transfers = useFileTransfers()
 const { settings } = useSettings()
@@ -118,10 +127,11 @@ function selectFiles(paths: string[], focus: string): void {
   state.selection = paths
   state.selected = focus
 }
-/** 双击目录进入，双击文件使用现有上传及冲突处理流程。 */
+/** 打开目录；文件在双栏中触发上传，在本地终端的文件面板中填入路径。 */
 function openFile(file: SshRemoteFile): void {
   if (file.kind === 'directory') void load(file.path)
-  else emit('upload', [file.path])
+  else if (transferMode.value) emit('upload', [file.path])
+  else emit('insert', [file.path])
 }
 /** 完成同名冲突决策，卸载面板时也会取消等待。 */
 function settleConflict(action: 'overwrite' | 'skip' | 'cancel'): void {
@@ -192,6 +202,7 @@ async function downloadBatch(detail: FilePaneDrop): Promise<void> {
 function receiveDrop(event: Event): void {
   const detail = (event as CustomEvent<FilePaneDrop>).detail
   if (
+    !transferMode.value ||
     detail.source !== 'remote' ||
     detail.sessionId !== props.sessionId ||
     detail.directory !== state.listing?.path
@@ -208,7 +219,14 @@ function syncCompleted(): void {
   void load(state.path, false)
   emit('refreshed')
 }
-onMounted(() => void load())
+onMounted(() => void load(props.initialPath?.trim() || ''))
+// 本地连接的配置工作目录变更后，同步文件面板的起点。
+watch(
+  () => props.initialPath,
+  path => {
+    if (!transferMode.value) void load(path?.trim() || '')
+  }
+)
 onBeforeUnmount(() => {
   disposed = true
   generation += 1
@@ -217,8 +235,9 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <section
-    class="file-pane border-line flex min-h-0 min-w-0 flex-1 flex-col border-r"
-    data-file-drop-target="local"
+    class="file-pane border-line flex min-h-0 min-w-0 flex-1 flex-col"
+    :class="{ 'border-r': transferMode }"
+    :data-file-drop-target="transferMode ? 'local' : undefined"
     :data-file-session-id="sessionId"
     :data-file-directory="listing?.path"
     @mirai-file-drop="receiveDrop"
@@ -256,9 +275,15 @@ onBeforeUnmount(() => {
         :disabled="loading || !listing?.parent"
         @click="load(listing?.parent || '')"
       />
-      <span class="text-txt-3 min-w-0 flex-1 truncate px-1 text-[11px]">{{
-        t('本地文件')
-      }}</span>
+      <span
+        v-if="transferMode"
+        class="text-txt-3 min-w-0 flex-1 truncate px-1 text-[11px]"
+        >{{ t('本地文件') }}</span
+      >
+      <div
+        v-else
+        class="flex-1"
+      />
       <IconButton
         icon="lucide:folder-open"
         :size="14"
@@ -266,6 +291,7 @@ onBeforeUnmount(() => {
         @click="chooseDirectory"
       />
       <IconButton
+        v-if="transferMode"
         icon="lucide:upload"
         :size="14"
         :title="t('上传选中文件')"
@@ -273,6 +299,7 @@ onBeforeUnmount(() => {
         @click="emit('upload', state.selection.slice())"
       />
       <IconButton
+        v-if="transferMode"
         icon="lucide:folder-sync"
         :size="14"
         :title="t('目录同步')"
@@ -323,6 +350,7 @@ onBeforeUnmount(() => {
       {{ t('已选择 {count} 项', { count: state.selection.length }) }}
     </div>
     <FileConflictDialog
+      v-if="transferMode"
       v-model:always="state.conflictAlways"
       :open="state.conflictOpen"
       :file-name="state.conflictName"
@@ -334,7 +362,7 @@ onBeforeUnmount(() => {
     />
     <Teleport to="body"
       ><DirectorySyncDialog
-        v-if="syncing && listing"
+        v-if="syncing && listing && remotePath"
         :session-id="sessionId"
         :local-path="listing.path"
         :remote-path="remotePath"

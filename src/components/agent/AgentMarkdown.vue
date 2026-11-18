@@ -14,11 +14,11 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { copyText } from '@/utils/clipboard'
 import { IS_TAURI } from '@/utils/window'
 import { isAgentWebLink, renderAgentMarkdown } from '@/utils/agent-markdown'
-import { useAgentTerminalSession } from '@/composables/useAgentContextBus'
 import {
-  insertToTerminal as insertTextToTerminal,
-  sshPaste,
-} from '@/composables/useTerminalInsert'
+  useAgentTerminalTarget,
+  type AgentTerminalTarget,
+} from '@/composables/useAgentContextBus'
+import { insertToTerminal as insertTextToTerminal } from '@/composables/useTerminalInsert'
 import { toast } from '@/composables/useToast'
 
 const { t } = useI18n()
@@ -52,25 +52,34 @@ watch(
     if (!streaming) source.value = props.content
   }
 )
-const terminalSession = useAgentTerminalSession()
-const SHELL_LANGUAGE = /^(bash|sh|shell|zsh|console|shellsession|powershell|pwsh|ps1)$/i
+const terminalTarget = useAgentTerminalTarget()
+const SHELL_LANGUAGE =
+  /^(bash|sh|shell|zsh|console|shellsession|powershell|pwsh|ps1|cmd|bat|batch)$/i
 const COMMAND_START =
   /^(\$ |sudo |cd |ls|cat |grep |tail |head |systemctl |journalctl |docker |kubectl |git |apt(-get)? |yum |dnf |npm |pnpm |ps |top|df |du |free|chmod |chown |mkdir |rm |cp |mv |curl |wget |echo |export |find |ss |netstat |ip |ping |kill )/
 const TERMINAL_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/></svg>'
 // 判断无语言标注的代码块是否像一段 shell 命令：首个非空行以常见命令开头。
 function looksLikeCommand(code: string): boolean {
-  const first = code.split('\n').find(line => line.trim())?.trim() ?? ''
+  const first =
+    code
+      .split('\n')
+      .find(line => line.trim())
+      ?.trim() ?? ''
   return COMMAND_START.test(first)
 }
 // 给 shell 代码块的标题栏追加“插入终端”按钮；只在受限渲染结果上增加本组件自己的按钮。
-function withTerminalButtons(rendered: string, sessionId: string): string {
+function withTerminalButtons(
+  rendered: string,
+  target: AgentTerminalTarget
+): string {
   if (!rendered.includes('md-code')) return rendered
   const template = document.createElement('template')
   template.innerHTML = rendered
   const plain = t('代码')
   for (const block of template.content.querySelectorAll('.md-code')) {
-    const language = block.querySelector('.md-code-header > span')?.textContent ?? ''
+    const language =
+      block.querySelector('.md-code-header > span')?.textContent ?? ''
     const code = block.querySelector('code')?.textContent ?? ''
     const shell =
       SHELL_LANGUAGE.test(language) ||
@@ -81,10 +90,12 @@ function withTerminalButtons(rendered: string, sessionId: string): string {
     button.dataset.insertTerminal = ''
     button.className =
       'ml-auto inline-flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-40'
-    button.disabled = !sessionId
-    button.title = sessionId
-      ? t('插入到终端（不会自动执行）')
-      : t('终端未连接，无法插入')
+    button.disabled =
+      Boolean(target.singleLineOnly) &&
+      /[\u0000-\u001f\u007f-\u009f]/u.test(code.replace(/[\r\n]+$/u, ''))
+    button.title = button.disabled
+      ? t('本地终端只能插入单行命令')
+      : t('插入到终端（不会自动执行）')
     button.innerHTML = `${TERMINAL_ICON}<span></span>`
     button.lastElementChild!.textContent = t('插入终端')
     block.querySelector('button[data-copy-code]')?.before(button)
@@ -93,9 +104,8 @@ function withTerminalButtons(rendered: string, sessionId: string): string {
 }
 const html = computed(() => {
   const rendered = renderAgentMarkdown(source.value, props.canApplySql)
-  return terminalSession
-    ? withTerminalButtons(rendered, terminalSession.value)
-    : rendered
+  const target = terminalTarget?.value
+  return target ? withTerminalButtons(rendered, target) : rendered
 })
 const state = reactive({ feedback: '', failed: false })
 const { feedback, failed } = toRefs(state)
@@ -110,14 +120,16 @@ function notify(message: string, failed = false): void {
 }
 // 把代码块文本粘贴到活动终端但不执行；多行确认与括号粘贴交给共用的插入函数。
 async function insertToTerminal(code: string): Promise<void> {
-  const sessionId = terminalSession?.value
-  if (!sessionId) {
+  const target = terminalTarget?.value
+  if (!target) {
     notify(t('终端未连接，无法插入'), true)
     return
   }
   try {
-    if (await insertTextToTerminal(sshPaste(sessionId), code))
+    if (await insertTextToTerminal(target.paste, code)) {
+      target.focus?.()
       notify(t('已插入终端，确认后按回车执行'))
+    }
   } catch (error) {
     toast.error({ title: t('插入终端失败'), description: String(error) })
   }

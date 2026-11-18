@@ -361,7 +361,10 @@ watch(
         @keydown="keydown"
         @paste="paste"
       />
-      <div class="flex min-w-0 items-center gap-1.5 pt-1.5">
+      <!-- 窄面板把模型和审批放到单独一行，给操作按钮留出完整点击区域。 -->
+      <div
+        class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-1.5 pt-1.5 @min-[21rem]/agent:flex"
+      >
         <IconButton
           :icon="reading ? 'lucide:loader-circle' : 'lucide:plus'"
           :size="18"
@@ -372,12 +375,12 @@ watch(
           "
           :aria-label="t('上传文件')"
           :disabled="disabled || reading || busy"
-          class="text-txt-3 size-7 shrink-0 rounded-full p-0"
+          class="text-txt-3 col-start-1 row-start-2 size-7 shrink-0 rounded-full p-0"
           @click="fileInput?.click()"
         />
         <AgentPermissionSelect
           v-model="approvalMode"
-          class="max-w-28 shrink-0"
+          class="col-start-1 row-start-1 max-w-28 shrink-0"
           :disabled="permissionDisabled ?? disabled"
         />
         <button
@@ -401,16 +404,17 @@ watch(
           />
         </button>
 
+        <AgentProfileSelect
+          class="col-start-2 row-start-1 max-w-[min(11rem,100%)] min-w-0 justify-self-start"
+          :active-id="activeId"
+          :options="profileOptions"
+          :disabled="profileDisabled || busy || awaitingApproval"
+          @select="emit('selectProfile', $event)"
+        />
+
         <div
-          class="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5"
+          class="col-start-2 row-start-2 ml-auto flex shrink-0 items-center gap-1.5"
         >
-          <AgentProfileSelect
-            class="min-w-0 flex-1 @min-[37.5rem]/agent:max-w-48"
-            :active-id="activeId"
-            :options="profileOptions"
-            :disabled="profileDisabled || busy || awaitingApproval"
-            @select="emit('selectProfile', $event)"
-          />
           <button
             type="button"
             class="focus-visible:outline-accent grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border bg-transparent not-disabled:hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-3 disabled:cursor-default disabled:opacity-40"

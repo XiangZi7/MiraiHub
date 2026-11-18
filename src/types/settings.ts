@@ -65,8 +65,6 @@ export const DEFAULT_SETTINGS = {
   transferBufferSizeKb: '128',
 
   terminalShell: DEFAULT_LOCAL_SHELL,
-  terminalStyle: 'v4',
-  terminalCommandBlocks: false,
   terminalFont: 'jetbrains-mono',
   terminalFontSize: '13',
   terminalCursor: 'bar',

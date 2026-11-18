@@ -83,18 +83,6 @@
             }
             return
           }
-          if (command === 'ssh_exec')
-            return args.command.includes('/data/miraiTV')
-              ? {
-                  stdout: 'Login banner\r\n__MIRAI_GIT_BRANCH__:main\n',
-                  stderr: '',
-                  exitCode: null,
-                }
-              : {
-                  stdout: '__MIRAI_GIT_NONE__\n',
-                  stderr: 'fatal: not a git repository',
-                  exitCode: null,
-                }
           if (command === 'ssh_list_directory')
             return { path: args.path || '/data/miraiTV', entries: files }
           if (
@@ -136,9 +124,6 @@
       if (scheme === 'light') document.documentElement.classList.add('light')
       i18n.global.locale.value = 'zh-CN'
       const store = useSettingsStore(pinia)
-      store.values.terminalStyle =
-        new URLSearchParams(location.search).get('style') || 'v4'
-      store.values.terminalCommandBlocks = true
       store.values.terminalFontSize = '13'
       store.values.terminalCursor = 'bar'
       window.fixture = { store, calls, ready: false }
@@ -153,20 +138,6 @@
                   'height:100vh;padding:20px;display:flex;flex-direction:column;gap:12px',
               },
               [
-                h(
-                  'div',
-                  { style: 'display:flex;gap:8px' },
-                  ['classic', 'v4'].map(value =>
-                    h(
-                      'button',
-                      {
-                        class: 'btn',
-                        onClick: () => (store.values.terminalStyle = value),
-                      },
-                      value
-                    )
-                  )
-                ),
                 h(
                   'div',
                   { style: 'display:flex;min-height:0;flex:1;gap:10px' },

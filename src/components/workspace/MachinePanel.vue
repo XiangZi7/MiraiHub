@@ -15,10 +15,15 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import { MACHINE_VIEWS } from '@/constants/workspace'
 import type { MachineViewId } from '@/types'
-import type { SavedConnection } from '@/types/connection'
-import type { AgentContextRequest } from '@/types/agent'
+import type {
+  LocalConnectionSettings,
+  SavedConnection,
+} from '@/types/connection'
+import type { AgentContextRequest, AgentTarget } from '@/types/agent'
+import type { AgentTerminalTarget } from '@/composables/useAgentContextBus'
 import { cn } from '@/utils/cn'
 import FilesView from './FilesView.vue'
+import LocalFilePane from './local-file-pane.vue'
 
 const AiAgentPanel = defineAsyncComponent(
   () => import('@/components/agent/AiAgentPanel.vue')
@@ -34,9 +39,11 @@ const { t } = useI18n()
 const props = defineProps<{
   /** 当前标签对应的连接，无标签时为 undefined */
   connection?: SavedConnection
+  localSettings?: Pick<LocalConnectionSettings, 'workingDirectory'>
+  terminalInsertTarget?: AgentTerminalTarget
   title?: string
   active: boolean
-  /** 后端 SSH 会话 id，未连上时为空串 */
+  /** 后端终端会话 id，未连上时为空串 */
   sessionId: string
   /** 当前连接独立管理并适配当前分屏的面板宽度 */
   width: number
@@ -50,6 +57,7 @@ const emit = defineEmits<{
   /** 请求收起面板 */
   close: []
   contextConsumed: [id: string]
+  insertPaths: [paths: string[]]
 }>()
 
 // 转成 ref 传给子组件的 composable：它们 watch 会话 id 的变化来重新取数
@@ -71,8 +79,8 @@ watch(
   },
   { immediate: true }
 )
-const target = computed(() => ({
-  kind: 'ssh' as const,
+const target = computed<AgentTarget>(() => ({
+  kind: props.localSettings ? 'local' : 'ssh',
   sessionId: props.sessionId,
   database: '',
 }))
@@ -151,7 +159,7 @@ watch(
       <div class="flex-1" />
 
       <IconButton
-        v-if="view === 'files'"
+        v-if="view === 'files' && !localSettings"
         icon="lucide:columns-2"
         :size="14"
         :title="t('本地与远端双栏')"
@@ -172,7 +180,14 @@ watch(
       v-show="view === 'files'"
       class="panel-fade-in flex min-h-0 min-w-0 flex-1 flex-col"
     >
+      <LocalFilePane
+        v-if="localSettings"
+        :session-id="sessionId"
+        :initial-path="localSettings.workingDirectory"
+        @insert="emit('insertPaths', $event)"
+      />
       <FilesView
+        v-else
         ref="filesView"
         v-model:dual-pane="dualPane"
         :session-id="sessionId"
@@ -190,6 +205,7 @@ watch(
       :context-request="fileContext || contextRequest"
       :title="connection?.name || title"
       :active="active && view === 'agent'"
+      :terminal-insert-target="terminalInsertTarget"
       embedded
       @context-consumed="contextConsumed"
     />

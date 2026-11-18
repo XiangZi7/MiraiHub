@@ -10,6 +10,7 @@ const { parseDateValue, formatDateValue, calendarDays, shiftMonth } =
 const { useFilePaneDrag } = await load(
   'src/components/workspace/useFilePaneDrag.ts'
 )
+const { terminalPathText } = await load('src/composables/useTerminalInsert.ts')
 
 test('文件图标按格式区分，大小写、点文件、目录和快捷方式有对应图标', () => {
   const formats = [
@@ -86,6 +87,9 @@ test('日期列按类型挂选择器，值按文本解析和拼回，保留小�
 
 test('跨栏拖拽保留整组选择，只允许同会话的另一侧接收，取消后不传输', t => {
   const previousDocument = globalThis.document
+  const previousWindow = globalThis.window
+  const pointerWindow = new EventTarget()
+  globalThis.window = pointerWindow
   const target = new EventTarget()
   target.dataset = {
     fileSessionId: 'session',
@@ -98,6 +102,8 @@ test('跨栏拖拽保留整组选择，只允许同会话的另一侧接收，�
   t.after(() => {
     if (previousDocument === undefined) delete globalThis.document
     else globalThis.document = previousDocument
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
   })
   const files = ['a', 'b', 'c'].map(name => ({
     name,
@@ -136,14 +142,20 @@ test('跨栏拖拽保留整组选择，只允许同会话的另一侧接收，�
     },
     preventDefault() {},
   })
+  function pointer(type, x = 100) {
+    const action = new Event(type, { cancelable: true })
+    const { target, preventDefault, ...coordinates } = event(0, x)
+    Object.assign(action, coordinates)
+    pointerWindow.dispatchEvent(action)
+  }
   const received = []
   target.addEventListener('mirai-file-drop', event =>
     received.push(event.detail)
   )
   assert.equal(drag.start(event(0)), true)
   assert.equal(selection.length, 2)
-  drag.move(event(0, 100))
-  drag.finish(event(0, 100))
+  pointer('pointermove')
+  pointer('pointerup')
   assert.equal(received.length, 1)
   assert.deepEqual(
     received[0].files.map(file => file.name),
@@ -152,13 +164,49 @@ test('跨栏拖拽保留整组选择，只允许同会话的另一侧接收，�
   assert.equal(received[0].directory, '/srv')
   target.dataset.fileSessionId = 'other-session'
   drag.start(event(0))
-  drag.move(event(0, 100))
-  drag.finish(event(0, 100))
+  pointer('pointermove')
+  pointer('pointerup')
   assert.equal(received.length, 1)
   target.dataset.fileSessionId = 'session'
   drag.start(event(0))
-  drag.move(event(0, 100))
+  pointer('pointermove')
   drag.cancel()
-  drag.finish(event(0, 100))
+  pointer('pointerup')
   assert.equal(received.length, 1)
+
+  target.dataset.fileDropTarget = 'terminal'
+  delete target.dataset.fileDirectory
+  target.dataset.fileTerminalSource = 'local'
+  drag.start(event(0))
+  pointer('pointermove')
+  pointer('pointerup')
+  assert.deepEqual(
+    received[1].files.map(file => file.path),
+    files.slice(0, 2).map(file => file.path)
+  )
+
+  drag.start(event(0))
+  pointer('pointermove')
+  target.dataset.fileTerminalSource = 'remote'
+  pointer('pointerup')
+  assert.equal(received.length, 2)
+})
+
+test('文件路径按终端类型引用，拒绝可能作为输入控制键的字符', () => {
+  const windows = 'D:\\项目\\a b.txt'
+  assert.equal(
+    terminalPathText([windows, 'D:\\other'], 'cmd'),
+    '"D:\\项目\\a b.txt" "D:\\other"'
+  )
+  assert.equal(terminalPathText([windows], 'git-bash'), "'D:/项目/a b.txt'")
+  assert.equal(
+    terminalPathText(["D:\\O'Brien\\file.txt"], 'powershell'),
+    "'D:\\O''Brien\\file.txt'"
+  )
+  assert.equal(
+    terminalPathText(["/srv/O'Brien/$notes"]),
+    "'/srv/O'\\''Brien/$notes'"
+  )
+  assert.equal(terminalPathText(['/srv/line\nbreak']), '')
+  assert.equal(terminalPathText(['D:\\%CD%\\file.txt'], 'cmd'), '')
 })

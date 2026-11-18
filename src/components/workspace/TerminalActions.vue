@@ -107,13 +107,17 @@ const items = computed(() => {
           icon: 'lucide:sparkles',
           disabled: !state.hasSelection || props.status !== 'connected',
         },
-        {
-          id: 'inline-ai',
-          label: t('用自然语言生成命令'),
-          icon: 'lucide:wand-sparkles',
-          shortcut: 'Ctrl+I',
-          disabled: props.status !== 'connected',
-        },
+        ...(!props.local
+          ? [
+              {
+                id: 'inline-ai',
+                label: t('用自然语言生成命令'),
+                icon: 'lucide:wand-sparkles',
+                shortcut: 'Ctrl+I',
+                disabled: props.status !== 'connected',
+              },
+            ]
+          : []),
       ]
     : []
   return [
@@ -510,14 +514,14 @@ function insertCommand(command: string): void {
         :aria-label="t('搜索终端内容')"
         :aria-invalid="state.invalidQuery"
         :placeholder="t('搜索终端内容…')"
-        class="text-txt min-w-0 flex-1 bg-transparent text-xs outline-none aria-[invalid=true]:text-danger"
+        class="text-txt aria-[invalid=true]:text-danger min-w-0 flex-1 bg-transparent text-xs outline-none"
         @keydown.enter.prevent="search($event.shiftKey ? -1 : 1)"
       />
       <button
         v-for="option in searchToggles"
         :key="option.key"
         type="button"
-        class="text-txt-3 hover:bg-hover hover:text-txt grid h-5 min-w-5 shrink-0 place-items-center rounded px-1 font-mono text-[10px] transition-colors aria-pressed:bg-accent/15 aria-pressed:text-accent"
+        class="text-txt-3 hover:bg-hover hover:text-txt aria-pressed:bg-accent/15 aria-pressed:text-accent grid h-5 min-w-5 shrink-0 place-items-center rounded px-1 font-mono text-[10px] transition-colors"
         :title="option.title"
         :aria-label="option.title"
         :aria-pressed="state[option.key]"

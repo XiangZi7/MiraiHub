@@ -69,98 +69,89 @@ html.reduce-motion .mirai-terminal-cursor {
   animation: none;
 }
 
-/* v4 自成扁平终端表面；经典样式继续使用工作区的玻璃面板令牌。 */
-.terminal-v4 {
-  --mirai-terminal-surface: #000000;
-  --mirai-terminal-accent: var(--color-accent);
-  --mirai-terminal-muted: #8f8f8f;
-  --mirai-terminal-error: #e5484d;
-  --mirai-terminal-line: #ffffff0f;
-  border-radius: 10px;
-  /* border-color: #2e2e2e; */
-  /* box-shadow: none; */
+/* SSH 与本地会话共享面板、顶栏和输出区的几何尺寸。 */
+@layer components {
+  .pane.terminal-pane {
+    @apply bg-terminal border-line-soft flex-1 border-b;
+  }
+
+  .terminal-header {
+    @apply border-line-soft flex h-10 shrink-0 items-center gap-2.5 border-b px-3;
+  }
+
+  .terminal-output {
+    @apply bg-terminal relative min-h-0 flex-1 overflow-hidden;
+  }
+
+  .terminal-mount {
+    /* 网格用实际行高填充，高度取整后的少量余量在上下两边均分。 */
+    @apply absolute inset-0 grid grid-cols-1 content-center px-2;
+  }
+}
+/* 两种终端沿用同一套窄面板顶栏规则。 */
+.terminal-pane {
+  container-type: inline-size;
+  container-name: terminal;
 }
 
-[data-skin-scheme='light'] .terminal-v4 {
-  --mirai-terminal-surface: #fbfbfa;
-  --mirai-terminal-muted: #656a70;
-  --mirai-terminal-error: #cf2f36;
-  --mirai-terminal-line: #24292f12;
-  border-color: #dce3ec;
-}
-
-.mirai-terminal-footer {
-  color: var(--mirai-terminal-muted);
-  border-color: var(--mirai-terminal-line);
-  background: var(--mirai-terminal-surface);
-}
-
-.terminal-v4 .terminal-output {
-  background: var(--mirai-terminal-surface);
-}
-.mirai-terminal-branch {
-  color: var(--mirai-terminal-accent);
-}
-.terminal-v4 .xterm .xterm-viewport {
-  background: transparent;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-.terminal-v4:hover .xterm .xterm-viewport {
-  scrollbar-color: var(--color-line-strong) transparent;
-}
-
-/* xterm 6 使用自绘滚动条；旧版 viewport 规则不足以隐藏这条常驻灰轨。 */
-.terminal-v4 .xterm .xterm-scrollable-element > .scrollbar > .slider {
-  background: transparent;
-}
-.terminal-v4:hover .xterm .xterm-scrollable-element > .scrollbar > .slider {
-  background: var(--color-line-strong);
-}
-
-/* 装饰锚定 xterm marker，随滚动、回滚裁剪和字体网格移动，不拦截输入或选区。 */
-.terminal-v4 .mirai-command-boundary,
-.terminal-v4 .mirai-command-muted,
-.terminal-v4 .mirai-command-meta {
-  pointer-events: none;
-  user-select: none;
-}
-.terminal-v4 .mirai-command-branch {
-  pointer-events: none;
-  user-select: none;
-  color: var(--mirai-terminal-accent);
-  font: 11px var(--font-mono);
-  white-space: nowrap;
-}
-.terminal-v4 .mirai-command-boundary {
-  border-top: 1px solid var(--mirai-terminal-line);
-}
-.terminal-v4 .mirai-command-muted {
-  background: color-mix(
-    in srgb,
-    var(--mirai-terminal-surface) 14%,
-    transparent
-  );
-}
-.terminal-v4 .mirai-command-meta {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  color: var(--mirai-terminal-muted);
-  font: 10px var(--font-mono);
-  white-space: nowrap;
-}
-.terminal-v4 .mirai-command-meta[data-failed='true'] {
-  color: var(--mirai-terminal-error);
-}
-
-@container terminal (max-width: 440px) {
-  .mirai-terminal-position,
-  .mirai-terminal-encoding {
+@container terminal (max-width: 360px) {
+  .terminal-header {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+  .terminal-state-label,
+  .terminal-kind {
     display: none;
   }
-  .terminal-v4 .mirai-command-meta,
-  .terminal-v4 .mirai-command-branch {
-    display: none;
+}
+
+/* 高于 xterm 黑底规则的特异性，确保独立 CSS chunk 的加载顺序不影响皮肤。 */
+.terminal-pane .xterm .xterm-viewport {
+  background-color: transparent;
+  scrollbar-width: none;
+}
+
+.terminal-pane .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+/* xterm 自绘滚动条只展示滑块，两端按钮隐藏。 */
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .scra {
+  display: none;
+}
+
+/* xterm 用 visible/invisible 切换外层透明度。覆盖 Tailwind 的 visibility，
+   避免离开时整条滚动条瞬间被隐藏，来不及播放淡出。 */
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  visibility: visible;
+  transition: opacity 320ms ease-in-out;
+}
+
+/* 只收窄可见滑块，保留 xterm 的拖动命中区。 */
+.terminal-pane
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider {
+  background: transparent;
+}
+
+.terminal-pane
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider::before {
+  position: absolute;
+  inset: 0;
+  width: 7px;
+  margin-inline: auto;
+  border-radius: 999px;
+  background: var(--color-line-strong);
+  content: '';
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical {
+    transition: none;
   }
 }

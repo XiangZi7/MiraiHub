@@ -54,6 +54,10 @@ impl Registry {
         let mut registry = Self {
             tools: builtin::specs(kind),
         };
+        // 本地终端只开放当前对话的附件工具，不把本机交给外部执行工具。
+        if kind == "local" {
+            return registry;
+        }
         for server in servers.iter().filter(|server| server.applies_to(kind)) {
             registry.add_external(server);
         }
@@ -198,6 +202,14 @@ mod tests {
             targets: Vec::new(),
             tools: tools.as_array().cloned().unwrap_or_default(),
         }
+    }
+
+    #[test]
+    fn local_terminal_registry_contains_only_conversation_attachment_tools() {
+        let tools = json!([{"name":"run","inputSchema":{"type":"object"}}]);
+        let registry = Registry::build("local", &[server("External", tools)]);
+        let names: Vec<_> = registry.tools.iter().map(|tool| tool.name.as_str()).collect();
+        assert_eq!(names, ["list_attachments", "read_attachment", "search_attachment"]);
     }
 
     #[test]

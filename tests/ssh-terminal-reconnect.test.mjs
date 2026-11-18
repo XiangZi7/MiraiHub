@@ -31,7 +31,7 @@ const xtermModule = dataModule(`
   export function useXterm() {
     const term = shallowRef()
     return {
-      term, fitAddon: shallowRef(), stopSettingsWatch() {},
+      term, fit() { return false }, stopSettingsWatch() {},
       writeOutput(data) { term.value.write(data) }, resetOutput() {},
       open() {
         term.value = {

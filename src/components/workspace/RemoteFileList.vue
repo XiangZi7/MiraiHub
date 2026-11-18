@@ -52,15 +52,6 @@ const transferDrag = useFilePaneDrag({
 function handlePointerDown(event: PointerEvent): void {
   if (!transferDrag.start(event)) pointerDown(event)
 }
-// 优先处理跨栏拖拽，未开始文件拖动时交给框选。
-function handlePointerMove(event: PointerEvent): void {
-  if (!transferDrag.move(event)) pointerMove(event)
-}
-// 完成传输手势并释放框选状态。
-function handlePointerUp(event: PointerEvent): void {
-  transferDrag.finish(event)
-  stopDrag()
-}
 // 取消手势时同时清理选择框和文件预览。
 function cancelGestures(): void {
   transferDrag.cancel()
@@ -158,8 +149,8 @@ async function navigate(event: KeyboardEvent): Promise<void> {
     tabindex="0"
     @keydown="navigate"
     @pointerdown="handlePointerDown"
-    @pointermove="handlePointerMove"
-    @pointerup="handlePointerUp"
+    @pointermove="pointerMove"
+    @pointerup="stopDrag"
     @pointercancel="cancelGestures"
     @lostpointercapture="cancelGestures"
     @click.capture="transferDrag.consumeClick"

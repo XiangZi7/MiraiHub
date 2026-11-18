@@ -77,10 +77,10 @@
   --text-agent-small: 11px;
 
   /* ---------- 终端语法色 ---------- */
-  --color-term-fg: oklch(88% 0.005 285);
-  --color-term-green: oklch(84% 0.18 148);
-  --color-term-blue: oklch(76% 0.13 245);
-  --color-term-cyan: oklch(82% 0.12 195);
+  --color-term-fg: #ededed;
+  --color-term-green: #63c174;
+  --color-term-blue: #52a9ff;
+  --color-term-cyan: #0ac5b3;
   --color-term-dim: oklch(60% 0.01 285);
 
   /* ---------- 圆角 ----------
@@ -692,10 +692,10 @@ html.material-solid .glass {
   --color-orange: oklch(58% 0.16 48);
   --color-danger: oklch(53% 0.21 27);
 
-  --color-term-fg: oklch(30% 0.01 285);
-  --color-term-green: oklch(48% 0.14 148);
-  --color-term-blue: oklch(48% 0.14 245);
-  --color-term-cyan: oklch(50% 0.11 195);
+  --color-term-fg: #24292f;
+  --color-term-green: #18703a;
+  --color-term-blue: #1a5fb4;
+  --color-term-cyan: #0b7268;
   --color-term-dim: oklch(62% 0.012 285);
 
   /* 浅色界面靠阴影而不是亮度差分层，投影用紫灰而不是纯黑：

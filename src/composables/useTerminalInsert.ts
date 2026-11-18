@@ -3,6 +3,9 @@ import { ask } from '@tauri-apps/plugin-dialog'
 import { writeToShell } from '@/api/ssh'
 import { i18n } from '@/i18n'
 import { IS_TAURI } from '@/utils/window'
+import { toast } from '@/composables/useToast'
+import type { Terminal } from '@xterm/xterm'
+import type { LocalShellKind } from '@/types/connection'
 
 /**
  * 把文本插入终端（不执行）的共用逻辑，以及命令面板查找“当前标签页终端”的轻量登记表。
@@ -15,7 +18,9 @@ export interface TerminalInsertTarget {
   focus: () => void
 }
 
-type TerminalTargetProvider = (tabId: string) => TerminalInsertTarget | undefined
+type TerminalTargetProvider = (
+  tabId: string
+) => TerminalInsertTarget | undefined
 
 const providers = new Set<TerminalTargetProvider>()
 
@@ -31,7 +36,9 @@ export function requestTerminalTarget(
 }
 
 // 登记可插入文本的终端，随所在作用域销毁自动注销。
-export function onTerminalTargetRequest(provider: TerminalTargetProvider): void {
+export function onTerminalTargetRequest(
+  provider: TerminalTargetProvider
+): void {
   providers.add(provider)
   onScopeDispose(() => providers.delete(provider))
 }
@@ -68,4 +75,46 @@ export async function insertToTerminal(
   }
   await paste(text)
   return true
+}
+
+/** 按当前 Shell 引用路径。控制字符会变成按键，CMD 的百分号或感叹号可能触发变量展开。 */
+export function terminalPathText(
+  paths: readonly string[],
+  shell?: LocalShellKind
+): string {
+  if (
+    paths.some(
+      path =>
+        !path ||
+        /[\u0000-\u001f\u007f-\u009f]/u.test(path) ||
+        (shell === 'cmd' && /["%!]/u.test(path))
+    )
+  )
+    return ''
+
+  return paths
+    .map(path => {
+      if (shell === 'cmd') return '"' + path + '"'
+      if (shell === 'powershell')
+        return "'" + path.replace(/[‘’‚‛']/gu, quote => quote + quote) + "'"
+      const value = shell === 'git-bash' ? path.replaceAll('\\', '/') : path
+      return "'" + value.replaceAll("'", "'\\''") + "'"
+    })
+    .join(' ')
+}
+
+/** 把文件路径填入当前光标位置并恢复终端焦点，留给用户确认后执行。 */
+export function pasteTerminalPaths(
+  terminal: Terminal | undefined,
+  paths: readonly string[],
+  shell?: LocalShellKind
+): void {
+  if (!terminal || !paths.length) return
+  const text = terminalPathText(paths, shell)
+  if (!text) {
+    toast.error(i18n.global.t('此路径包含当前终端无法粘贴的字符'))
+    return
+  }
+  terminal.paste(text)
+  terminal.focus()
 }

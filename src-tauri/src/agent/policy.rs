@@ -601,14 +601,14 @@ pub fn classify(
                 sessions: a.sessions,
             })
         }
-        ("ssh" | "database" | "redis", "list_attachments") => {
+        ("ssh" | "database" | "redis" | "local", "list_attachments") => {
             let a: AttachmentList = parse(args)?;
             if a.offset > 1_000_000 {
                 return Err(AppError::invalid_input("附件列表分页位置无效"));
             }
             Ok(Action::AttachmentList { offset: a.offset })
         }
-        ("ssh" | "database" | "redis", "read_attachment") => {
+        ("ssh" | "database" | "redis" | "local", "read_attachment") => {
             let a: AttachmentRead = parse(args)?;
             attachment_range(&a.attachment_id, a.offset, a.limit, 12000)?;
             Ok(Action::AttachmentRead {
@@ -617,7 +617,7 @@ pub fn classify(
                 limit: a.limit,
             })
         }
-        ("ssh" | "database" | "redis", "search_attachment") => {
+        ("ssh" | "database" | "redis" | "local", "search_attachment") => {
             let a: AttachmentSearch = parse(args)?;
             attachment_range(&a.attachment_id, a.offset, a.limit, 40)?;
             bounded(&a.query, 512)?;
@@ -788,7 +788,7 @@ mod tests {
     use super::*;
     #[test]
     fn attachment_tools_are_bounded_local_reads_on_every_supported_target() {
-        for kind in ["ssh", "database", "redis"] {
+        for kind in ["ssh", "database", "redis", "local"] {
             let registry = crate::agent::mcp::Registry::build(kind, &[]);
             let list = classify(&registry, kind, "list_attachments", "{}").unwrap();
             assert!(matches!(list, Action::AttachmentList { offset: 0 }));

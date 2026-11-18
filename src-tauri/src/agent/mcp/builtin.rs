@@ -97,7 +97,7 @@ pub fn specs(kind: &str) -> Vec<ToolSpec> {
             json!(["schema", "table"]),
         )]);
     }
-    if matches!(kind, "ssh" | "database" | "redis") {
+    if matches!(kind, "ssh" | "database" | "redis" | "local") {
         tools.extend([
             spec("list_attachments", "List local attachments belonging to this conversation, 100 files per page. Start offset at 0 and follow nextOffset until null. Returns opaque IDs, names and byte sizes; no file content. Available automatically in Auto/Full modes; Ask requests approval.",
                 json!({"offset":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}), json!([])),

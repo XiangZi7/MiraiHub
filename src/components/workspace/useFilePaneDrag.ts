@@ -26,12 +26,15 @@ export function useFilePaneDrag(options: {
     collapse: boolean
     files: SshRemoteFile[]
   } | null = null
+  let listeners: AbortController | undefined
   let target: HTMLElement | null = null
   let suppressClick = false
 
   /** 文件名区域启动传输手势，其他区域继续由列表负责框选。 */
   function start(event: PointerEvent): boolean {
-    if (event.button !== 0 || !options.sessionId()) return false
+    if (event.button !== 0) return false
+    suppressClick = false
+    if (!options.sessionId()) return false
     const row = (event.target as Element)
       .closest<HTMLElement>('[data-file-drag-handle]')
       ?.closest<HTMLElement>('[data-file-index]')
@@ -58,11 +61,33 @@ export function useFilePaneDrag(options: {
       collapse: selected && !modified,
       files,
     }
+    // 同一个手势跨越两栏时，用窗口事件保持跟踪，避免离开列表后丢失指针。
+    listeners = new AbortController()
+    const eventOptions = { capture: true, signal: listeners.signal }
+    window.addEventListener('pointermove', move, eventOptions)
+    window.addEventListener('pointerup', finish, eventOptions)
+    window.addEventListener('pointercancel', cancel, eventOptions)
+    window.addEventListener('blur', cancel, { signal: listeners.signal })
     options.container.value?.focus({ preventScroll: true })
     return true
   }
 
-  /** 达到阈值后显示拖动预览，并按坐标命中同会话的另一侧目录。 */
+  /** 按当前坐标匹配同会话的另一侧目录，或接收同侧路径的终端。 */
+  function destinationAt(event: PointerEvent): HTMLElement | null {
+    const hit = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>('[data-file-drop-target]')
+    const sessionId = options.sessionId()
+    if (!sessionId || !hit || hit.dataset.fileSessionId !== sessionId)
+      return null
+    const source = options.source()
+    const targetKind = hit.dataset.fileDropTarget
+    if (targetKind === 'terminal')
+      return hit.dataset.fileTerminalSource === source ? hit : null
+    return targetKind !== source && hit.dataset.fileDirectory ? hit : null
+  }
+
+  /** 达到阈值后显示拖动预览，并高亮当前命中的目录或终端。 */
   function move(event: PointerEvent): boolean {
     if (!gesture || gesture.id !== event.pointerId) return false
     if (!event.buttons) {
@@ -77,7 +102,6 @@ export function useFilePaneDrag(options: {
     if (!preview.visible) {
       preview.visible = true
       suppressClick = true
-      options.container.value?.setPointerCapture(event.pointerId)
       const selected = options
         .files()
         .filter(file => options.selection().includes(file.path))
@@ -88,17 +112,7 @@ export function useFilePaneDrag(options: {
     preview.y = event.clientY + 14
     preview.count = gesture.files.length
     preview.name = gesture.files[0]?.name ?? ''
-    const hit =
-      document
-        .elementFromPoint(event.clientX, event.clientY)
-        ?.closest<HTMLElement>('[data-file-drop-target]') ?? null
-    const next =
-      hit &&
-      hit.dataset.fileSessionId === options.sessionId() &&
-      hit.dataset.fileDropTarget !== options.source() &&
-      hit.dataset.fileDirectory
-        ? hit
-        : null
+    const next = destinationAt(event)
     if (target !== next) {
       target?.removeAttribute('data-file-drag-over')
       target = next
@@ -108,12 +122,12 @@ export function useFilePaneDrag(options: {
     return true
   }
 
-  /** 松开后向实际目标发送一批路径，下载和上传仍走现有传输队列。 */
+  /** 松开时重新命中目标，将选中的路径交给文件面板或终端。 */
   function finish(event: PointerEvent): boolean {
     if (!gesture || gesture.id !== event.pointerId) return false
     const current = gesture
-    const destination = target
     const moved = preview.visible
+    const destination = moved ? destinationAt(event) : null
     const detail: FilePaneDrop = {
       source: options.source(),
       sessionId: options.sessionId() ?? '',
@@ -131,15 +145,14 @@ export function useFilePaneDrag(options: {
     return true
   }
 
-  /** 取消拖拽并清除捕获和高亮，不触发文件传输。 */
+  /** 取消拖拽并注销本次手势监听，清除文件预览和目标高亮。 */
   function cancel(): void {
-    const id = gesture?.id
+    listeners?.abort()
+    listeners = undefined
     gesture = null
     preview.visible = false
     target?.removeAttribute('data-file-drag-over')
     target = null
-    if (id !== undefined && options.container.value?.hasPointerCapture(id))
-      options.container.value.releasePointerCapture(id)
   }
 
   /** 拖动后的点击不能被当成打开文件或目录的双击。 */
@@ -150,5 +163,5 @@ export function useFilePaneDrag(options: {
     event.stopImmediatePropagation()
   }
   onBeforeUnmount(cancel)
-  return { preview, start, move, finish, cancel, consumeClick }
+  return { preview, start, cancel, consumeClick }
 }

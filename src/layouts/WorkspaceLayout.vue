@@ -271,14 +271,18 @@ async function tabAction(id: string, action: string): Promise<void> {
     toast.error({ title: t('连接操作失败'), description: String(error) })
   }
 }
+/** 从快捷键或命令面板打开活动终端的文件栏，分屏与上传沿用 SSH 操作。 */
 async function runWorkspaceAction(action: string): Promise<void> {
   if (action === 'database') {
     openConnectionWindow('database')
     return
   }
-  const tab = activeSshTab.value
+  const tab =
+    action === 'files' && activeTab.value?.connection.kind === 'local'
+      ? activeTab.value
+      : activeSshTab.value
   if (!tab) {
-    toast.info(t('请先打开一个 SSH 连接'))
+    toast.info(t(action === 'files' ? '请先打开终端' : '请先打开一个 SSH 连接'))
     return
   }
   await tabAction(tab.id, action)
@@ -299,8 +303,12 @@ async function runCommand(item: CommandItem): Promise<void> {
     return
   }
   if (target.nav) await selectNav(target.nav)
-  if (target.machineView) {
-    const tab = activeSshTab.value
+  if (target.machineView === 'files') await runWorkspaceAction('files')
+  else if (target.machineView) {
+    const tab =
+      activeTab.value?.connection.kind === 'local'
+        ? activeTab.value
+        : activeSshTab.value
     if (tab) layout.openMachinePane(tab.id, target.machineView)
     else toast.info(t('请先打开一个 SSH 连接'))
   }

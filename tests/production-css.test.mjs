@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { compileStyle, parse } from 'vue/compiler-sfc'
+import { parse } from 'vue/compiler-sfc'
 
 // 使用项目实际安装的构建依赖，复现 Tailwind → Vite 的两轮生产 CSS 压缩。
 const tailwindRequire = createRequire(import.meta.resolve('@tailwindcss/vite'))
@@ -62,37 +62,35 @@ for (const file of [
   })
 }
 
-for (const [name, file] of [
-  ['TerminalPanel', 'src/components/workspace/TerminalPanel.vue'],
-  [
-    'LocalTerminalPanel',
+test('SSH 与本地终端共用透明底色，生产压缩后仍覆盖 xterm 的黑底', async () => {
+  for (const file of [
+    'src/components/workspace/TerminalPanel.vue',
     'src/pages/servers/components/local-terminal-panel.vue',
-  ],
-]) {
-  test(`${name} 的透明终端底色在生产压缩后仍优先于 xterm 的黑底`, () => {
-    const filename = fileURLToPath(new URL(`../${file}`, import.meta.url))
-    const { descriptor, errors } = parse(readFileSync(filename, 'utf8'))
+  ]) {
+    const { descriptor, errors } = parse(
+      readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+    )
     assert.deepEqual(errors, [])
-    const compiled = compileStyle({
-      filename,
-      source: descriptor.styles.map(style => style.content).join('\n'),
-      id: 'data-v-terminal',
-      scoped: true,
-    })
-    assert.deepEqual(compiled.errors, [])
-    // xterm 的黑底选择器为 .xterm .xterm-viewport（0,2,0）。编译后的组件
-    // 多一个作用域属性，保证独立 CSS chunk 无论按什么顺序加载都使用透明底。
-    const css = postcss.parse(productionCss(compiled.code))
-    const overrides = []
-    css.walkRules(rule => {
-      if (rule.selector !== '[data-v-terminal] .xterm .xterm-viewport') return
-      rule.walkDecls('background-color', declaration =>
-        overrides.push(declaration.value)
-      )
-    })
-    assert.ok(overrides.some(value => ['transparent', '#0000'].includes(value)))
+    assert.match(descriptor.template.content, /class="[^"\n]*\bterminal-pane\b/)
+  }
+  const path = fileURLToPath(
+    new URL('../src/assets/styles/main.css', import.meta.url)
+  )
+  const result = await compile(readFileSync(path, 'utf8'), {
+    base: dirname(path),
+    onDependency() {},
   })
-}
+  const css = postcss.parse(productionCss(result.build([])))
+  const overrides = []
+  css.walkRules(rule => {
+    // 面板选择器比 xterm 的黑底规则多一层类名，加载顺序不会影响底色。
+    if (rule.selector !== '.terminal-pane .xterm .xterm-viewport') return
+    rule.walkDecls('background-color', declaration =>
+      overrides.push(declaration.value)
+    )
+  })
+  assert.ok(overrides.some(value => ['transparent', '#0000'].includes(value)))
+})
 
 test('错误提示保留调用方的绝对定位，不混入相对定位', async () => {
   const { createSSRApp } = await import('vue')

@@ -28,7 +28,7 @@ type SubmitHandler = (line: string) => void
 
 /** 管理一块 SSH 终端的连接、输出隔离与卸载清理。 */
 export function useSshTerminal() {
-  const { term, fitAddon, open, stopSettingsWatch, writeOutput, resetOutput } =
+  const { term, fit, open, stopSettingsWatch, writeOutput, resetOutput } =
     useXterm(() => resize())
 
   // 响应式状态
@@ -221,13 +221,7 @@ export function useSshTerminal() {
     cancelAnimationFrame(fitFrame)
     fitFrame = requestAnimationFrame(() => {
       fitFrame = 0
-      const fit = fitAddon.value
-      const terminal = term.value
-      if (!fit || !terminal) return
-      if (!terminal.element?.clientWidth || !terminal.element?.clientHeight)
-        return
-      fit.fit()
-      syncRemoteSize()
+      if (fit()) syncRemoteSize()
     })
   }
 

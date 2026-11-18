@@ -366,25 +366,6 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         title: '终端外观',
         fields: [
           {
-            key: 'terminalStyle',
-            label: '终端样式',
-            description: '切换后立即生效，保留当前连接与终端内容',
-            control: 'select',
-            icon: 'lucide:square-terminal',
-            size: 'lg',
-            options: [
-              { value: 'classic', label: '经典', icon: 'lucide:square-terminal' },
-              { value: 'v4', label: 'Mirai v4', icon: 'lucide:panels-top-left' },
-            ],
-          },
-          {
-            key: 'terminalCommandBlocks',
-            label: '命令分区',
-            description:
-              '在 v4 样式中区分命令与输出；Shell 提供时显示耗时和退出码',
-            control: 'switch',
-          },
-          {
             key: 'terminalFont',
             label: '终端字体',
             control: 'select',

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { effectScope, nextTick } from 'vue'
 import { dataModule, sourceLoader } from './helpers/source-module.mjs'
@@ -214,10 +215,21 @@ test('深浅终端的文字和语义色均达到 4.5:1，浅色高亮通过加�
   t.after(() => {
     globalThis.document = previous
   })
+  const styles = readFileSync(
+    new URL('../src/assets/styles/main.css', import.meta.url),
+    'utf8'
+  )
+  const [dark, light] = styles.split('/* light-tokens:start */')
+  const tokens = { dark, light }
   const themeLoad = sourceLoader({
-    '@/utils/color': dataModule(
-      'export const parseColor = () => [0,0,0]; export const rgba = () => "#000000"'
-    ),
+    '@/utils/color': dataModule(`
+      const styles = ${JSON.stringify(tokens)}
+      export const rgba = value => {
+        const token = value.slice(4, -1)
+        const style = styles[document.documentElement.dataset.skinScheme]
+        return style.match(new RegExp(token + ': (#[0-9a-f]{6});'))?.[1]
+      }
+    `),
   })
   const { currentTerminalTheme } = await themeLoad('src/constants/terminal.ts')
   /** 将实际色板换算为相对亮度，检查可读性而非固定某个颜色值。 */
@@ -238,7 +250,7 @@ test('深浅终端的文字和语义色均达到 4.5:1，浅色高亮通过加�
     ['light', '#fbfbfa'],
   ]) {
     document.documentElement.dataset.skinScheme = scheme
-    const theme = currentTerminalTheme('v4')
+    const theme = currentTerminalTheme()
     for (const role of [
       'foreground',
       'brightBlack',

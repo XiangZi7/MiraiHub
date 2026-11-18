@@ -29,7 +29,11 @@ import {
   useAgentErrorToasts,
   notifyAgentError,
 } from '@/composables/useAgentErrorToasts'
-import { provideAgentTerminalSession } from '@/composables/useAgentContextBus'
+import {
+  provideAgentTerminalTarget,
+  type AgentTerminalTarget,
+} from '@/composables/useAgentContextBus'
+import { sshPaste } from '@/composables/useTerminalInsert'
 
 const { t } = useI18n()
 
@@ -41,12 +45,20 @@ const props = withDefaults(
     split?: boolean
     embedded?: boolean
     contextRequest?: AgentContextRequest | null
+    terminalInsertTarget?: AgentTerminalTarget
   }>(),
   { active: true, split: false }
 )
-// SSH 目标的会话即回复中 shell 代码块“插入终端”的去处，未连接时为空串
-provideAgentTerminalSession(
-  computed(() => (props.target.kind === 'ssh' ? props.target.sessionId : ''))
+const isLocal = computed(() => props.target.kind === 'local')
+// 代码块只能插入创建本面板的终端，未连接或切换目标后不保留旧会话。
+provideAgentTerminalTarget(
+  computed(() => {
+    if (!props.target.sessionId) return undefined
+    if (isLocal.value) return props.terminalInsertTarget
+    if (props.target.kind === 'ssh')
+      return { paste: sshPaste(props.target.sessionId) }
+    return undefined
+  })
 )
 const emit = defineEmits<{
   split: []
@@ -117,7 +129,9 @@ const scroll = useTemplateRef<HTMLElement>('scroll')
 const content = useTemplateRef<HTMLElement>('content')
 const composer = useTemplateRef<InstanceType<typeof AgentComposer>>('composer')
 const isRedis = computed(() => props.target.kind === 'redis')
-const isDatabase = computed(() => props.target.kind !== 'ssh')
+const isDatabase = computed(
+  () => props.target.kind === 'database' || isRedis.value
+)
 const suggestions = computed(() =>
   isRedis.value
     ? [
@@ -133,14 +147,16 @@ const suggestions = computed(() =>
           t('帮我编写查询'),
           t('检查索引并说明改进方案'),
         ]
-      : [
-          t('检查系统状态'),
-          t('查看磁盘使用情况'),
-          t('查看运行中的进程'),
-          t('检查网络状态'),
-          t('分析服务器问题'),
-          t('更新系统软件包'),
-        ]
+      : isLocal.value
+        ? [t('帮我编写本地终端命令'), t('分析终端报错')]
+        : [
+            t('检查系统状态'),
+            t('查看磁盘使用情况'),
+            t('查看运行中的进程'),
+            t('检查网络状态'),
+            t('分析服务器问题'),
+            t('更新系统软件包'),
+          ]
 )
 const canSend = computed(() =>
   Boolean(

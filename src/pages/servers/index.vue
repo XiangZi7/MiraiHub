@@ -84,8 +84,8 @@ const activeTerminalTab = computed(() => {
 /** 将工作区菜单操作交给对应终端实例，文件操作同时展开目标连接的文件面板。 */
 async function action(id: string, action: string): Promise<void> {
   if (action === 'files' || action === 'upload') {
-    if (!openTabs.some(tab => tab.id === id && tab.connection.kind === 'ssh'))
-      return
+    const kind = openTabs.find(tab => tab.id === id)?.connection.kind
+    if (kind !== 'ssh' && !(kind === 'local' && action === 'files')) return
     layout.openMachinePane(id, 'files')
     if (action === 'upload') {
       for (const view of sshWorkspaces.value ?? []) await view.uploadFor(id)
@@ -142,6 +142,7 @@ registerWorkspaceController('servers', { action })
       <LocalTerminalPanel
         ref="localTerminals"
         :connection-id="tab.id"
+        :active="visible(tab.id)"
         v-show="visible(tab.id)"
         :title="tab.title"
         :settings="tab.settings"

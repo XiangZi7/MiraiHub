@@ -1,9 +1,16 @@
-import { inject, onScopeDispose, provide, type InjectionKey, type Ref } from 'vue'
+import {
+  inject,
+  onScopeDispose,
+  provide,
+  type InjectionKey,
+  type Ref,
+} from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { onContextFromWindows } from '@/api/agent'
 import { toast } from '@/composables/useToast'
 import { i18n } from '@/i18n'
 import type { AgentContextRequest } from '@/types/agent'
+import type { TerminalInsertTarget } from '@/composables/useTerminalInsert'
 
 /**
  * 跨组件向 SSH 工作区的 AI Agent 投递上下文的轻量总线。
@@ -66,18 +73,23 @@ export function useWindowAgentContextBridge(): void {
   })
 }
 
-/** Agent 面板向其 Markdown 子组件提供的活动终端会话 id，空串表示未连接 */
-export const AGENT_TERMINAL_SESSION: InjectionKey<Readonly<Ref<string>>> =
-  Symbol('agent-terminal-session')
+export type AgentTerminalTarget = Pick<TerminalInsertTarget, 'paste'> &
+  Partial<Pick<TerminalInsertTarget, 'focus'>> & { singleLineOnly?: boolean }
 
-// 在 Agent 面板中提供可插入文本的终端会话。
-export function provideAgentTerminalSession(
-  sessionId: Readonly<Ref<string>>
+const AGENT_TERMINAL_TARGET: InjectionKey<
+  Readonly<Ref<AgentTerminalTarget | undefined>>
+> = Symbol('agent-terminal-target')
+
+/** 将当前绑定的终端插入动作提供给 Agent 回复中的代码块。 */
+export function provideAgentTerminalTarget(
+  target: Readonly<Ref<AgentTerminalTarget | undefined>>
 ): void {
-  provide(AGENT_TERMINAL_SESSION, sessionId)
+  provide(AGENT_TERMINAL_TARGET, target)
 }
 
-// 读取所在 Agent 面板的终端会话；不在 SSH Agent 面板内时返回 null。
-export function useAgentTerminalSession(): Readonly<Ref<string>> | null {
-  return inject(AGENT_TERMINAL_SESSION, null)
+/** 取当前 Agent 面板绑定的终端插入动作；数据库面板没有终端目标。 */
+export function useAgentTerminalTarget(): Readonly<
+  Ref<AgentTerminalTarget | undefined>
+> | null {
+  return inject(AGENT_TERMINAL_TARGET, null)
 }

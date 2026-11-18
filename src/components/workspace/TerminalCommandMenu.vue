@@ -15,7 +15,6 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
 import TerminalCommandEditor from '@/components/workspace/TerminalCommandEditor.vue'
 import TerminalSnippetDialog from '@/components/workspace/terminal-snippet-dialog.vue'
 import BatchOperationDialog from '@/components/operations/BatchOperationDialog.vue'
@@ -136,6 +135,7 @@ function position(): void {
     ? Math.max(8, rect.top - state.maxHeight - 6)
     : rect.bottom + 6
 }
+/** 先按触发按钮计算位置，再显示浮层并聚焦，避免打开时带动页面滚动。 */
 async function toggle(): Promise<void> {
   if (state.open) {
     close()
@@ -143,10 +143,10 @@ async function toggle(): Promise<void> {
   }
   state.error = ''
   state.editing = false
-  state.open = true
   position()
+  state.open = true
   await nextTick()
-  menu.value?.focus()
+  menu.value?.focus({ preventScroll: true })
 }
 function close(restoreFocus = true): void {
   reorder.cancel()
@@ -254,10 +254,10 @@ useEventListener(window, 'resize', () => {
       @close="batchCommand = ''"
     />
     <Transition
-      enter-active-class="transition duration-150 ease-out motion-reduce:transition-none"
-      enter-from-class="-translate-y-1 opacity-0"
-      leave-active-class="transition duration-100 ease-in motion-reduce:transition-none"
-      leave-to-class="-translate-y-1 opacity-0"
+      enter-active-class="transition-opacity duration-150 ease-out motion-reduce:transition-none"
+      enter-from-class="opacity-0"
+      leave-active-class="transition-opacity duration-100 ease-in motion-reduce:transition-none"
+      leave-to-class="opacity-0"
     >
       <section
         v-if="open"
@@ -269,7 +269,6 @@ useEventListener(window, 'resize', () => {
         tabindex="-1"
         @keydown.esc.prevent.stop="escape"
       >
-        <AppMenuSurface />
         <header
           class="border-line-soft flex shrink-0 items-center gap-2 border-b px-3 py-2"
         >
@@ -507,7 +506,9 @@ useEventListener(window, 'resize', () => {
   border: 1px solid var(--color-line-strong);
   border-radius: 8px;
   box-shadow: var(--shadow-pop);
-  isolation: isolate;
+  /* 直接绘制面板底色，避免 WebView2 动画首帧重新采样后方终端和工具栏。 */
+  background-color: var(--color-canvas);
+  background-color: oklch(from var(--color-panel) l c h / 1);
   outline: none;
   overflow: hidden;
 }

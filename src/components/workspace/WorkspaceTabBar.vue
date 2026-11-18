@@ -96,6 +96,7 @@ function add(): void {
 }
 
 // 查询操作菜单保留复制、保存等现有动作，连接菜单继续管理连接。
+/** 生成标签菜单，按连接类型提供文件入口和终端操作。 */
 function contextItems(id: string): ContextMenuItem[] {
   const content = contentTargets.value.get(id)
   if (content)
@@ -134,7 +135,15 @@ function contextItems(id: string): ContextMenuItem[] {
           },
           { id: 'files', label: t('打开远端文件'), icon: 'lucide:folder-open' },
         ]
-      : []),
+      : local
+        ? [
+            {
+              id: 'files',
+              label: t('打开文件面板'),
+              icon: 'lucide:folder-open',
+            },
+          ]
+        : []),
     {
       id: 'edit',
       label: t('编辑连接配置'),

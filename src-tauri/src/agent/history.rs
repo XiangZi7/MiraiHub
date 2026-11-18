@@ -345,6 +345,11 @@ pub(super) async fn scope(app: &AppHandle, target: &Target) -> AppResult<String>
                 .await?
                 .kind
         )
+    } else if target.kind == "local" {
+        // 本地终端按 Shell 和启动目录复用历史，系统中其他目录的会话不会混入。
+        app.state::<crate::local_terminal::LocalTerminalManager>()
+            .agent_context(&target.session_id)?
+            .1
     } else {
         String::new()
     };

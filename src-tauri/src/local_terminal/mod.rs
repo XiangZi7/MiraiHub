@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -49,6 +50,9 @@ struct StatusEvent {
 }
 
 pub struct LocalTerminalSession {
+    shell_name: String,
+    launch_directory: String,
+    exited: AtomicBool,
     master: Mutex<Box<dyn MasterPty + Send>>,
     /// 发往专用写线程的输入队列。PTY 写入是阻塞的：Shell 忙着不读输入时管道写满，
     /// 直接在命令里写会卡住调用线程；排队交给单独线程写，也保证按键顺序不乱。
@@ -80,6 +84,18 @@ impl LocalTerminalSession {
             command.cwd(home);
         }
 
+        let shell_name = command
+            .get_argv()
+            .first()
+            .and_then(|program| Path::new(program).file_name())
+            .and_then(|name| name.to_str())
+            .unwrap_or("shell")
+            .to_owned();
+        let launch_directory = command
+            .get_cwd()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
         let child = pair
             .slave
             .spawn_command(command)
@@ -95,6 +111,9 @@ impl LocalTerminalSession {
 
         Ok((
             Self {
+                shell_name,
+                launch_directory,
+                exited: AtomicBool::new(false),
                 master: Mutex::new(pair.master),
                 input: spawn_writer(writer),
                 child: Mutex::new(child),
@@ -180,6 +199,15 @@ impl LocalTerminalManager {
             .ok_or_else(|| AppError::not_found(format!("本地终端会话不存在：{id}")))
     }
 
+    /// 为 Agent 读取已连接的 Shell 名称和启动目录标识，不探测进程或读取终端输出。
+    pub(crate) fn agent_context(&self, id: &str) -> AppResult<(String, String)> {
+        let session = self.get(id)?;
+        if session.exited.load(Ordering::Acquire) {
+            return Err(AppError::invalid_input("本地终端已关闭"));
+        }
+        Ok((session.shell_name.clone(), session.launch_directory.clone()))
+    }
+
     pub fn close(&self, id: &str) -> AppResult<()> {
         let session = self
             .sessions
@@ -243,6 +271,7 @@ fn pump_output(
         }
 
         let exit_code = session.wait();
+        session.exited.store(true, Ordering::Release);
         let _ = app.emit_to(
             TERMINAL_WINDOW,
             EVENT_STATUS,
