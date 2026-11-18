@@ -17,8 +17,9 @@ import type {
 } from '@/types/database'
 import { settingNumber, settingsSnapshot } from '@/composables/useSettings'
 
-/** 连接协议。SSH 与数据库共用一套存储，靠这个字段分流 */
-export type ConnectionKind = 'ssh' | 'local' | DatabaseConnectionKind
+/** 已保存连接的协议，以及连接编辑窗口支持的表单类型。 */
+export type ConnectionKind = 'ssh' | 'local' | 'rdp' | DatabaseConnectionKind
+export type ConnectionFormKind = 'ssh' | 'local' | 'rdp' | 'database'
 
 export type ConnectionTagColor =
   'red' | 'orange' | 'amber' | 'green' | 'cyan' | 'blue' | 'violet' | 'gray'
@@ -123,6 +124,19 @@ export interface LocalConnectionSettings {
   startupCommand?: string
 }
 
+export interface RdpResolution {
+  width: number
+  height: number
+}
+
+export interface RdpConnectionSettings {
+  /** 由本机系统用户加密、且与目标主机和账号绑定的密码密文。 */
+  rdpCredential?: string
+  /** 省略时根据标签页或分屏大小自动协商远端分辨率。 */
+  resolution?: RdpResolution
+  scale?: 'fit' | 'actual'
+}
+
 /**
  * 一条已保存的连接。
  *
@@ -151,7 +165,10 @@ export interface SavedConnection {
   /** 最后一次连接时间，从未连过为 0 */
   lastUsedAt: number
   settings:
-    SshConnectionSettings | LocalConnectionSettings | DatabaseConnectionSettings
+    | SshConnectionSettings
+    | LocalConnectionSettings
+    | DatabaseConnectionSettings
+    | RdpConnectionSettings
 }
 
 /**
@@ -211,6 +228,13 @@ export function isLocalConnection(
   connection: SavedConnection
 ): connection is SavedConnection & { settings: LocalConnectionSettings } {
   return connection.kind === 'local'
+}
+
+/** 从通用连接配置中取得远程桌面选项。 */
+export function isRdpConnection(
+  connection: SavedConnection
+): connection is SavedConnection & { kind: 'rdp'; settings: RdpConnectionSettings } {
+  return connection.kind === 'rdp'
 }
 
 /**
@@ -313,7 +337,13 @@ export function endpointOf(connection: SavedConnection): string {
   // SQLite 的 host 就是文件路径
   if (connection.kind === 'sqlite') return connection.host
 
-  return `${connection.username ? `${connection.username}@` : ''}${connection.host}:${connection.port}`
+  const host =
+    connection.kind === 'rdp' &&
+    connection.host.includes(':') &&
+    !connection.host.startsWith('[')
+      ? `[${connection.host}]`
+      : connection.host
+  return `${connection.username ? `${connection.username}@` : ''}${host}:${connection.port}`
 }
 
 export function groupKindOf(kind: ConnectionKind): ConnectionGroupKind {

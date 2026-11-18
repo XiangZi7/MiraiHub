@@ -91,6 +91,7 @@ fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
         .manage(ssh::tunnels::TunnelManager::default())
         .manage(ssh::batch::BatchManager::default())
         .manage(ssh::SessionManager::new())
+        .manage(crate::rdp::RdpSessions::default())
         .manage(ssh::TransferManager::new())
         .manage(db::DatabaseManager::new())
         .manage(redis_db::RedisManager::default())

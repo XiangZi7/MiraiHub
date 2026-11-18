@@ -317,49 +317,8 @@ pub fn save(app: &AppHandle, next: &Settings) -> AppResult<PublicSettings> {
     std::fs::rename(&temporary, dir.join("ai-settings.bin"))?;
     Ok(next.public())
 }
-#[cfg(windows)]
-pub(super) fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
-    use windows::Win32::{
-        Foundation::{LocalFree, HLOCAL},
-        Security::Cryptography::{
-            CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-        },
-    };
-    let input = CRYPT_INTEGER_BLOB {
-        cbData: bytes.len() as u32,
-        pbData: bytes.as_ptr() as *mut u8,
-    };
-    let mut output = CRYPT_INTEGER_BLOB::default();
-    unsafe {
-        let result = if encrypt {
-            CryptProtectData(
-                &input,
-                windows::core::PCWSTR::null(),
-                None,
-                None,
-                None,
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-        } else {
-            CryptUnprotectData(
-                &input,
-                None,
-                None,
-                None,
-                None,
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-        };
-        result.map_err(|_| AppError::internal("Windows 凭据加密/解密失败"))?;
-        let data = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
-        let _ = LocalFree(Some(HLOCAL(output.pbData as _)));
-        Ok(data)
-    }
-}
-/// macOS 与 Linux 通过系统密钥存储保护配置、聊天和附件。
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+/// 通过系统密钥存储保护 AI 配置、聊天和附件。
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 pub(super) fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
     crate::platform::secure_storage::protect(bytes, encrypt)
 }

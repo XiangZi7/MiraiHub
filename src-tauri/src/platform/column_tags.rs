@@ -141,16 +141,13 @@ pub async fn open_column_tags_window(
         }
     };
     enable_window_shadow(&dialog);
+    super::window::install_modal_close_handler(&dialog, false);
 
     // 先注册销毁监听，再由 window_ready 禁用父窗；顺序反了主窗可能永久卡在禁用态。
     let app_events = app.clone();
     dialog.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
             *app_events.state::<ColumnTagsWindow>().request() = None;
-            if let Some(parent) = app_events.get_webview_window("main") {
-                let _ = parent.set_enabled(true);
-                let _ = parent.set_focus();
-            }
         }
     });
     Ok(())

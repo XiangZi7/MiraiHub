@@ -177,7 +177,7 @@ pub fn enable_window_shadow(window: &WebviewWindow) {
 /// 它有独立的窗口阴影与任务栏行为，且能通过禁用父窗实现原生模态。
 /// 同一时间只保留一个实例，重复触发把已有窗口带到前台。
 ///
-/// `kind` 决定打开 SSH 配置还是数据库配置，作为 query 参数传给前端。
+/// `kind` 决定打开哪种连接配置，作为 query 参数传给前端。
 /// `group` 是新建时预选的分组名，从分组右键菜单进来时带上。
 pub fn open_connection_window(
     app: &AppHandle,
@@ -196,7 +196,11 @@ pub fn open_connection_window(
 
     // kind 只允许固定值：它会拼进 URL，不校验的话
     // 前端传来的任意字符串都能注入 query 参数
-    let kind = kind.unwrap_or("ssh");
+    let kind = match kind {
+        Some(kind @ ("local" | "database" | "rdp")) => kind,
+        _ => "ssh",
+    };
+    let height = if kind == "rdp" { 560.0 } else { 640.0 };
     let safe_connection_id = connection_id.filter(|id| {
         !id.is_empty()
             && id.chars().all(|character| {
@@ -222,9 +226,9 @@ pub fn open_connection_window(
     let mut builder =
         WebviewWindowBuilder::new(app, CONNECTION_WINDOW, WebviewUrl::App(url.into()))
             .title("Add Connection")
-            .inner_size(620.0, 640.0)
-            .min_inner_size(620.0, 640.0)
-            .max_inner_size(620.0, 640.0)
+            .inner_size(620.0, height)
+            .min_inner_size(620.0, height)
+            .max_inner_size(620.0, height)
             .resizable(false)
             .minimizable(false)
             .maximizable(false)
@@ -252,17 +256,7 @@ pub fn open_connection_window(
 
     enable_window_shadow(&dialog);
 
-    // 先注册销毁监听，再禁用父窗：
-    // 顺序反过来的话，若构建后到监听注册前窗口被关掉，主窗会永久卡在禁用态
-    if let Some(parent) = main.as_ref() {
-        let parent_on_destroy = parent.clone();
-        dialog.on_window_event(move |event| {
-            if matches!(event, tauri::WindowEvent::Destroyed) {
-                let _ = parent_on_destroy.set_enabled(true);
-                let _ = parent_on_destroy.set_focus();
-            }
-        });
-    }
+    install_modal_close_handler(&dialog, false);
 
     Ok(())
 }
@@ -314,25 +308,9 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
 
     let dialog = builder.build().map_err(to_app_error)?;
     enable_window_shadow(&dialog);
+    install_modal_close_handler(&dialog, true);
 
     if let Some(parent) = main.as_ref() {
-        let parent_on_destroy = parent.clone();
-        let cached_dialog = dialog.clone();
-        dialog.on_window_event(move |event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                if cached_dialog.hide().is_ok() {
-                    let _ = cached_dialog.emit("settings-hidden", ());
-                    let _ = parent_on_destroy.set_enabled(true);
-                    let _ = parent_on_destroy.set_focus();
-                }
-            }
-            tauri::WindowEvent::Destroyed => {
-                let _ = parent_on_destroy.set_enabled(true);
-                let _ = parent_on_destroy.set_focus();
-            }
-            _ => {}
-        });
         // A cached, hidden settings WebView must not keep the application alive.
         let cached_dialog = dialog.clone();
         parent.on_window_event(move |event| {
@@ -342,6 +320,52 @@ pub fn open_settings_window(app: &AppHandle) -> AppResult<()> {
         });
     }
     Ok(())
+}
+
+/// 模态窗口离场前恢复主窗口交互，避免 Windows 把焦点交给其他应用后再抢回来。
+pub(super) fn install_modal_close_handler(window: &WebviewWindow, keep_settings: bool) {
+    let dialog = window.clone();
+    window.on_window_event(move |event| match event {
+        tauri::WindowEvent::CloseRequested { api, .. } if cfg!(windows) || keep_settings => {
+            api.prevent_close();
+            restore_modal_owner(&dialog, false);
+            let hidden = dialog.hide().is_ok();
+            if keep_settings && hidden {
+                let _ = dialog.emit("settings-hidden", ());
+                if !cfg!(windows) {
+                    restore_modal_owner(&dialog, true);
+                }
+            } else {
+                let _ = dialog.destroy();
+            }
+        }
+        tauri::WindowEvent::Destroyed => restore_modal_owner(&dialog, true),
+        _ => {}
+    });
+}
+
+/// 还有其他可见模态窗时保持主窗口禁用，异常销毁时补回交互和焦点。
+fn restore_modal_owner(dialog: &WebviewWindow, recover_focus: bool) {
+    let app = dialog.app_handle();
+    if [
+        SETTINGS_WINDOW,
+        CONNECTION_WINDOW,
+        super::column_tags::WINDOW,
+    ]
+    .into_iter()
+    .filter(|label| *label != dialog.label())
+    .filter_map(|label| app.get_webview_window(label))
+    .any(|window| window.is_visible().unwrap_or(false))
+    {
+        return;
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        let was_disabled = !main.is_enabled().unwrap_or(false);
+        let _ = main.set_enabled(true);
+        if recover_focus && (was_disabled || !cfg!(windows)) && main.is_visible().unwrap_or(false) {
+            let _ = main.set_focus();
+        }
+    }
 }
 
 pub fn show_child_window(window: &WebviewWindow) -> AppResult<()> {

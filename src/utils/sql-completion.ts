@@ -49,7 +49,8 @@ const phrases = [
   'PRIMARY KEY',
   'FOREIGN KEY',
 ]
-const dialects = { mysql: MySQL, postgresql: PostgreSQL, sqlite: SQLite }
+/** 编辑器和只读 SQL 预览复用各数据库的解析方言。 */
+export const SQL_DIALECTS = { mysql: MySQL, postgresql: PostgreSQL, sqlite: SQLite }
 
 /** 候选项附带预先算好的小写形式，按键过滤时不再逐个转换。 */
 interface SqlCandidate {
@@ -71,7 +72,7 @@ const objectCandidates = new WeakMap<readonly string[], SqlCandidate[]>()
 function vocabulary(kind: DatabaseKind): SqlCandidate[] {
   let values = vocabularies.get(kind)
   if (!values) {
-    const spec = dialects[kind].spec
+    const spec = SQL_DIALECTS[kind].spec
     values = [
       ...phrases,
       ...functions,
@@ -121,7 +122,7 @@ export interface SqlDocument {
  * 方言变化或可复用部分不足一半时，片段收益抵不上开销，直接全量解析。
  */
 function parseTree(sql: string, kind: DatabaseKind, previous?: SqlDocument) {
-  const parser = dialects[kind].language.parser
+  const parser = SQL_DIALECTS[kind].language.parser
   if (!previous || previous.kind !== kind) return parser.parse(sql)
   const before = previous.sql
   const limit = Math.min(before.length, sql.length)

@@ -111,6 +111,14 @@ test("兼容 Rust 子窗口 query，原生 label 的窗口身份优先且不泄�
 test("新建连接可携带预选分组，编辑已有连接时忽略分组参数", () => {
   assert.deepEqual(
     resolveWindowEntry(
+      "?window=connection&type=rdp&connectionId=rdp-1",
+      "",
+      "connection",
+    ),
+    { surface: "connection", path: "/connection/rdp?connectionId=rdp-1" },
+  );
+  assert.deepEqual(
+    resolveWindowEntry(
       "?window=connection&type=ssh&group=%E7%94%9F%E4%BA%A7%20a%26b",
       "",
       "connection",

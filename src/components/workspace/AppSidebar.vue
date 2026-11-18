@@ -12,6 +12,7 @@ import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { NAV_ITEMS } from '@/constants/workspace'
+import { SERVER_CONNECTION_ICONS } from '@/constants/connection'
 import type {
   ConnectionGroupDropPosition,
   ConnectionGroupView,
@@ -22,6 +23,7 @@ import type { NavId } from '@/types'
 import { cn } from '@/utils/cn'
 import { openConnectionWindow, openSettingsWindow } from '@/utils/window'
 import { translateLabel } from '@/i18n'
+import { isConnectionFormKind } from '@/router/window-entry'
 import DatabaseTransferDialog from './database/DatabaseTransferDialog.vue'
 import type { DatabaseTransferMode } from './database/DatabaseTransferDialog.vue'
 import SidebarProjects from './SidebarProjects.vue'
@@ -77,8 +79,9 @@ const state = reactive({
 })
 
 const addMenuItems = computed<ContextMenuItem[]>(() => [
-  { id: 'ssh', label: t('SSH Connection'), icon: 'lucide:server' },
-  { id: 'local', label: t('Local Terminal'), icon: 'lucide:square-terminal' },
+  { id: 'ssh', label: t('SSH Connection'), icon: SERVER_CONNECTION_ICONS.ssh },
+  { id: 'local', label: t('Local Terminal'), icon: SERVER_CONNECTION_ICONS.local },
+  { id: 'rdp', label: t('Windows 远程桌面（RDP）'), icon: SERVER_CONNECTION_ICONS.rdp },
   {
     id: 'database',
     label: t('Database Connection'),
@@ -139,6 +142,7 @@ function addConnection(group?: string): void {
   )
 }
 
+/** 从底部按钮向上展开新建连接菜单。 */
 function openAddMenu(event: MouseEvent): void {
   if (state.addMenuOpen) {
     state.addMenuOpen = false
@@ -147,8 +151,7 @@ function openAddMenu(event: MouseEvent): void {
   addMenuTrigger.value = event.currentTarget as HTMLElement
   const rect = addMenuTrigger.value.getBoundingClientRect()
   state.addMenuX = rect.left
-  // 菜单向上展开，高度随条目数增长（新增“从 ~/.ssh/config 导入”一项及分隔线）
-  state.addMenuY = rect.top - 154
+  state.addMenuY = rect.top - 188
   state.addMenuOpen = true
 }
 
@@ -158,17 +161,13 @@ function selectConnectionKind(kind: string): void {
     state.opensshImportOpen = true
     return
   }
-  if (kind === 'ssh' || kind === 'local' || kind === 'database')
-    openConnectionWindow(kind)
+  if (isConnectionFormKind(kind)) openConnectionWindow(kind)
 }
 
+/** 在对应的原生子窗口编辑侧栏保存的连接。 */
 function editConnection(connection: SavedConnection): void {
   openConnectionWindow(
-    connection.kind === 'local'
-      ? 'local'
-      : connection.kind === 'ssh'
-        ? 'ssh'
-        : 'database',
+    isConnectionFormKind(connection.kind) ? connection.kind : 'database',
     connection.id
   )
 }

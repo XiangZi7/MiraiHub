@@ -19,6 +19,7 @@ pub mod error;
 pub mod ipc;
 pub mod local_terminal;
 pub mod platform;
+mod rdp;
 pub mod redis_db;
 pub mod ssh;
 pub mod updater;

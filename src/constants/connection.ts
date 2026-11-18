@@ -2,6 +2,13 @@ import type { ConnectionTagColor, LocalShellKind } from '@/types/connection'
 import type { DatabaseConnectionKind } from '@/types/database'
 import { DESKTOP_PLATFORM } from '@/utils/platform'
 
+/** 服务器列表与连接入口复用同一组协议图标。 */
+export const SERVER_CONNECTION_ICONS = {
+  ssh: 'lucide:server',
+  local: 'lucide:square-terminal',
+  rdp: 'lucide:monitor',
+} as const
+
 /** 侧栏和连接标签统一使用 Iconify 原版彩色产品图标。 */
 export const DATABASE_CONNECTION_ICONS: Record<
   DatabaseConnectionKind,

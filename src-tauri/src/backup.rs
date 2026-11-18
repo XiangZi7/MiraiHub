@@ -77,6 +77,16 @@ pub(crate) fn valid_payload(payload: &Value) -> AppResult<()> {
 }
 pub(crate) fn pack(mut payload: Value, password: &str) -> AppResult<Vec<u8>> {
     valid_payload(&payload)?;
+    // RDP 密文绑定本机系统用户，即使加密备份也不携带它。
+    if let Some(connections) = payload["connections"].as_array_mut() {
+        for connection in connections {
+            if connection["kind"] == "rdp" {
+                if let Some(settings) = connection["settings"].as_object_mut() {
+                    settings.remove("rdpCredential");
+                }
+            }
+        }
+    }
     if password.is_empty() {
         redact(&mut payload);
         payload["includesCredentials"] = false.into();

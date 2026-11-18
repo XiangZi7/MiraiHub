@@ -8,7 +8,11 @@ import { SETTINGS_PAGES } from '@/constants/settings'
 import { useConnectionsStore } from '@/stores/connections'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { routes } from './routes'
-import { isWorkspaceNav, type WindowEntry } from './window-entry'
+import {
+  isConnectionFormKind,
+  isWorkspaceNav,
+  type WindowEntry,
+} from '@/router/window-entry'
 
 export function createAppRouter(
   pinia: Pinia,
@@ -47,7 +51,7 @@ export function createAppRouter(
       }
     if (
       to.name === 'connection' &&
-      !['ssh', 'local', 'database'].includes(String(to.params.kind))
+      !isConnectionFormKind(to.params.kind)
     )
       return { path: entry.path, replace: true }
   })
@@ -65,7 +69,9 @@ export function createAppRouter(
           connection.kind === 'postgresql' ||
           connection.kind === 'sqlite' ||
           connection.kind === 'redis'
-        : connection.kind === 'ssh' || connection.kind === 'local'
+        : connection.kind === 'ssh' ||
+          connection.kind === 'local' ||
+          connection.kind === 'rdp'
     const id =
       typeof to.params.connectionId === 'string' ? to.params.connectionId : ''
     if (id) {

@@ -1,7 +1,11 @@
 import { i18n } from '@/i18n'
 import { onBeforeUnmount, onMounted, shallowRef } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { IS_TAURI } from '@/utils/window'
+import {
+  IS_TAURI,
+  isWindowFullscreen,
+  setWindowFullscreen,
+} from '@/utils/window'
 import { toast } from '@/composables/useToast'
 
 /** 同步原生窗口或浏览器全屏状态，支持按钮、F11 和 Esc。 */
@@ -11,9 +15,7 @@ export function useFullscreen() {
   let busy = false
   let stop: (() => void) | undefined
   async function sync(): Promise<void> {
-    fullscreen.value = IS_TAURI
-      ? await getCurrentWindow().isFullscreen()
-      : Boolean(document.fullscreenElement)
+    fullscreen.value = await isWindowFullscreen()
   }
   async function toggle(exit = false): Promise<void> {
     if (busy) return
@@ -21,9 +23,7 @@ export function useFullscreen() {
     try {
       await sync()
       const target = exit ? false : !fullscreen.value
-      if (IS_TAURI) await getCurrentWindow().setFullscreen(target)
-      else if (target) await document.documentElement.requestFullscreen()
-      else if (document.fullscreenElement) await document.exitFullscreen()
+      await setWindowFullscreen(target)
       await sync()
     } catch (error) {
       toast.error({

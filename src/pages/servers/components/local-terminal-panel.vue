@@ -337,7 +337,6 @@ defineExpose({
         :terminal-insert-target="terminalInsertTarget"
         @close="sideOpen = false"
         @context-consumed="contextRequest = null"
-        @insert-paths="insertFilePaths"
       />
     </AppSidePane>
   </div>

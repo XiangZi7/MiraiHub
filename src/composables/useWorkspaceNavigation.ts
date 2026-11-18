@@ -21,9 +21,12 @@ export function useWorkspaceNavigation() {
   async function selectNav(nav: NavId): Promise<void> {
     await router.push({ name: nav })
   }
+  /** 打开连接。对 RDP 显式发起连接，常规标签切换只改变活动视图。 */
   async function openConnection(connection: SavedConnection): Promise<void> {
     // 显式重新打开才更新连接配置；普通标签/历史导航只切换活动项。
-    if (workspace.tabs.some(tab => tab.id === connection.id))
+    if (connection.kind === 'rdp')
+      workspace.open(connection, { connectRdp: true })
+    else if (workspace.tabs.some(tab => tab.id === connection.id))
       workspace.open(connection)
     const failure = await router.push(connectionLocation(connection))
     if (!failure) void connections.touch(connection.id)

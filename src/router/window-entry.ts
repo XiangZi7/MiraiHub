@@ -1,4 +1,5 @@
 import type { NavId } from '@/types'
+import type { ConnectionFormKind } from '@/types/connection'
 
 export type WindowSurface =
   | 'workspace'
@@ -36,6 +37,18 @@ export function isWorkspaceNav(value: unknown): value is NavId {
   return ['servers', 'databases'].includes(String(value))
 }
 
+/** 校验原生连接窗口和前端路由共同支持的表单类型。 */
+export function isConnectionFormKind(
+  value: unknown
+): value is ConnectionFormKind {
+  return (
+    value === 'ssh' ||
+    value === 'local' ||
+    value === 'rdp' ||
+    value === 'database'
+  )
+}
+
 /** 旧版 Rust query 入口集中转换；窗口身份一经启动确定，不随路由改变。 */
 export function resolveWindowEntry(
   search: string,
@@ -51,9 +64,8 @@ export function resolveWindowEntry(
       : (surfaceOf(NATIVE_SURFACES, nativeLabel) ?? 'workspace')
     : (surfaceOf(REQUESTABLE_SURFACES, requested ?? '') ?? 'workspace')
   if (surface === 'connection') {
-    const kind = ['ssh', 'local', 'database'].includes(query.get('type') ?? '')
-      ? query.get('type')!
-      : 'ssh'
+    const type = query.get('type')
+    const kind = isConnectionFormKind(type) ? type : 'ssh'
     const connectionId = query.get('connectionId')
     // 新建时可以带上预选分组；编辑已有连接时归属以存档为准，忽略它。
     const group = connectionId ? null : query.get('group')

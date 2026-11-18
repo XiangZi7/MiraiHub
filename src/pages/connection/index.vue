@@ -9,6 +9,7 @@ import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { closeWindow, IS_TAURI } from '@/utils/window'
 import DatabaseConnectionForm from '@/pages/connection/components/database-connection-form.vue'
 import LocalConnectionForm from '@/pages/connection/components/local-connection-form.vue'
+import RdpConnectionForm from '@/pages/connection/components/rdp-connection-form.vue'
 import SshConnectionForm from '@/pages/connection/components/ssh-connection-form.vue'
 
 const { t } = useI18n()
@@ -19,11 +20,15 @@ const props = withDefaults(
 )
 const isDatabase = computed(() => props.kind === 'database')
 const isLocal = computed(() => props.kind === 'local')
+const isRdp = computed(() => props.kind === 'rdp')
 const databaseKind = shallowRef<'mysql' | 'postgresql' | 'sqlite' | 'redis'>(
   'mysql'
 )
-const title = computed(() =>
-  props.connectionId
+/** 根据连接类型与编辑状态显示对应的配置窗口标题。 */
+const title = computed(() => {
+  if (isRdp.value)
+    return props.connectionId ? t('编辑远程桌面连接') : t('新建远程桌面连接')
+  return props.connectionId
     ? isDatabase.value
       ? 'Edit Database Connection'
       : isLocal.value
@@ -34,7 +39,7 @@ const title = computed(() =>
       : isLocal.value
         ? 'Add Local Terminal'
         : 'Add SSH Connection'
-)
+})
 
 /** 关闭连接配置窗口，桌面端走原生窗口入口，浏览器预览关闭当前窗口。 */
 function closeDialog(): void {
@@ -78,18 +83,28 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </header>
 
     <main class="relative z-10 flex min-h-0 flex-1 flex-col">
+      <!-- 配置区：本地终端表单编辑 Shell 与启动参数。 -->
       <LocalConnectionForm
         v-if="isLocal"
         :connection-id="connectionId"
         :default-group="group"
         @close="closeDialog"
       />
+      <!-- 配置区：RDP 表单编辑 Windows 主机与登录用户名。 -->
+      <RdpConnectionForm
+        v-else-if="isRdp"
+        :connection-id="connectionId"
+        :default-group="group"
+        @close="closeDialog"
+      />
+      <!-- 配置区：SSH 表单编辑终端认证与连接参数。 -->
       <SshConnectionForm
         v-else-if="!isDatabase"
         :connection-id="connectionId"
         :default-group="group"
         @close="closeDialog"
       />
+      <!-- 配置区：数据库表单编辑引擎与连接参数。 -->
       <DatabaseConnectionForm
         v-else
         v-model:kind="databaseKind"

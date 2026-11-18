@@ -4,6 +4,7 @@ use crate::error::{AppError, AppResult};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tauri::{State, WebviewWindow};
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +94,24 @@ pub async fn local_list_directory(window: WebviewWindow, path: String) -> AppRes
     tokio::task::spawn_blocking(move || local_listing(&path))
         .await
         .map_err(|_| AppError::internal("读取本地目录失败"))?
+}
+
+/// 通过系统文件关联打开本地面板中的普通文件。
+#[tauri::command]
+pub async fn local_open_file(window: WebviewWindow, path: String) -> AppResult<()> {
+    super::tunnels::main_window(&window)?;
+    tokio::task::spawn_blocking(move || {
+        let file = Path::new(&path);
+        if !file.is_absolute() || !std::fs::symlink_metadata(file)?.is_file() {
+            return Err(AppError::invalid_input("请选择本地文件"));
+        }
+        window
+            .opener()
+            .open_path(path, None::<&str>)
+            .map_err(|error| AppError::internal(error.to_string()))
+    })
+    .await
+    .map_err(|_| AppError::internal("打开文件失败"))?
 }
 
 /// 跨平台同步只接收单个文件名，避免远端名称在 Windows 上变成路径或备用数据流。

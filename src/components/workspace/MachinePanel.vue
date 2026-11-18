@@ -57,7 +57,6 @@ const emit = defineEmits<{
   /** 请求收起面板 */
   close: []
   contextConsumed: [id: string]
-  insertPaths: [paths: string[]]
 }>()
 
 // 转成 ref 传给子组件的 composable：它们 watch 会话 id 的变化来重新取数
@@ -184,7 +183,6 @@ watch(
         v-if="localSettings"
         :session-id="sessionId"
         :initial-path="localSettings.workingDirectory"
-        @insert="emit('insertPaths', $event)"
       />
       <FilesView
         v-else

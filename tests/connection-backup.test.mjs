@@ -36,6 +36,30 @@ const snapshot = (...connections) => ({
 const defaults = { mode: 'skip', credentials: false, startupCommands: false }
 const archive = (...connections) =>
   createConnectionBackup(snapshot(...connections), true)
+
+test('RDP backups preserve the connection and display settings without device credentials', () => {
+  const display = { resolution: { width: 1920, height: 1080 }, scale: 'actual' }
+  const desktop = ssh({
+    id: 'rdp-1',
+    kind: 'rdp',
+    port: 3390,
+    username: 'ACME\\operator',
+    settings: { ...display, rdpCredential: 'device-protected' },
+  })
+  const backup = archive(desktop)
+  assert.deepEqual(backup.connections[0].settings, display)
+  backup.connections[0].settings.password = 'do-not-import'
+  backup.connections[0].settings.rdpCredential = 'another-device'
+  const parsed = parseConnectionBackup(backup)
+  assert.deepEqual(parsed.connections[0], { ...desktop, settings: display, lastUsedAt: 0 })
+  const result = restorePlan(
+    snapshot(desktop),
+    parsed,
+    { ...defaults, mode: 'update' },
+    () => 'new'
+  )
+  assert.equal(result.next.connections[0].settings.rdpCredential, 'device-protected')
+})
 const local = (settings = {}) =>
   ssh({
     id: 'local-1',

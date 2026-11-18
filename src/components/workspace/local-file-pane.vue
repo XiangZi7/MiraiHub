@@ -9,7 +9,9 @@ import {
 } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
-import { listLocalDirectory, type LocalListing } from '@/api/workspace-files'
+import { listLocalDirectory, openLocalFile, type LocalListing } from '@/api/workspace-files'
+import { errorMessage } from '@/api/ssh'
+import { translateNativeMessage } from '@/i18n/native'
 import { useFileTransfers } from '@/composables/useFileTransfers'
 import { toast } from '@/composables/useToast'
 import { useSettings } from '@/composables/useSettings'
@@ -29,7 +31,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   upload: [paths: string[]]
-  insert: [paths: string[]]
   refreshed: []
 }>()
 const transferMode = computed(() => props.remotePath !== undefined)
@@ -127,11 +128,22 @@ function selectFiles(paths: string[], focus: string): void {
   state.selection = paths
   state.selected = focus
 }
-/** 打开目录；文件在双栏中触发上传，在本地终端的文件面板中填入路径。 */
-function openFile(file: SshRemoteFile): void {
-  if (file.kind === 'directory') void load(file.path)
-  else if (transferMode.value) emit('upload', [file.path])
-  else emit('insert', [file.path])
+/** 双击或按 Enter 进入目录，在本地终端的文件面板中用系统默认应用打开文件。 */
+async function openFile(file: SshRemoteFile): Promise<void> {
+  if (file.kind === 'directory') {
+    await load(file.path)
+  } else if (transferMode.value) {
+    emit('upload', [file.path])
+  } else {
+    try {
+      await openLocalFile(file.path)
+    } catch (error) {
+      toast.error({
+        title: t('打开文件失败'),
+        description: translateNativeMessage(errorMessage(error)),
+      })
+    }
+  }
 }
 /** 完成同名冲突决策，卸载面板时也会取消等待。 */
 function settleConflict(action: 'overwrite' | 'skip' | 'cancel'): void {

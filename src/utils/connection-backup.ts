@@ -1,4 +1,6 @@
 import { i18n } from '@/i18n'
+import { isRdpConnection } from '@/types/connection'
+import { validRdpResolution } from '@/utils/rdp-display'
 import type {
   ConnectionGroup,
   ConnectionTagDefinition,
@@ -84,7 +86,7 @@ function connection(value: unknown): SavedConnection {
     s = object(v.settings)
   const kind = choice(
     v.kind,
-    ['ssh', 'mysql', 'postgresql', 'sqlite', 'redis', 'local'],
+    ['ssh', 'mysql', 'postgresql', 'sqlite', 'redis', 'local', 'rdp'],
     i18n.global.t('连接类型')
   )
   const common = {
@@ -110,6 +112,22 @@ function connection(value: unknown): SavedConnection {
   }
   if (!common.id || !common.name || (kind !== 'local' && !common.host))
     throw new Error(i18n.global.t('连接 ID、名称和主机不能为空'))
+  if (kind === 'rdp') {
+    const settings: import('@/types/connection').RdpConnectionSettings = {}
+    if (s.resolution !== undefined) {
+      const size = object(s.resolution)
+      const resolution = {
+        width: number(size.width, i18n.global.t('宽度（像素）')),
+        height: number(size.height, i18n.global.t('高度（像素）')),
+      }
+      if (!validRdpResolution(resolution))
+        throw new Error(i18n.global.t('远程桌面的分辨率超出支持范围'))
+      settings.resolution = resolution
+    }
+    if (s.scale !== undefined)
+      settings.scale = choice(s.scale, ['fit', 'actual'] as const, i18n.global.t('画面缩放'))
+    return { ...common, kind, settings }
+  }
   if (kind === 'ssh') {
     const a = object(s.auth),
       type = choice(
@@ -249,6 +267,11 @@ function sanitized(
   options: Pick<RestoreOptions, 'credentials' | 'startupCommands'>
 ): SavedConnection {
   const c = clone(source)
+  if (isRdpConnection(c)) {
+    // 凭据只对本机有效，跨设备备份只保存显示与连接配置。
+    delete c.settings.rdpCredential
+    return c
+  }
   if ('auth' in c.settings) {
     if (!options.credentials) {
       if (c.settings.auth.type === 'password') c.settings.auth.password = ''
@@ -345,6 +368,8 @@ export function restorePlan(
             c.settings.auth.passphrase = existing.settings.auth.passphrase
         }
       }
+      if (sameEndpoint && isRdpConnection(existing) && isRdpConnection(c))
+        c.settings.rdpCredential = existing.settings.rdpCredential
       if (
         !options.startupCommands &&
         sameEndpoint &&

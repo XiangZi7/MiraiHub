@@ -6,9 +6,10 @@ import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import type { ContextMenuItem } from '@/types/context-menu'
 import { copyText } from '@/utils/clipboard'
 import { openConnectionWindow } from '@/utils/window'
+import { isConnectionFormKind } from '@/router/window-entry'
 import { toast } from '@/composables/useToast'
 import { isDatabaseConnection } from '@/types/connection'
-import { DATABASE_CONNECTION_ICONS } from '@/constants/connection'
+import { DATABASE_CONNECTION_ICONS, SERVER_CONNECTION_ICONS } from '@/constants/connection'
 import type { TabDragEvent } from '@/composables/useTabReorder'
 import {
   type WorkspaceViewTab,
@@ -46,12 +47,11 @@ const items = computed<TabItem[]>(() =>
           iconSize: tab.contentId ? 13 : 18,
         }
       : {
-          dot:
-            tab.status === 'connected'
-              ? ('success' as const)
-              : tab.status === 'connecting'
-                ? ('amber' as const)
-                : ('txt-3' as const),
+          icon: tab.connection.kind === 'rdp' || tab.connection.kind === 'local'
+            ? SERVER_CONNECTION_ICONS[tab.connection.kind]
+            : SERVER_CONNECTION_ICONS.ssh,
+          iconSize: 14,
+          iconClass: props.active === tab.id ? 'text-accent' : 'text-txt-3',
         }),
     tooltip: tab.tooltip ?? [
       { label: t('连接'), value: tab.connection.name },
@@ -173,11 +173,9 @@ async function action(id: string, action: string): Promise<void> {
     return
   if (action === 'edit') {
     openConnectionWindow(
-      tab.connection.kind === 'local'
-        ? 'local'
-        : tab.connection.kind === 'ssh'
-          ? 'ssh'
-          : 'database',
+      isConnectionFormKind(tab.connection.kind)
+        ? tab.connection.kind
+        : 'database',
       id
     )
     return

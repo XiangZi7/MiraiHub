@@ -268,6 +268,8 @@ pub async fn remote_editor_finish(
 ) -> AppResult<()> {
     windows.target(window.label())?;
     editor.close_window(window.label()).await;
+    #[cfg(windows)]
+    let _ = window.hide();
     // Called only after the UI's save/discard flow; ordinary OS close requests cannot bypass it.
     window.destroy().map_err(native_error)
 }

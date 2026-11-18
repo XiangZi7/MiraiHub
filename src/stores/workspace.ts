@@ -19,6 +19,8 @@ export interface WorkspaceTab {
    * 而那两个面板是终端的兄弟节点，只能通过这份共享状态拿到。
    */
   sessionId: string
+  /** 仅在主动打开 RDP 连接时递增，恢复标签和切换标签无需拨号。 */
+  rdpConnectRequest?: number
   /** 数据库总览标签已关闭时，继续为仍打开的表和查询保留会话。 */
   databaseOverviewClosed?: boolean
 }
@@ -83,13 +85,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * 已经开过就只是切过去，不重复建标签 ——
    * 否则反复点侧栏会攒出一排同名标签，而它们连的是同一台机器。
    */
-  function open(connection: SavedConnection): void {
+  function open(connection: SavedConnection, options?: { connectRdp: boolean }): void {
     const existing = state.tabs.find(tab => tab.id === connection.id)
+    const connectRdp = connection.kind === 'rdp' && options?.connectRdp
 
     if (existing) {
       // 连接配置可能被改过（改了端口、换了密钥），用最新的覆盖
       existing.connection = connection
       existing.databaseOverviewClosed = false
+      if (connectRdp) existing.rdpConnectRequest = (existing.rdpConnectRequest ?? 0) + 1
       state.activeId = existing.id
       return
     }
@@ -99,6 +103,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       connection,
       status: 'disconnected',
       sessionId: '',
+      ...(connectRdp ? { rdpConnectRequest: 1 } : {}),
     })
 
     state.activeId = connection.id

@@ -2,6 +2,7 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { computed, onScopeDispose, reactive, toRefs } from 'vue'
 import * as store from '@/api/connections'
 import { settingsSnapshot } from '@/composables/useSettings'
+import { groupKindOf } from '@/types/connection'
 import type {
   ConnectionGroup,
   ConnectionGroupDropPosition,
@@ -151,13 +152,13 @@ export const useConnectionsStore = defineStore('connections', () => {
     sshConnections,
     databaseConnections,
 
-    /** 按 kind 取出对应的分组树 */
+    /** 数据库使用独立分组，服务器侧栏同时列出终端和远程桌面连接。 */
     groupsFor: (kind: ConnectionKind | 'database') => {
       const groupKind = kind === 'database' ? 'database' : 'ssh'
       return groupBy(
         groupKind === 'database'
           ? databaseConnections.value
-          : sshConnections.value,
+          : state.items.filter(item => groupKindOf(item.kind) === 'ssh'),
         state.groups,
         groupKind
       )

@@ -1,14 +1,18 @@
-//! macOS Keychain / Linux Secret Service 保存主密钥，文件内容使用 AES-GCM 加密。
+//! 本地数据由 Windows DPAPI 或系统钥匙串保护。
 
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Nonce,
 };
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 use rand::RngCore;
 
 use crate::error::{AppError, AppResult};
 
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const HEADER: &[u8] = b"MHSEC\x01";
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 const NONCE_LENGTH: usize = 12;
 
 /// 为配置、聊天和附件共用一个用户级主密钥；解密时绝不创建替代密钥。
@@ -56,6 +60,7 @@ pub fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
 }
 
 /// 使用版本头和随机 nonce 加密文件，并在解密时拒绝错误密钥、截断或篡改数据。
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn protect_with_key(bytes: &[u8], encrypt: bool, key: &[u8; 32]) -> AppResult<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| AppError::internal("加密密钥无效"))?;
     if encrypt {
@@ -86,6 +91,53 @@ fn protect_with_key(bytes: &[u8], encrypt: bool, key: &[u8; 32]) -> AppResult<Ve
             )
             .map_err(|_| AppError::internal("本地数据解密失败，密钥不匹配或文件已损坏"))
     }
+}
+
+#[cfg(windows)]
+pub fn protect(bytes: &[u8], encrypt: bool) -> AppResult<Vec<u8>> {
+    use windows::Win32::{
+        Foundation::{LocalFree, HLOCAL},
+        Security::Cryptography::{
+            CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+        },
+    };
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: bytes.len() as u32,
+        pbData: bytes.as_ptr() as *mut u8,
+    };
+    let mut output = CRYPT_INTEGER_BLOB::default();
+    unsafe {
+        let result = if encrypt {
+            CryptProtectData(
+                &input,
+                windows::core::PCWSTR::null(),
+                None,
+                None,
+                None,
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut output,
+            )
+        } else {
+            CryptUnprotectData(
+                &input,
+                None,
+                None,
+                None,
+                None,
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut output,
+            )
+        };
+        result.map_err(|_| AppError::internal("Windows 凭据加密/解密失败"))?;
+        let data = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        let _ = LocalFree(Some(HLOCAL(output.pbData as _)));
+        Ok(data)
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+pub fn protect(_bytes: &[u8], _encrypt: bool) -> AppResult<Vec<u8>> {
+    Err(AppError::invalid_input("此平台尚未接入系统密钥存储"))
 }
 
 #[cfg(test)]

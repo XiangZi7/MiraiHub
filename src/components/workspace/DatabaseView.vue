@@ -2122,7 +2122,7 @@ registerDatabaseCommandSource(
           overlay
         />
 
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div class="bg-panel flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             v-if="!connected"
             class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center justify-end border-b px-2.5 py-1"

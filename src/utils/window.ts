@@ -1,6 +1,7 @@
 import { readonly, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import type { ConnectionFormKind } from '@/types/connection'
 
 /**
  * 文档当前实际生效的明暗。
@@ -62,6 +63,46 @@ export function toggleMaximizeWindow(): void {
   withWindow(win => win.toggleMaximize())
 }
 
+let restoreMaximizedAfterFullscreen = false
+
+/** 读取桌面窗口或浏览器的全屏状态，供工作区和远程桌面共享。 */
+export async function isWindowFullscreen(): Promise<boolean> {
+  return IS_TAURI
+    ? getCurrentWindow().isFullscreen()
+    : Boolean(document.fullscreenElement)
+}
+
+/** Windows 无边框窗口先退出最大化，避免全屏客户区被任务栏工作区裁切。 */
+export async function setWindowFullscreen(enabled: boolean): Promise<void> {
+  if (!IS_TAURI) {
+    if (enabled && !document.fullscreenElement)
+      await document.documentElement.requestFullscreen()
+    else if (!enabled && document.fullscreenElement)
+      await document.exitFullscreen()
+    return
+  }
+
+  const win = getCurrentWindow()
+  const fullscreen = await win.isFullscreen()
+  if (enabled) {
+    if (fullscreen) return
+    const wasMaximized =
+      navigator.userAgent.includes('Windows') && (await win.isMaximized())
+    if (wasMaximized) await win.toggleMaximize()
+    try {
+      await win.setFullscreen(true)
+    } catch (error) {
+      if (wasMaximized) await win.toggleMaximize().catch(() => {})
+      throw error
+    }
+    restoreMaximizedAfterFullscreen = wasMaximized
+  } else {
+    if (fullscreen) await win.setFullscreen(false)
+    if (restoreMaximizedAfterFullscreen && !(await win.isMaximized()))
+      await win.toggleMaximize()
+    restoreMaximizedAfterFullscreen = false
+  }
+}
 /** 关闭窗口。主窗口在「最小化到托盘」开启时会被 close-requested 监听拦截成隐藏 */
 export function closeWindow(): void {
   withWindow(win => win.close())
@@ -75,7 +116,7 @@ export function hideWindow(): void {
 /**
  * 请求 Rust 创建原生连接配置子窗口。
  *
- * `kind` 决定打开 SSH、本地终端还是数据库配置窗口。
+ * `kind` 决定打开 SSH、本地终端、远程桌面或数据库配置窗口。
  * MySQL / PostgreSQL 属于数据库窗口内部的协议选择，不与 SSH 放在同一级。
  *
  * `group` 是新建时预选的分组：从某个分组的右键菜单进来，
@@ -84,7 +125,7 @@ export function hideWindow(): void {
  * 浏览器开发态用 popup 降级，方便不启动 Tauri 也能检查表单 UI。
  */
 export function openConnectionWindow(
-  kind: 'ssh' | 'local' | 'database',
+  kind: ConnectionFormKind,
   connectionId?: string,
   group?: string
 ): void {
@@ -100,7 +141,7 @@ export function openConnectionWindow(
       .open(
         `/?window=connection${query}`,
         'miraihub-connection',
-        'popup=yes,width=620,height=640,resizable=no'
+        `popup=yes,width=620,height=${kind === 'rdp' ? 560 : 640},resizable=no`
       )
       ?.focus()
     return

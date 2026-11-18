@@ -92,11 +92,6 @@ const editorTheme = EditorView.theme({
     borderLeftColor: 'var(--color-accent)',
     borderLeftWidth: '2px',
   },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
-    {
-      backgroundColor:
-        'color-mix(in oklab, var(--color-accent) 26%, transparent)',
-    },
   '.cm-activeLine': {
     backgroundColor: 'color-mix(in oklab, var(--color-txt) 5%, transparent)',
   },
@@ -264,9 +259,19 @@ defineExpose({
   flex: 1;
   min-height: 0;
   min-width: 0;
+  --code-selection: color-mix(
+    in oklab,
+    var(--color-accent) 25%,
+    oklch(from var(--color-canvas) l c h / 1)
+  );
 }
 .code-editor :deep(.cm-editor) {
   height: 100%;
   outline: none;
+}
+.code-editor :deep(.cm-editor .cm-scroller .cm-selectionLayer .cm-selectionBackground),
+.code-editor :deep(.cm-editor.cm-focused .cm-scroller .cm-selectionLayer .cm-selectionBackground),
+.code-editor :deep(.cm-content ::selection) {
+  background-color: var(--code-selection);
 }
 </style>

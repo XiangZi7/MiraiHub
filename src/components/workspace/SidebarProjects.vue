@@ -8,7 +8,6 @@ import DatabaseConnectionIcon from '@/components/connection/DatabaseConnectionIc
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppCollapse from '@/components/ui/AppCollapse.vue'
-import StatusDot from '@/components/ui/StatusDot.vue'
 import type {
   ConnectionGroupDropPosition,
   ConnectionGroupView,
@@ -16,7 +15,7 @@ import type {
 } from '@/types/connection'
 import type { ContextMenuItem } from '@/types/context-menu'
 import { endpointOf, isDatabaseConnection } from '@/types/connection'
-import { connectionTagColorCss } from '@/constants/connection'
+import { connectionTagColorCss, SERVER_CONNECTION_ICONS } from '@/constants/connection'
 import { useConnectionGroupDrag } from '@/composables/useConnectionGroupDrag'
 import { useConnectionGroupReorder } from '@/composables/useConnectionGroupReorder'
 import { cn } from '@/utils/cn'
@@ -159,7 +158,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
               label: props.openIds.has(connection.id)
                 ? t('切换到连接')
                 : t('打开连接'),
-              icon: 'lucide:square-terminal',
+              icon: serverIcon(connection),
             },
           ]
         : []),
@@ -278,9 +277,12 @@ function toggleGroup(groupId: string): void {
   collapsed[groupId] = isExpanded(groupId)
 }
 
-function toneOf(connection: SavedConnection): 'success' | 'amber' | 'txt-3' {
-  if (props.connectedIds.has(connection.id)) return 'success'
-  return props.openIds.has(connection.id) ? 'amber' : 'txt-3'
+/** 按连接协议选择 Windows、终端或 SSH 服务器图标。 */
+function serverIcon(connection: SavedConnection): string {
+  const kind = connection.kind
+  return kind === 'rdp' || kind === 'local'
+    ? SERVER_CONNECTION_ICONS[kind]
+    : SERVER_CONNECTION_ICONS.ssh
 }
 
 function renameGroup(groupId: string, name: string): void {
@@ -495,6 +497,7 @@ function runContextAction(action: string): void {
               v-for="node in group.items"
               :key="node.id"
               type="button"
+              :aria-current="props.activeId === node.id ? 'true' : undefined"
               :class="
                 cn(
                   'connection-node w-full',
@@ -521,14 +524,12 @@ function runContextAction(action: string): void {
                 v-if="isDatabaseConnection(node)"
                 :kind="node.kind"
               />
-              <StatusDot
+              <AppIcon
                 v-else
-                :tone="toneOf(node)"
-                :size="6"
-                :glow="toneOf(node) !== 'txt-3'"
-                :class="
-                  (node.kind === 'local' || showAddress) && 'mt-1.5 self-start'
-                "
+                :name="serverIcon(node)"
+                :size="14"
+                class="shrink-0"
+                :class="props.activeId === node.id ? 'text-accent' : 'text-txt-3'"
               />
               <span class="min-w-0 flex-1 text-left">
                 <span class="text-txt block truncate text-[11.5px]">{{

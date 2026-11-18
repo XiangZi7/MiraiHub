@@ -14,6 +14,7 @@ import {
 import { useResizeObserver, useStorage, useTimeoutFn } from '@vueuse/core'
 import * as columnTagsApi from '@/api/column-tags'
 import * as database from '@/api/database'
+import DdlCode from '@/components/workspace/database/ddl-code.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppColumnResizeHandle from '@/components/ui/AppColumnResizeHandle.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
@@ -2416,9 +2417,12 @@ watch(
             />
             {{ t('复制 DDL') }}
           </AppButton>
-          <pre
-            class="text-term-fg pr-24 font-mono text-[11.5px] leading-5 whitespace-pre-wrap"
-            >{{ state.detail.ddl || t('无法生成 DDL') }}</pre>
+          <DdlCode
+            v-if="state.detail.ddl"
+            :source="state.detail.ddl"
+            :kind="databaseKind"
+          />
+          <p v-else class="text-term-fg pr-24 text-xs">{{ t('无法生成 DDL') }}</p>
         </div>
       </div>
 

@@ -47,6 +47,15 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"
 russh = { version = "0.55", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "2.3"
 
+# 远程桌面使用 IronRDP 的协议、输入和图像解码，经 Tokio 建立原生 TCP/TLS 连接。
+ironrdp = { version = "0.17", features = ["cliprdr", "connector", "displaycontrol", "dvc", "graphics", "input", "session"] }
+arboard = { version = "3.7", default-features = false }
+ironrdp-tokio = { version = "0.10", features = ["reqwest"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-native-certs = "0.8"
+sha2 = "0.10"
+x509-cert = "0.2"
+
 # 二进制数据（附件、备份、代理认证、数据库/Redis 二进制值）的文本编码；终端输出已改走原始字节 Channel
 base64 = "0.22"
 # 生成密钥时的随机源。版本需与 russh 内部 ssh-key 所用的 rand 主版本一致，

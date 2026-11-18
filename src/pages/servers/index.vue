@@ -13,6 +13,7 @@ import {
   type LocalConnectionSettings,
 } from '@/types/connection'
 import LocalTerminalPanel from '@/pages/servers/components/local-terminal-panel.vue'
+import RemoteDesktopPanel from '@/pages/servers/components/remote-desktop-panel.vue'
 import TerminalPanel from '@/components/workspace/TerminalPanel.vue'
 import SshTerminalWorkspace from '@/pages/servers/components/ssh-terminal-workspace.vue'
 
@@ -34,8 +35,12 @@ const localTerminals =
   useTemplateRef<Array<InstanceType<typeof LocalTerminalPanel>>>(
     'localTerminals'
   )
-/** 接收 SSH 或本地终端的会话状态，同步工作区标签与会话标识。 */
-const handleSshStatus = (
+const remoteDesktops =
+  useTemplateRef<Array<InstanceType<typeof RemoteDesktopPanel>>>(
+    'remoteDesktops'
+  )
+/** 接收服务器面板的会话状态，同步工作区标签与会话标识。 */
+const handleSessionStatus = (
   id: string,
   status: SshSessionStatus,
   sessionId: string
@@ -73,18 +78,29 @@ const localTabViews = computed(() =>
   })
 )
 
-const activeTerminalTab = computed(() => {
+const rdpTabViews = computed(() =>
+  openTabs.filter(tab => tab.connection.kind === 'rdp')
+)
+
+const activeServerTab = computed(() => {
   const tab = activeTab.value
   return tab &&
-    (tab.connection.kind === 'ssh' || tab.connection.kind === 'local')
+    (tab.connection.kind === 'ssh' ||
+      tab.connection.kind === 'local' ||
+      tab.connection.kind === 'rdp')
     ? tab
     : undefined
 })
 
 /** 将工作区菜单操作交给对应终端实例，文件操作同时展开目标连接的文件面板。 */
 async function action(id: string, action: string): Promise<void> {
+  const kind = openTabs.find(tab => tab.id === id)?.connection.kind
+  if (kind === 'rdp') {
+    for (const view of remoteDesktops.value ?? [])
+      await view.actionFor(id, action)
+    return
+  }
   if (action === 'files' || action === 'upload') {
-    const kind = openTabs.find(tab => tab.id === id)?.connection.kind
     if (kind !== 'ssh' && !(kind === 'local' && action === 'files')) return
     layout.openMachinePane(id, 'files')
     if (action === 'upload') {
@@ -128,7 +144,7 @@ registerWorkspaceController('servers', { action })
         :terminal-type="tab.terminalType"
         :startup-command="tab.startupCommand"
         @status="
-          (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
+          (status, sessionId) => handleSessionStatus(tab.id, status, sessionId)
         "
       />
     </Teleport>
@@ -147,7 +163,27 @@ registerWorkspaceController('servers', { action })
         :title="tab.title"
         :settings="tab.settings"
         @status="
-          (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
+          (status, sessionId) => handleSessionStatus(tab.id, status, sessionId)
+        "
+      />
+    </Teleport>
+
+    <!-- RDP 标签保留已连接的 IronRDP 会话，在工作区分屏中显示画布。 -->
+    <Teleport
+      v-for="tab in rdpTabViews"
+      :key="tab.id"
+      :to="tabSplit?.targetFor(tab.id) ?? 'body'"
+      :disabled="!tabSplit?.targetFor(tab.id)"
+    >
+      <!-- 远程桌面面板使用已保存凭据连接，并呈现 Windows 画面与键鼠交互。 -->
+      <RemoteDesktopPanel
+        v-show="visible(tab.id)"
+        ref="remoteDesktops"
+        :connection="tab.connection"
+        :connect-request="tab.rdpConnectRequest"
+        :active="visible(tab.id)"
+        @status="
+          (status, sessionId) => handleSessionStatus(tab.id, status, sessionId)
         "
       />
     </Teleport>
@@ -157,7 +193,7 @@ registerWorkspaceController('servers', { action })
       :disabled="!tabSplit?.targetFor(activeId)"
     >
       <TerminalPanel
-        v-if="!tabSplit && !activeTerminalTab"
+        v-if="!tabSplit && !activeServerTab"
         v-show="activeNav === 'servers'"
         key="empty-terminal"
       />

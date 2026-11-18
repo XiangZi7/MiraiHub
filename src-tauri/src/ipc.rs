@@ -93,8 +93,15 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         platform::commands::launch_at_startup_enabled,
         platform::skins::skin_directory,
         platform::skins::open_skin_directory,
+        // ---------- RDP ----------
+        crate::rdp::rdp_protect_password,
+        crate::rdp::rdp_start,
+        crate::rdp::rdp_input,
+        crate::rdp::rdp_trust_certificate,
+        crate::rdp::rdp_stop,
         // ---------- SSH：会话 ----------
         ssh::workspace_files::local_list_directory,
+        ssh::workspace_files::local_open_file,
         ssh::workspace_files::ssh_sync_scan,
         ssh::commands::ssh_connect,
         ssh::commands::ssh_disconnect,
