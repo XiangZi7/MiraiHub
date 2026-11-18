@@ -399,23 +399,6 @@ const {
     emit('status', nextStatus, nextSessionId),
 })
 
-// 开发环境且可写是默认状态，不占用界面；其余情况在顶部常驻提示。
-const safetyBand = computed(() => {
-  const current = session.value
-  if (!current) return null
-  const production = current.environment === 'production'
-  const testing = current.environment === 'testing'
-  if (!production && !testing && !current.readOnly) return null
-  const labels = [
-    ...(production ? [t('生产环境')] : testing ? [t('测试环境')] : []),
-    ...(current.readOnly ? [t('只读')] : []),
-  ]
-  return {
-    label: labels.join(' · '),
-    color: production ? 'bg-danger' : testing ? 'bg-amber' : 'bg-accent-deep',
-  }
-})
-
 // watch 会立即读取 getter；先创建数据库会话，再派生和监听 AI 的执行目标。
 const agentTarget = computed(() => ({
   kind: 'database' as const,
@@ -1874,18 +1857,8 @@ registerDatabaseCommandSource(
     v-else
     ref="databaseContainer"
     data-database-layout
-    :class="['relative flex min-h-0 min-w-0 flex-1', safetyBand && 'pt-5']"
+    class="relative flex min-h-0 min-w-0 flex-1"
   >
-    <div
-      v-if="safetyBand"
-      :class="[
-        'absolute inset-x-0 top-0 z-10 flex h-5 items-center justify-center text-[11px] font-medium text-white',
-        safetyBand.color,
-      ]"
-      role="status"
-    >
-      {{ safetyBand.label }}
-    </div>
     <DatabaseGuardDialog />
     <!-- 可复用模板放在根元素内，让父级 v-show 能正确隐藏缓存的连接视图。 -->
     <DefineDatabaseStatus v-slot="{ tab, embedded }">
