@@ -19,6 +19,7 @@ interface RdpRequest {
 export type RdpEvent =
   | { type: 'connected' }
   | { type: 'certificate'; fingerprint: string; previousFingerprint?: string }
+  | { type: 'clipboard'; message: string; error: boolean }
   | { type: 'ended'; error: string | null }
 
 interface PointerPosition {

@@ -50,6 +50,7 @@ russh-sftp = "2.3"
 # 远程桌面使用 IronRDP 的协议、输入和图像解码，经 Tokio 建立原生 TCP/TLS 连接。
 ironrdp = { version = "0.17", features = ["cliprdr", "connector", "displaycontrol", "dvc", "graphics", "input", "session"] }
 arboard = { version = "3.7", default-features = false }
+tempfile = "3.27"
 ironrdp-tokio = { version = "0.10", features = ["reqwest"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 rustls-native-certs = "0.8"
@@ -97,6 +98,7 @@ windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Security_Cryptography",
+    "Win32_System_DataExchange",
     "Win32_Graphics_Dwm",
     "Win32_UI_Controls",
 ] }
@@ -113,6 +115,7 @@ keyring = { version = "3.6.3", features = ["sync-secret-service", "crypto-rust"]
 tauri-plugin-autostart = "~2.5.1"
 
 [dev-dependencies]
+ironrdp = { version = "0.17", features = ["svc"] }
 tauri = { version = "2", features = ["test"] }
 tokio = { version = "1", features = ["rt", "macros"] }
 

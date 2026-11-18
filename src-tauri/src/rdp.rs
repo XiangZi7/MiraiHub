@@ -133,6 +133,10 @@ pub enum RdpEvent {
         previous_fingerprint: Option<String>,
     },
     Connected,
+    Clipboard {
+        message: &'static str,
+        error: bool,
+    },
     Ended {
         error: Option<String>,
     },
@@ -557,7 +561,7 @@ async fn run(
         });
         connector.attach_static_channel(DrdynvcClient::new().with_dynamic_channel(display));
         connector.attach_static_channel(CliprdrClient::new(Box::new(
-            clipboard::TextClipboard::default(),
+            clipboard::SessionClipboard::default(),
         )));
         let mut initial = TokioFramed::new(stream);
         let upgrade = ironrdp_tokio::connect_begin(&mut initial, &mut connector)
@@ -697,9 +701,13 @@ async fn run(
                             clipboard::begin_copy(&mut stage);
                         }
                         if matches!(event, RdpInput::ClipboardPaste) {
-                            if let Some(frame) = clipboard::begin_paste(&mut stage).await {
-                                output.push(ActiveStageOutput::ResponseFrame(frame));
-                                continue;
+                            match clipboard::begin_paste(&mut stage).await {
+                                clipboard::Paste::Forward => {}
+                                clipboard::Paste::Skip => continue,
+                                clipboard::Paste::Wait(frame) => {
+                                    output.push(ActiveStageOutput::ResponseFrame(frame));
+                                    continue;
+                                }
                             }
                         }
                         output.extend(stage.process_fastpath_input(&mut image, &input_events(&mut input, event))
@@ -751,7 +759,10 @@ async fn run(
                 _ => {}
             }
         }
-        let (clipboard_frames, paste) = clipboard::poll(&mut stage).await;
+        let (clipboard_frames, paste) = clipboard::poll(&mut stage, |message, error| {
+            let _ = events.send(RdpEvent::Clipboard { message, error });
+        })
+        .await;
         for frame in clipboard_frames {
             writer.write_all(&frame).await?;
         }

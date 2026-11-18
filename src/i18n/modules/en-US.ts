@@ -70,6 +70,11 @@ export default {
   无法开启更多远程桌面会话: 'Cannot open more Remote Desktop sessions',
   远程桌面已断开: 'Remote Desktop disconnected',
   远程桌面输入超时: 'Remote Desktop input timed out',
+  无法复制远程桌面文件: 'Could not copy the remote desktop files',
+  无法将本机文件粘贴到远程桌面:
+    'Could not paste the local files into the remote desktop',
+  '正在复制远程桌面文件…': 'Copying remote desktop files…',
+  已复制远程桌面文件: 'Remote desktop files copied',
   无效的远程桌面输入: 'Invalid Remote Desktop input',
   '无法初始化远程桌面 TLS': 'Could not initialize Remote Desktop TLS',
   无法到达远程桌面主机或端口: 'Could not reach the Remote Desktop host or port',

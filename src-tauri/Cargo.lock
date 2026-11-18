@@ -3234,6 +3234,7 @@ dependencies = [
  "ironrdp-input",
  "ironrdp-pdu",
  "ironrdp-session",
+ "ironrdp-svc",
 ]
 
 [[package]]
@@ -4046,6 +4047,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tokio-rustls",

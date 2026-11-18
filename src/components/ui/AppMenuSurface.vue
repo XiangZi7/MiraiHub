@@ -53,9 +53,9 @@ const filterId = `menu-backdrop-${useId()}`
 <style scoped>
 .app-menu-surface {
   position: absolute;
-  inset: 0;
+  inset: var(--menu-surface-inset, 0);
   z-index: -1;
-  overflow: hidden;
+  overflow: var(--menu-surface-overflow, hidden);
   border-radius: inherit;
   pointer-events: none;
 }
@@ -67,6 +67,7 @@ const filterId = `menu-backdrop-${useId()}`
 .app-menu-backdrop {
   position: absolute;
   inset: 0;
+  clip-path: var(--menu-surface-clip, none);
   background:
     linear-gradient(180deg, var(--glass-highlight), transparent 32%),
     color-mix(in oklch, var(--color-panel) 94%, transparent);

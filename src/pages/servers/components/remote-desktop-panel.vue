@@ -190,7 +190,7 @@ async function disconnect(): Promise<void> {
   if (id) await stopRdp(id).catch(() => undefined)
 }
 
-/** 只处理当前连接的证书、已连接和结束状态。 */
+/** 只处理当前连接的证书、连接状态和剪贴板回执。 */
 function handleEvent(id: string, event: RdpEvent): void {
   if (sessionId !== id) return
   if (event.type === 'certificate') {
@@ -200,6 +200,10 @@ function handleEvent(id: string, event: RdpEvent): void {
   } else if (event.type === 'connected') {
     state.phase = 'connected'
     emit('status', 'connected', id)
+  } else if (event.type === 'clipboard') {
+    const message = translateNativeMessage(event.message)
+    if (event.error) toast.error(message)
+    else toast.info(message)
   } else {
     resetSession()
     if (event.error) notifyError(event.error)
