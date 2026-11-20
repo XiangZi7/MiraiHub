@@ -6,7 +6,11 @@
  */
 
 import { onScopeDispose, shallowRef, watch } from 'vue'
-import { useDebounceFn, useEventListener } from '@vueuse/core'
+import {
+  useDebounceFn,
+  useDevicePixelRatio,
+  useEventListener,
+} from '@vueuse/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -68,62 +72,28 @@ function loadWebLinks(terminal: Terminal): void {
   terminal.loadAddon(addon)
 }
 
-/** 微调 xterm 自己的行高，让整行网格尽量填满高度，鼠标和光标仍用同一套坐标。 */
-function fitTerminalRows(terminal: Terminal): void {
-  const element = terminal.element
-  const mount = element?.parentElement
-  const screen = element?.querySelector<HTMLElement>('.xterm-screen')
-  if (!mount?.clientHeight || !screen) return
-
-  const ratio = window.devicePixelRatio || 1
-  const height = Math.floor(mount.clientHeight * ratio)
-  const row = Math.round(
-    (parseFloat(screen.style.height) * ratio) / terminal.rows
-  )
-  if (!row || terminal.rows < 3) return
-
-  // 两种 xterm 渲染器都按设备像素向下取整：行高 = 字符高度 × 行高倍率。
-  const glyph = Math.ceil(
-    row / (terminal.options.lineHeight ?? TERMINAL_LINE_HEIGHT)
-  )
-  const preferred = Math.floor(glyph * TERMINAL_LINE_HEIGHT)
-  let best = preferred
-  let gap = height % preferred
-  // 每行最多调整约 3 个 CSS 像素，优先选留白少、且接近原行高的完整网格。
-  for (
-    let offset = 1;
-    offset <= Math.round(3 * ratio) && gap > ratio;
-    offset++
-  ) {
-    for (const candidate of [preferred - offset, preferred + offset]) {
-      if (candidate < glyph || candidate > height) continue
-      const remaining = height % candidate
-      if (remaining < gap) {
-        best = candidate
-        gap = remaining
-      }
-    }
-  }
-
-  if (best !== row) terminal.options.lineHeight = (best + 0.25) / glyph
-}
-
 /**
  * 管理 SSH 与本地终端的字体、渲染器和设置联动，不重建底层会话。
  * @param onOptionsChange 字体、字号等设置变化后调用，调用方借此重新 fit 并同步远端尺寸。
  */
 export function useXterm(onOptionsChange: () => void) {
   const { settings } = useSettings()
+  const { pixelRatio } = useDevicePixelRatio()
   // xterm 实例不参与响应式：它内部持有大量 DOM 与缓冲区，
   // 被 Vue 深度代理会显著拖慢渲染
   const term = shallowRef<Terminal>()
   let fitAddon: FitAddon | undefined
   let webglAddon: WebglAddon | undefined
+  let stopWebglAlpha: (() => void) | undefined
   let rendererRevision = 0
+  let fontContext: CanvasRenderingContext2D | null | undefined
+  let measuredFont = ''
   let cursor: ReturnType<typeof createTerminalCursor>
   const cursorDisposables: IDisposable[] = []
   onScopeDispose(() => {
     cursorDisposables.forEach(item => item.dispose())
+    stopWebglAlpha?.()
+    stopWebglAlpha = undefined
     cursor?.dispose()
     cursor = undefined
   })
@@ -138,31 +108,40 @@ export function useXterm(onOptionsChange: () => void) {
     cursor?.reset()
   }
 
-  // 皮肤变化时同步配色与渲染器，沿用当前缓冲区、选区和 SSH 会话。
+  // 皮肤变化只同步配色，复用 WebGL、字体网格、缓冲区与 SSH 会话，避免文字密度跳变。
   useEventListener(window, SKIN_CHANGE_EVENT, () => {
     const terminal = term.value
     if (!terminal) return
     terminal.options.theme = rendererTheme()
     cursor?.refresh()
-    void refreshRenderer(terminal)
+  })
+
+  // 跨 DPI 屏幕或系统缩放变化时，即使容器 CSS 尺寸不变也重新校准并同步 PTY 网格。
+  watch(pixelRatio, () => {
+    const terminal = term.value
+    if (!terminal?.element?.isConnected) return
+    syncLetterSpacing(terminal)
+    onOptionsChange()
   })
 
   /**
-   * 浅色透明终端用 DOM 绘字，避免 WebGL 的透明字形边缘变细、发虚；深色保留 GPU 渲染。
-   * 切换皮肤时只替换绘制插件并重新适配网格；字体或插件迟到时忽略过期的切换。
+   * 明暗主题共用 WebGL 加速，内置字体就绪后再创建字形图集；不随皮肤切换渲染器。
+   * 字体或插件迟到时忽略过期加载，不支持 WebGL2 时保留 DOM 回退。
    */
   async function refreshRenderer(terminal: Terminal): Promise<void> {
     const revision = ++rendererRevision
     if (typeof document === 'undefined') return
-    const light = document.documentElement.dataset.skinScheme === 'light'
-    if (light && webglAddon) {
-      webglAddon.dispose()
-      webglAddon = undefined
-      onOptionsChange()
-    }
-    // 两种渲染器都需等待内置字体；WebGL 必须在字体就绪后才创建字形图集。
     await refreshFont(terminal)
-    if (light || webglAddon || revision !== rendererRevision) return
+    if (
+      revision !== rendererRevision ||
+      term.value !== terminal ||
+      !terminal.element?.isConnected
+    )
+      return
+    if (webglAddon) {
+      syncLetterSpacing(terminal)
+      return
+    }
     try {
       const { WebglAddon } = await import('@xterm/addon-webgl')
       if (
@@ -172,19 +151,84 @@ export function useXterm(onOptionsChange: () => void) {
       )
         return
       const addon = new WebglAddon()
-      // 驱动重置或休眠唤醒后回退到 DOM，并按新的字宽重新适配。
+      // 驱动重置或休眠唤醒后回退到 DOM，撤销 WebGL 字距补偿并重新适配。
       addon.onContextLoss(() => {
         if (webglAddon !== addon) return
         webglAddon = undefined
+        stopWebglAlpha?.()
+        stopWebglAlpha = undefined
         addon.dispose()
+        syncLetterSpacing(terminal)
         onOptionsChange()
       })
       terminal.loadAddon(addon)
       webglAddon = addon
+      stopWebglAlpha?.()
+      stopWebglAlpha = bindWebglAlpha(terminal)
+      syncLetterSpacing(terminal)
       onOptionsChange()
     } catch {
       /* 不支持 WebGL2 时保留 DOM 渲染。 */
     }
+  }
+
+  /**
+   * 修正 addon-webgl 0.19 的透明字形混合：Alpha 使用 SRC_ALPHA 会把覆盖率平方，浅底文字因此发虚。
+   * 只调整此画布的公开 GL 状态，保留原 RGB、字重和透明背景；上下文恢复后重设，销毁时移除监听。
+   */
+  function bindWebglAlpha(terminal: Terminal): (() => void) | undefined {
+    try {
+      const canvases = terminal.element?.querySelectorAll<HTMLCanvasElement>(
+        '.xterm-screen > canvas'
+      )
+      if (!canvases) return
+      for (const canvas of canvases) {
+        // 链接高亮也是 Canvas，跳过已使用 2D 上下文的覆盖层，只处理实际 WebGL 画布。
+        const gl = canvas.getContext('webgl2')
+        if (!gl) continue
+        // 保持颜色混合不变，仅让透明笔画的 Alpha 按一次覆盖率合成；兼容未来的预乘 RGB 渲染。
+        const applyBlend = () => {
+          if (
+            gl.isContextLost() ||
+            gl.getParameter(gl.BLEND_SRC_RGB) !== gl.SRC_ALPHA ||
+            gl.getParameter(gl.BLEND_DST_RGB) !== gl.ONE_MINUS_SRC_ALPHA
+          )
+            return
+          gl.blendFuncSeparate(
+            gl.SRC_ALPHA,
+            gl.ONE_MINUS_SRC_ALPHA,
+            gl.ONE,
+            gl.ONE_MINUS_SRC_ALPHA
+          )
+        }
+        applyBlend()
+        // 在 xterm 同步重建 GL 状态之后、下一帧绘制之前重新设置；最终回退或卸载时主动清理。
+        return useEventListener(canvas, 'webglcontextrestored', applyBlend)
+      }
+    } catch {
+      // 不支持读取绘制状态时保留原 WebGL 渲染，不中断终端输出。
+      return
+    }
+  }
+
+  /** 补偿 WebGL 的字宽向下取整，按字体与系统缩放贴近原浅色 DOM 网格；普通 fit 复用测量。 */
+  function syncLetterSpacing(terminal: Terminal): void {
+    if (!webglAddon) {
+      terminal.options.letterSpacing = 0
+      measuredFont = ''
+      return
+    }
+    const ratio = window.devicePixelRatio || 1
+    const font = `${terminal.options.fontSize}px ${terminal.options.fontFamily}`
+    const key = `${ratio}:${font}`
+    if (measuredFont === key) return
+    fontContext ??= document.createElement('canvas').getContext('2d')
+    if (!fontContext) return
+    fontContext.font = font
+    const width = fontContext.measureText('W').width * ratio
+    if (!Number.isFinite(width) || width <= 0) return
+    terminal.options.letterSpacing = Math.round(width) - Math.floor(width)
+    measuredFont = key
   }
 
   /**
@@ -194,6 +238,8 @@ export function useXterm(onOptionsChange: () => void) {
    */
   async function refreshFont(terminal: Terminal): Promise<void> {
     if (typeof document === 'undefined' || !document.fonts) return
+    // 字体下载完成后即便选项未变，也必须抛弃此前回退字体的字宽缓存。
+    measuredFont = ''
     const family = terminal.options.fontFamily!
     const size = terminal.options.fontSize!
     const regular = `400 ${size}px ${family}`
@@ -217,6 +263,8 @@ export function useXterm(onOptionsChange: () => void) {
     // 用公开选项触发字宽重测；两次同步赋值由 xterm 合并到下一帧绘制。
     terminal.options.fontFamily = 'monospace'
     terminal.options.fontFamily = family
+    // 下载期间可能已 fit 并缓存回退字宽，字体到达后再次使字距缓存失效。
+    measuredFont = ''
     terminal.clearTextureAtlas()
     terminal.refresh(0, terminal.rows - 1)
     onOptionsChange()
@@ -248,7 +296,7 @@ export function useXterm(onOptionsChange: () => void) {
       !fitAddon
     )
       return false
-    fitTerminalRows(terminal)
+    syncLetterSpacing(terminal)
     fitAddon.fit()
     return true
   }
@@ -260,6 +308,8 @@ export function useXterm(onOptionsChange: () => void) {
       fontSize: settingNumber('terminalFontSize', 13),
       fontWeight: 400,
       fontWeightBold: 700,
+      letterSpacing: 0,
+      // 保留浅色基准行距，不再为填满面板而动态压缩行高。
       lineHeight: TERMINAL_LINE_HEIGHT,
       cursorStyle: settings.terminalCursor as CursorStyle,
       cursorBlink: false,
@@ -306,7 +356,6 @@ export function useXterm(onOptionsChange: () => void) {
     terminal.unicode.activeVersion = '11'
     loadWebLinks(terminal)
     terminal.open(container)
-    fitTerminalRows(terminal)
     addon.fit()
     cursor = createTerminalCursor(terminal, () => settings.terminalCursorBlink)
 

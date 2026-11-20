@@ -37,8 +37,10 @@ const load = sourceLoader({
     export function onBeforeUnmount() {}
   `),
   '@vueuse/core': dataModule(`
+    import { shallowRef } from ${JSON.stringify(import.meta.resolve('vue'))}
     export const useDebounceFn = fn => fn
     export function useEventListener() {}
+    export const useDevicePixelRatio = () => ({ pixelRatio: shallowRef(1) })
   `),
   '@xterm/addon-fit': dataModule('export class FitAddon { fit() {} }'),
   '@xterm/addon-unicode11': dataModule('export class Unicode11Addon {}'),

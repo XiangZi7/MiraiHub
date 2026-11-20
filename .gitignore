@@ -59,3 +59,10 @@ src-tauri/resources/
 
 # 本地终端检查产物
 terminal-check.local/
+
+.terminal-antialias-profile
+.terminal-antialias-errors.txt
+.terminal-antialias-fixed.png
+.terminal-antialias-output.txt
+.terminal-antialias.html
+.terminal-antialias.png
