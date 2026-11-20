@@ -14,6 +14,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
+use super::completion::CompletionCache;
 use super::error::{SshError, SshResult};
 use super::events::{emit_status, StatusEvent};
 use super::known_hosts::{self, HostKeyCheck};
@@ -216,6 +217,8 @@ pub struct SshSession {
     remote_forwards: RemoteForwardRoutes,
     /// 交互式 shell 最近输出的纯文本，供 AI 读取
     terminal: TerminalHistory,
+    /// 命令和路径补全的短期缓存，生命周期与本次 SSH 连接一致。
+    pub(super) completion: CompletionCache,
 }
 
 impl SshSession {
@@ -318,6 +321,7 @@ impl SshSession {
             link,
             remote_forwards,
             terminal: TerminalHistory::default(),
+            completion: CompletionCache::default(),
         })
     }
 
@@ -1178,6 +1182,7 @@ pub(crate) mod tests {
         }
     }
 
+    /// 创建内存传输的测试会话，同时初始化与真实连接一致的会话级补全缓存。
     async fn transfer_session() -> (SshSession, Arc<AtomicUsize>) {
         let (client_stream, server_stream) = tokio::io::duplex(64 * 1024);
         let rejected = Arc::new(AtomicUsize::new(0));
@@ -1223,6 +1228,7 @@ pub(crate) mod tests {
                 link,
                 remote_forwards: RemoteForwardRoutes::default(),
                 terminal: TerminalHistory::default(),
+                completion: CompletionCache::default(),
             },
             rejected,
         )

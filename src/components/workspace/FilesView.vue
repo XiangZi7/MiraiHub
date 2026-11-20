@@ -32,16 +32,16 @@ import { useRemoteUploads } from '@/composables/useRemoteUploads'
 import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import type { ContextMenuItem } from '@/types/context-menu'
-import type { SshRemoteFile } from '@/types/ssh'
+import type { SshDirectoryListing, SshRemoteFile } from '@/types/ssh'
 import { copyText, scheduleClipboardClear } from '@/utils/clipboard'
-import FileConflictDialog from './FileConflictDialog.vue'
-import RemoteFileCreateDialog from './RemoteFileCreateDialog.vue'
-import RemoteFileRenameDialog from './RemoteFileRenameDialog.vue'
-import RemoteFileChmodDialog from './RemoteFileChmodDialog.vue'
-import RemoteFileList from './RemoteFileList.vue'
+import FileConflictDialog from '@/components/workspace/FileConflictDialog.vue'
+import RemoteFileCreateDialog from '@/components/workspace/RemoteFileCreateDialog.vue'
+import RemoteFileRenameDialog from '@/components/workspace/RemoteFileRenameDialog.vue'
+import RemoteFileChmodDialog from '@/components/workspace/RemoteFileChmodDialog.vue'
+import RemoteFileList from '@/components/workspace/RemoteFileList.vue'
 import FileBrowserControls from '@/components/workspace/file-browser-controls.vue'
 import type { FilePaneDrop } from '@/components/workspace/useFilePaneDrag'
-import RemoteFileTransferDialog from './RemoteFileTransferDialog.vue'
+import RemoteFileTransferDialog from '@/components/workspace/RemoteFileTransferDialog.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import LocalFilePane from '@/components/workspace/local-file-pane.vue'
 import { formatBytes } from '@/utils/format'
@@ -164,6 +164,11 @@ const connected = computed(() => Boolean(props.sessionId))
 const selectedFiles = computed(() =>
   visibleEntries.value.filter(file => state.selection.includes(file.path))
 )
+/** 地址栏查询输入路径的实际父目录，不改变当前列表、选中项或浏览历史。 */
+function listPathDirectory(directory: string): Promise<SshDirectoryListing> {
+  return ssh.listDirectory(props.sessionId, directory)
+}
+
 const pathEntries = computed(() =>
   sortedEntries.value.filter(
     file => settings.showHiddenFiles || !file.name.startsWith('.')
@@ -728,7 +733,8 @@ async function deleteFiles(files: SshRemoteFile[]): Promise<void> {
     for (const file of files) {
       if (sessionId !== props.sessionId) break
       try {
-        if (file.kind === 'directory') await ssh.deleteTree(sessionId, file.path)
+        if (file.kind === 'directory')
+          await ssh.deleteTree(sessionId, file.path)
         else await ssh.deletePath(sessionId, file.path, false)
         deleted++
       } catch (error) {
@@ -928,9 +934,12 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         <FileBrowserControls
           v-model:filter="filterText"
           :path="path"
-          :entries="pathEntries"
+          :entries="sortedEntries"
           :connected="connected"
           :loading="loading"
+          :show-hidden="settings.showHiddenFiles"
+          :context-key="sessionId"
+          :list-directory="listPathDirectory"
           @navigate="load"
         />
 

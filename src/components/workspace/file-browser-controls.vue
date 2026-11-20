@@ -3,13 +3,16 @@ import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import RemotePathInput from '@/components/workspace/RemotePathInput.vue'
-import type { SshRemoteFile } from '@/types/ssh'
+import type { SshDirectoryListing, SshRemoteFile } from '@/types/ssh'
 defineProps<{
   path: string
   entries: readonly SshRemoteFile[]
   connected: boolean
   loading: boolean
   local?: boolean
+  showHidden?: boolean
+  contextKey?: string
+  listDirectory?: (path: string) => Promise<SshDirectoryListing>
 }>()
 const filter = defineModel<string>('filter', { required: true })
 const emit = defineEmits<{ navigate: [path: string] }>()
@@ -23,6 +26,9 @@ const { t } = useI18n()
       :connected="connected"
       :loading="loading"
       :local="local"
+      :show-hidden="showHidden"
+      :context-key="contextKey"
+      :list-directory="listDirectory"
       @navigate="emit('navigate', $event)"
     />
   </div>

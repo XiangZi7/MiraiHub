@@ -1,5 +1,7 @@
 /** ssh-files 相关文案。中文原文即消息 ID，zh-CN 目录自动按 en 的键生成同名条目。 */
 export const en: Record<string, string> = {
+  'Tab 补齐 · Enter 打开': 'Tab to complete · Enter to open',
+  输入本地目录路径: 'Enter a local directory path',
   修改权限: 'Change permissions',
   修改权限失败: 'Failed to change permissions',
   '已修改 {count} 个项目的权限': 'Changed permissions of {count} item(s)',

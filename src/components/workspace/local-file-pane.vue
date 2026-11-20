@@ -9,7 +9,11 @@ import {
 } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
-import { listLocalDirectory, openLocalFile, type LocalListing } from '@/api/workspace-files'
+import {
+  listLocalDirectory,
+  openLocalFile,
+  type LocalListing,
+} from '@/api/workspace-files'
 import { errorMessage } from '@/api/ssh'
 import { translateNativeMessage } from '@/i18n/native'
 import { useFileTransfers } from '@/composables/useFileTransfers'
@@ -23,7 +27,7 @@ import FileBrowserControls from '@/components/workspace/file-browser-controls.vu
 import FileConflictDialog from '@/components/workspace/FileConflictDialog.vue'
 import DirectorySyncDialog from '@/components/workspace/directory-sync-dialog.vue'
 import type { FilePaneDrop } from '@/components/workspace/useFilePaneDrag'
-import type { SshRemoteFile } from '@/types/ssh'
+import type { SshDirectoryListing, SshRemoteFile } from '@/types/ssh'
 const props = defineProps<{
   sessionId: string
   remotePath?: string
@@ -58,8 +62,9 @@ let disposed = false
 let pendingDownloads = Promise.resolve()
 let conflictResolver:
   ((action: 'overwrite' | 'skip' | 'cancel') => void) | undefined
-const entries = computed<SshRemoteFile[]>(() =>
-  (state.listing?.entries ?? []).map(entry => ({
+/** 将本地列表转为双栏共用的只读目录项，地址补全和文件列表使用相同路径来源。 */
+function localEntries(listing: LocalListing | null): SshRemoteFile[] {
+  return (listing?.entries ?? []).map(entry => ({
     ...entry,
     kind: entry.directory ? 'directory' : 'file',
     permissions: '',
@@ -67,7 +72,16 @@ const entries = computed<SshRemoteFile[]>(() =>
     group: '',
     linkTarget: null,
   }))
-)
+}
+const entries = computed(() => localEntries(state.listing))
+
+/** 地址栏读取实际父目录但不导航，支持跨盘符、UNC 和多级路径补齐。 */
+async function listPathDirectory(
+  directory: string
+): Promise<SshDirectoryListing> {
+  const listing = await listLocalDirectory(directory)
+  return { path: listing.path, entries: localEntries(listing) }
+}
 const visibleEntries = computed(() =>
   entries.value.filter(
     file =>
@@ -332,6 +346,8 @@ onBeforeUnmount(() => {
       :entries="entries"
       :connected="Boolean(listing)"
       :loading="loading"
+      :show-hidden="settings.showHiddenFiles"
+      :list-directory="listPathDirectory"
       local
       @navigate="load"
     />

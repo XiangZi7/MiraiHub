@@ -203,3 +203,57 @@ test('补全纠正路径大小写时，合并的退格与替换文本保持输�
   assert.deepEqual(submitted, ['cd miraiTV/'])
   assert.equal(api.inputLine.value, '')
 })
+
+test('历史、光标和原生 Tab 后暂停客户端补全，后续字符不能被误认成完整命令', async t => {
+  const api = fixture(t)
+  await api.connect(config)
+  for (const editing of ['\x1b[A', '\x1b[D', '\x01', '\t']) {
+    api.sendInput('cd initial')
+    api.sendInput(editing)
+    assert.equal(api.inputReliable.value, false)
+    api.sendInput('partial')
+    assert.equal(api.inputLine.value, '')
+    api.sendInput('\r')
+    assert.equal(api.inputReliable.value, true)
+    api.sendInput('ls')
+    assert.equal(api.inputLine.value, 'ls')
+    api.sendInput('\x03')
+  }
+})
+
+test('终端自动光标/焦点/设备报告不清空输入，Ctrl+L 与退格保留可靠镜像', async t => {
+  const api = fixture(t)
+  await api.connect(config)
+  api.sendInput('cd /var/logs')
+  for (const report of [
+    '\x1b[1;2R',
+    '\x1b[I',
+    '\x1b[O',
+    '\x1b[?1;2c',
+    '\x0c',
+  ]) {
+    api.sendInput(report)
+    assert.equal(api.inputLine.value, 'cd /var/logs')
+    assert.equal(api.inputReliable.value, true)
+  }
+  api.sendInput('\x7f')
+  assert.equal(api.inputLine.value, 'cd /var/log')
+  api.sendInput('\x15')
+  assert.equal(api.inputLine.value, '')
+  api.sendInput('new line')
+  api.sendInput('\x17')
+  assert.equal(api.inputLine.value, 'new ')
+})
+
+test('带引号路径的整体补全替换不损坏前面的命令，重连恢复可靠输入', async t => {
+  const api = fixture(t)
+  await api.connect(config)
+  api.sendInput('cd "/srv/My F')
+  const replacement = '\x7f'.repeat('"/srv/My F'.length) + "'/srv/My Folder/'"
+  api.sendInput(replacement)
+  assert.equal(api.inputLine.value, "cd '/srv/My Folder/'")
+  api.sendInput('\x1b[A')
+  await api.connect(config)
+  assert.equal(api.inputLine.value, '')
+  assert.equal(api.inputReliable.value, true)
+})

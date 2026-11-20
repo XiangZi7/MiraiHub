@@ -43,9 +43,12 @@ export function useSshTerminal() {
     error: '',
     // 当前 shell 提示符后由用户输入的文本，仅用于前端补全，不写入历史。
     inputLine: '',
+    // 光标或历史无法可靠镜像时暂停客户端补全，避免把局部后缀误当完整命令
+    inputReliable: true,
   })
 
-  const { sessionId, status, error, inputLine, route } = toRefs(state)
+  const { sessionId, status, error, inputLine, inputReliable, route } =
+    toRefs(state)
 
   // 事件订阅的取消函数，断开时逐个调用
   let unlisteners: UnlistenFn[] = []
@@ -69,6 +72,7 @@ export function useSshTerminal() {
       // vim/top 等切到 alternate buffer 后，按键属于应用本身，不做 shell 补全。
       if (terminal.buffer.active.type === 'alternate') {
         state.inputLine = ''
+        state.inputReliable = false
         sendInput(data)
         return
       }
@@ -93,6 +97,7 @@ export function useSshTerminal() {
     cleanup()
     state.route = []
     state.status = 'connecting'
+    state.inputReliable = true
     state.error = ''
     state.inputLine = ''
     resetOutput()
@@ -279,41 +284,48 @@ export function useSshTerminal() {
     void ssh.writeToShell(state.sessionId, data).catch(handleWriteError)
   }
 
-  /** 同步当前行输入镜像；补全纠正路径大小写时，合并的退格和替换文本也按实际输入更新。 */
+  /** 同步当前行镜像；未知历史或光标操作后暂停补全直到提交/取消，终端自动报告不改变用户输入。 */
   function trackInput(data: string): void {
+    // CPR、焦点与设备属性是 xterm 自动回复，不是 readline 编辑键。
+    if (/^\x1b\[[\d;?>]*[RIOc]$/u.test(data)) return
     if (data === '\r' || data === '\n') {
-      const submitted = state.inputLine
+      const submitted = state.inputReliable ? state.inputLine : ''
       state.inputLine = ''
+      state.inputReliable = true
       submitHandler?.(submitted)
       return
     }
-
-    const replacement = data.match(/^([\x7f\b]+)([^\x00-\x1f\x7f]*)$/u)
-    if (replacement) {
-      state.inputLine =
-        [...state.inputLine].slice(0, -replacement[1]!.length).join('') +
-        replacement[2]!
+    if (data === '\x03') {
+      state.inputLine = ''
+      state.inputReliable = true
       return
     }
-
+    if (data === '\x0c') return
     if (data === '\x15') {
       state.inputLine = ''
       return
     }
-
     if (data === '\x17') {
-      state.inputLine = state.inputLine.replace(/\S+\s*$/, '')
+      if (state.inputReliable)
+        state.inputLine = state.inputLine.replace(/\S+\s*$/, '')
       return
     }
-
-    // 历史、Home/End、光标左右移动后无法可靠镜像 readline 的行状态，暂时关闭本轮补全。
-    if (data.startsWith('\x1b')) {
+    const replacement = data.match(/^([\x7f\b]+)([^\x00-\x1f\x7f]*)$/u)
+    if (replacement) {
+      if (state.inputReliable) {
+        state.inputLine =
+          [...state.inputLine].slice(0, -replacement[1]!.length).join('') +
+          replacement[2]!
+      }
+      return
+    }
+    if ([...data].some(character => character < ' ' || character === '\x7f')) {
+      // 原生 Tab、历史、光标移动或括号粘贴的结果无法仅根据按键推算，不能把之后的局部后缀当完整行。
       state.inputLine = ''
+      state.inputReliable = false
       return
     }
-
-    if (![...data].some(character => character < ' ' || character === '\x7f'))
-      state.inputLine += data
+    if (state.inputReliable) state.inputLine += data
   }
 
   function setInputInterceptor(handler?: InputInterceptor): void {
@@ -341,6 +353,7 @@ export function useSshTerminal() {
     status,
     error,
     inputLine,
+    inputReliable,
     mount,
     connect,
     disconnect,

@@ -29,6 +29,10 @@ import '@xterm/xterm/css/xterm.css'
 import TerminalSuggestions from '@/components/workspace/TerminalSuggestions.vue'
 import TerminalActions from '@/components/workspace/TerminalActions.vue'
 import TerminalInlineAi from '@/components/workspace/terminal-inline-ai.vue'
+import {
+  shellCompletionToken,
+  shellSuggestionInput,
+} from '@/utils/shell-completion'
 
 const { t } = useI18n()
 
@@ -87,6 +91,7 @@ const {
   sessionId,
   error,
   inputLine,
+  inputReliable,
   mount,
   connect,
   disconnect,
@@ -253,7 +258,9 @@ function openInlineAi(): void {
   state.inlineAiOpen = true
 }
 
-const completionEnabled = computed(() => status.value === 'connected')
+const completionEnabled = computed(
+  () => status.value === 'connected' && inputReliable?.value !== false
+)
 const completion = useSshShellCompletion({
   sessionId,
   inputLine,
@@ -267,6 +274,19 @@ const completionAnchor = shallowRef({
   maxHeight: 260,
 })
 let anchorFrame = 0
+
+// 标准 OSC 7 跟随实际 shell 目录，复合命令或失败 cd 不再只依赖前端猜测。
+watch(
+  term,
+  (terminal, _previous, onCleanup) => {
+    const disposable = terminal?.parser.registerOscHandler(
+      7,
+      completion.updateWorkingDirectory
+    )
+    onCleanup(() => disposable?.dispose())
+  },
+  { immediate: true }
+)
 
 // xterm 是否已挂到容器上。挂载只做一次，重连复用同一个实例。
 // 用普通变量而非响应式：模板不读它，只是 watch 内部的一次性标记
@@ -367,9 +387,13 @@ useResizeObserver(containerRef, () => {
   scheduleCompletionAnchorUpdate()
 })
 
+/** 打开的建议框每帧最多重新定位一次，关闭时不为高频终端输出创建无效 RAF。 */
 function scheduleCompletionAnchorUpdate(): void {
-  cancelAnimationFrame(anchorFrame)
-  anchorFrame = requestAnimationFrame(updateCompletionAnchor)
+  if (!completion.open.value || anchorFrame) return
+  anchorFrame = requestAnimationFrame(() => {
+    anchorFrame = 0
+    updateCompletionAnchor()
+  })
 }
 
 /** 把建议框贴到当前输入 token，而不是固定压在终端底部。 */
@@ -383,11 +407,12 @@ function updateCompletionAnchor(): void {
   const screenRect = screen.getBoundingClientRect()
   const cellWidth = screenRect.width / Math.max(terminal.cols, 1)
   const cellHeight = screenRect.height / Math.max(terminal.rows, 1)
-  const tokenLength = [...currentToken(inputLine.value)].length
+  const tokenLength = [...(shellCompletionToken(inputLine.value)?.raw ?? '')]
+    .length
   const tokenColumn = Math.max(0, terminal.buffer.active.cursorX - tokenLength)
   const cursorTop =
     screenRect.top - areaRect.top + terminal.buffer.active.cursorY * cellHeight
-  const desiredWidth = Math.min(440, Math.max(260, areaRect.width - 24))
+  const desiredWidth = Math.max(0, Math.min(440, areaRect.width - 24))
   const left = Math.min(
     Math.max(12, screenRect.left - areaRect.left + tokenColumn * cellWidth),
     Math.max(12, areaRect.width - desiredWidth - 12)
@@ -486,22 +511,11 @@ async function disconnectSession(): Promise<void> {
   }
 }
 
-function currentToken(line: string): string {
-  return line.match(/\S+$/)?.[0] ?? ''
-}
-
-/** 接受当前行的有效候选；Linux 路径大小写不同时替换整个 token，随后关闭本轮补全。 */
+/** 接受当前行的单 token 候选；带空格、引用或大小写差异时整体替换，不自动执行命令。 */
 function acceptSuggestion(item = completion.activeSuggestion.value): void {
   if (!item || !completion.open.value) return
-
-  const token = currentToken(inputLine.value)
-  if (!item.value.toLocaleLowerCase().startsWith(token.toLocaleLowerCase()))
-    return
-
-  const value = item.value + (item.kind === 'directory' ? '' : ' ')
-  const input = item.value.startsWith(token)
-    ? value.slice(token.length)
-    : '\x7f'.repeat([...token].length) + value
+  const input = shellSuggestionInput(inputLine.value, item)
+  if (input === undefined) return
   sendInput(input)
   emit('input', input)
   completion.close()
@@ -515,8 +529,12 @@ function interceptTerminalInput(data: string): boolean {
   return false
 }
 
-// 补全弹层打开时接管 Tab / 上下键 / Esc
+/** Ctrl+Space 主动打开补全；弹层打开后 Tab 接受、上下选择、Esc 关闭，其余键交给 shell。 */
 function interceptCompletionKey(data: string): boolean {
+  if (data === '\x00' && completionEnabled.value) {
+    completion.request()
+    return true
+  }
   if (!completion.open.value) return false
 
   if (data === '\t') {
@@ -681,7 +699,7 @@ defineExpose({
       :data-file-session-id="status === 'connected' ? sessionId : undefined"
       @mirai-file-drop="receiveFilePaths"
     >
-    <!-- 终端实例挂载点。 -->
+      <!-- 终端实例挂载点。 -->
       <div
         ref="terminal"
         class="terminal-mount"

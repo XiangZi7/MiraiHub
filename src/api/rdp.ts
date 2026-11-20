@@ -36,6 +36,7 @@ export type RdpInput =
   | { type: 'clipboardCopy' }
   | { type: 'clipboardPaste' }
   | { type: 'releaseAll' }
+  | { type: 'ctrlAltDelete' }
 
 /** 由原生配置窗口将明文密码转换为目标绑定的本机凭据密文。 */
 export function protectRdpPassword(

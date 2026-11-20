@@ -4,6 +4,7 @@ import {
   nextTick,
   onBeforeUnmount,
   reactive,
+  toRefs,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -59,25 +60,56 @@ const { width: viewportWidth, height: viewportHeight } =
 const canFullscreen = IS_TAURI || document.fullscreenEnabled
 type Zoom = 'fit' | 'fill' | number
 type DisplayMenu = 'resolution' | 'zoom'
+// 响应式状态
 const state = reactive({
+  // 当前连接、凭据补齐或证书核对阶段。
   phase: 'idle' as
     'idle' | 'setup' | 'connecting' | 'certificate' | 'connected',
+  // 当前会话的主机和端口，供顶栏与证书对话框展示。
   endpoint: '',
+  // 本次连接等待用户核对的证书指纹。
   fingerprint: '',
+  // 已记住但与本次连接不一致的证书指纹。
   previousFingerprint: '',
+  // 是否已经收到并绘制当前会话的首帧。
   frameReady: false,
+  // 服务端当前实际桌面宽度。
   width: 0,
+  // 服务端当前实际桌面高度。
   height: 0,
+  // 当前面板是否占用会话全屏区域。
   fullscreen: false,
+  // 本标签页临时选择的远端分辨率。
   resolution: undefined as RdpResolution | 'auto' | undefined,
+  // 本标签页普通窗口中的临时缩放模式。
   zoom: undefined as Zoom | undefined,
-  fullscreenZoom: 'fill' as Zoom,
+  // 全屏缩放与普通窗口独立，默认等比适应并保留用户选择。
+  fullscreenZoom: 'fit' as Zoom,
+  // 当前展开的显示设置菜单。
   menu: null as DisplayMenu | null,
+  // 显示菜单的触发按钮，用于点击外部与焦点管理。
   menuTrigger: null as HTMLElement | null,
+  // 显示菜单相对于窗口的横坐标。
   menuX: 0,
+  // 显示菜单相对于窗口的纵坐标。
   menuY: 0,
+  // 服务端尚未应用请求的分辨率，可通过重连回退。
   pendingResolution: false,
 })
+const {
+  phase,
+  endpoint,
+  fingerprint,
+  previousFingerprint,
+  frameReady,
+  width,
+  height,
+  fullscreen,
+  menu,
+  menuTrigger,
+  menuX,
+  menuY,
+} = toRefs(state)
 // 连接协商和等待首帧共用 SSH 的顶部进度条，证书确认期间不显示加载反馈。
 const desktopLoading = computed(
   () =>
@@ -149,14 +181,26 @@ const zoomItems = computed<ContextMenuItem[]>(() =>
   }))
 )
 
+// 会话生命周期与原生异步边界。
 let sessionId = ''
 let sessionKey = ''
 let lastRequested: RdpResolution | undefined
+let disposed = false
+let connectionGeneration = 0
+let stoppingSession: Promise<void> = Promise.resolve()
+const startingSessions = new Map<string, Promise<void>>()
+const stoppingSessions = new Map<string, Promise<void>>()
+// 全屏请求与窗口恢复状态，允许在进入过程中撤销请求。
 let windowWasFullscreen = false
 let fullscreenBusy = false
-let disposed = false
+let fullscreenRequested = false
+let fullscreenTransition: Promise<void> | undefined
+// 输入队列只归属当前会话，旧 IPC 完成时不得接管新队列。
 let inputFrame = 0
-let flushingInput = false
+let flushingSession = ''
+let inputFlush: Promise<void> | undefined
+let capturedPointer: number | undefined
+const pressedButtons = new Set<number>()
 const pendingInputs: RdpInput[] = []
 
 /** 显示连接异常，由工作区的公共通知组件提供细节。 */
@@ -175,6 +219,9 @@ function resetSession(): void {
   cancelAnimationFrame(inputFrame)
   inputFrame = 0
   pendingInputs.length = 0
+  flushingSession = ''
+  inputFlush = undefined
+  clearPointerCapture()
   state.phase = 'idle'
   state.endpoint = ''
   state.fingerprint = ''
@@ -184,16 +231,44 @@ function resetSession(): void {
   state.height = 0
   state.pendingResolution = false
   state.menu = null
+  void setDesktopFullscreen(false)
   const surface = canvas.value
   surface?.getContext('2d')?.clearRect(0, 0, surface.width, surface.height)
   emit('status', 'disconnected', '')
 }
 
-/** 断开或取消当前 IronRDP 会话，将面板还原成可连接状态。 */
-async function disconnect(): Promise<void> {
+/** 先取消原生任务，若启动回执尚未到达则等其完成后再停止，防止晚启动泄漏。 */
+function stopSession(id: string): Promise<void> {
+  const existing = stoppingSessions.get(id)
+  if (existing) return existing
+  const starting = startingSessions.get(id)
+  const stopped = (async () => {
+    await stopRdp(id).catch(() => undefined)
+    if (starting) {
+      await starting.catch(() => undefined)
+      await stopRdp(id).catch(() => undefined)
+    }
+  })()
+  stoppingSessions.set(id, stopped)
+  stoppingSession = Promise.all([stoppingSession, stopped]).then(
+    () => undefined
+  )
+  void stopped.then(() => stoppingSessions.delete(id))
+  return stopped
+}
+
+/** 立即还原面板，并将旧会话停止纳入下一次启动必须等待的屏障。 */
+function closeSession(): Promise<void> {
   const id = sessionId
   resetSession()
-  if (id) await stopRdp(id).catch(() => undefined)
+  if (id) void stopSession(id)
+  return stoppingSession
+}
+
+/** 断开或取消当前 IronRDP 会话，同时使等待中的连接与重连流程失效。 */
+async function disconnect(): Promise<void> {
+  connectionGeneration++
+  await closeSession()
 }
 
 /** 只处理当前连接的证书、连接状态和剪贴板回执。 */
@@ -211,6 +286,7 @@ function handleEvent(id: string, event: RdpEvent): void {
     if (event.error) toast.error(message)
     else toast.info(message)
   } else {
+    connectionGeneration++
     resetSession()
     if (event.error) notifyError(event.error)
     else toast.info(t('远程桌面已断开'))
@@ -243,11 +319,10 @@ function draw(id: string, frame: ArrayBuffer): void {
   }
   state.width = desktopWidth
   state.height = desktopHeight
-  if (
-    desktopWidth === lastRequested?.width &&
-    desktopHeight === lastRequested.height
-  )
-    state.pendingResolution = false
+  state.pendingResolution =
+    !!lastRequested &&
+    (desktopWidth !== lastRequested.width ||
+      desktopHeight !== lastRequested.height)
   const context = surface.getContext('2d', { alpha: false })
   if (!context) return
   const pixels = new Uint8ClampedArray(frame, 12)
@@ -265,14 +340,20 @@ function editConfiguration(): void {
   openConnectionWindow('rdp', props.connection.id)
 }
 
-/** 使用已保存的凭据和尺寸打开会话，旧配置引导至配置窗口。 */
+/** 为用户的连接请求分配代次，取消可使 nextTick 中尚未启动的请求失效。 */
 async function connect(): Promise<void> {
+  const generation = ++connectionGeneration
+  await connectSession(generation)
+}
+
+/** 使用当前代次的凭据打开会话，并等待旧停止完成后才创建新的原生会话。 */
+async function connectSession(generation: number): Promise<void> {
   await nextTick()
-  if (disposed) return
+  if (disposed || generation !== connectionGeneration) return
   const current = profile.value
   const credential = current?.settings.rdpCredential
   if (!current?.username || !credential) {
-    void disconnect()
+    void closeSession()
     state.phase = 'setup'
     editConfiguration()
     return
@@ -286,7 +367,9 @@ async function connect(): Promise<void> {
     settings.resolution,
   ])
   if (sessionId && sessionKey === key) return
-  if (sessionId) void disconnect()
+  if (sessionId) void closeSession()
+  await stoppingSession
+  if (disposed || generation !== connectionGeneration) return
 
   const id = crypto.randomUUID()
   sessionId = id
@@ -303,47 +386,72 @@ async function connect(): Promise<void> {
     desktop,
   }
   try {
-    await startRdp(
+    const starting = startRdp(
       request,
       event => handleEvent(id, event),
       frame => draw(id, frame)
     )
-    if (sessionId !== id) await stopRdp(id).catch(() => undefined)
+    startingSessions.set(id, starting)
+    await starting
   } catch (error) {
     if (sessionId !== id) return
-    resetSession()
+    void closeSession()
     notifyError(errorMessage(error))
-  }
-}
-
-/** 进入原生全屏后将会话移到窗口上层，退出时恢复之前的窗口状态。 */
-async function setDesktopFullscreen(enabled: boolean): Promise<void> {
-  if (fullscreenBusy || enabled === state.fullscreen) return
-  fullscreenBusy = true
-  state.menu = null
-  try {
-    if (enabled) {
-      windowWasFullscreen = await isWindowFullscreen()
-      state.fullscreenZoom = 'fill'
-    }
-    await setWindowFullscreen(enabled || windowWasFullscreen)
-    state.fullscreen = enabled
-    if (enabled && (disposed || !props.active)) {
-      await setWindowFullscreen(windowWasFullscreen)
-      state.fullscreen = false
-    } else {
-      await nextTick()
-      if (state.frameReady) canvas.value?.focus()
-    }
-  } catch (error) {
-    toast.error({ title: t('切换全屏失败'), description: errorMessage(error) })
+    return
   } finally {
-    fullscreenBusy = false
+    startingSessions.delete(id)
   }
+  if (sessionId !== id) await stopSession(id)
 }
 
+// 全屏与显示设置。
+/** 串行应用最新全屏请求，进入中取消也会恢复原窗口状态，且不覆盖用户缩放。 */
+async function setDesktopFullscreen(enabled: boolean): Promise<void> {
+  fullscreenRequested =
+    enabled && !disposed && props.active && state.phase === 'connected'
+  state.menu = null
+  if (fullscreenBusy) return fullscreenTransition
+  if (fullscreenRequested === state.fullscreen) return
+  fullscreenBusy = true
+  fullscreenTransition = (async () => {
+    try {
+      while (true) {
+        if (fullscreenRequested !== state.fullscreen) {
+          if (fullscreenRequested) {
+            windowWasFullscreen = await isWindowFullscreen()
+            if (!fullscreenRequested) continue
+            await setWindowFullscreen(true)
+            state.fullscreen = true
+          } else {
+            await setWindowFullscreen(windowWasFullscreen)
+            state.fullscreen = false
+          }
+        } else {
+          await nextTick()
+          if (fullscreenRequested !== state.fullscreen) continue
+          if (!disposed && props.active && state.frameReady)
+            canvas.value?.focus()
+          break
+        }
+      }
+    } catch (error) {
+      fullscreenRequested = false
+      state.fullscreen = false
+      toast.error({
+        title: t('切换全屏失败'),
+        description: errorMessage(error),
+      })
+    } finally {
+      fullscreenBusy = false
+      fullscreenTransition = undefined
+    }
+  })()
+  await fullscreenTransition
+}
+
+/** 切换最新的全屏意图，连续点击或 F11 可取消尚未完成的进入操作。 */
 function toggleFullscreen(): void {
-  void setDesktopFullscreen(!state.fullscreen)
+  void setDesktopFullscreen(!fullscreenRequested)
 }
 
 // 在工作区的 F11 / Esc 之前处理会话全屏，显示菜单仍可优先使用 Esc。
@@ -372,7 +480,10 @@ useEventListener(
 )
 
 useEventListener(document, 'fullscreenchange', () => {
-  if (!IS_TAURI && !document.fullscreenElement) state.fullscreen = false
+  if (!IS_TAURI && !document.fullscreenElement) {
+    fullscreenRequested = false
+    state.fullscreen = false
+  }
 })
 
 /** 以顶栏按钮为锚点打开项目共用的玻璃菜单。 */
@@ -422,33 +533,43 @@ async function acceptCertificate(remember: boolean): Promise<void> {
   }
 }
 
-/** 保持输入 IPC 的发送顺序，连续移动合并，只等待一批发送完成。 */
-async function flushInput(): Promise<void> {
+// 键鼠输入与会话隔离。
+/** 逐批有序排空当前会话输入，失焦时立即发送，旧 IPC 不阻塞或清理新会话。 */
+function flushInput(): Promise<void> {
+  cancelAnimationFrame(inputFrame)
   inputFrame = 0
-  if (flushingInput || !sessionId || !pendingInputs.length) return
   const id = sessionId
-  flushingInput = true
-  try {
-    await sendRdpInput(id, pendingInputs.splice(0, 64))
-  } catch (error) {
-    if (sessionId === id) {
-      await disconnect()
-      notifyError(errorMessage(error))
+  if (!id || !pendingInputs.length) return inputFlush ?? Promise.resolve()
+  if (flushingSession === id) return inputFlush ?? Promise.resolve()
+  flushingSession = id
+  inputFlush = (async () => {
+    try {
+      while (sessionId === id && pendingInputs.length)
+        await sendRdpInput(id, pendingInputs.splice(0, 64))
+    } catch (error) {
+      if (sessionId === id) {
+        void disconnect()
+        notifyError(errorMessage(error))
+      }
+    } finally {
+      if (flushingSession === id) {
+        flushingSession = ''
+        inputFlush = undefined
+      }
     }
-  } finally {
-    flushingInput = false
-    if (pendingInputs.length && !inputFrame)
-      inputFrame = requestAnimationFrame(() => void flushInput())
-  }
+  })()
+  return inputFlush
 }
 
-/** 在下一帧发送输入，既保留点击与按键顺序，也避免重复发送每个移动采样点。 */
+/** 下一帧合并连续移动；隐藏窗口或正在发送时不依赖暂停的 RAF。 */
 function queueInput(event: RdpInput): void {
   if (state.phase !== 'connected' || !sessionId) return
   if (event.type === 'move' && pendingInputs.at(-1)?.type === 'move')
     pendingInputs[pendingInputs.length - 1] = event
   else pendingInputs.push(event)
-  if (!inputFrame) inputFrame = requestAnimationFrame(() => void flushInput())
+  if (document.hidden) void flushInput()
+  else if (flushingSession !== sessionId && !inputFrame)
+    inputFrame = requestAnimationFrame(() => void flushInput())
 }
 
 /** 把聚焦桌面上收到的物理按键交给 Windows，阻止工作区快捷键重复处理。 */
@@ -500,15 +621,39 @@ function handleMove(event: PointerEvent): void {
   if (position) queueInput({ type: 'move', ...position })
 }
 
-/** 发送鼠标按下或释放，在拖动期间用指针捕获保证释放可送达。 */
+/** 清除本地按钮和捕获记录，主动释放捕获时忽略浏览器已完成的释放。 */
+function clearPointerCapture(): void {
+  const pointer = capturedPointer
+  capturedPointer = undefined
+  pressedButtons.clear()
+  const surface = canvas.value
+  if (pointer === undefined || !surface?.hasPointerCapture(pointer)) return
+  try {
+    surface.releasePointerCapture(pointer)
+  } catch {
+    // 指针取消或窗口失焦时，浏览器可能已先释放捕获。
+  }
+}
+
+/** 发送鼠标按下或释放，最后一个按钮松开后归还捕获，拖出画布仍可释放。 */
 function handleButton(event: PointerEvent, pressed: boolean): void {
   const position = pointerPosition(event)
   if (!position || event.button < 0 || event.button > 4) return
   if (pressed) {
+    if (capturedPointer !== undefined && capturedPointer !== event.pointerId)
+      releaseInput()
     canvas.value?.focus()
     canvas.value?.setPointerCapture(event.pointerId)
-  }
+    capturedPointer = event.pointerId
+    pressedButtons.add(event.button)
+  } else pressedButtons.delete(event.button)
   queueInput({ type: 'button', button: event.button, pressed, ...position })
+  if (!pressed && !pressedButtons.size) clearPointerCapture()
+}
+
+/** 非主动丢失捕获时释放全部键鼠输入，避免拖动中断留下远端按下状态。 */
+function handleLostPointerCapture(event: PointerEvent): void {
+  if (capturedPointer === event.pointerId) releaseInput()
 }
 
 /** 将滚轮转换成 Windows 远程桌面的轮刻度。 */
@@ -526,21 +671,44 @@ function handleWheel(event: WheelEvent): void {
     })
 }
 
-/** 失去焦点或指针中断时释放远端按键，避免修饰键保持按下。 */
+/** 失焦或指针中断时立即有序释放全部键鼠，不等待隐藏窗口中暂停的 RAF。 */
 function releaseInput(): void {
+  clearPointerCapture()
   queueInput({ type: 'releaseAll' })
+  void flushInput()
 }
 
-/** 处理标签栏的连接操作，重连时重新读取已保存配置。 */
+/** 用专用原生消息发送安全组合键，由 Rust 先释放旧输入再生成完整序列。 */
+function sendCtrlAltDelete(): void {
+  const id = sessionId
+  clearPointerCapture()
+  queueInput({ type: 'ctrlAltDelete' })
+  void flushInput()
+  void nextTick(() => {
+    if (props.active && sessionId === id && state.frameReady)
+      canvas.value?.focus()
+  })
+}
+
+/** 处理标签栏操作，重连保留同一代次，等待停止期间的取消不能重新启动。 */
 async function actionFor(id: string, action: string): Promise<void> {
   if (id !== props.connection.id) return
   if (action === 'disconnect') await disconnect()
   else if (action === 'reconnect') {
-    await disconnect()
-    await connect()
+    const generation = ++connectionGeneration
+    await closeSession()
+    if (disposed || generation !== connectionGeneration) return
+    await connectSession(generation)
   }
 }
 
+// 全局失焦与隐藏通知独立于画布焦点，覆盖切换窗口和最小化到托盘。
+useEventListener(window, 'blur', releaseInput)
+useEventListener(document, 'visibilitychange', () => {
+  if (document.hidden) releaseInput()
+})
+
+// 生命周期监听与父工作区操作入口。
 defineExpose({ actionFor })
 
 // 双击侧栏时直接连接，恢复和切换已有标签时保留当前状态。
@@ -559,16 +727,26 @@ watch(
   }
 )
 
-/** 合并拖动窗口产生的连续变化，只给当前自适应会话发送最后一个尺寸。 */
+/** 合并窗口尺寸变化，并复用待应用标记为不支持动态分辨率的服务端提供重连回退。 */
 const resizeRemote = useDebounceFn(() => {
-  if (!props.active || !viewportWidth.value || !viewportHeight.value) return
+  if (
+    !props.active ||
+    !Number.isFinite(viewportWidth.value) ||
+    !Number.isFinite(viewportHeight.value) ||
+    viewportWidth.value <= 0 ||
+    viewportHeight.value <= 0 ||
+    state.phase !== 'connected'
+  )
+    return
   const size = requestedDesktop.value
+  state.pendingResolution =
+    state.frameReady &&
+    (size.width !== state.width || size.height !== state.height)
   if (
     size.width === lastRequested?.width &&
     size.height === lastRequested.height
   )
     return
-  if (state.phase !== 'connected') return
   lastRequested = size
   queueInput({ type: 'resize', ...size })
 }, 350)
@@ -598,17 +776,17 @@ onBeforeUnmount(() => {
   <div class="contents">
     <Teleport
       to="body"
-      :disabled="!state.fullscreen"
+      :disabled="!fullscreen"
     >
       <section
         class="terminal-pane pane h-full"
-        :class="{ 'rdp-fullscreen': state.fullscreen }"
+        :class="{ 'rdp-fullscreen': fullscreen }"
         :aria-busy="desktopLoading"
       >
         <!-- 全屏顶栏浮于画面上方，鼠标移到顶部拉手或键盘聚焦时展开。 -->
         <header
           class="terminal-header"
-          :data-menu-open="state.menu !== null"
+          :data-menu-open="menu !== null"
         >
           <span
             v-if="!desktopLoading"
@@ -620,7 +798,7 @@ onBeforeUnmount(() => {
             <StatusDot
               :tone="statusMeta.tone"
               :size="6"
-              :glow="state.phase === 'connected'"
+              :glow="phase === 'connected'"
             />
             <span class="terminal-state-label">{{ statusMeta.text }}</span>
           </span>
@@ -631,25 +809,25 @@ onBeforeUnmount(() => {
           </span>
           <span
             class="terminal-endpoint text-txt-2 max-w-36 min-w-0 truncate text-[11px]"
-            :title="state.endpoint || endpointOf(profile ?? connection)"
+            :title="endpoint || endpointOf(profile ?? connection)"
           >
             {{ profile?.name ?? connection.name }}
           </span>
           <button
-            v-if="state.frameReady"
+            v-if="frameReady"
             type="button"
             class="text-txt-3 hover:bg-hover hover:text-txt flex h-6 shrink-0 items-center gap-1 rounded px-1.5 font-mono text-[11px]"
             :title="t('远端分辨率')"
             :aria-label="t('远端分辨率')"
             aria-haspopup="menu"
-            :aria-expanded="state.menu === 'resolution'"
+            :aria-expanded="menu === 'resolution'"
             @click="openDisplayMenu('resolution', $event)"
           >
             <AppIcon
               name="lucide:monitor"
               :size="12"
             />
-            {{ state.width }} × {{ state.height }}
+            {{ width }} × {{ height }}
             <AppIcon
               name="lucide:chevron-down"
               :size="11"
@@ -657,17 +835,24 @@ onBeforeUnmount(() => {
           </button>
           <div class="ml-auto flex shrink-0 items-center gap-1">
             <IconButton
-              v-if="state.frameReady"
+              v-if="frameReady"
               icon="lucide:scaling"
               :size="14"
               :title="t('画面缩放') + ' · ' + zoomLabel(zoom)"
               aria-haspopup="menu"
-              :aria-expanded="state.menu === 'zoom'"
+              :aria-expanded="menu === 'zoom'"
               @click="openDisplayMenu('zoom', $event)"
             />
             <IconButton
-              v-if="canFullscreen && (state.frameReady || state.fullscreen)"
-              :icon="state.fullscreen ? 'lucide:minimize' : 'lucide:maximize'"
+              v-if="phase === 'connected'"
+              icon="lucide:keyboard"
+              :size="14"
+              :title="t('发送 Ctrl+Alt+Delete')"
+              @click="sendCtrlAltDelete"
+            />
+            <IconButton
+              v-if="canFullscreen && (frameReady || fullscreen)"
+              :icon="fullscreen ? 'lucide:minimize' : 'lucide:maximize'"
               :size="14"
               :title="t('全屏 / 退出')"
               @click="toggleFullscreen"
@@ -679,10 +864,10 @@ onBeforeUnmount(() => {
               @click="editConfiguration"
             />
             <IconButton
-              v-if="state.endpoint"
+              v-if="endpoint"
               icon="lucide:unplug"
               :size="14"
-              :title="state.phase === 'connected' ? t('断开连接') : t('取消')"
+              :title="phase === 'connected' ? t('断开连接') : t('取消')"
               @click="disconnect"
             />
           </div>
@@ -693,12 +878,12 @@ onBeforeUnmount(() => {
           ref="viewport"
           class="terminal-output [container-type:size] flex"
           :class="{
-            'overflow-auto': state.frameReady && typeof zoom === 'number',
+            'overflow-auto': frameReady && typeof zoom === 'number',
           }"
           :aria-busy="desktopLoading"
         >
           <canvas
-            v-show="state.phase === 'connected' && state.frameReady"
+            v-show="phase === 'connected' && frameReady"
             ref="canvas"
             tabindex="0"
             :aria-label="t('Windows 远程桌面（RDP）')"
@@ -710,13 +895,11 @@ onBeforeUnmount(() => {
             :style="
               typeof zoom === 'number'
                 ? {
-                    width: (state.width * zoom) / 100 + 'px',
-                    height: (state.height * zoom) / 100 + 'px',
+                    width: (width * zoom) / 100 + 'px',
+                    height: (height * zoom) / 100 + 'px',
                   }
                 : {
-                    '--rdp-aspect': state.height
-                      ? state.width / state.height
-                      : 1,
+                    '--rdp-aspect': height ? width / height : 1,
                   }
             "
             @keydown="handleKey($event, true)"
@@ -725,6 +908,7 @@ onBeforeUnmount(() => {
             @pointerdown.prevent="handleButton($event, true)"
             @pointerup.prevent="handleButton($event, false)"
             @pointercancel="releaseInput"
+            @lostpointercapture="handleLostPointerCapture"
             @wheel.prevent="handleWheel"
             @contextmenu.prevent
             @blur="releaseInput"
@@ -732,7 +916,7 @@ onBeforeUnmount(() => {
 
           <!-- 未连接状态：旧记录只引导到统一配置窗口，普通断开后可直接重连。 -->
           <div
-            v-if="state.phase === 'idle' || state.phase === 'setup'"
+            v-if="phase === 'idle' || phase === 'setup'"
             class="m-auto flex max-w-72 flex-col items-center gap-3 p-4 text-center"
           >
             <AppIcon
@@ -742,13 +926,13 @@ onBeforeUnmount(() => {
             />
             <p class="text-txt-3 text-xs">
               {{
-                state.phase === 'setup'
+                phase === 'setup'
                   ? t('请在配置窗口保存远程桌面凭据')
                   : t('远程桌面已断开')
               }}
             </p>
             <AppButton
-              v-if="state.phase === 'setup'"
+              v-if="phase === 'setup'"
               size="sm"
               @click="editConfiguration"
               >{{ t('编辑连接配置') }}</AppButton
@@ -768,37 +952,35 @@ onBeforeUnmount(() => {
             class="progress-indeterminate"
             role="progressbar"
             :aria-label="
-              state.phase === 'connected'
-                ? t('正在加载远程桌面…')
-                : t('连接中…')
+              phase === 'connected' ? t('正在加载远程桌面…') : t('连接中…')
             "
           />
         </div>
 
         <AppContextMenu
-          :open="state.menu !== null"
-          :x="state.menuX"
-          :y="state.menuY"
-          :items="state.menu === 'zoom' ? zoomItems : resolutionItems"
-          :label="t(state.menu === 'zoom' ? '画面缩放' : '远端分辨率')"
-          :trigger="state.menuTrigger"
-          @close="state.menu = null"
+          :open="menu !== null"
+          :x="menuX"
+          :y="menuY"
+          :items="menu === 'zoom' ? zoomItems : resolutionItems"
+          :label="t(menu === 'zoom' ? '画面缩放' : '远端分辨率')"
+          :trigger="menuTrigger"
+          @close="menu = null"
           @select="selectDisplayOption"
         />
 
         <Teleport to="body">
           <AppDialog
-            v-if="active && state.phase === 'certificate'"
+            v-if="active && phase === 'certificate'"
             :title="
-              state.previousFingerprint
+              previousFingerprint
                 ? t('远程桌面证书已变化')
                 : t('核对远程桌面证书')
             "
-            :description="t('正在连接 {value0}', { value0: state.endpoint })"
+            :description="t('正在连接 {value0}', { value0: endpoint })"
             @close="disconnect"
           >
             <p
-              v-if="state.previousFingerprint"
+              v-if="previousFingerprint"
               class="border-danger/40 bg-danger/10 text-danger mb-3 rounded-lg border px-3 py-2.5 text-[11px] leading-relaxed"
               role="alert"
             >
@@ -818,15 +1000,15 @@ onBeforeUnmount(() => {
               <dt class="text-txt-3">{{ t('算法') }}</dt>
               <dd class="text-txt font-mono">SHA-256</dd>
               <dt class="text-txt-3">
-                {{ state.previousFingerprint ? t('新指纹') : t('指纹') }}
+                {{ previousFingerprint ? t('新指纹') : t('指纹') }}
               </dt>
               <dd class="text-txt font-mono break-all select-text">
-                {{ state.fingerprint }}
+                {{ fingerprint }}
               </dd>
-              <template v-if="state.previousFingerprint">
+              <template v-if="previousFingerprint">
                 <dt class="text-txt-3">{{ t('旧指纹') }}</dt>
                 <dd class="text-txt-3 font-mono break-all select-text">
-                  {{ state.previousFingerprint }}
+                  {{ previousFingerprint }}
                 </dd>
               </template>
             </dl>
@@ -837,7 +1019,7 @@ onBeforeUnmount(() => {
                 t('仅本次')
               }}</AppButton>
               <AppButton
-                :variant="state.previousFingerprint ? 'danger' : 'primary'"
+                :variant="previousFingerprint ? 'danger' : 'primary'"
                 @click="acceptCertificate(true)"
                 >{{ t('总是信任') }}</AppButton
               >

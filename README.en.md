@@ -116,7 +116,7 @@ The portable version needs [WebView2 Runtime](https://developer.microsoft.com/mi
 
 ## Windows Remote Desktop
 
-Add a **Windows Remote Desktop (RDP)** connection with the host, port (default `3389`), and Windows credentials. Open the connection in the workspace to switch to full screen and choose a fixed resolution or resize with the window.
+Add a **Windows Remote Desktop (RDP)** connection with the host, port (default `3389`), and Windows credentials. Open the connection in the workspace to switch to full screen and choose a fixed resolution or resize with the window. Use the toolbar to send `Ctrl+Alt+Delete` to the remote desktop. Full screen defaults to aspect-preserving fit and keeps your zoom choice; reconnect to apply a resolution when the server does not support resizing. Losing window focus, hiding the page, or losing pointer capture releases remote input promptly to prevent stuck keys.
 
 When the remote host allows clipboard redirection, use `Ctrl+C` and `Ctrl+V` to copy and paste text and regular files between the local and remote desktops. Each transfer supports up to 128 files and 1 GiB in total.
 

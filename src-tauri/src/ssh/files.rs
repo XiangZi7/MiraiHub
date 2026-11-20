@@ -1252,12 +1252,12 @@ fn local_download_path(local_path: &str, remote_path: &str, task_id: &str) -> Pa
         .join(format!("{}-{safe_name}", safe_task_id(task_id)))
 }
 
-/// 解析 `pwd` + `ls -lA` 的合并输出。
+/// 解析 `pwd` + `ls -lA` 的合并输出，保留规范目录名末尾的合法空格，避免后续导航指向另一个目录。
 fn parse_listing(stdout: &str) -> DirectoryListing {
     let mut lines = stdout.lines();
 
-    // 第一行是 pwd 的输出
-    let path = lines.next().unwrap_or("/").trim().to_owned();
+    // lines 已移除换行符；目录名本身的空格不能当作格式空白裁剪。
+    let path = lines.next().unwrap_or("/").to_owned();
 
     let entries = lines
         .filter(|line| !line.trim().is_empty())
@@ -1290,7 +1290,11 @@ fn parse_entry(line: &str, dir: &str) -> Option<RemoteFile> {
     let permissions = head[0];
     let owner = head[2];
     let group = head[3];
-    let size: u64 = if device { 0 } else { head[4].parse().unwrap_or(0) };
+    let size: u64 = if device {
+        0
+    } else {
+        head[4].parse().unwrap_or(0)
+    };
 
     // 第 8 个字段两种格式都有，但含义不同：
     // full-iso 里是时区（+0800），短格式里是时间（09:41）或年份（2023）。
@@ -1545,6 +1549,16 @@ mod tests {
         assert_eq!(listing.entries[0].name, "a.txt");
     }
 
+    /// pwd 路径末尾的空格属于目录名称，后续子路径也必须保留它。
+    #[test]
+    fn keeps_edge_spaces_in_directory_path() {
+        let listing = parse_listing(
+            "/tmp/ edge dir \r\n-rw-r--r-- 1 u g 10 2024-05-22 09:41:21.000000000 +0800 a.txt\r\n",
+        );
+        assert_eq!(listing.path, "/tmp/ edge dir ");
+        assert_eq!(listing.entries[0].path, "/tmp/ edge dir /a.txt");
+    }
+
     #[test]
     fn keeps_arrow_and_edge_spaces_in_regular_file_names() {
         let line = "-rw-r--r-- 1 u g 10 2024-05-22 09:41:21.000000000 +0800  a -> b ";
@@ -1556,8 +1570,7 @@ mod tests {
 
     #[test]
     fn symlink_with_spaces_on_both_sides() {
-        let line =
-            "lrwxrwxrwx 1 u g 9 2024-05-22 09:41:21.000000000 +0800 my link -> my target";
+        let line = "lrwxrwxrwx 1 u g 9 2024-05-22 09:41:21.000000000 +0800 my link -> my target";
         let entry = parse_entry(line, "/tmp").unwrap();
 
         assert_eq!(entry.name, "my link");

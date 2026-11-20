@@ -109,6 +109,7 @@ function kindLabel(item: ShellSuggestion): string {
     <footer class="terminal-suggestions-footer">
       <span> {{ t('↑↓ 选择') }} </span>
       <span> {{ t('Tab 接受') }} </span>
+      <span v-if="anchor.width >= 360"> {{ t('Ctrl+Space 补全') }} </span>
       <AppIcon
         v-if="loading"
         name="lucide:loader-circle"

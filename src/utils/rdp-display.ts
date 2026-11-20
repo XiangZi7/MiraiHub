@@ -26,9 +26,15 @@ export function validRdpResolution(size: RdpResolution): boolean {
   )
 }
 
-/** 按桌面可见区域选择远端分辨率，高分辨率窗口等比收敛到客户端上限。 */
+/** 按可见区域等比选择分辨率；未布局或非有限尺寸使用安全默认值。 */
 export function fitRdpResolution(width: number, height: number): RdpResolution {
-  if (width <= 0 || height <= 0) return { width: 1600, height: 900 }
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  )
+    return { width: 1600, height: 900 }
   const ratio = Math.min(1, MAX_WIDTH / width, MAX_HEIGHT / height)
   return {
     width: Math.max(MIN_WIDTH, Math.floor((width * ratio) / 2) * 2),

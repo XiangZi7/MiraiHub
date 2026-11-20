@@ -172,6 +172,7 @@ pub enum RdpInput {
     ClipboardCopy,
     ClipboardPaste,
     ReleaseAll,
+    CtrlAltDelete,
 }
 
 enum Command {
@@ -861,6 +862,7 @@ fn input_events(
         RdpInput::ClipboardCopy => return clipboard_shortcut(state, 0x2e),
         RdpInput::ClipboardPaste => return clipboard_shortcut(state, 0x2f),
         RdpInput::ReleaseAll => state.release_all(),
+        RdpInput::CtrlAltDelete => return ctrl_alt_delete(state),
         RdpInput::Key { code, pressed } => {
             let code = Scancode::from_u16(code);
             state.apply([if pressed {
@@ -902,6 +904,29 @@ fn input_events(
         ]),
     }
     .into_vec()
+}
+
+/// 清空既有键鼠状态，再按 Ctrl、Alt、扩展 Delete 顺序按下并反序释放。
+fn ctrl_alt_delete(
+    state: &mut Database,
+) -> Vec<ironrdp::pdu::input::fast_path::FastPathInputEvent> {
+    let ctrl = Scancode::from_u16(0x1d);
+    let alt = Scancode::from_u16(0x38);
+    let delete = Scancode::from_u16(0xe053);
+    let mut events = state.release_all().into_vec();
+    events.extend(
+        state
+            .apply([
+                Operation::KeyPressed(ctrl),
+                Operation::KeyPressed(alt),
+                Operation::KeyPressed(delete),
+                Operation::KeyReleased(delete),
+                Operation::KeyReleased(alt),
+                Operation::KeyReleased(ctrl),
+            ])
+            .into_vec(),
+    );
+    events
 }
 
 /// 以小端尺寸和坐标为头部，仅发送变化矩形内的紧凑 RGBA 行。
@@ -996,6 +1021,50 @@ mod tests {
         let held_chord = input_events(&mut input, RdpInput::ClipboardPaste);
         assert_eq!(held_chord.len(), 2);
         assert!(input.is_key_pressed(right_ctrl));
+    }
+
+    /// 验证专用消息先清空既有键鼠，再生成包含 E0 Delete 的完整反序释放序列。
+    #[test]
+    fn ctrl_alt_delete_releases_previous_input_and_sends_extended_delete_in_order() {
+        // 构造既有扩展 Ctrl 与鼠标左键按下状态，验证组合键不会留下旧输入。
+        fn hold_input(input: &mut Database) {
+            input_events(
+                input,
+                RdpInput::Key {
+                    code: 0xe01d,
+                    pressed: true,
+                },
+            );
+            input_events(
+                input,
+                RdpInput::Button {
+                    x: 10,
+                    y: 20,
+                    button: 0,
+                    pressed: true,
+                },
+            );
+        }
+        let mut expected_state = Database::new();
+        hold_input(&mut expected_state);
+        let mut expected = input_events(&mut expected_state, RdpInput::ReleaseAll);
+        assert!(!expected.is_empty());
+        expected.extend([
+            FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1d),
+            FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x38),
+            FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x53),
+            FastPathInputEvent::KeyboardEvent(
+                KeyboardFlags::EXTENDED | KeyboardFlags::RELEASE,
+                0x53,
+            ),
+            FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x38),
+            FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1d),
+        ]);
+        let mut input = Database::new();
+        hold_input(&mut input);
+        let event = serde_json::from_str::<RdpInput>(r#"{"type":"ctrlAltDelete"}"#).unwrap();
+        assert_eq!(input_events(&mut input, event), expected);
+        assert!(input_events(&mut input, RdpInput::ReleaseAll).is_empty());
     }
 
     #[cfg(target_os = "windows")]
