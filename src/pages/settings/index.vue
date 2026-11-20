@@ -31,6 +31,7 @@ import type {
 import { closeWindow, IS_TAURI, toggleMaximizeWindow } from '@/utils/window'
 import { applyZoom } from '@/utils/settings-runtime'
 import { applyWindowBackgroundOpacity } from '@/utils/window-appearance'
+import { applyUiFont } from '@/utils/fonts'
 import SettingsPanel from '@/pages/settings/components/settings-panel.vue'
 import SettingsSidebar from '@/pages/settings/components/settings-sidebar.vue'
 import ThemeSkinPanel from '@/pages/settings/components/theme-skin-panel.vue'
@@ -77,6 +78,12 @@ watch(
   () => state.draft.uiScale,
   value => void applyZoom(value)
 )
+// 字体草稿只在当前设置窗口即时预览，应用或保存前不修改持久值与其他窗口。
+watch(
+  () => state.draft.uiFont,
+  value => applyUiFont(value),
+  { immediate: true }
+)
 // 背景透明度随草稿即时预览，首次挂载也同步到当前设置窗口。
 watch(
   () => state.draft.windowBackgroundOpacity,
@@ -86,6 +93,7 @@ watch(
 // 关闭或重建设置窗口时恢复已保存的外观，撤销未提交的预览。
 onBeforeUnmount(() => {
   void applyZoom(settings.uiScale)
+  applyUiFont(settings.uiFont)
   applyWindowBackgroundOpacity(settings.windowBackgroundOpacity)
 })
 
@@ -146,10 +154,11 @@ function pageOf(key: SettingKey): SettingsPageId | undefined {
   )?.id
 }
 
-/** 结束皮肤预览并恢复已保存的缩放，然后关闭原生设置窗口或浏览器预览。 */
+/** 结束皮肤预览并恢复已保存的字体与缩放，然后关闭原生设置窗口或浏览器预览。 */
 async function closeDialog(): Promise<void> {
   await skinPreview.finish()
   void applyZoom(settings.uiScale)
+  applyUiFont(settings.uiFont)
   if (IS_TAURI) {
     closeWindow()
     return

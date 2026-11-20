@@ -107,6 +107,20 @@ test('汉仪字体保持原始 WOFF2，中文终端选项不使用非等宽英�
   assert.match(fonts.resolveTerminalFontFamily('consolas'), /^Consolas/)
 })
 
+test('界面等宽字体使用汉仪中文回退，终端默认回退链保持独立', () => {
+  for (const value of ['jetbrains-mono', 'cascadia-code', 'consolas']) {
+    const family = fonts.uiFontFamily(value)
+    assert.ok(family.indexOf('"Hanyi"') > 0)
+    assert.ok(family.indexOf('"Hanyi"') < family.indexOf('ui-monospace'))
+    assert.ok(family.includes('JetBrains Mono Variable'))
+    assert.equal(
+      fonts.resolveTerminalFontFamily(value).includes('Hanyi'),
+      false
+    )
+  }
+  assert.equal(fonts.uiFontFamily('inter').includes('Hanyi'), false)
+})
+
 test('未知、损坏和原型属性名称不会流入 CSS 或形成空白选择', () => {
   for (const value of [
     undefined,

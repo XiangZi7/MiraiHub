@@ -155,7 +155,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
           {
             key: 'uiFont',
             label: '界面字体',
-            description: '保存后同步到所有窗口，不影响终端与代码编辑器',
+            description: '选择后即时预览，应用或保存后同步到所有窗口',
             control: 'select',
             icon: 'lucide:type',
             size: 'lg',

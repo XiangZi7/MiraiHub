@@ -23,6 +23,8 @@ export const en = {
   刷新对象树: 'Refresh object tree',
   聚焦对象树过滤框: 'Focus object tree filter',
   数据库对象: 'Database objects',
+  显示字段长度: 'Show field lengths',
+  隐藏字段长度: 'Hide field lengths',
   // 命令面板（UX-2）
   '打开表…': 'Open table…',
   '设计表…': 'Design table…',

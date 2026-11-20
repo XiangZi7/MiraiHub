@@ -11,25 +11,25 @@ export const DEFAULT_TERMINAL_FONT = 'jetbrains-mono'
 const SYSTEM_UI_FONT_FAMILY =
   '"PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 
+// 只列出拉丁等宽字体及其内置回退；界面和终端按各自需求补充中文与通用字体。
 const MONOSPACED_FONT_OPTIONS: readonly FontOption[] = [
   {
     value: 'jetbrains-mono',
     label: 'JetBrains Mono',
     description: '内置等宽字体',
-    fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace',
+    fontFamily: '"JetBrains Mono Variable"',
   },
   {
     value: 'cascadia-code',
     label: 'Cascadia Code',
     description: '内置等宽字体',
-    fontFamily:
-      '"Cascadia Code", "JetBrains Mono Variable", ui-monospace, monospace',
+    fontFamily: '"Cascadia Code", "JetBrains Mono Variable"',
   },
   {
     value: 'consolas',
     label: 'Consolas',
     description: '系统字体，未安装时回退到内置等宽字体',
-    fontFamily: 'Consolas, "JetBrains Mono Variable", ui-monospace, monospace',
+    fontFamily: 'Consolas, "JetBrains Mono Variable"',
   },
 ]
 
@@ -51,12 +51,20 @@ export const UI_FONT_OPTIONS: readonly FontOption[] = [
     description: '内置中文字体',
     fontFamily: `"Hanyi", "Inter", ${SYSTEM_UI_FONT_FAMILY}`,
   },
-  ...MONOSPACED_FONT_OPTIONS,
+  // 这些字体没有中文字形：汉仪必须排在通用 monospace 前面，中文才能实际使用它。
+  ...MONOSPACED_FONT_OPTIONS.map(option => ({
+    ...option,
+    description: '英文等宽，中文使用汉仪',
+    fontFamily: `${option.fontFamily}, "Hanyi", ui-monospace, monospace`,
+  })),
 ]
 
 /** 汉仪正圆并非等宽字体；终端仅用它渲染中文，英文继续使用 JetBrains Mono。 */
 export const TERMINAL_FONT_OPTIONS: readonly FontOption[] = [
-  ...MONOSPACED_FONT_OPTIONS,
+  ...MONOSPACED_FONT_OPTIONS.map(option => ({
+    ...option,
+    fontFamily: `${option.fontFamily}, ui-monospace, monospace`,
+  })),
   {
     value: 'hanyi',
     label: '汉仪正圆 55简（中文）',

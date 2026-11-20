@@ -34,6 +34,11 @@ import {
   useDatabaseColumnTags,
 } from '@/composables/useDatabaseColumnTags'
 import { useDatabaseColumnWidths } from '@/composables/useDatabaseColumnWidths'
+import {
+  columnTypeParametersVisible,
+  toggleColumnTypeParameters,
+} from '@/composables/useDatabaseColumnTypes'
+import { databaseColumnTypeLabels } from '@/utils/database-column-types'
 import { toast } from '@/composables/useToast'
 import type { ContextMenuItem } from '@/types/context-menu'
 import type {
@@ -284,6 +289,13 @@ const gridColumns = computed(() =>
         dataType: column.dataType,
       }))
 )
+const columnTypeLabels = computed(() =>
+  databaseColumnTypeLabels(
+    gridColumns.value,
+    columnTypeParametersVisible.value,
+    state.detail?.columns
+  )
+)
 const columnComments = computed(
   () =>
     new Map(
@@ -394,6 +406,15 @@ const columnMenuItems = computed<ContextMenuItem[]>(() => {
       icon: 'lucide:copy',
       separatorBefore: true,
     },
+    {
+      id: 'toggle-type-parameters',
+      label: columnTypeParametersVisible.value
+        ? t('隐藏字段长度')
+        : t('显示字段长度'),
+      icon: 'lucide:ruler',
+      checked: columnTypeParametersVisible.value,
+      separatorBefore: true,
+    },
   ]
 })
 const rowMenuItems = computed<ContextMenuItem[]>(() => {
@@ -469,10 +490,13 @@ watch(
   }
 )
 
+/** 处理列头右键动作：切换字段长度、配置标签或复制字段名，保持原始数据列不变。 */
 async function handleColumnAction(id: string): Promise<void> {
   const column = columnMenu.column
   if (!column) return
-  if (id === 'tags') {
+  if (id === 'toggle-type-parameters') {
+    toggleColumnTypeParameters()
+  } else if (id === 'tags') {
     await openTagSettings(column)
   } else if (id === 'clear-tags') {
     setColumnTags(column, null)
@@ -2003,8 +2027,9 @@ watch(
                         :aria-label="t('已启用标签化显示，右键可修改')"
                       />
                         <span
+                          :title="columnTypeLabels[columnIndex]"
                           class="text-txt-4 ml-1.5 text-[9px] font-normal"
-                          >{{ column.dataType }}</span
+                          >{{ columnTypeLabels[columnIndex] }}</span
                         >
                     </span>
                     <AppColumnResizeHandle
@@ -2422,7 +2447,12 @@ watch(
             :source="state.detail.ddl"
             :kind="databaseKind"
           />
-          <p v-else class="text-term-fg pr-24 text-xs">{{ t('无法生成 DDL') }}</p>
+          <p
+            v-else
+            class="text-term-fg pr-24 text-xs"
+          >
+            {{ t('无法生成 DDL') }}
+          </p>
         </div>
       </div>
 

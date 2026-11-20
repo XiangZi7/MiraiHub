@@ -35,7 +35,7 @@ export function resolveTerminalFontFamily(value: unknown): string {
   )!.fontFamily
 }
 
-/** 在当前窗口应用已保存的界面字体；不覆盖终端与代码区域使用的等宽字体令牌。 */
+/** 在当前窗口应用保存值或草稿预览的界面字体；不覆盖终端与代码区域的等宽字体令牌。 */
 export function applyUiFont(
   value: unknown,
   root: HTMLElement = document.documentElement

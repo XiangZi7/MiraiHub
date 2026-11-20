@@ -572,8 +572,9 @@ export default {
   纯色: 'Solid',
   界面: 'Interface',
   界面字体: 'Interface font',
-  '保存后同步到所有窗口，不影响终端与代码编辑器':
-    'Saving updates all windows without changing terminal or code editor fonts',
+  '选择后即时预览，应用或保存后同步到所有窗口':
+    'Preview immediately; applying or saving updates all windows',
+  '英文等宽，中文使用汉仪': 'Monospace for English; Hanyi for Chinese',
   系统字体: 'System font',
   '汉仪正圆 55简': 'Hanyi Zhengyuan 55J',
   '汉仪正圆 55简（中文）': 'Hanyi Zhengyuan 55J (Chinese)',

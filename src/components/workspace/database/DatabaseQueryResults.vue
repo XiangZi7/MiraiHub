@@ -11,6 +11,13 @@ import {
   watch,
 } from 'vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppContextMenu from '@/components/ui/AppContextMenu.vue'
+import {
+  columnTypeParametersVisible,
+  toggleColumnTypeParameters,
+} from '@/composables/useDatabaseColumnTypes'
+import { databaseColumnTypeLabels } from '@/utils/database-column-types'
+import type { ContextMenuItem } from '@/types/context-menu'
 import AppColumnResizeHandle from '@/components/ui/AppColumnResizeHandle.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import IconButton from '@/components/ui/IconButton.vue'
@@ -303,6 +310,33 @@ const DENSITY_PADDING = {
 const numericColumns = computed(() =>
   (result.value?.columns ?? []).map(column => isNumericType(column.dataType))
 )
+const columnTypeLabels = computed(() =>
+  databaseColumnTypeLabels(
+    result.value?.columns ?? [],
+    columnTypeParametersVisible.value
+  )
+)
+// 查询结果列头菜单与单元格菜单分开，避免两个右键菜单叠加。
+const columnMenu = reactive({
+  // 当前列头菜单是否展开。
+  open: false,
+  // 菜单在视口内的横坐标。
+  x: 0,
+  // 菜单在视口内的纵坐标。
+  y: 0,
+  // 提供菜单可访问名称的当前字段。
+  column: '',
+})
+const columnMenuItems = computed<ContextMenuItem[]>(() => [
+  {
+    id: 'toggle-type-parameters',
+    label: columnTypeParametersVisible.value
+      ? t('隐藏字段长度')
+      : t('显示字段长度'),
+    icon: 'lucide:ruler',
+    checked: columnTypeParametersVisible.value,
+  },
+])
 const gridScroller = useTemplateRef<HTMLElement>('gridScroller')
 const gridValue = (row: number, column: number): string | null =>
   visibleRows.value[row]?.[column] ?? null
@@ -323,6 +357,7 @@ usePublishDatabaseSelection(
 watch([result, page], () => {
   selection.clear()
   gridMenu.open = false
+  columnMenu.open = false
 })
 
 function cellSelected(row: number, column: number): boolean {
@@ -359,7 +394,24 @@ function openCellFromEvent(event: MouseEvent): void {
 }
 
 const gridMenu = reactive({ open: false, x: 0, y: 0 })
+/** 在字段表头打开长度显示菜单，并关闭可能已展开的单元格菜单。 */
+function openColumnMenu(event: MouseEvent, column: string): void {
+  gridMenu.open = false
+  columnMenu.column = column
+  columnMenu.x = event.clientX
+  columnMenu.y = event.clientY
+  columnMenu.open = true
+}
+
+/** 切换共享的字段长度偏好，关闭菜单后更新所有数据库表头。 */
+function handleColumnAction(id: string): void {
+  columnMenu.open = false
+  if (id === 'toggle-type-parameters') toggleColumnTypeParameters()
+}
+
+/** 打开行选区菜单时关闭表头菜单，保持同一时刻只显示一个右键菜单。 */
 function openGridMenu(event: MouseEvent, row: number): void {
+  columnMenu.open = false
   if (!selection.rowSelection(row)) selection.select({ row, column: 0 })
   gridMenu.x = event.clientX
   gridMenu.y = event.clientY
@@ -836,12 +888,14 @@ async function copyResult(): Promise<void> {
                     numericColumns[index] && 'text-right'
                   )
                 "
-                :title="column.dataType"
+                  :title="columnTypeLabels[index]"
+                  tabindex="0"
+                  @contextmenu.prevent="openColumnMenu($event, column.name)"
               >
                 <span class="block truncate">
                   <span>{{ column.name }}</span>
                   <span class="text-txt-4 ml-1.5 text-[9px] font-normal">{{
-                    column.dataType
+                      columnTypeLabels[index]
                   }}</span>
                 </span>
                 <AppColumnResizeHandle
@@ -917,6 +971,15 @@ async function copyResult(): Promise<void> {
       />
       </div>
     </div>
+    <AppContextMenu
+      :open="columnMenu.open"
+      :x="columnMenu.x"
+      :y="columnMenu.y"
+      :items="columnMenuItems"
+      :label="columnMenu.column"
+      @close="columnMenu.open = false"
+      @select="handleColumnAction"
+    />
     <DatabaseGridContextMenu
       :open="gridMenu.open"
       :x="gridMenu.x"
