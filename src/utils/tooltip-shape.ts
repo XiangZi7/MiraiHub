@@ -2,6 +2,7 @@ export interface TooltipShape {
   width: number
   height: number
   radius: number
+  left: number
   top: number
   inset: string
   path: string
@@ -17,13 +18,14 @@ function coordinate(value: number): string {
  * 根据气泡 border-box 生成唯一的闭合轮廓，玻璃裁剪与 SVG 描边直接复用同一路径。
  * 尖角向上对应 bottom 放置，向下对应 top；四个圆角和尖角不再分段补画。
  * 描边宽度为 1px，轮廓向视口内缩半像素，防止边缘被 SVG 视口裁剪。
- * inset/top 已补偿宿主的 1px border，背景与描边都覆盖同一个外伸 6px 的区域。
+ * inset/left/top 补偿实际 border 宽度（缩放后可能为 0.8px），背景与描边覆盖相同的外伸区域。
  */
 export function tooltipShape(
   bodyWidth: number,
   bodyHeight: number,
   side: 'top' | 'bottom',
-  arrowX: number
+  arrowX: number,
+  border = 1
 ): TooltipShape {
   if (
     !Number.isFinite(bodyWidth) ||
@@ -35,6 +37,7 @@ export function tooltipShape(
       width: 0,
       height: 0,
       radius: 6,
+      left: 0,
       top: 0,
       inset: '0',
       path: '',
@@ -44,6 +47,7 @@ export function tooltipShape(
 
   const width = bodyWidth
   const height = bodyHeight + 6
+  const edge = Math.max(0, Number.isFinite(border) ? border : 1)
   const left = 0.5
   const right = width - 0.5
   const upward = side === 'bottom'
@@ -90,8 +94,11 @@ export function tooltipShape(
     width,
     height,
     radius,
-    top: upward ? -7 : -1,
-    inset: upward ? '-7px -1px -1px' : '-1px -1px -7px',
+    left: -edge,
+    top: -(edge + (upward ? 6 : 0)),
+    inset: upward
+      ? `${n(-edge - 6)}px ${n(-edge)}px ${n(-edge)}px`
+      : `${n(-edge)}px ${n(-edge)}px ${n(-edge - 6)}px`,
     path,
     clipPath: `path("${path}")`,
   }

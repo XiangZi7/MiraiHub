@@ -67,7 +67,7 @@ test('圆角和描边不被视口裁剪，宿主 border 尺寸与旧浏览器回
   assert.equal(value(outline, 'overflow'), 'visible')
   assert.equal(value(outline, 'stroke-width'), '1px')
   assert.equal(value(outline, 'stroke-linejoin'), 'round')
-  assert.equal(value(outline, 'left'), '-1px')
+  assert.equal(value(outline, 'left'), 'var(--tooltip-outline-left, -1px)')
   assert.equal(value(outline, 'display'), 'none')
   assert.equal(
     value(tooltipRule('.app-tooltip-outline', true), 'display'),

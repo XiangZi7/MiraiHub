@@ -105,6 +105,8 @@ export function useAppTooltip(
     const rect = active.getBoundingClientRect()
     const scale = windowScale()
     const size = bubble.value.getBoundingClientRect()
+    // CSS 缩放会量化 border 的实际宽度（如 125% 时为 0.8px），不能固定按 1px 偏移。
+    const border = Number.parseFloat(getComputedStyle(bubble.value).borderTopWidth)
     /**
      * 窄控件（图标按钮、标签页）锚到自身下方居中，箭头才对得准，
      * 位置也不会随光标微动而漂移；
@@ -124,7 +126,8 @@ export function useAppTooltip(
       size.width / scale,
       size.height / scale,
       result.side,
-      result.arrowX
+      result.arrowX,
+      border
     )
     state.style = {
       left: `${result.left}px`,
@@ -132,6 +135,7 @@ export function useAppTooltip(
       maxWidth: `${Math.min(320, (window.innerWidth - 16) / scale)}px`,
       '--tooltip-shape-inset': state.shape.inset,
       '--tooltip-shape-clip': state.shape.clipPath,
+      '--tooltip-outline-left': `${state.shape.left}px`,
       '--tooltip-outline-top': `${state.shape.top}px`,
       '--tooltip-radius': `${state.shape.radius}px`,
     }

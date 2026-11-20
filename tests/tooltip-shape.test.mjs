@@ -63,6 +63,20 @@ test('上下尖角均高 6px，与圆角轮廓及 border-box 的背景区域准�
   assert.equal(34 - 2 + 7 + 1, up.height)
 })
 
+test('125% 缩放后的 0.8px 实际 border 不会让背景和 SVG 错位', () => {
+  const reference = tooltipShape(240, 34, 'bottom', 120)
+  const up = tooltipShape(240, 34, 'bottom', 120, 0.8)
+  const down = tooltipShape(240, 34, 'top', 120, 0.8)
+  assert.equal(up.path, reference.path)
+  assert.equal(up.left, -0.8)
+  assert.equal(up.top, -6.8)
+  assert.equal(up.inset, '-6.8px -0.8px -0.8px')
+  assert.equal(down.inset, '-0.8px -0.8px -6.8px')
+  assert.equal(0.8 + up.top, -6)
+  assert.equal(0.8 + down.top, 0)
+  assert.equal(240 - 0.8 * 2 + 0.8 * 2, up.width)
+})
+
 test('箭头越界时夹在圆角之间，狭窄气泡也不会产生反向横线或非法路径', () => {
   for (const side of ['bottom', 'top']) {
     for (const width of [20, 28, 240]) {

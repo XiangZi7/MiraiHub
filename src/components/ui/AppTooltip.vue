@@ -77,7 +77,7 @@ const { content, details, open, positioned, side, style, shape } = toRefs(state)
 .app-tooltip-outline {
   display: none;
   position: absolute;
-  left: -1px;
+  left: var(--tooltip-outline-left, -1px);
   top: var(--tooltip-outline-top, -1px);
   overflow: visible;
   pointer-events: none;
