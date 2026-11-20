@@ -78,6 +78,12 @@ const state = reactive({
   menuY: 0,
   pendingResolution: false,
 })
+// 连接协商和等待首帧共用 SSH 的顶部进度条，证书确认期间不显示加载反馈。
+const desktopLoading = computed(
+  () =>
+    state.phase === 'connecting' ||
+    (state.phase === 'connected' && !state.frameReady)
+)
 const statusMeta = computed(() => {
   if (state.phase === 'connected')
     return { text: t('已连接'), tone: 'success' } as const
@@ -597,6 +603,7 @@ onBeforeUnmount(() => {
       <section
         class="terminal-pane pane h-full"
         :class="{ 'rdp-fullscreen': state.fullscreen }"
+        :aria-busy="desktopLoading"
       >
         <!-- 全屏顶栏浮于画面上方，鼠标移到顶部拉手或键盘聚焦时展开。 -->
         <header
@@ -604,6 +611,7 @@ onBeforeUnmount(() => {
           :data-menu-open="state.menu !== null"
         >
           <span
+            v-if="!desktopLoading"
             :class="[
               'flex shrink-0 items-center gap-1.5 text-[11px]',
               statusTone[statusMeta.tone],
@@ -687,10 +695,7 @@ onBeforeUnmount(() => {
           :class="{
             'overflow-auto': state.frameReady && typeof zoom === 'number',
           }"
-          :aria-busy="
-            state.phase === 'connecting' ||
-            (state.phase === 'connected' && !state.frameReady)
-          "
+          :aria-busy="desktopLoading"
         >
           <canvas
             v-show="state.phase === 'connected' && state.frameReady"
@@ -757,24 +762,17 @@ onBeforeUnmount(() => {
             >
           </div>
 
-          <!-- 连接状态区：协商和等待首帧时提供居中反馈。 -->
-          <p
-            v-else-if="state.phase !== 'certificate' && !state.frameReady"
-            class="text-txt-3 m-auto flex items-center gap-2 text-xs"
-            role="status"
-            aria-live="polite"
-          >
-            <AppIcon
-              name="lucide:loader-circle"
-              :size="14"
-              class="motion-safe:animate-spin"
-            />
-            {{
+          <!-- 顶部加载进度条：沿用 SSH 的细条，覆盖连接协商与首帧等待，不占用画面中央。 -->
+          <div
+            v-if="desktopLoading"
+            class="progress-indeterminate"
+            role="progressbar"
+            :aria-label="
               state.phase === 'connected'
                 ? t('正在加载远程桌面…')
                 : t('连接中…')
-            }}
-          </p>
+            "
+          />
         </div>
 
         <AppContextMenu

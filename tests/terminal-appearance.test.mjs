@@ -114,7 +114,10 @@ function fixture(t, scheme = 'dark') {
     }),
     fonts: {
       check: () => false,
-      load: font => new Promise(resolve => pending.push({ font, resolve })),
+      load: (font, text) =>
+        new Promise((resolve, reject) =>
+          pending.push({ font, text, resolve, reject })
+        ),
     },
   }
   settings.terminalFont = 'jetbrains-mono'
@@ -183,6 +186,63 @@ test('慢字体到达前不缓存 WebGL 字形，到达后重新测量并重绘�
   assert.equal(terminal.refreshed, 1)
   assert.equal(changes(), 2)
   assert.equal(WebglAddon.created, created + 1)
+})
+
+test('汉仪选项加载中英文及粗体字形，不用旧字体请求覆盖当前字体', async t => {
+  const { terminal, pending } = fixture(t)
+  const buffer = terminal.buffer
+  const initial = pending.splice(0)
+  settings.terminalFont = 'hanyi'
+  await nextTick()
+  assert.match(
+    terminal.options.fontFamily,
+    /^"JetBrains Mono Variable", "Hanyi"/
+  )
+  assert.equal(pending.length, 2)
+  assert.ok(pending.every(item => item.text === 'MW汉字'))
+  assert.match(pending[1].font, /^700 13px /)
+  await finishFonts(initial)
+  assert.equal(terminal.cleared, 0)
+  await finishFonts(pending)
+  assert.equal(terminal.cleared, 1)
+  assert.equal(terminal.buffer, buffer)
+})
+
+test('中英文字形已缓存时复用渲染器，不重复请求汉仪字体', async t => {
+  const { terminal, pending } = fixture(t)
+  await finishFonts(pending)
+  const buffer = terminal.buffer
+  const checked = []
+  document.fonts.check = (font, text) => {
+    checked.push({ font, text })
+    return true
+  }
+  settings.terminalFont = 'hanyi'
+  await nextTick()
+  await finishFonts(pending)
+  assert.equal(pending.length, 0)
+  assert.equal(checked.length, 2)
+  assert.ok(
+    checked.every(item => item.text === 'MW汉字' && item.font.includes('Hanyi'))
+  )
+  assert.equal(terminal.buffer, buffer)
+})
+
+test('字体资源加载失败时保留等宽回退链与终端缓冲区', async t => {
+  const { terminal, pending } = fixture(t)
+  await finishFonts(pending)
+  const buffer = terminal.buffer
+  settings.terminalFont = 'hanyi'
+  await nextTick()
+  for (const item of pending.splice(0))
+    item.reject(new Error('font unavailable'))
+  await finishFonts(pending)
+  assert.match(
+    terminal.options.fontFamily,
+    /^"JetBrains Mono Variable", "Hanyi"/
+  )
+  assert.match(terminal.options.fontFamily, /monospace$/)
+  assert.equal(terminal.buffer, buffer)
 })
 
 /** 用独立画布记录公开 GL 混合状态，覆盖安装、恢复与移除监听，不访问 xterm 私有实现。 */

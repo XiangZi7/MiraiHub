@@ -12,6 +12,25 @@
     format('woff2-variations');
 }
 
+/* Cascadia Code 同样内置 latin 可变字体，不依赖系统安装或在线字体服务。 */
+@font-face {
+  font-family: 'Cascadia Code';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 700;
+  src: url('@fontsource-variable/cascadia-code/files/cascadia-code-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+/* 用户提供的汉仪正圆 55简为常规字重，保留完整中文字符集。 */
+@font-face {
+  font-family: 'Hanyi';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@/assets/fonts/hanyi.woff2') format('woff2');
+}
+
 /* ==========================================================================
    设计令牌 —— 所有值自动映射为 CSS 变量与 Tailwind 工具类
    例：--color-card → bg-card / text-card / border-card
@@ -968,7 +987,11 @@ html.reduce-motion::view-transition-new(root) {
 @keyframes grid-row-added {
   from {
     opacity: 0;
-    background-color: color-mix(in oklch, var(--color-success) 35%, transparent);
+    background-color: color-mix(
+      in oklch,
+      var(--color-success) 35%,
+      transparent
+    );
   }
 }
 @utility grid-row-added {
@@ -984,7 +1007,11 @@ html.reduce-motion::view-transition-new(root) {
 }
 @keyframes grid-commit-flash {
   from {
-    background-color: color-mix(in oklch, var(--color-success) 28%, transparent);
+    background-color: color-mix(
+      in oklch,
+      var(--color-success) 28%,
+      transparent
+    );
   }
 }
 @utility grid-commit-flash {
@@ -1193,6 +1220,7 @@ html.reduce-motion::view-transition-new(root) {
   }
   &[aria-current='page']::after {
     background: var(--color-accent);
-    box-shadow: 0 0 8px color-mix(in oklch, var(--color-accent) 35%, transparent);
+    box-shadow: 0 0 8px
+      color-mix(in oklch, var(--color-accent) 35%, transparent);
   }
 }

@@ -29,23 +29,17 @@ import {
   settingsSnapshot,
   useSettings,
 } from '@/composables/useSettings'
+import { resolveTerminalFontFamily } from '@/utils/fonts'
 
 type CursorStyle = 'block' | 'bar' | 'underline'
 
 const TERMINAL_LINE_HEIGHT = 1.4
-
-const FONT_FAMILIES: Record<string, string> = {
-  'jetbrains-mono': '"JetBrains Mono Variable", ui-monospace, monospace',
-  'cascadia-code': '"Cascadia Code", ui-monospace, monospace',
-  consolas: 'Consolas, ui-monospace, monospace',
-}
+// 混合字体同时探测中英文，防止只加载默认空格而遗漏汉仪中文回退字体。
+const FONT_SAMPLE = 'MW汉字'
 
 /** 将终端字体设置解析为内置字体和系统等宽字体的回退顺序。 */
 export function terminalFontFamily(): string {
-  return (
-    FONT_FAMILIES[settingsSnapshot().terminalFont] ??
-    FONT_FAMILIES['jetbrains-mono']!
-  )
+  return resolveTerminalFontFamily(settingsSnapshot().terminalFont)
 }
 
 /**
@@ -244,11 +238,15 @@ export function useXterm(onOptionsChange: () => void) {
     const size = terminal.options.fontSize!
     const regular = `400 ${size}px ${family}`
     const bold = `700 ${size}px ${family}`
-    if (document.fonts.check(regular) && document.fonts.check(bold)) return
+    if (
+      document.fonts.check(regular, FONT_SAMPLE) &&
+      document.fonts.check(bold, FONT_SAMPLE)
+    )
+      return
     try {
       await Promise.all([
-        document.fonts.load(regular),
-        document.fonts.load(bold),
+        document.fonts.load(regular, FONT_SAMPLE),
+        document.fonts.load(bold, FONT_SAMPLE),
       ])
     } catch {
       return

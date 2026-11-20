@@ -11,11 +11,12 @@ import { subscribeSkinPreview } from '@/api/skin-preview'
 import type { AppearanceSettings, SkinSettings } from '@/utils/skin'
 import { watchSystemColorScheme } from '@/utils/color-mode'
 import { applyWindowBackgroundOpacity } from '@/utils/window-appearance'
+import { applyUiFont } from '@/utils/fonts'
 
 let started = false
 
 /**
- * 把纯前端就能生效的设置应用到当前文档：紧凑布局、减少动画、纯色材质、界面缩放。
+ * 把纯前端就能生效的设置应用到当前文档：界面字体、紧凑布局、减少动画、纯色材质、界面缩放。
  *
  * 每个 WebView 窗口都各自调用一次，这样设置窗口、连接窗口也跟着变；
  * 托盘、材质、自启动这类只能由主窗口触发一次的动作放在 WorkspaceLayout 里。
@@ -43,6 +44,13 @@ export function startSettingsRuntime(
   }
   // 皮肤文件在安装目录里，读完再应用一次；在此之前先按默认样式渲染。
   void loadSkinRegistry()
+
+  // 每个窗口在挂载前恢复字体，保存或跨窗口同步后只更新界面字体令牌。
+  watch(
+    () => settings.uiFont,
+    value => applyUiFont(value),
+    { immediate: true }
+  )
 
   watch(
     () =>

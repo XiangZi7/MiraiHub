@@ -1,5 +1,6 @@
 import type { SettingsPage } from '@/types/settings'
 import { LOCAL_SHELL_OPTIONS } from '@/constants/connection'
+import { TERMINAL_FONT_OPTIONS, UI_FONT_OPTIONS } from '@/constants/fonts'
 
 export const SETTINGS_PAGES: readonly SettingsPage[] = [
   {
@@ -105,7 +106,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     id: 'appearance',
     label: '外观',
     title: '外观设置',
-    description: '窗口材质、界面密度与动效。',
+    description: '窗口材质、字体、界面密度与动效。',
     icon: 'lucide:palette',
     groups: [
       {
@@ -151,6 +152,15 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
       {
         title: '界面',
         fields: [
+          {
+            key: 'uiFont',
+            label: '界面字体',
+            description: '保存后同步到所有窗口，不影响终端与代码编辑器',
+            control: 'select',
+            icon: 'lucide:type',
+            size: 'lg',
+            options: UI_FONT_OPTIONS,
+          },
           {
             key: 'showConnectionAddress',
             label: '显示连接地址',
@@ -371,11 +381,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             control: 'select',
             icon: 'lucide:type',
             size: 'lg',
-            options: [
-              { value: 'jetbrains-mono', label: 'JetBrains Mono' },
-              { value: 'cascadia-code', label: 'Cascadia Code' },
-              { value: 'consolas', label: 'Consolas' },
-            ],
+            options: TERMINAL_FONT_OPTIONS,
           },
           {
             key: 'terminalFontSize',
@@ -518,9 +524,17 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             icon: 'lucide:files',
             size: 'md',
             options: [
-              { value: 'ask', label: '每次询问', icon: 'lucide:message-circle-question' },
+              {
+                value: 'ask',
+                label: '每次询问',
+                icon: 'lucide:message-circle-question',
+              },
               { value: 'overwrite', label: '直接覆盖', icon: 'lucide:replace' },
-              { value: 'rename', label: '自动重命名', icon: 'lucide:file-pen-line' },
+              {
+                value: 'rename',
+                label: '自动重命名',
+                icon: 'lucide:file-pen-line',
+              },
             ],
           },
         ],
@@ -696,10 +710,22 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
             icon: 'lucide:download',
             options: [
               { value: 'auto', label: '自动（优先加速）', icon: 'lucide:zap' },
-              { value: 'github', label: 'GitHub 直连', icon: 'lucide:git-branch' },
-              { value: 'ghproxy', label: 'GH-Proxy 加速', icon: 'lucide:network' },
+              {
+                value: 'github',
+                label: 'GitHub 直连',
+                icon: 'lucide:git-branch',
+              },
+              {
+                value: 'ghproxy',
+                label: 'GH-Proxy 加速',
+                icon: 'lucide:network',
+              },
               { value: 'ghfast', label: 'ghfast 加速', icon: 'lucide:zap' },
-              { value: 'custom', label: '自定义转发', icon: 'lucide:settings-2' },
+              {
+                value: 'custom',
+                label: '自定义转发',
+                icon: 'lucide:settings-2',
+              },
             ],
           },
           {

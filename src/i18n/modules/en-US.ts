@@ -43,14 +43,17 @@ export default {
     'Use a resolution from 200 × 200 to 4096 × 2304 with an even width',
   请填写远程桌面密码: 'Enter the Remote Desktop password',
   请输入有效的远程桌面密码: 'Enter a valid Remote Desktop password',
-  请在远程桌面配置窗口保存密码: 'Save the password in the Remote Desktop settings',
+  请在远程桌面配置窗口保存密码:
+    'Save the password in the Remote Desktop settings',
   无法保存远程桌面密码: 'Could not save the Remote Desktop password',
   '远程桌面凭据不可用，请在配置窗口重新保存密码':
     'Remote Desktop credentials are unavailable. Save the password again in the connection settings.',
-  请在配置窗口保存远程桌面凭据: 'Save the Remote Desktop credentials in the connection settings',
+  请在配置窗口保存远程桌面凭据:
+    'Save the Remote Desktop credentials in the connection settings',
   请选择本地文件: 'Select a local file',
   请填写连接名称: 'Enter a connection name',
-  '请输入有效的远程桌面主机名或 IP 地址': 'Enter a valid Remote Desktop hostname or IP address',
+  '请输入有效的远程桌面主机名或 IP 地址':
+    'Enter a valid Remote Desktop hostname or IP address',
   请输入有效的远程桌面用户名: 'Enter a valid Remote Desktop username',
   远程桌面需要在桌面应用中运行: 'Remote Desktop requires the desktop app',
   远程桌面连接失败: 'Remote Desktop connection failed',
@@ -59,9 +62,12 @@ export default {
   远程桌面证书已变化: 'Remote Desktop certificate has changed',
   '当前证书与已信任的证书不同，请核对新指纹后再继续。':
     'The certificate differs from the one you trusted. Verify the new fingerprint before continuing.',
-  无法读取已信任的远程桌面证书: 'Could not read the trusted Remote Desktop certificate',
-  无法保存远程桌面证书信任记录: 'Could not save the Remote Desktop certificate trust record',
-  '证书信任记录已变化，请重新连接': 'The certificate trust record changed. Reconnect to continue.',
+  无法读取已信任的远程桌面证书:
+    'Could not read the trusted Remote Desktop certificate',
+  无法保存远程桌面证书信任记录:
+    'Could not save the Remote Desktop certificate trust record',
+  '证书信任记录已变化，请重新连接':
+    'The certificate trust record changed. Reconnect to continue.',
   '系统无法验证此证书。请通过可信渠道核对 SHA-256 指纹后再继续登录。':
     'The system could not verify this certificate. Compare the SHA-256 fingerprint with a trusted source before signing in.',
   '正在加载远程桌面…': 'Loading remote desktop…',
@@ -81,12 +87,15 @@ export default {
   远程桌面协议协商失败: 'Remote Desktop negotiation failed',
   '远程桌面 TLS 握手失败': 'Remote Desktop TLS handshake failed',
   远程桌面连接超时: 'Remote Desktop connection timed out',
-  远程桌面主机没有提供证书: 'The Remote Desktop host did not provide a certificate',
+  远程桌面主机没有提供证书:
+    'The Remote Desktop host did not provide a certificate',
   远程桌面标签页已关闭: 'The Remote Desktop tab is closed',
   远程桌面证书未确认: 'Remote Desktop certificate was not confirmed',
   无法读取远程桌面证书: 'Could not read Remote Desktop certificate',
-  '远程桌面登录失败，请检查 Windows 用户名和密码': 'Remote Desktop sign-in failed. Check the Windows username and password.',
-  远程桌面的分辨率超出支持范围: 'The remote desktop resolution exceeds the supported range',
+  '远程桌面登录失败，请检查 Windows 用户名和密码':
+    'Remote Desktop sign-in failed. Check the Windows username and password.',
+  远程桌面的分辨率超出支持范围:
+    'The remote desktop resolution exceeds the supported range',
   远程桌面连接已中断: 'The Remote Desktop connection was interrupted',
   无法发送远程桌面输入: 'Could not send Remote Desktop input',
   无法处理远程桌面会话数据: 'Could not process Remote Desktop data',
@@ -546,8 +555,8 @@ export default {
     'Hide the window and keep the app running in the background',
   外观: 'Appearance',
   外观设置: 'Appearance settings',
-  '窗口材质、界面密度与动效。':
-    'Window material, interface density, and motion.',
+  '窗口材质、字体、界面密度与动效。':
+    'Window material, fonts, interface density, and motion.',
   窗口: 'Window',
   外观模式: 'Appearance',
   '深色是默认外观；跟随系统会随操作系统的浅色/深色设置切换。自带配色的皮肤不受此项影响':
@@ -562,6 +571,17 @@ export default {
     '50% keeps the theme default. Increase it to hide more of the desktop, or decrease it for more transparency.',
   纯色: 'Solid',
   界面: 'Interface',
+  界面字体: 'Interface font',
+  '保存后同步到所有窗口，不影响终端与代码编辑器':
+    'Saving updates all windows without changing terminal or code editor fonts',
+  系统字体: 'System font',
+  '汉仪正圆 55简': 'Hanyi Zhengyuan 55J',
+  '汉仪正圆 55简（中文）': 'Hanyi Zhengyuan 55J (Chinese)',
+  内置中文字体: 'Bundled Chinese font',
+  内置等宽字体: 'Bundled monospace font',
+  '系统字体，未安装时回退到内置等宽字体':
+    'System font; falls back to bundled monospace if unavailable',
+  '中文使用汉仪，英文保留等宽排版': 'Hanyi for Chinese; monospace for English',
   紧凑布局: 'Compact layout',
   '收紧列表行高与按钮间距，一屏显示更多内容':
     'Reduce row height and button spacing to show more content',

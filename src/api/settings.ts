@@ -11,6 +11,7 @@ import { normalizeLanguage } from '@/utils/locale'
 import { normalizeColorMode } from '@/utils/color-mode'
 import { normalizeLocalShell } from '@/utils/platform'
 import { normalizeWindowBackgroundOpacity } from '@/utils/window-appearance'
+import { normalizeTerminalFont, normalizeUiFont } from '@/utils/fonts'
 
 const STORAGE_KEY = 'miraihub.settings.v1'
 const CHANGE_EVENT = 'miraihub:settings-changed'
@@ -48,6 +49,8 @@ export function loadSettings(): SettingsValues {
   defaults.language = normalizeLanguage(defaults.language)
   defaults.colorMode = normalizeColorMode(defaults.colorMode)
   defaults.terminalShell = normalizeLocalShell(defaults.terminalShell)
+  defaults.uiFont = normalizeUiFont(defaults.uiFont)
+  defaults.terminalFont = normalizeTerminalFont(defaults.terminalFont)
   // 上传并发上限从 8 提到 12（v2.0.13）：'4' 是旧默认值，视为未配置并提升到新默认，
   // 已手动调过的其他值保持不变。
   if (defaults.folderUploadConcurrency === '4')

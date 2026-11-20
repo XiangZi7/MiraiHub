@@ -96,9 +96,10 @@ export function tooltipShape(
     radius,
     left: -edge,
     top: -(edge + (upward ? 6 : 0)),
+    // 偏移保留 CSS 的完整精度；截成 3 位会在 110% 缩放下跨过 1/64px 布局舍入边界。
     inset: upward
-      ? `${n(-edge - 6)}px ${n(-edge)}px ${n(-edge)}px`
-      : `${n(-edge)}px ${n(-edge)}px ${n(-edge - 6)}px`,
+      ? `${-edge - 6}px ${-edge}px ${-edge}px`
+      : `${-edge}px ${-edge}px ${-edge - 6}px`,
     path,
     clipPath: `path("${path}")`,
   }

@@ -77,6 +77,19 @@ test('125% 缩放后的 0.8px 实际 border 不会让背景和 SVG 错位', () =
   assert.equal(240 - 0.8 * 2 + 0.8 * 2, up.width)
 })
 
+test('110% 缩放的边框偏移不截断精度，避免背景与 SVG 跨过不同布局像素', () => {
+  const shape = tooltipShape(
+    244.484375 / 1.1,
+    37.1875 / 1.1,
+    'bottom',
+    12,
+    0.909091
+  )
+  assert.equal(shape.left, -0.909091)
+  assert.equal(shape.inset, '-6.909091px -0.909091px -0.909091px')
+  assert.equal(shape.top, -6.909091)
+})
+
 test('箭头越界时夹在圆角之间，狭窄气泡也不会产生反向横线或非法路径', () => {
   for (const side of ['bottom', 'top']) {
     for (const width of [20, 28, 240]) {

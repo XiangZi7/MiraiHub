@@ -1,4 +1,5 @@
 import { DEFAULT_LOCAL_SHELL } from '@/utils/platform'
+import { DEFAULT_TERMINAL_FONT, DEFAULT_UI_FONT } from '@/constants/fonts'
 
 export type SettingValue = string | boolean
 
@@ -26,6 +27,7 @@ export const DEFAULT_SETTINGS = {
   compactLayout: false,
   showConnectionAddress: true,
   uiScale: '100',
+  uiFont: DEFAULT_UI_FONT,
   reduceMotion: false,
   skinTheme: 'default',
   skinBase: 'default',
@@ -65,7 +67,7 @@ export const DEFAULT_SETTINGS = {
   transferBufferSizeKb: '128',
 
   terminalShell: DEFAULT_LOCAL_SHELL,
-  terminalFont: 'jetbrains-mono',
+  terminalFont: DEFAULT_TERMINAL_FONT,
   terminalFontSize: '13',
   terminalCursor: 'bar',
   terminalCursorBlink: true,
