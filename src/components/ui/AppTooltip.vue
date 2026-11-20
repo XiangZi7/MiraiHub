@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { toRefs, useId, useTemplateRef } from 'vue'
 import { useAppTooltip } from '@/composables/useAppTooltip'
-import AppMenuSurface from './AppMenuSurface.vue'
+import AppMenuSurface from '@/components/ui/AppMenuSurface.vue'
 
 const tooltipId = `tooltip-${useId()}`
 const bubble = useTemplateRef<HTMLElement>('bubble')
 const { state, enter, leave } = useAppTooltip(bubble, tooltipId)
-const { content, details, open, positioned, side, style } = toRefs(state)
+const { content, details, open, positioned, side, style, shape } = toRefs(state)
 </script>
 
 <template>
@@ -22,7 +22,19 @@ const { content, details, open, positioned, side, style } = toRefs(state)
       @pointerenter="enter"
       @pointerleave="leave"
     >
+      <!-- 公共玻璃底与描边共享完整路径，包含四个圆角和上下尖角。 -->
       <AppMenuSurface />
+      <svg
+        v-if="shape.path"
+        class="app-tooltip-outline"
+        :width="shape.width"
+        :height="shape.height"
+        :viewBox="`0 0 ${shape.width} ${shape.height}`"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path :d="shape.path" />
+      </svg>
       <dl
         v-if="details.length"
         class="scroll-thin app-tooltip-content grid grid-cols-[auto_minmax(0,1fr)] overflow-auto p-1"
@@ -56,98 +68,35 @@ const { content, details, open, positioned, side, style } = toRefs(state)
   isolation: isolate;
   width: max-content;
   max-width: min(320px, calc(100vw - 16px));
+  border-radius: var(--tooltip-radius, 6px);
 }
 .app-tooltip-content {
   max-height: min(240px, calc((100vh - 32px) / var(--preview-zoom, 1)));
   overflow-wrap: anywhere;
 }
-@supports (clip-path: shape(from 0 0, hline to 100%, close)) {
-  /* 小尖角与气泡主体由同一个玻璃底绘制，箭头单独补描边。 */
+.app-tooltip-outline {
+  display: none;
+  position: absolute;
+  left: -1px;
+  top: var(--tooltip-outline-top, -1px);
+  overflow: visible;
+  pointer-events: none;
+  fill: none;
+  stroke: var(--color-line-strong);
+  stroke-width: 1px;
+  stroke-linejoin: round;
+}
+@supports (clip-path: path('M0 0 H1 V1 Z')) {
+  /* 背景与 SVG 共用闭合轮廓，四角弧线和尖角连续，不再拼接直线或旋转方块。 */
   .app-tooltip {
-    --pointer-x: clamp(12px, var(--tooltip-arrow-x, 12px), calc(100% - 12px));
-    --pointer-left: calc(var(--pointer-x) - 5px);
-    --pointer-right: calc(var(--pointer-x) + 5px);
-    --surface-top: 0px;
-    --surface-bottom: 100%;
+    border-color: transparent;
+    box-shadow: var(--shadow-pop-drop);
     --menu-surface-overflow: visible;
-    --menu-surface-clip: shape(
-      from 7px var(--surface-top),
-      hline to var(--pointer-left),
-      line to var(--pointer-x) 0px,
-      line to var(--pointer-right) var(--surface-top),
-      hline to calc(100% - 7px),
-      curve to 100% calc(var(--surface-top) + 7px) with 100% var(--surface-top),
-      vline to calc(var(--surface-bottom) - 7px),
-      curve to calc(100% - 7px) var(--surface-bottom) with 100%
-        var(--surface-bottom),
-      hline to var(--pointer-right),
-      line to var(--pointer-x) 100%,
-      line to var(--pointer-left) var(--surface-bottom),
-      hline to 7px,
-      curve to 0px calc(var(--surface-bottom) - 7px) with 0px
-        var(--surface-bottom),
-      vline to calc(var(--surface-top) + 7px),
-      curve to 7px var(--surface-top) with 0px var(--surface-top),
-      close
-    );
+    --menu-surface-inset: var(--tooltip-shape-inset);
+    --menu-surface-clip: var(--tooltip-shape-clip);
   }
-
-  .app-tooltip--bottom {
-    --surface-top: 6px;
-    --menu-surface-inset: -6px 0 0;
-    border-top-color: transparent;
-  }
-
-  .app-tooltip--top {
-    --surface-bottom: calc(100% - 6px);
-    --menu-surface-inset: 0 0 -6px;
-    border-bottom-color: transparent;
-  }
-
-  .app-tooltip::before,
-  .app-tooltip::after {
-    position: absolute;
-    pointer-events: none;
-    content: '';
-  }
-
-  .app-tooltip::before {
-    left: var(--pointer-x);
-    width: 8px;
-    height: 8px;
-    border: solid var(--color-line-strong);
-    transform: translateX(-50%) rotate(45deg);
-  }
-
-  .app-tooltip::after {
-    inset-inline: 0;
-    height: 1px;
-    background: linear-gradient(
-      to right,
-      transparent 0 6px,
-      var(--color-line-strong) 6px var(--pointer-left),
-      transparent var(--pointer-left) var(--pointer-right),
-      var(--color-line-strong) var(--pointer-right) calc(100% - 6px),
-      transparent calc(100% - 6px)
-    );
-  }
-
-  .app-tooltip--bottom::before {
-    top: -5px;
-    border-width: 1px 0 0 1px;
-  }
-
-  .app-tooltip--top::before {
-    bottom: -5px;
-    border-width: 0 1px 1px 0;
-  }
-
-  .app-tooltip--bottom::after {
-    top: -1px;
-  }
-
-  .app-tooltip--top::after {
-    bottom: -1px;
+  .app-tooltip-outline {
+    display: block;
   }
 }
 </style>

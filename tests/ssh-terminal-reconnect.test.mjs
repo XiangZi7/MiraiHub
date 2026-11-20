@@ -94,6 +94,33 @@ function fixture(t) {
   return api
 }
 
+for (const [label, reason, exitCode] of [
+  ['远端关闭', '远端关闭连接', null],
+  ['正常退出', null, 0],
+  ['异常退出', '网络连接中断', 1],
+]) {
+  test(`SSH ${label}只更新断开状态和原因，不插入提示行或清空原输出`, async t => {
+    const api = fixture(t)
+    await api.connect(config)
+    const id = api.sessionId.value
+    const terminal = api.term.value
+    // 远端程序自己输出的同名文案仍原样保留，仅禁止客户端追加状态文字。
+    const output = 'root@server:~# \r\n程序原始输出：连接已断开\r\n'
+    native.output.get(id)(new TextEncoder().encode(output))
+    terminal.flush()
+    assert.equal(terminal.screen, output)
+    native.status.get(id)({ status: 'disconnected', reason, exitCode })
+    terminal.flush()
+    assert.equal(api.status.value, 'disconnected')
+    assert.equal(api.error.value, reason ?? '')
+    assert.equal(api.sessionId.value, id)
+    assert.equal(terminal.screen, output)
+    assert.deepEqual(terminal.pending, [])
+    api.sendInput('ignored after disconnect')
+    assert.deepEqual(native.written, [])
+  })
+}
+
 test('重连立即清空旧屏，排队及迟到的旧输出不再混入新会话', async t => {
   const api = fixture(t)
   await api.connect(config)

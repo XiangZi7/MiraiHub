@@ -96,9 +96,12 @@
      浅色模式下整组会被换成紫灰投影 + 更强的白高光。
      窗口外阴影不在 WebView 内自绘，由平台层的 DWM 原生阴影负责。 */
   --shadow-win: inset 0 1px 0 rgb(255 255 255 / 0.1);
+  /* 非矩形气泡单独复用投影和高光，避免整圈硬边穿过箭头根部。 */
+  --shadow-pop-drop: 0 24px 56px -12px rgb(0 0 0 / 0.66);
+  --shadow-pop-inset: inset 0 1px 0 rgb(255 255 255 / 0.09);
   --shadow-pop:
-    0 24px 56px -12px rgb(0 0 0 / 0.66), 0 0 0 1px rgb(255 255 255 / 0.07),
-    inset 0 1px 0 rgb(255 255 255 / 0.09);
+    var(--shadow-pop-drop), 0 0 0 1px rgb(255 255 255 / 0.07),
+    var(--shadow-pop-inset);
   --shadow-pane:
     0 1px 2px rgb(0 0 0 / 0.24), 0 10px 28px -14px rgb(0 0 0 / 0.55),
     inset 0 1px 0 rgb(255 255 255 / 0.045);
@@ -703,9 +706,11 @@ html.material-solid .glass {
   --glass-highlight: rgb(255 255 255 / 0.65);
   --glass-highlight-strong: rgb(255 255 255 / 0.9);
   --shadow-win: inset 0 1px 0 rgb(255 255 255 / 0.5);
+  --shadow-pop-drop: 0 24px 56px -12px oklch(32% 0.04 285 / 0.18);
+  --shadow-pop-inset: inset 0 1px 0 rgb(255 255 255 / 0.7);
   --shadow-pop:
-    0 24px 56px -12px oklch(32% 0.04 285 / 0.18),
-    0 0 0 1px oklch(32% 0.03 285 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.7);
+    var(--shadow-pop-drop), 0 0 0 1px oklch(32% 0.03 285 / 0.08),
+    var(--shadow-pop-inset);
   --shadow-pane:
     0 1px 2px oklch(32% 0.03 285 / 0.06),
     0 10px 28px -14px oklch(32% 0.04 285 / 0.12),

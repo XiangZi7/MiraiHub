@@ -250,7 +250,8 @@ for (const scheme of ['light', 'dark']) {
     assert.equal(terminal.options.fontWeightBold, 700)
     const layout = terminalLayout(terminal)
     const buffer = terminal.buffer
-    document.documentElement.dataset.skinScheme = scheme === 'light' ? 'dark' : 'light'
+    document.documentElement.dataset.skinScheme =
+      scheme === 'light' ? 'dark' : 'light'
     window.dispatchEvent(new Event('skin-change'))
     assert.equal(gl.calls.length, 1)
     assert.deepEqual(terminalLayout(terminal), layout)
@@ -292,7 +293,9 @@ for (const reason of ['GPU 回退', '作用域卸载']) {
     await finishFonts(pending)
     assert.equal(gl.calls.length, 1)
     if (reason === 'GPU 回退') {
-      const renderer = terminal.addons.find(addon => addon instanceof WebglAddon)
+      const renderer = terminal.addons.find(
+        addon => addon instanceof WebglAddon
+      )
       renderer.contextLoss()
       assert.equal(renderer.disposed, true)
       assert.equal(terminal.options.letterSpacing, 0)
@@ -335,7 +338,8 @@ for (const failure of ['返回空上下文', '读取上下文失败']) {
     terminal.element.querySelectorAll = () => [
       {
         getContext() {
-          if (failure === '读取上下文失败') throw new Error('GL access unavailable')
+          if (failure === '读取上下文失败')
+            throw new Error('GL access unavailable')
           return null
         },
       },
@@ -482,7 +486,10 @@ test('容器尺寸不变的 DPI 切换自动校准字距并通知远端适配，
   const initial = changes()
   const measured = measurements()
   const buffer = terminal.buffer
-  for (const [ratio, spacing] of [[3, 0], [1.5, 1]]) {
+  for (const [ratio, spacing] of [
+    [3, 0],
+    [1.5, 1],
+  ]) {
     window.devicePixelRatio = ratio
     window.dispatchEvent(new Event('test-dpr-change'))
     await nextTick()

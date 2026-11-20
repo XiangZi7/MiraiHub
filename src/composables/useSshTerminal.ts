@@ -123,23 +123,10 @@ export function useSshTerminal() {
         state.status = payload.status
 
         if (payload.status === 'disconnected') {
-          // 断线原因是后端的中文文案，按当前语言翻译后再显示
-          const reason = payload.reason
+          // 断线只更新顶栏状态与错误信息，不把客户端状态文案混进远端终端输出。
+          state.error = payload.reason
             ? translateNativeMessage(payload.reason)
             : ''
-          state.error = reason
-          // 没有退出码时把断线原因（远端关闭连接 / 网络超时 / 认证失败）写进提示行
-          const suffix =
-            payload.exitCode === null
-              ? reason
-                ? i18n.global.t('（{value0}）', { value0: reason })
-                : ''
-              : i18n.global.t('（退出码 {value0}）', {
-                  value0: payload.exitCode,
-                })
-          terminal.writeln(
-            `\r\n\x1b[90m${i18n.global.t('terminal.disconnected', { suffix })}\x1b[0m`
-          )
         }
       })
 

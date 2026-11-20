@@ -3,6 +3,7 @@ import type { CSSProperties, Ref } from 'vue'
 import { useEventListener, useResizeObserver, useTimeoutFn } from '@vueuse/core'
 import { startNativeTooltipBridge } from '@/utils/native-tooltip-bridge'
 import { tooltipPosition } from '@/utils/tooltip-position'
+import { tooltipShape } from '@/utils/tooltip-shape'
 
 /** 触发区超过这个宽度就跟随光标：再宽的行居中会把气泡甩到离光标很远的地方。 */
 const ANCHOR_MAX_WIDTH = 160
@@ -26,6 +27,8 @@ export function useAppTooltip(
     side: 'bottom' as 'top' | 'bottom',
     // 气泡坐标及尺寸限制。
     style: {} as CSSProperties,
+    // 根据同一次尺寸测量生成的完整轮廓，背景与边框不再分别计算圆角。
+    shape: tooltipShape(0, 0, 'bottom', 0),
   })
   let active: Element | null = null
   let dismissed: Element | null = null
@@ -96,10 +99,12 @@ export function useAppTooltip(
     )
   }
 
+  /** 按同一次尺寸测量更新位置与完整轮廓，让 SVG 描边和玻璃裁剪在缩放后仍准确重合。 */
   function updatePosition(): void {
     if (!state.open || !active?.isConnected || !bubble.value) return
     const rect = active.getBoundingClientRect()
     const scale = windowScale()
+    const size = bubble.value.getBoundingClientRect()
     /**
      * 窄控件（图标按钮、标签页）锚到自身下方居中，箭头才对得准，
      * 位置也不会随光标微动而漂移；
@@ -111,17 +116,26 @@ export function useAppTooltip(
       anchored
         ? { x: (rect.left + rect.right) / 2, y: rect.bottom, top: rect.top }
         : pointer,
-      bubble.value.getBoundingClientRect(),
+      size,
       { width: window.innerWidth, height: window.innerHeight, scale }
     )
     state.side = result.side
+    state.shape = tooltipShape(
+      size.width / scale,
+      size.height / scale,
+      result.side,
+      result.arrowX
+    )
     state.style = {
       left: `${result.left}px`,
       top: `${result.top}px`,
       maxWidth: `${Math.min(320, (window.innerWidth - 16) / scale)}px`,
-      '--tooltip-arrow-x': `${result.arrowX}px`,
+      '--tooltip-shape-inset': state.shape.inset,
+      '--tooltip-shape-clip': state.shape.clipPath,
+      '--tooltip-outline-top': `${state.shape.top}px`,
+      '--tooltip-radius': `${state.shape.radius}px`,
     }
-    state.positioned = true
+    state.positioned = Boolean(state.shape.path)
   }
 
   function queuePosition(): void {
