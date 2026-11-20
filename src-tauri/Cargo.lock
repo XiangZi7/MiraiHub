@@ -4013,7 +4013,7 @@ dependencies = [
 
 [[package]]
 name = "miraihub"
-version = "4.0.18"
+version = "4.0.19"
 dependencies = [
  "aes-gcm 0.10.3",
  "arboard",
