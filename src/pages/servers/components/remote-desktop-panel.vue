@@ -8,7 +8,12 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
-import { useDebounceFn, useElementSize, useEventListener } from '@vueuse/core'
+import {
+  useDebounceFn,
+  useElementSize,
+  useEventListener,
+  useTimeoutFn,
+} from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { sendRdpInput, startRdp, stopRdp, trustRdpCertificate } from '@/api/rdp'
 import type { RdpEvent, RdpInput } from '@/api/rdp'
@@ -55,6 +60,7 @@ const profile = computed(() => {
 })
 const viewport = useTemplateRef<HTMLElement>('viewport')
 const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
+const toolbarHeader = useTemplateRef<HTMLElement>('toolbarHeader')
 const { width: viewportWidth, height: viewportHeight } =
   useElementSize(viewport)
 const canFullscreen = IS_TAURI || document.fullscreenEnabled
@@ -79,6 +85,16 @@ const state = reactive({
   height: 0,
   // 当前面板是否占用会话全屏区域。
   fullscreen: false,
+  // 鼠标离开后在缓冲时间内继续显示全屏工具栏。
+  toolbarVisible: false,
+  // 鼠标是否处于工具栏按钮或拉手范围内。
+  toolbarHovered: false,
+  // 鼠标是否处于独立的顶部感应区，跨区域移动时不互相覆盖悬停状态。
+  toolbarTriggerHovered: false,
+  // 键盘焦点留在工具栏时保持可见，不在导航途中收起。
+  toolbarFocused: false,
+  // 本标签页是否固定显示全屏工具栏，退出再进入全屏时保留选择。
+  toolbarPinned: false,
   // 本标签页临时选择的远端分辨率。
   resolution: undefined as RdpResolution | 'auto' | undefined,
   // 本标签页普通窗口中的临时缩放模式。
@@ -105,6 +121,7 @@ const {
   width,
   height,
   fullscreen,
+  toolbarPinned,
   menu,
   menuTrigger,
   menuX,
@@ -403,6 +420,115 @@ async function connectSession(generation: number): Promise<void> {
   }
   if (sessionId !== id) await stopSession(id)
 }
+
+// 全屏工具栏：保留缓冲时间，悬停、下拉菜单、键盘焦点和固定模式优先于自动隐藏。
+const toolbarInteractionActive = computed(
+  () =>
+    state.toolbarHovered ||
+    state.toolbarTriggerHovered ||
+    state.toolbarFocused ||
+    state.toolbarPinned ||
+    state.menu !== null
+)
+const toolbarExpanded = computed(
+  () =>
+    !state.fullscreen || state.toolbarVisible || toolbarInteractionActive.value
+)
+
+/** 鼠标离开一秒后才收起；触发前再次确认交互状态，过期回调不能隐藏正在操作的菜单。 */
+const toolbarHide = useTimeoutFn(
+  () => {
+    if (!disposed && state.fullscreen && !toolbarInteractionActive.value)
+      state.toolbarVisible = false
+  },
+  1000,
+  { immediate: false }
+)
+
+/** 从本次离开时刻重新计时，菜单、焦点和固定模式仍活跃时取消自动收起。 */
+function scheduleToolbarHide(): void {
+  toolbarHide.stop()
+  if (
+    state.fullscreen &&
+    state.toolbarVisible &&
+    !toolbarInteractionActive.value
+  )
+    toolbarHide.start()
+}
+
+/** 顶部感应区与工具栏各自记录悬停，进入任一区域立即显示并撤销旧的收起任务。 */
+function showFullscreenToolbar(source: 'header' | 'trigger'): void {
+  if (!state.fullscreen) return
+  if (source === 'header') state.toolbarHovered = true
+  else state.toolbarTriggerHovered = true
+  state.toolbarVisible = true
+  toolbarHide.stop()
+}
+
+/** 离开当前区域后仍给鼠标一秒回到按钮，跨越感应区或移入下拉菜单不会立即消失。 */
+function leaveFullscreenToolbar(source: 'header' | 'trigger'): void {
+  if (source === 'header') state.toolbarHovered = false
+  else state.toolbarTriggerHovered = false
+  scheduleToolbarHide()
+}
+
+/** 键盘导航进入工具栏时保持显示，不因鼠标位置在远端画布上而收起按钮。 */
+function focusFullscreenToolbar(): void {
+  if (!state.fullscreen) return
+  state.toolbarFocused = true
+  state.toolbarVisible = true
+  toolbarHide.stop()
+}
+
+/** 工具栏按钮之间移动焦点不收起，真正离开后再按菜单和固定状态安排隐藏。 */
+function blurFullscreenToolbar(event: FocusEvent): void {
+  if (toolbarHeader.value?.contains(event.relatedTarget as Node)) return
+  state.toolbarFocused = false
+  scheduleToolbarHide()
+}
+
+/** 切换本标签页的固定显示偏好，操作完成后恢复远端键盘焦点而不重置缩放或连接。 */
+function toggleToolbarPinned(): void {
+  if (!state.fullscreen) return
+  const id = sessionId
+  state.toolbarPinned = !state.toolbarPinned
+  void nextTick(() => {
+    if (
+      props.active &&
+      state.fullscreen &&
+      state.frameReady &&
+      sessionId === id
+    )
+      canvas.value?.focus()
+  })
+}
+
+// 进入全屏先展示工具栏便于发现操作，退出时撤销计时；固定偏好留在本标签页。
+watch(
+  () => state.fullscreen,
+  fullscreen => {
+    toolbarHide.stop()
+    state.toolbarHovered = false
+    state.toolbarTriggerHovered = false
+    state.toolbarFocused = false
+    state.toolbarVisible = fullscreen
+    if (fullscreen) scheduleToolbarHide()
+  },
+  { flush: 'sync' }
+)
+
+// 下拉菜单即使 Teleport 到工具栏之外也保持顶栏，关闭或取消固定后再留出完整缓冲时间。
+watch(
+  [() => state.menu, () => state.toolbarPinned],
+  () => {
+    if (!state.fullscreen) return
+    if (toolbarInteractionActive.value) {
+      toolbarHide.stop()
+      state.toolbarVisible = true
+    } else scheduleToolbarHide()
+  },
+  { flush: 'sync' }
+)
 
 // 全屏与显示设置。
 /** 串行应用最新全屏请求，进入中取消也会恢复原窗口状态，且不覆盖用户缩放。 */
@@ -765,7 +891,9 @@ watch(
     }
   }
 )
+// 卸载时立即取消顶栏隐藏计时，不让回调作用于关闭的标签或下一次全屏会话。
 onBeforeUnmount(() => {
+  toolbarHide.stop()
   disposed = true
   void setDesktopFullscreen(false)
   void disconnect()
@@ -783,10 +911,26 @@ onBeforeUnmount(() => {
         :class="{ 'rdp-fullscreen': fullscreen }"
         :aria-busy="desktopLoading"
       >
-        <!-- 全屏顶栏浮于画面上方，鼠标移到顶部拉手或键盘聚焦时展开。 -->
+        <!-- 全屏顶部感应区：从屏幕顶边即可找回工具栏，不占远端画面的布局空间。 -->
+        <div
+          v-if="fullscreen"
+          class="rdp-toolbar-trigger"
+          aria-hidden="true"
+          @pointerenter="showFullscreenToolbar('trigger')"
+          @pointerleave="leaveFullscreenToolbar('trigger')"
+          @pointercancel="leaveFullscreenToolbar('trigger')"
+          @pointerdown.prevent="showFullscreenToolbar('trigger')"
+        />
+        <!-- 全屏顶栏：悬停、菜单和键盘焦点期间保持展开，离开后缓冲一秒再收起。 -->
         <header
+          ref="toolbarHeader"
           class="terminal-header"
           :data-menu-open="menu !== null"
+          :data-toolbar-visible="toolbarExpanded"
+          @pointerenter="showFullscreenToolbar('header')"
+          @pointerleave="leaveFullscreenToolbar('header')"
+          @focusin="focusFullscreenToolbar"
+          @focusout="blurFullscreenToolbar"
         >
           <span
             v-if="!desktopLoading"
@@ -834,6 +978,18 @@ onBeforeUnmount(() => {
             />
           </button>
           <div class="ml-auto flex shrink-0 items-center gap-1">
+            <!-- 全屏工具栏固定按钮：可关闭自动收起，偏好只属于当前远程桌面标签。 -->
+            <IconButton
+              v-if="fullscreen"
+              :icon="toolbarPinned ? 'lucide:pin-off' : 'lucide:pin'"
+              :size="14"
+              :title="
+                toolbarPinned ? t('取消固定全屏工具栏') : t('固定全屏工具栏')
+              "
+              :aria-pressed="toolbarPinned"
+              :class="toolbarPinned && 'text-accent bg-accent/10'"
+              @click="toggleToolbarPinned"
+            />
             <IconButton
               v-if="frameReady"
               icon="lucide:scaling"
@@ -1043,10 +1199,18 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.rdp-fullscreen .terminal-header {
+.rdp-toolbar-trigger {
   position: absolute;
   inset: 0 0 auto;
   z-index: 1;
+  height: 6px;
+  cursor: pointer;
+}
+
+.rdp-fullscreen .terminal-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
   background: inherit;
   transform: translateY(-100%);
   transition: transform 160ms ease-out;
@@ -1056,18 +1220,22 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 100%;
   left: 50%;
-  width: 5rem;
-  height: 0.4rem;
+  width: 8rem;
+  height: 0.625rem;
   border-radius: 0 0 0.4rem 0.4rem;
   background: var(--color-txt-3);
   transform: translateX(-50%);
   content: '';
 }
 
-.rdp-fullscreen .terminal-header:hover,
-.rdp-fullscreen .terminal-header:focus-within,
-.rdp-fullscreen .terminal-header[data-menu-open='true'] {
+.rdp-fullscreen .terminal-header[data-toolbar-visible='true'] {
   transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rdp-fullscreen .terminal-header {
+    transition: none;
+  }
 }
 
 .rdp-fit {

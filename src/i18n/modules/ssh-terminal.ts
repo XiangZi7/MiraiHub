@@ -1,5 +1,7 @@
 /** ssh-terminal 相关文案。中文原文即消息 ID，zh-CN 目录自动按 en 的键生成同名条目。 */
 export const en: Record<string, string> = {
+  固定全屏工具栏: 'Pin full-screen toolbar',
+  取消固定全屏工具栏: 'Unpin full-screen toolbar',
   '发送 Ctrl+Alt+Delete': 'Send Ctrl+Alt+Delete',
   'Ctrl+Space 补全': 'Ctrl+Space to complete',
   '第 {line} 行，第 {column} 列': 'Ln {line}, Col {column}',

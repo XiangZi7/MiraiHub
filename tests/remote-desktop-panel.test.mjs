@@ -46,6 +46,20 @@ const vueuseModule = dataModule(`
   export const elementSize = { width: shallowRef(800), height: shallowRef(600) }
   export const useDebounceFn = fn => fn
   export const useElementSize = () => elementSize
+  // 可控计时器保留真实 Vue 作用域清理，让测试精确推进工具栏的隐藏延迟。
+  export function useTimeoutFn(fn, delay, options = {}) {
+    let timer
+    // 取消尚未执行的隐藏回调，避免重入和卸载后触发。
+    const stop = () => { clearTimeout(timer); timer = undefined }
+    // 每次从新的鼠标离开时刻开始计时，不保留旧回调。
+    const start = () => {
+      stop()
+      timer = setTimeout(() => { timer = undefined; fn() }, delay)
+    }
+    if (options.immediate !== false) start()
+    onScopeDispose(stop)
+    return { start, stop }
+  }
   export function useEventListener(target, event, listener, options) {
     target.addEventListener(event, listener, options)
     onScopeDispose(() => target.removeEventListener(event, listener, options))
@@ -98,7 +112,7 @@ const load = sourceLoader(
           return () => props.open ? h('div', { role: 'menu', 'aria-label': props.label },
             props.items.map(item => h('button', {
               'data-option': item.id,
-              onClick: () => emit('select', item.id),
+              onClick: () => { emit('select', item.id); emit('close') },
             }, item.label))) : null
         },
       }
@@ -233,6 +247,9 @@ async function fixture(t, options = {}) {
       width: 0,
       height: 0,
       captured: new Set(),
+      contains(target) {
+        return descendants(this).includes(target)
+      },
       getContext: () => ({ clearRect() {}, putImageData() {} }),
       getBoundingClientRect() {
         return {
@@ -330,6 +347,10 @@ async function fixture(t, options = {}) {
     viewport: () =>
       nodes().find(node => node.props.class?.includes('terminal-output')),
     canvas: () => nodes().find(node => node.type === 'canvas'),
+    // 读取真实顶栏和触发区的模板绑定，检查隐藏状态与悬停、焦点事件。
+    header: () => nodes().find(node => node.type === 'header'),
+    toolbarTrigger: () =>
+      nodes().find(node => node.props.class === 'rdp-toolbar-trigger'),
     button: title =>
       nodes().find(
         node =>
@@ -759,4 +780,134 @@ test('RDP 自动 resize 复用待应用分辨率菜单，新远端帧确认后�
   button.props.onClick({ currentTarget: button })
   await flush()
   assert.equal(view.option('reconnect'), undefined)
+})
+
+/** 用模拟时钟测试真实全屏顶栏，不等待一秒真实时间，也不直接改组件状态。 */
+async function fullscreenToolbarFixture(t) {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const view = await fixture(t)
+  await ready()
+  await toggleFullscreen(view)
+  return view
+}
+
+/** 推进隐藏计时并等待 Vue 应用新的可见状态。 */
+async function advanceToolbarTime(t, duration) {
+  t.mock.timers.tick(duration)
+  await flush()
+}
+
+test('RDP 进入全屏先展示顶栏，未操作时一秒后隐藏，普通窗口不自动隐藏', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await advanceToolbarTime(t, 999)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await advanceToolbarTime(t, 1)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+  await toggleFullscreen(view)
+  view.header().props.onPointerleave()
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  assert.equal(view.toolbarTrigger(), undefined)
+  assert.equal(view.button('固定全屏工具栏'), undefined)
+})
+
+test('RDP 轻微移开顶栏不立即消失，再次进入撤销旧计时，重新离开获得完整缓冲', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  view.header().props.onPointerenter()
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.header().props.onPointerleave()
+  await advanceToolbarTime(t, 800)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.header().props.onPointerenter()
+  await advanceToolbarTime(t, 3000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.header().props.onPointerleave()
+  await advanceToolbarTime(t, 999)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await advanceToolbarTime(t, 1)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+})
+
+test('RDP 顶边感应区可找回顶栏，跨入按钮时旧区域离开不覆盖当前悬停', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  await advanceToolbarTime(t, 1000)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+  view.toolbarTrigger().props.onPointerenter()
+  await flush()
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.header().props.onPointerenter()
+  view.toolbarTrigger().props.onPointerleave()
+  await advanceToolbarTime(t, 3000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.header().props.onPointerleave()
+  await advanceToolbarTime(t, 1000)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+})
+
+test('RDP 下拉菜单期间顶栏保持可见，选择关闭后才开始一秒收起缓冲', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  view.header().props.onPointerenter()
+  const button = view.button('画面缩放')
+  button.props.onClick({ currentTarget: button })
+  await flush()
+  view.header().props.onPointerleave()
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-menu-open'], true)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.option('100').props.onClick()
+  await flush()
+  assert.equal(view.header().props['data-menu-open'], false)
+  await advanceToolbarTime(t, 999)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await advanceToolbarTime(t, 1)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+})
+
+test('RDP 固定按钮保持顶栏并保留标签偏好，取消固定后恢复自动收起且不重连', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  assert.equal(view.button('固定全屏工具栏').props['aria-pressed'], false)
+  view.button('固定全屏工具栏').props.onClick()
+  await flush()
+  assert.equal(view.button('取消固定全屏工具栏').props['aria-pressed'], true)
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await toggleFullscreen(view)
+  await toggleFullscreen(view)
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.button('取消固定全屏工具栏').props.onClick()
+  await flush()
+  assert.equal(document.activeElement, view.canvas())
+  await advanceToolbarTime(t, 1000)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+  assert.equal(native.calls.length, 1)
+})
+
+test('RDP 键盘焦点在工具栏和按钮之间移动时不收起，离开到画布后才隐藏', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  await advanceToolbarTime(t, 1000)
+  view.header().props.onFocusin()
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view
+    .header()
+    .props.onFocusout({ relatedTarget: view.button('发送 Ctrl+Alt+Delete') })
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.header().props.onFocusout({ relatedTarget: view.canvas() })
+  await advanceToolbarTime(t, 1000)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+})
+
+test('RDP 退出再进入全屏撤销旧隐藏任务，新一轮始终保留完整一秒', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  await advanceToolbarTime(t, 600)
+  await toggleFullscreen(view)
+  await toggleFullscreen(view)
+  await advanceToolbarTime(t, 450)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await advanceToolbarTime(t, 550)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
 })
