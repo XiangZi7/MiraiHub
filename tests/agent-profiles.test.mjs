@@ -32,6 +32,7 @@ const { i18n } = await load('src/i18n/index.ts')
 const {
   DEFAULT_AGENT_LIMITS,
   AGENT_CAPACITY_PRESETS,
+  AGENT_MODEL_WINDOW_PRESETS,
   agentCapacityPreset,
   formatAgentContextSize,
   validAgentLimits,
@@ -161,6 +162,40 @@ test('capacity settings migrate old profiles and remain independent through save
       assert.equal(reopened.state.draft.value.limits.maxSteps, 32)
     } finally {
       reopened.app.unmount()
+    }
+  } finally {
+    app.unmount()
+  }
+})
+
+/** 1M 和精确窗口值可持久化，但不改变同配置的其他限制及其他配置。 */
+test('1M and exact model windows persist independently from local capacity and output limits', async () => {
+  const { app, state } = fixture(useAgentSettings)
+  try {
+    await flush()
+    assert.equal(DEFAULT_AGENT_LIMITS.contextWindowTokens, 128000)
+    assert.ok(
+      AGENT_MODEL_WINDOW_PRESETS.some(option => option.value === 1000000)
+    )
+    const independentLimits = {
+      ...DEFAULT_AGENT_LIMITS,
+      maxContextKb: 64000,
+      maxOutputTokens: 16384,
+      maxRetries: 7,
+    }
+    for (const window of [
+      ...AGENT_MODEL_WINDOW_PRESETS.map(option => option.value),
+      1048576,
+      2000000,
+    ]) {
+      const limits = { ...independentLimits, contextWindowTokens: window }
+      assert.ok(validAgentLimits(limits))
+      state.draft.value.limits = limits
+      await state.save()
+      assert.equal(state.error.value, '')
+      assert.deepEqual(api.saved.input.config.limits, limits)
+      assert.deepEqual({ ...state.draft.value.limits }, limits)
+      assert.equal(state.drafts.value.b.limits.contextWindowTokens, 128000)
     }
   } finally {
     app.unmount()

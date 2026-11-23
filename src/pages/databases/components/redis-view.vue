@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, toRef, toRefs, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useDocumentVisibility } from '@vueuse/core'
 import IconButton from '@/components/ui/IconButton.vue'
 import AppResizeHandle from '@/components/ui/AppResizeHandle.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
@@ -11,6 +12,9 @@ import DatabaseConnectionState from '@/components/workspace/database/DatabaseCon
 import RedisKeyBrowser from '@/components/workspace/redis/RedisKeyBrowser.vue'
 import RedisKeyDetail from '@/components/workspace/redis/RedisKeyDetail.vue'
 import RedisConsole from '@/components/workspace/redis/RedisConsole.vue'
+import RedisServerPanel from '@/components/workspace/redis/RedisServerPanel.vue'
+import RedisBigKeyPanel from '@/components/workspace/redis/RedisBigKeyPanel.vue'
+import RedisPubSubPanel from '@/components/workspace/redis/RedisPubSubPanel.vue'
 import { useRedisSession } from '@/composables/useRedisSession'
 import { useDatabaseSidebarWidth } from '@/composables/useDatabaseSidebarWidth'
 import { useAgentPaneWidth } from '@/composables/useAgentPaneWidth'
@@ -55,7 +59,9 @@ const state = reactive({
   database: '0',
   // 工作区标签与命令草稿；切换标签保留未保存内容
   activeTab: 'keys',
-  tabOrder: ['keys', 'command'],
+  tabOrder: ['keys', 'command', 'server', 'bigkeys', 'pubsub'],
+  // 当前连接与 DB 已访问的进阶标签；首次打开才挂载，内部切换保留任务。
+  visitedTools: [] as string[],
   command: '',
   dirty: false,
   // AI 面板从标签工具栏打开，默认停靠在右侧；面板标题栏可切换为全宽显示或关闭
@@ -70,6 +76,7 @@ const {
   command,
   dirty,
   activeTab,
+  visitedTools,
   agentOpen,
   agentSplit,
   pendingAction,
@@ -93,6 +100,40 @@ const agentTarget = computed<AgentTarget>(() => ({
   sessionId: connected.value ? (session.value?.sessionId ?? '') : '',
   database: session.value?.database ?? '',
 }))
+const documentVisibility = useDocumentVisibility()
+// 连接与 DB 是进阶任务的边界：变化时重新挂载，旧任务由面板释放。
+const toolsContext = computed(() =>
+  connected.value && session.value
+    ? `${session.value.sessionId}:${session.value.database}`
+    : ''
+)
+const keyBrowserVisible = computed(
+  () =>
+    (!state.agentOpen || state.agentSplit) &&
+    (state.activeTab === 'keys' || state.activeTab === 'command')
+)
+const monitoringActive = computed(
+  () =>
+    props.active !== false &&
+    documentVisibility.value === 'visible' &&
+    connected.value &&
+    state.activeTab === 'server' &&
+    (!state.agentOpen || state.agentSplit)
+)
+// 只在首次访问时挂载；内部切标签保留扫描和订阅，切库/断开清空访问记录。
+watch(
+  [() => state.activeTab, toolsContext],
+  ([tab, context], previous) => {
+    if (context !== previous?.[1]) state.visitedTools = []
+    if (
+      context &&
+      ['server', 'bigkeys', 'pubsub'].includes(tab) &&
+      !state.visitedTools.includes(tab)
+    )
+      state.visitedTools.push(tab)
+  },
+  { immediate: true, flush: 'sync' }
+)
 const tabItems = computed(() => [
   {
     id: 'keys',
@@ -100,6 +141,9 @@ const tabItems = computed(() => [
     icon: 'lucide:key-round',
   },
   { id: 'command', label: t('Redis 命令'), icon: 'lucide:square-terminal' },
+  { id: 'server', label: t('服务器状态'), icon: 'lucide:activity' },
+  { id: 'bigkeys', label: t('大 key 扫描'), icon: 'lucide:scan-search' },
+  { id: 'pubsub', label: t('发布/订阅'), icon: 'lucide:radio' },
 ])
 const tabs = computed(() =>
   state.tabOrder.flatMap(id => tabItems.value.filter(tab => tab.id === id))
@@ -149,6 +193,13 @@ function toggleAgent() {
 function toggleAgentSplit() {
   state.agentSplit = !state.agentSplit
 }
+/** 从大键分析跳到对应键详情，继续使用当前配置的未保存修改保护。 */
+function openScannedKey(key: RedisKey): void {
+  guard(() => {
+    state.activeTab = 'keys'
+    void inspect(key)
+  })
+}
 /** 键被重命名、新建后刷新列表并打开它。 */
 async function openKey(key: RedisKey) {
   state.dirty = false
@@ -191,8 +242,9 @@ defineExpose({
     ref="container"
     class="pane flex-1 flex-row"
   >
+    <!-- 键浏览区：仅键值和命令标签显示侧栏，进阶工具获得完整工作区宽度。 -->
     <RedisKeyBrowser
-      v-show="!agentOpen || agentSplit"
+      v-show="keyBrowserVisible"
       :style="sidebarStyle"
       :name="connection.name"
       :database="session?.database ?? '0'"
@@ -216,8 +268,9 @@ defineExpose({
           })
       "
     />
+    <!-- 键浏览侧栏分隔条：隐藏侧栏时不占用可拖动区域。 -->
     <AppResizeHandle
-      v-show="!agentOpen || agentSplit"
+      v-show="keyBrowserVisible"
       v-model="sidebarWidth"
       pane-side="left"
       :min="sidebarMin"
@@ -358,6 +411,43 @@ defineExpose({
             :key-type="detail?.keyType"
             @execute="runCommand"
           />
+          <!-- 服务器监控区：首次访问才挂载，隐藏或失去工作区活跃状态时停止轮询。 -->
+          <RedisServerPanel
+            v-if="visitedTools.includes('server')"
+            v-show="activeTab === 'server'"
+            :key="'server:' + toolsContext"
+            :session-id="session!.sessionId"
+            :active="monitoringActive"
+            :inert="busy"
+          />
+          <!-- 大键分析区：同连接内切标签保留扫描，切库和断开由上下文 key 释放任务。 -->
+          <RedisBigKeyPanel
+            v-if="visitedTools.includes('bigkeys')"
+            v-show="activeTab === 'bigkeys'"
+            :key="'bigkeys:' + toolsContext"
+            :session-id="session!.sessionId"
+            :database="session!.database"
+            :inert="busy"
+            @open="openScannedKey"
+          />
+          <!-- 消息调试区：频道不按 DB 隔离，切库仍主动释放本面板的订阅。 -->
+          <div
+            v-if="visitedTools.includes('pubsub')"
+            v-show="activeTab === 'pubsub'"
+            :key="'pubsub:' + toolsContext"
+            class="flex min-h-0 min-w-0 flex-1 flex-col"
+            :inert="busy"
+          >
+            <p
+              class="border-line-soft text-txt-3 shrink-0 border-b px-3 py-2 text-[11px] leading-relaxed"
+            >
+              {{ t('发布订阅频道属于整个 Redis 实例，不按 DB 隔离。') }}
+            </p>
+            <RedisPubSubPanel
+              :session-id="session!.sessionId"
+              :database="session!.database"
+            />
+          </div>
         </template>
         <footer
           class="border-line-soft text-txt-4 flex h-6 shrink-0 items-center gap-2 border-t px-3 text-[10px]"

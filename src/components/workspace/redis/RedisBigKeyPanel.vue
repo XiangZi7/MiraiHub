@@ -12,17 +12,32 @@ import type { RedisBigKeyProgress, RedisKey } from '@/types/redis'
 const props = defineProps<{ sessionId: string; database: string }>()
 const emit = defineEmits<{ open: [key: RedisKey] }>()
 const { t } = useI18n()
+interface ScanRequest {
+  generation: number
+  job: number | null
+  finished: boolean
+  stopToken?: number
+  reportStopError?: boolean
+}
 // 响应式状态
 const state = reactive({
+  // 当前扫描匹配模式，空值表示全部键。
   pattern: '',
-  // 当前扫描任务 ID；为 null 表示未在扫描
+  // IPC 返回任务 ID 前也锁定启动入口，并允许用户取消。
+  starting: false,
+  // 当前后端扫描任务 ID，完成或取消后清空。
   job: null as number | null,
+  // 只保留当前连接与 DB 的扫描快照。
   progress: null as RedisBigKeyProgress | null,
-  // 扫描时所在的 DB，切库后结果标记为过期
+  // 快照对应的 DB，避免旧键进入新库。
   scannedDb: '',
+  // 快照对应的 SSH/Redis 会话，切换连接时清空。
+  scannedSession: '',
+  // 结果类型过滤，开始新扫描时恢复全部类型。
   typeFilter: '',
 })
-const { pattern, job, progress, typeFilter } = toRefs(state)
+const { pattern, progress, typeFilter } = toRefs(state)
+const scanning = computed(() => state.starting || state.job != null)
 const percent = computed(() => {
   const p = state.progress
   if (!p) return 0
@@ -38,68 +53,171 @@ const rows = computed(() =>
     key => !state.typeFilter || key.keyType === state.typeFilter
   )
 )
-const maxBytes = computed(() => state.progress?.keys[0]?.bytes ?? 1)
-async function start() {
-  if (state.job != null) return
-  state.progress = null
-  state.scannedDb = props.database
-  try {
-    const id = await redis.bigKeyScan(
-      props.sessionId,
-      state.pattern.trim(),
-      progress => {
-        state.progress = progress
-        if (progress.done) {
-          state.job = null
-          if (progress.error) toast.error(progress.error)
-        }
-      }
-    )
-    // 极小的库可能在返回任务 ID 前就已扫完。
-    if (!(state.progress as RedisBigKeyProgress | null)?.done) state.job = id
-  } catch (error) {
-    toast.error(redis.errorMessage(error))
-  }
-}
-function cancel() {
-  if (state.job != null) void redis.stopJob(state.job)
-}
-watch(
-  () => props.sessionId,
-  () => {
-    cancel()
-    state.job = null
-    state.progress = null
-  }
+const maxBytes = computed(() =>
+  Math.max(1, state.progress?.keys[0]?.bytes ?? 1)
 )
-onScopeDispose(cancel)
+let generation = 0
+let disposed = false
+let activeRequest: ScanRequest | null = null
+
+/** 判断扫描回调是否仍属于当前生命周期，旧进度和旧 finally 均不得回写。 */
+function isCurrent(request: ScanRequest): boolean {
+  return (
+    !disposed && activeRequest === request && generation === request.generation
+  )
+}
+
+/** 回收后端任务；显式取消失败才通知当前界面，过期或卸载清理始终静默。 */
+async function stopJob(
+  job: number,
+  token: number,
+  reportError = false
+): Promise<void> {
+  try {
+    await redis.stopJob(job)
+  } catch (error) {
+    if (reportError && !disposed && token === generation)
+      toast.error(redis.errorMessage(error))
+  }
+}
+
+/** 启动扫描前立即锁定入口；取消后晚到的任务 ID 会回收，不重新激活扫描。 */
+async function start(): Promise<void> {
+  if (disposed || !props.sessionId || scanning.value) return
+  const request: ScanRequest = {
+    generation: ++generation,
+    job: null,
+    finished: false,
+  }
+  activeRequest = request
+  state.starting = true
+  state.progress = null
+  state.typeFilter = ''
+  state.scannedDb = props.database
+  state.scannedSession = props.sessionId
+  const sessionId = props.sessionId
+  const pattern = state.pattern.trim()
+  try {
+    const id = await redis.bigKeyScan(sessionId, pattern, progress => {
+      if (!isCurrent(request) || request.finished) return
+      state.progress = progress
+      if (progress.done) {
+        request.finished = true
+        state.job = null
+        state.starting = false
+        if (progress.error) toast.error(redis.errorMessage(progress.error))
+      }
+    })
+    request.job = id
+    if (!isCurrent(request)) {
+      if (!request.finished)
+        await stopJob(
+          id,
+          request.stopToken ?? generation,
+          request.reportStopError
+        )
+      return
+    }
+    // 极小的库可能在返回任务 ID 前就已扫完，不能重新置为扫描中。
+    if (!request.finished) state.job = id
+  } catch (error) {
+    if (!isCurrent(request) || request.finished) return
+    request.finished = true
+    state.job = null
+    toast.error(redis.errorMessage(error))
+  } finally {
+    if (isCurrent(request)) state.starting = false
+  }
+}
+
+/** 使当前扫描立即失效；用户取消保留部分结果，切换或卸载时丢弃整个快照。 */
+function invalidate(keepProgress: boolean, reportError = false): void {
+  const request = activeRequest
+  const token = ++generation
+  activeRequest = null
+  if (request && !request.finished) {
+    request.stopToken = token
+    request.reportStopError = reportError
+  }
+  state.starting = false
+  state.job = null
+  if (keepProgress && request && !request.finished) {
+    state.progress = {
+      scanned: state.progress?.scanned ?? 0,
+      total: state.progress?.total ?? 0,
+      keys: state.progress?.keys ?? [],
+      done: true,
+      cancelled: true,
+      error: null,
+    }
+  }
+  if (request?.job != null && !request.finished)
+    void stopJob(request.job, token, reportError)
+}
+
+/** 取消已启动或仍等待 IPC 任务 ID 的扫描，后续旧进度不再进入界面。 */
+function cancel(): void {
+  invalidate(true, true)
+}
+
+/** 打开当前快照中的原始键标识；取消后的部分结果仍可用，但跨连接/DB 不可用。 */
+function openKey(key: RedisKey): void {
+  if (
+    disposed ||
+    state.scannedSession !== props.sessionId ||
+    state.scannedDb !== props.database ||
+    !state.progress?.keys.some(item => item.key.id === key.id)
+  )
+    return
+  emit('open', key)
+}
+
+// 同会话切 DB 也会清理任务与旧结果；纯标签隐藏不触发此监听。
+watch(
+  [() => props.sessionId, () => props.database],
+  () => {
+    invalidate(false)
+    state.progress = null
+    state.typeFilter = ''
+    state.scannedDb = ''
+    state.scannedSession = ''
+  },
+  { flush: 'sync' }
+)
+// 卸载先阻止回调/通知，再回收任务；pending ID 到达后由 start 的过期分支补充回收。
+onScopeDispose(() => {
+  disposed = true
+  invalidate(false)
+})
 </script>
 
 <template>
   <section
-    class="flex min-h-0 min-w-0 flex-1 flex-col"
+    class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     :aria-label="t('大 key 扫描')"
+    :aria-busy="scanning"
   >
+    <!-- 扫描控制区：启动中的 IPC 同样支持取消，工具栏在窄窗口自动换行。 -->
     <form
-      class="border-line-soft flex h-10 shrink-0 items-center gap-2 border-b px-2"
+      class="border-line-soft flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2"
       @submit.prevent="start"
     >
       <AppInput
         v-model="pattern"
         size="sm"
         monospace
-        class="w-64"
+        class="min-w-32 flex-1"
         :aria-label="t('匹配模式')"
         :placeholder="t('匹配模式（留空为全部）')"
-        :disabled="job != null"
+        :disabled="scanning"
         spellcheck="false"
       />
       <AppButton
-        v-if="job == null"
+        v-if="!scanning"
         type="submit"
         size="sm"
         variant="primary"
-        class="h-6"
+        :disabled="!sessionId"
       >
         <AppIcon
           name="lucide:scan-search"
@@ -109,7 +227,6 @@ onScopeDispose(cancel)
       <AppButton
         v-else
         size="sm"
-        class="h-6"
         @click="cancel"
       >
         <AppIcon
@@ -117,15 +234,19 @@ onScopeDispose(cancel)
           :size="11"
         />{{ t('取消') }}
       </AppButton>
-      <span class="text-txt-4 ml-auto truncate text-[10px]">{{
-        t('使用 SCAN + MEMORY USAGE，按批执行，不阻塞服务器')
-      }}</span>
+      <span class="text-txt-3 basis-full text-[10px] leading-relaxed">
+        {{ t('使用 SCAN + MEMORY USAGE 分批读取，大库请缩小匹配范围') }}
+      </span>
     </form>
+    <!-- 当前扫描快照与进度：只接受当前 generation 的消息。 -->
     <div
       v-if="progress"
       class="border-line-soft shrink-0 border-b px-3 py-2"
     >
-      <div class="text-txt-3 flex items-center gap-2 text-[11px]">
+      <div
+        class="text-txt-3 flex flex-wrap items-center gap-2 text-[11px]"
+        role="status"
+      >
         <span>{{
           t('已扫描 {scanned} / 约 {total} 个键', {
             scanned: progress.scanned,
@@ -149,11 +270,6 @@ onScopeDispose(cancel)
                 : t('扫描完成')
           }}</span
         >
-        <span
-          v-if="state.scannedDb !== database"
-          class="text-amber"
-          >{{ t('结果来自 DB {db}', { db: state.scannedDb }) }}</span
-        >
         <span class="ml-auto font-mono tabular-nums"
           >{{ percent.toFixed(0) }}%</span
         >
@@ -161,13 +277,14 @@ onScopeDispose(cancel)
       <div
         class="bg-raised mt-1.5 h-1 overflow-hidden rounded-full"
         role="progressbar"
+        :aria-label="t('大 key 扫描')"
         :aria-valuenow="Math.round(percent)"
         aria-valuemin="0"
         aria-valuemax="100"
       >
         <div
-          class="bg-accent h-full rounded-full motion-safe:transition-[width] motion-safe:duration-300"
-          :style="{ width: percent + '%' }"
+          class="bg-accent h-full origin-left rounded-full motion-safe:transition-transform motion-safe:duration-300"
+          :style="{ transform: `scaleX(${percent / 100})` }"
         />
       </div>
     </div>
@@ -179,21 +296,23 @@ onScopeDispose(cancel)
         v-for="type in ['', ...types]"
         :key="type"
         type="button"
-        class="rounded px-2 py-0.5 text-[10px] motion-safe:transition-colors"
+        class="focus-visible:ring-violet/65 cursor-pointer rounded px-2 py-1 text-[10px] outline-none focus-visible:ring-2 motion-safe:transition-colors"
         :class="
           typeFilter === type
             ? 'bg-accent/15 text-accent'
             : 'text-txt-3 hover:bg-raised'
         "
+        :aria-pressed="typeFilter === type"
         @click="typeFilter = type"
       >
         {{ type || t('全部类型') }}
       </button>
     </div>
-    <div class="scroll-thin min-h-0 flex-1 overflow-auto">
+    <!-- 大键列表：保留横向滚动，键名使用原生按钮提供键盘打开入口。 -->
+    <div class="scroll-thin min-h-0 min-w-0 flex-1 overflow-auto">
       <table
         v-if="progress"
-        class="w-full table-fixed border-collapse text-[11px]"
+        class="w-full min-w-[560px] table-fixed border-collapse text-[11px]"
       >
         <thead class="bg-panel text-txt-3 sticky top-0 z-10">
           <tr class="border-line-soft border-b text-left">
@@ -210,47 +329,62 @@ onScopeDispose(cancel)
           <tr
             v-for="(row, index) in rows"
             :key="row.key.id"
-            class="border-line-soft hover:bg-raised/60 cursor-pointer border-b motion-safe:transition-colors"
-            :title="t('打开键')"
-            @click="emit('open', row.key)"
+            class="border-line-soft hover:bg-raised/60 border-b motion-safe:transition-colors"
           >
-            <td class="text-txt-4 px-2 py-1.5">{{ index + 1 }}</td>
-            <td class="text-txt-2 truncate px-2 py-1.5 font-mono">
-              {{ row.key.name }}
+            <td class="text-txt-3 px-2 py-1.5">{{ index + 1 }}</td>
+            <td class="text-txt-2 px-2 py-1.5 font-mono">
+              <button
+                type="button"
+                class="focus-visible:ring-violet/65 w-full cursor-pointer truncate rounded text-left outline-none focus-visible:ring-2"
+                :title="t('打开键')"
+                @click="openKey(row.key)"
+              >
+                {{ row.key.name }}
+              </button>
             </td>
             <td class="text-txt-3 px-2 py-1.5">{{ row.keyType }}</td>
-            <td class="text-txt-3 px-2 py-1.5 text-right font-mono tabular-nums">
+            <td
+              class="text-txt-3 px-2 py-1.5 text-right font-mono tabular-nums"
+            >
               {{ row.length || '—' }}
             </td>
             <td class="px-2 py-1.5">
               <div class="flex items-center gap-2">
-                <div class="bg-raised h-1.5 min-w-0 flex-1 overflow-hidden rounded-full">
+                <div
+                  class="bg-raised h-1.5 min-w-0 flex-1 overflow-hidden rounded-full"
+                >
                   <div
-                    class="bg-amber h-full rounded-full"
-                    :style="{ width: (row.bytes / maxBytes) * 100 + '%' }"
+                    class="bg-amber h-full origin-left rounded-full"
+                    :style="{ transform: `scaleX(${row.bytes / maxBytes})` }"
                   />
                 </div>
-                <span class="text-txt-2 w-16 shrink-0 text-right font-mono tabular-nums">{{
-                  formatBytes(row.bytes)
-                }}</span>
+                <span
+                  class="text-txt-2 w-16 shrink-0 text-right font-mono tabular-nums"
+                  >{{ formatBytes(row.bytes) }}</span
+                >
               </div>
             </td>
           </tr>
           <tr v-if="!rows.length">
             <td
               colspan="5"
-              class="text-txt-4 px-3 py-6 text-center"
+              class="text-txt-3 px-3 py-6 text-center"
             >
-              {{ job != null ? t('正在扫描…') : t('没有键') }}
+              {{ scanning ? t('正在扫描…') : t('没有键') }}
             </td>
           </tr>
         </tbody>
       </table>
       <div
         v-else
-        class="text-txt-4 flex h-full items-center justify-center px-6 text-center text-[11px]"
+        class="text-txt-3 flex h-full min-h-24 items-center justify-center px-6 text-center text-[11px]"
+        role="status"
       >
-        {{ t('扫描当前 DB，列出占用内存最多的 100 个键') }}
+        {{
+          scanning
+            ? t('正在扫描…')
+            : t('扫描当前 DB，列出占用内存最多的 100 个键')
+        }}
       </div>
     </div>
   </section>

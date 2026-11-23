@@ -592,9 +592,12 @@ defineExpose({
     :aria-busy="status === 'connecting'"
   >
     <!-- 会话工具条：展示连接状态、监控信息、布局和终端操作。 -->
-    <div class="terminal-header">
+    <div class="terminal-header ssh-terminal-header">
       <span
         v-if="status !== 'connecting'"
+        :title="statusMeta.text"
+        :aria-label="statusMeta.text"
+        role="status"
         :class="[
           'flex shrink-0 items-center gap-1.5 text-[11px]',
           statusMeta.tone,
@@ -626,7 +629,7 @@ defineExpose({
       </span>
 
       <span
-        class="terminal-endpoint text-txt-2 max-w-36 shrink-0 truncate text-[11px]"
+        class="terminal-endpoint text-txt-2 max-w-36 min-w-0 shrink truncate text-[11px]"
         :title="
           config
             ? `${config.username}@${config.host}:${config.port}`
@@ -816,10 +819,27 @@ defineExpose({
 </template>
 
 <style scoped>
+/* 窄终端优先保留关键动作；地址可收缩，次要指标让出空间，不重建终端。 */
 @container terminal (max-width: 640px) {
-  .terminal-endpoint,
   .terminal-metrics {
     display: none;
+  }
+  .terminal-endpoint {
+    max-width: 7rem;
+  }
+}
+@container terminal (max-width: 400px) {
+  .ssh-terminal-header {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+  .terminal-state-label,
+  .terminal-kind {
+    display: none;
+  }
+  .terminal-endpoint {
+    flex: 1;
+    max-width: none;
   }
 }
 .terminal-completion-enter-active,

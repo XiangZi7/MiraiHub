@@ -19,6 +19,8 @@ const components = [
   'src/pages/settings/components/ai-capacity-fields.vue',
   // 容量输入框改用公共 AppInput；需真实渲染才能断言 input 的 id/min/max/step。
   'src/components/ui/AppInput.vue',
+  // 模型窗口快捷档位使用实际按钮，验证禁用和按下状态。
+  'src/components/ui/AppButton.vue',
 ]
 const load = sourceLoader({}, components)
 const { i18n } = await load('src/i18n/index.ts')
@@ -337,6 +339,85 @@ test('capacity presets preserve the independently editable retry count', async (
     assert.ok(retryInput)
     assert.equal(retryInput.props.min, 0)
     assert.equal(retryInput.props.max, 999)
+  } finally {
+    app.unmount()
+  }
+})
+
+/** 验证实际快捷按钮、手动输入和禁用状态，防止 1M 档位串改其他容量。 */
+test('model window buttons select 1M without changing other limits and preserve exact custom values', async t => {
+  // Vue 3.5 数字输入通过 getRootNode 与 DOM 构造器检查焦点；隔离虚拟 renderer 的宿主类型。
+  const previous = { Document: globalThis.Document, ShadowRoot: globalThis.ShadowRoot }
+  globalThis.Document ??= class {}
+  globalThis.ShadowRoot ??= class {}
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete globalThis[key]
+      else globalThis[key] = value
+    }
+  })
+  const { default: Capacity } = await load(components[7])
+  const { DEFAULT_AGENT_LIMITS } = await load('src/constants/agent-limits.ts')
+  const state = reactive({
+    disabled: false,
+    limits: {
+      ...DEFAULT_AGENT_LIMITS,
+      contextWindowTokens: 1048576,
+      maxRetries: 7,
+    },
+  })
+  const original = { ...state.limits }
+  const root = node('root')
+  const app = renderer.createApp({
+    render: () =>
+      h(Capacity, {
+        disabled: state.disabled,
+        modelValue: state.limits,
+        'onUpdate:modelValue': value => {
+          state.limits = value
+        },
+      }),
+  })
+  i18n.global.locale.value = 'zh-CN'
+  app.use(i18n).mount(root)
+  const all = element => [element, ...element.children.flatMap(all)]
+  const buttons = () => all(root).filter(element => element.type === 'button')
+  try {
+    // 虚拟输入不在真实 Document / ShadowRoot 中，提供对应的根节点查询。
+    for (const input of all(root).filter(element => element.type === 'input'))
+      input.getRootNode = () => null
+    assert.equal(buttons().length, 3)
+    assert.ok(buttons().every(button => button.props['aria-pressed'] === false))
+    buttons()
+      .find(button => visible(button).trim() === '1M')
+      .props.onClick()
+    await nextTick()
+    assert.deepEqual(
+      { ...state.limits },
+      { ...original, contextWindowTokens: 1000000 }
+    )
+    assert.equal(
+      buttons().find(button => visible(button).trim() === '1M').props[
+        'aria-pressed'
+      ],
+      true
+    )
+    const input = all(root).find(
+      element => element.props.id === 'ai-context-window'
+    )
+    assert.ok(input)
+    assert.equal(input.props.max, 2000000)
+    // 数字输入的 v-model 按原生 number 控件回传数值，仍允许精确的自定义窗口。
+    input.props['onUpdate:modelValue'](1048576)
+    await nextTick()
+    assert.deepEqual({ ...state.limits }, original)
+    assert.ok(buttons().every(button => button.props['aria-pressed'] === false))
+    i18n.global.locale.value = 'en-US'
+    await nextTick()
+    assert.match(visible(root), /1,000,000 tokens/)
+    state.disabled = true
+    await nextTick()
+    assert.ok(buttons().every(button => button.props.disabled === true))
   } finally {
     app.unmount()
   }
@@ -663,7 +744,10 @@ test('ssh backend messages translate fixed wording and keep hosts and server tex
     translateNativeMessage('连接 root@10.0.0.1:22 失败：网络超时'),
     'Failed to connect to root@10.0.0.1:22: Network timeout'
   )
-  assert.equal(translateNativeMessage('120 秒内未确认'), 'Not confirmed within 120 seconds')
+  assert.equal(
+    translateNativeMessage('120 秒内未确认'),
+    'Not confirmed within 120 seconds'
+  )
   assert.equal(translateNativeMessage('自定义服务端文本'), '自定义服务端文本')
   i18n.global.locale.value = 'zh-CN'
   assert.equal(

@@ -65,7 +65,13 @@ const { width: viewportWidth, height: viewportHeight } =
   useElementSize(viewport)
 const canFullscreen = IS_TAURI || document.fullscreenEnabled
 type Zoom = 'fit' | 'fill' | number
-type DisplayMenu = 'resolution' | 'zoom'
+type DisplayMenu = 'resolution' | 'zoom' | 'more'
+interface ToolbarMenuContext {
+  id: number
+  connectionId: string
+  sessionId: string
+  menu: DisplayMenu
+}
 // 响应式状态
 const state = reactive({
   // 当前连接、凭据补齐或证书核对阶段。
@@ -103,6 +109,8 @@ const state = reactive({
   fullscreenZoom: 'fit' as Zoom,
   // 当前展开的显示设置菜单。
   menu: null as DisplayMenu | null,
+  // 每次打开锁定连接和会话，旧菜单回调不能影响后来打开的菜单。
+  menuContext: null as ToolbarMenuContext | null,
   // 显示菜单的触发按钮，用于点击外部与焦点管理。
   menuTrigger: null as HTMLElement | null,
   // 显示菜单相对于窗口的横坐标。
@@ -166,6 +174,9 @@ const zoom = computed(() =>
 const zoomOptions = ['fit', 'fill', 50, 75, 100, 125, 150, 200] as const
 const zoomLabel = (mode: Zoom): string =>
   mode === 'fit' ? t('适应窗口') : mode === 'fill' ? t('拉伸铺满') : `${mode}%`
+const zoomControlLabel = computed(
+  () => `${t('画面缩放')} · ${zoomLabel(zoom.value)}`
+)
 const resolutionLabel = ({ width, height }: RdpResolution): string =>
   `${width} × ${height}`
 const resolutionItems = computed<ContextMenuItem[]>(() => {
@@ -192,12 +203,76 @@ const resolutionItems = computed<ContextMenuItem[]>(() => {
 })
 const zoomItems = computed<ContextMenuItem[]>(() =>
   zoomOptions.map(mode => ({
-    id: String(mode),
+    id: `zoom:${mode}`,
     label: zoomLabel(mode),
     checked: zoom.value === mode,
   }))
 )
+// 窄工具栏的更多菜单复用相同的缩放与分辨率选项。
+const moreItems = computed<ContextMenuItem[]>(() => [
+  ...(state.frameReady
+    ? [
+        {
+          id: 'more-resolution',
+          label: t('远端分辨率'),
+          icon: 'lucide:monitor',
+          children: resolutionItems.value,
+        },
+        {
+          id: 'more-zoom',
+          label: zoomControlLabel.value,
+          icon: 'lucide:scaling',
+          children: zoomItems.value,
+        },
+      ]
+    : []),
+  ...(state.phase === 'connected'
+    ? [
+        {
+          id: 'more-ctrl-alt-delete',
+          label: t('发送 Ctrl+Alt+Delete'),
+          icon: 'lucide:keyboard',
+        },
+      ]
+    : []),
+  {
+    id: 'more-edit',
+    label: t('编辑连接配置'),
+    icon: 'lucide:settings-2',
+    separatorBefore: state.frameReady || state.phase === 'connected',
+  },
+  ...(state.fullscreen
+    ? [
+        {
+          id: 'more-pin',
+          label: state.toolbarPinned
+            ? t('取消固定全屏工具栏')
+            : t('固定全屏工具栏'),
+          icon: state.toolbarPinned ? 'lucide:pin-off' : 'lucide:pin',
+          checked: state.toolbarPinned,
+        },
+      ]
+    : []),
+])
+const toolbarMenuItems = computed(() => {
+  if (state.menu === 'more') return moreItems.value
+  return state.menu === 'zoom' ? zoomItems.value : resolutionItems.value
+})
+const toolbarMenuLabel = computed(() => {
+  if (state.menu === 'more') return t('更多')
+  return state.menu === 'zoom' ? t('画面缩放') : t('远端分辨率')
+})
+// 事件处理闭包与菜单实例共用打开时的快照，旧实例的 select / close 不接管新菜单。
+const toolbarMenuHandlers = computed(() => {
+  const context = state.menuContext
+  return {
+    select: (id: string) => selectToolbarOption(id, context),
+    close: () => closeToolbarMenu(context),
+  }
+})
 
+// 菜单代次只控制工具栏，不改变原生连接或输入队列。
+let menuSequence = 0
 // 会话生命周期与原生异步边界。
 let sessionId = ''
 let sessionKey = ''
@@ -612,19 +687,61 @@ useEventListener(document, 'fullscreenchange', () => {
   }
 })
 
-/** 以顶栏按钮为锚点打开项目共用的玻璃菜单。 */
+/** 以顶栏按钮为锚点打开共用菜单，并锁定本次菜单所属连接和会话。 */
 function openDisplayMenu(menu: DisplayMenu, event: MouseEvent): void {
+  if (!props.active) return
+  if (state.menu === menu) {
+    state.menu = null
+    return
+  }
   const button = event.currentTarget as HTMLElement
   const rect = button.getBoundingClientRect()
   state.menuTrigger = button
   state.menuX = rect.left
   state.menuY = rect.bottom + 5
-  state.menu = state.menu === menu ? null : menu
+  state.menuContext = {
+    id: ++menuSequence,
+    connectionId: props.connection.id,
+    sessionId,
+    menu,
+  }
+  state.menu = menu
 }
 
-/** 远端分辨率和本地缩放分别生效，配置窗口保存的默认值用于新标签。 */
-function selectDisplayOption(id: string): void {
-  if (state.menu === 'zoom') {
+/** 只关闭仍属于原快照的菜单，避免旧菜单的 close 回调覆盖后来打开的菜单。 */
+function closeToolbarMenu(context: ToolbarMenuContext | null): void {
+  if (context === state.menuContext) state.menu = null
+}
+
+/** 路由当前菜单的显示选项与次要动作，失活或切换目标后的旧选择不再执行。 */
+function selectToolbarOption(
+  id: string,
+  context: ToolbarMenuContext | null
+): void {
+  if (
+    !context ||
+    context !== state.menuContext ||
+    !props.active ||
+    state.menu !== context.menu ||
+    props.connection.id !== context.connectionId ||
+    sessionId !== context.sessionId
+  )
+    return
+  const selected = toolbarMenuItems.value
+    .flatMap(item => item.children ?? [item])
+    .find(item => item.id === id)
+  if (!selected || selected.disabled) return
+  if (id.startsWith('zoom:'))
+    selectDisplayOption(id.slice('zoom:'.length), 'zoom')
+  else if (id === 'more-ctrl-alt-delete') sendCtrlAltDelete()
+  else if (id === 'more-edit') editConfiguration()
+  else if (id === 'more-pin') toggleToolbarPinned()
+  else selectDisplayOption(id, 'resolution')
+}
+
+/** 应用菜单选择的远端分辨率或当前窗口模式的画面缩放。 */
+function selectDisplayOption(id: string, group: 'resolution' | 'zoom'): void {
+  if (group === 'zoom') {
     const selected = zoomOptions.find(mode => String(mode) === id)
     if (selected !== undefined) {
       if (state.fullscreen) state.fullscreenZoom = selected
@@ -880,6 +997,14 @@ watch(
   [viewportWidth, viewportHeight, () => state.phase, () => props.active],
   () => void resizeRemote()
 )
+// 菜单只属于打开时的连接，切换配置目标后立即关闭，不触碰原连接生命周期。
+watch(
+  () => props.connection.id,
+  () => {
+    state.menu = null
+  },
+  { flush: 'sync' }
+)
 // 分屏或标签切换时也释放按键，保持后台 RDP 会话。
 watch(
   () => props.active,
@@ -957,30 +1082,59 @@ onBeforeUnmount(() => {
           >
             {{ profile?.name ?? connection.name }}
           </span>
-          <button
+          <!-- 显示控制区：分辨率和画面缩放相邻，各自打开选项。 -->
+          <div
             v-if="frameReady"
-            type="button"
-            class="text-txt-3 hover:bg-hover hover:text-txt flex h-6 shrink-0 items-center gap-1 rounded px-1.5 font-mono text-[11px]"
-            :title="t('远端分辨率')"
-            :aria-label="t('远端分辨率')"
-            aria-haspopup="menu"
-            :aria-expanded="menu === 'resolution'"
-            @click="openDisplayMenu('resolution', $event)"
+            class="rdp-toolbar-secondary flex shrink-0 items-center gap-1"
+            role="group"
+            :aria-label="t('远程桌面显示')"
           >
-            <AppIcon
-              name="lucide:monitor"
-              :size="12"
-            />
-            {{ width }} × {{ height }}
-            <AppIcon
-              name="lucide:chevron-down"
-              :size="11"
-            />
-          </button>
+            <!-- 分辨率按钮：显示实际远端像素尺寸并选择远端分辨率。 -->
+            <button
+              type="button"
+              class="text-txt-3 hover:bg-hover hover:text-txt flex h-6 items-center gap-1 rounded px-1.5 font-mono text-[11px]"
+              :title="t('远端分辨率')"
+              :aria-label="t('远端分辨率')"
+              aria-haspopup="menu"
+              :aria-expanded="menu === 'resolution'"
+              @click="openDisplayMenu('resolution', $event)"
+            >
+              <AppIcon
+                name="lucide:monitor"
+                :size="12"
+              />
+              {{ width }} × {{ height }}
+              <AppIcon
+                name="lucide:chevron-down"
+                :size="11"
+              />
+            </button>
+            <!-- 画面缩放按钮：紧邻分辨率，显示当前模式并打开缩放选项。 -->
+            <button
+              type="button"
+              class="text-txt-3 hover:bg-hover hover:text-txt flex h-6 items-center gap-1 rounded px-1.5 font-mono text-[11px] whitespace-nowrap"
+              :title="zoomControlLabel"
+              :aria-label="zoomControlLabel"
+              aria-haspopup="menu"
+              :aria-expanded="menu === 'zoom'"
+              @click="openDisplayMenu('zoom', $event)"
+            >
+              <AppIcon
+                name="lucide:scaling"
+                :size="12"
+              />
+              {{ zoomLabel(zoom) }}
+              <AppIcon
+                name="lucide:chevron-down"
+                :size="11"
+              />
+            </button>
+          </div>
           <div class="ml-auto flex shrink-0 items-center gap-1">
             <!-- 全屏工具栏固定按钮：可关闭自动收起，偏好只属于当前远程桌面标签。 -->
             <IconButton
               v-if="fullscreen"
+              class="rdp-toolbar-secondary"
               :icon="toolbarPinned ? 'lucide:pin-off' : 'lucide:pin'"
               :size="14"
               :title="
@@ -991,20 +1145,22 @@ onBeforeUnmount(() => {
               @click="toggleToolbarPinned"
             />
             <IconButton
-              v-if="frameReady"
-              icon="lucide:scaling"
-              :size="14"
-              :title="t('画面缩放') + ' · ' + zoomLabel(zoom)"
-              aria-haspopup="menu"
-              :aria-expanded="menu === 'zoom'"
-              @click="openDisplayMenu('zoom', $event)"
-            />
-            <IconButton
               v-if="phase === 'connected'"
               icon="lucide:keyboard"
+              class="rdp-toolbar-secondary"
               :size="14"
               :title="t('发送 Ctrl+Alt+Delete')"
               @click="sendCtrlAltDelete"
+            />
+            <!-- 窄面板更多入口：次要动作在共用菜单中可达，全屏与断开保留直接按钮。 -->
+            <IconButton
+              icon="lucide:ellipsis"
+              class="rdp-toolbar-more"
+              :size="14"
+              :title="t('更多')"
+              aria-haspopup="menu"
+              :aria-expanded="menu === 'more'"
+              @click="openDisplayMenu('more', $event)"
             />
             <IconButton
               v-if="canFullscreen && (frameReady || fullscreen)"
@@ -1015,6 +1171,7 @@ onBeforeUnmount(() => {
             />
             <IconButton
               icon="lucide:settings-2"
+              class="rdp-toolbar-secondary"
               :size="14"
               :title="t('编辑连接配置')"
               @click="editConfiguration"
@@ -1113,15 +1270,18 @@ onBeforeUnmount(() => {
           />
         </div>
 
+        <!-- 工具栏共用菜单：实例和回调锁定打开时的连接与会话，旧选项不能误操作新目标。 -->
         <AppContextMenu
-          :open="menu !== null"
+          :key="state.menuContext?.id"
+          :open="active && menu !== null"
           :x="menuX"
           :y="menuY"
-          :items="menu === 'zoom' ? zoomItems : resolutionItems"
-          :label="t(menu === 'zoom' ? '画面缩放' : '远端分辨率')"
+          :items="toolbarMenuItems"
+          :label="toolbarMenuLabel"
           :trigger="menuTrigger"
-          @close="menu = null"
-          @select="selectDisplayOption"
+          appearance="bubble"
+          @close="toolbarMenuHandlers.close"
+          @select="toolbarMenuHandlers.select"
         />
 
         <Teleport to="body">
@@ -1210,6 +1370,8 @@ onBeforeUnmount(() => {
 .rdp-fullscreen .terminal-header {
   position: absolute;
   inset: 0 0 auto;
+  width: min(100%, 880px);
+  margin-inline: auto;
   z-index: 2;
   background: inherit;
   transform: translateY(-100%);
@@ -1241,5 +1403,23 @@ onBeforeUnmount(() => {
 .rdp-fit {
   width: min(100cqw, calc(100cqh * var(--rdp-aspect)));
   height: auto;
+}
+
+.rdp-toolbar-more {
+  display: none;
+}
+
+/* 跟随所属远程桌面面板宽度，而不是窗口宽度，分屏时同样保留关键操作。 */
+@container terminal (max-width: 560px) {
+  .rdp-toolbar-secondary {
+    display: none;
+  }
+  .rdp-toolbar-more {
+    display: inline-flex;
+  }
+  .terminal-endpoint {
+    flex: 1;
+    max-width: none;
+  }
 }
 </style>

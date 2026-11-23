@@ -5,9 +5,11 @@ import type { AgentLimits } from '@/types/agent'
 import {
   AGENT_CAPACITY_PRESETS,
   AGENT_LIMIT_RANGES,
+  AGENT_MODEL_WINDOW_PRESETS,
   agentCapacityPreset,
   formatAgentContextSize,
 } from '@/constants/agent-limits'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppInput from '@/components/ui/AppInput.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 
@@ -55,8 +57,14 @@ const options = computed(() => [
 function limitInput(key: keyof AgentLimits): string {
   return limits.value[key] as unknown as string
 }
+/** 数字输入就地写回当前配置，保留清空等输入中的状态供保存时校验。 */
 function setLimit(key: keyof AgentLimits, value: string): void {
   limits.value[key] = value as unknown as number
+}
+
+/** 快捷选择模型窗口，仅修改当前配置的上下文 Token 预算。 */
+function setContextWindow(tokens: number): void {
+  limits.value.contextWindowTokens = tokens
 }
 </script>
 
@@ -137,19 +145,44 @@ function setLimit(key: keyof AgentLimits, value: string): void {
         )
       }}
     </p>
+    <!-- 模型预算区：快捷选择 1M 等窗口，仍可输入模型实际支持的精确容量。 -->
     <div class="grid min-w-0 gap-2">
-      <label
-        for="ai-context-window"
-        class="text-txt-3 text-[11px]"
-        >{{ t('agent.modelWindow') }}</label
-      >
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <label
+          for="ai-context-window"
+          class="text-txt-3 text-[11px]"
+          >{{ t('agent.modelWindow') }}</label
+        >
+        <div
+          class="flex flex-wrap gap-1"
+          role="group"
+          :aria-label="t('ai.modelWindowPresets')"
+        >
+          <!-- 模型窗口快捷按钮：选择只改变 Token 预算，不改变任务容量或输出限制。 -->
+          <AppButton
+            v-for="option in AGENT_MODEL_WINDOW_PRESETS"
+            :key="option.value"
+            size="sm"
+            :variant="
+              limits.contextWindowTokens === option.value
+                ? 'primary'
+                : 'default'
+            "
+            :aria-pressed="limits.contextWindowTokens === option.value"
+            :disabled="disabled"
+            @click="setContextWindow(option.value)"
+            >{{ option.label }}</AppButton
+          >
+        </div>
+      </div>
+      <!-- 模型窗口输入：保留自定义值，例如 1048576 tokens。 -->
       <AppInput
         id="ai-context-window"
         :model-value="limitInput('contextWindowTokens')"
         type="number"
         step="1"
-        min="16384"
-        max="2000000"
+        :min="AGENT_LIMIT_RANGES.contextWindowTokens.min"
+        :max="AGENT_LIMIT_RANGES.contextWindowTokens.max"
         :disabled="disabled"
         required
         aria-describedby="ai-model-budget-help"
@@ -245,8 +278,8 @@ function setLimit(key: keyof AgentLimits, value: string): void {
   font-variant-numeric: tabular-nums;
 }
 .capacity-help {
-  color: var(--color-txt-4);
-  font-size: 10px;
+  color: var(--color-txt-3);
+  font-size: 11px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }

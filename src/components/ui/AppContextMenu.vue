@@ -13,6 +13,7 @@ const props = defineProps<{
   items: readonly ContextMenuItem[]
   label?: string
   scrollable?: boolean
+  appearance?: 'bubble'
   /** 点击触发按钮由调用方切换，避免 pointerdown 先关闭、click 又打开。 */
   trigger?: HTMLElement | null
 }>()
@@ -161,7 +162,10 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
         v-show="open"
         ref="menu"
         class="app-context-menu"
-        :class="scrollable && 'app-context-menu-scroll scroll-thin'"
+        :class="[
+          scrollable && 'app-context-menu-scroll scroll-thin',
+          appearance === 'bubble' && 'app-context-menu-bubble',
+        ]"
         role="menu"
         tabindex="-1"
         aria-orientation="vertical"
@@ -326,6 +330,16 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
   position: fixed;
   z-index: 100;
 }
+.app-context-menu-bubble,
+.app-context-menu-bubble .app-context-submenu {
+  /* 与提示气泡共用玻璃底、圆角和柔和投影。 */
+  isolation: isolate;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop-drop);
+  --menu-surface-clip: inset(0 round 6px);
+  --context-menu-text: var(--color-txt);
+}
 .app-context-menu-scroll {
   max-height: calc(100dvh - 16px);
   overflow-y: auto;
@@ -360,7 +374,7 @@ useEventListener(window, 'blur', () => props.open && emit('close'))
   border: 1px solid transparent;
   border-radius: 7px;
   padding: 0 7px;
-  color: var(--color-txt-2);
+  color: var(--context-menu-text, var(--color-txt-2));
   font-size: 11.5px;
   font-weight: 500;
   outline: none;

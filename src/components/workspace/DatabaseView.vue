@@ -303,7 +303,7 @@ const queryState = reactive({
   activeId: '',
 })
 const historyEntries = shallowRef<DatabaseHistoryEntry[]>([])
-const historyMenu = reactive({ open: false, x: 0, y: 0 })
+const historyMenu = reactive({ open: false, x: 0, y: 0, tabId: '', source: '' })
 const nameDialog = reactive({
   open: false,
   mode: 'create-database' as NameActionMode,
@@ -490,6 +490,37 @@ function tabDatabase(tab: WorkspaceTab): string {
     return tab.kind === 'object' ? tab.object.schema : tab.schema
   return session.value?.database || configuredDatabase
 }
+
+/** 记录查询历史菜单的连接、会话和标签，避免旧菜单影响切换后的查询。 */
+function queryHistoryContext(tabId: string): string {
+  const tab = queryState.tabs.find(item => item.id === tabId)
+  return JSON.stringify([
+    props.connection?.id,
+    sessionId.value,
+    connected.value,
+    status.value,
+    databaseKind.value,
+    props.active !== false,
+    props.workspaceHostId,
+    displayedTabId.value,
+    queryState.activeId,
+    databaseName.value,
+    browsedDatabase.value,
+    queryLoading.value,
+    state.preparingQuery,
+    tabId ? (tab ? [tab.id, tab.kind, tabDatabase(tab)] : null) : 'overview',
+  ])
+}
+
+// 查询历史同样归属其触发标签，切换上下文后旧历史项不能写入另一查询。
+watch(
+  () => queryHistoryContext(historyMenu.tabId),
+  () => {
+    historyMenu.open = false
+  },
+  { flush: 'sync' }
+)
+
 /** 为数据库内部的表、查询和设计标签提供其自身所属库的悬停信息。 */
 function tabTooltip(tab: WorkspaceTab): NonNullable<TabItem['tooltip']> {
   const connection = props.connection
@@ -1572,7 +1603,8 @@ async function explainQuery(sql: string, tabId: string): Promise<void> {
   }
 }
 
-function showHistory(event: MouseEvent): void {
+/** 在所在查询工具栏打开连接历史，记录来源供选择时再次核对。 */
+function showHistory(event: MouseEvent, tabId: string): void {
   if (historyMenu.open) {
     historyMenu.open = false
     return
@@ -1583,10 +1615,20 @@ function showHistory(event: MouseEvent): void {
   const rect = historyTrigger.value.getBoundingClientRect()
   historyMenu.x = rect.right
   historyMenu.y = rect.bottom + 5
+  historyMenu.tabId = tabId
+  historyMenu.source = queryHistoryContext(historyMenu.tabId)
   historyMenu.open = true
 }
 
+/** 选择历史项前复核工具栏来源，保留原打开查询与清空历史的业务入口。 */
 function handleHistoryAction(id: string): void {
+  if (
+    !historyMenu.open ||
+    historyMenu.source !== queryHistoryContext(historyMenu.tabId)
+  ) {
+    historyMenu.open = false
+    return
+  }
   if (id === 'clear') {
     clearQueryHistory(props.connection?.id)
     historyEntries.value = []
@@ -1911,7 +1953,7 @@ registerDatabaseCommandSource(
             :title="t('查询历史')"
             aria-haspopup="menu"
             :aria-expanded="historyMenu.open"
-            @click="showHistory"
+            @click="showHistory($event, tab.id)"
           />
           <IconButton
             icon="lucide:network"

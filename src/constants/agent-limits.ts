@@ -9,6 +9,13 @@ export const AGENT_LIMIT_RANGES = {
   maxRetries: { min: 0, max: 999 },
 } as const
 
+/** 模型窗口快捷值只设置 Token 预算，不改本地容量、任务轮数或输出上限。 */
+export const AGENT_MODEL_WINDOW_PRESETS = [
+  { value: 128000, label: '128K' },
+  { value: 256000, label: '256K' },
+  { value: 1000000, label: '1M' },
+] as const
+
 export const AGENT_CAPACITY_PRESETS = [
   {
     value: 'standard',

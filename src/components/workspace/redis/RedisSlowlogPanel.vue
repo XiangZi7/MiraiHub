@@ -1,28 +1,41 @@
 <script setup lang="ts">
-import { computed, reactive, toRefs, watch } from 'vue'
+import { computed, onScopeDispose, reactive, toRefs, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppSkeleton from '@/components/ui/AppSkeleton.vue'
+import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import * as redis from '@/api/redis'
 import { toast } from '@/composables/useToast'
+import { copyText } from '@/utils/clipboard'
 import { quoteRedisArgument } from '@/utils/redis-commands'
 import type { RedisSlowlog } from '@/types/redis'
 
-const props = defineProps<{ sessionId: string }>()
+const props = withDefaults(
+  defineProps<{ sessionId: string; active?: boolean }>(),
+  { active: true }
+)
 const { t } = useI18n()
 // 响应式状态
 const state = reactive({
+  // 当前连接最近一次有效的慢日志快照。
   log: null as RedisSlowlog | null,
+  // 读取最近多少条记录。
   count: '128',
+  // 正在读取快照。
   loading: false,
+  // 正在执行清空，禁止重复提交。
+  resetting: false,
+  // 清空服务器慢日志的确认框。
   confirmReset: false,
-  // 按耗时排序，否则按时间倒序（服务器默认顺序）
+  // 按耗时排序，否则保留服务器的时间倒序。
   byDuration: false,
 })
-const { log, count, loading, confirmReset, byDuration } = toRefs(state)
+const { log, count, loading, resetting, confirmReset, byDuration } =
+  toRefs(state)
 const counts = [
   { value: '32', label: '32' },
   { value: '128', label: '128' },
@@ -34,45 +47,96 @@ const entries = computed(() => {
     ? list.sort((a, b) => b.durationUs - a.durationUs)
     : list
 })
-function duration(us: number) {
+let generation = 0
+let disposed = false
+/** 以微秒或毫秒展示 Redis 报告的命令耗时。 */
+function duration(us: number): string {
   return us >= 1000 ? (us / 1000).toFixed(2) + ' ms' : us + ' µs'
 }
-function commandText(args: string[]) {
+/** 对包含空白等字符的参数转义，复制出的命令仍保持原始参数边界。 */
+function commandText(args: string[]): string {
   return args
     .map(arg => (/^[\w:.*-]+$/.test(arg) ? arg : quoteRedisArgument(arg)))
     .join(' ')
 }
-async function load() {
-  if (state.loading) return
+/** 只读取当前活跃连接；隐藏、换连接、改条数或卸载后的旧结果不回写。 */
+async function load(): Promise<void> {
+  if (disposed || state.loading || !props.active || !props.sessionId) return
+  const token = generation
+  const id = props.sessionId
   state.loading = true
   try {
-    state.log = await redis.slowlog(props.sessionId, Number(state.count))
+    const log = await redis.slowlog(id, Number(state.count))
+    if (!disposed && token === generation && id === props.sessionId)
+      state.log = log
   } catch (error) {
-    toast.error(redis.errorMessage(error))
+    if (!disposed && token === generation)
+      toast.error({
+        title: t('读取 Redis 慢日志失败'),
+        description: redis.errorMessage(error),
+      })
   } finally {
-    state.loading = false
+    if (!disposed && token === generation) state.loading = false
   }
 }
-async function reset() {
+/** 确认后只清空当前连接，完成后刷新快照；停止等待不能撤销已执行的 RESET。 */
+async function reset(): Promise<void> {
+  if (
+    disposed ||
+    state.resetting ||
+    state.loading ||
+    !props.active ||
+    !props.sessionId
+  )
+    return
   state.confirmReset = false
+  state.resetting = true
+  const token = generation
+  const id = props.sessionId
   try {
-    await redis.slowlogReset(props.sessionId)
-    await load()
+    await redis.slowlogReset(id)
+    if (!disposed && token === generation && id === props.sessionId)
+      await load()
   } catch (error) {
-    toast.error(redis.errorMessage(error))
+    if (!disposed && token === generation)
+      toast.error(redis.errorMessage(error))
+  } finally {
+    if (!disposed && token === generation) state.resetting = false
   }
 }
-async function copy(args: string[]) {
-  await navigator.clipboard.writeText(commandText(args))
-  toast.success(t('已复制'))
+/** 通过公共剪贴板入口复制命令，并统一反馈失败或成功。 */
+async function copy(args: string[]): Promise<void> {
+  try {
+    await copyText(commandText(args))
+    if (!disposed) toast.success(t('已复制'))
+  } catch (error) {
+    if (!disposed)
+      toast.error({ title: t('复制失败'), description: String(error) })
+  }
 }
-watch(() => [props.sessionId, state.count], load, { immediate: true })
+// 连接、可见性或读取条数变化时失效旧请求，新连接不沿用旧记录或清空确认。
+watch(
+  () => [props.sessionId, props.active, state.count] as const,
+  ([id, active], previous) => {
+    generation++
+    state.loading = false
+    state.resetting = false
+    state.confirmReset = false
+    if (id !== previous?.[0]) state.log = null
+    if (active) void load()
+  },
+  { immediate: true, flush: 'sync' }
+)
+onScopeDispose(() => {
+  disposed = true
+  generation++
+})
 </script>
 
 <template>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col">
     <div
-      class="border-line-soft flex h-9 shrink-0 items-center gap-2 border-b px-3 text-[11px]"
+      class="border-line-soft flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-1 text-[11px]"
     >
       <span class="text-txt-3">{{
         t('共 {total} 条，显示最近 {count} 条', {
@@ -91,6 +155,7 @@ watch(() => [props.sessionId, state.count], load, { immediate: true })
         class="w-20 shrink-0"
         :label="t('读取条数')"
         :options="counts"
+        :disabled="loading || resetting || !active"
         compact
         hide-label
       />
@@ -100,20 +165,45 @@ watch(() => [props.sessionId, state.count], load, { immediate: true })
         :class="loading && '[&_svg]:motion-safe:animate-spin'"
         :title="t('刷新')"
         :aria-label="t('刷新')"
-        :disabled="loading"
+        :disabled="loading || resetting || !active"
         @click="load"
       />
       <AppButton
         size="sm"
         class="h-6"
-        :disabled="loading || !log?.total"
+        :disabled="loading || resetting || !active || !log?.total"
         @click="confirmReset = true"
       >
         {{ t('清空慢日志') }}
       </AppButton>
     </div>
-    <div class="scroll-thin min-h-0 flex-1 overflow-auto">
-      <table class="w-full table-fixed border-collapse text-[11px]">
+    <div
+      class="scroll-thin flex min-h-0 flex-1 flex-col overflow-auto"
+      :aria-busy="loading || resetting"
+    >
+      <AppSkeleton
+        v-if="loading && !log"
+        class="my-auto w-full"
+        variant="table"
+        :rows="6"
+        :columns="5"
+      />
+      <AppEmptyState
+        v-else-if="!log"
+        class="my-auto"
+        icon="lucide:list-ordered"
+        :title="t('暂无慢日志数据')"
+      >
+        <AppButton
+          :disabled="loading || resetting || !active"
+          @click="load"
+          >{{ t('刷新') }}</AppButton
+        >
+      </AppEmptyState>
+      <table
+        v-else
+        class="w-full min-w-[620px] table-fixed border-collapse text-[11px]"
+      >
         <thead class="bg-panel text-txt-3 sticky top-0 z-10">
           <tr class="border-line-soft border-b text-left">
             <th class="w-16 px-2 py-1.5 font-normal">ID</th>
@@ -150,7 +240,10 @@ watch(() => [props.sessionId, state.count], load, { immediate: true })
             </td>
             <td
               class="text-txt-4 truncate px-2 py-1.5 font-mono"
-              :title="entry.client + (entry.clientName ? ' · ' + entry.clientName : '')"
+              :title="
+                entry.client +
+                (entry.clientName ? ' · ' + entry.clientName : '')
+              "
             >
               {{ entry.client || '—'
               }}{{ entry.clientName ? ' · ' + entry.clientName : '' }}
@@ -179,6 +272,7 @@ watch(() => [props.sessionId, state.count], load, { immediate: true })
     </div>
     <AppConfirmDialog
       :open="confirmReset"
+      danger
       :title="t('清空慢日志？')"
       :description="t('将执行 SLOWLOG RESET，清空服务器上的全部慢日志记录。')"
       :confirm-label="t('清空慢日志')"

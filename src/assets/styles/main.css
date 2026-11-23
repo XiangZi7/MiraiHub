@@ -36,10 +36,8 @@
    例：--color-card → bg-card / text-card / border-card
    ========================================================================== */
 @theme {
-  /* ---------- 拉丁字体本地内置；中文明确使用系统 UI 字体，避免隐式回退 ---------- */
-  --font-sans:
-    'Inter', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei',
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* ---------- 首屏与默认界面字体一致：英文 JetBrains Mono，中文汉仪 ---------- */
+  --font-sans: 'JetBrains Mono Variable', 'Hanyi', ui-monospace, monospace;
   --font-mono:
     'JetBrains Mono Variable', 'JetBrains Mono', 'SF Mono', 'Cascadia Code',
     'Menlo', 'Consolas', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei',

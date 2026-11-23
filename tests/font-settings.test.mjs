@@ -54,7 +54,7 @@ async function fixture(t) {
   return { api, apiLoad, storage, properties }
 }
 
-test('外观和终端提供可用字体选项，并保留旧版本默认字体', () => {
+test('界面和终端默认使用 JetBrains Mono，并保留全部独立字体选项', () => {
   const appearance = SETTINGS_PAGES.find(page => page.id === 'appearance')
   const terminal = SETTINGS_PAGES.find(page => page.id === 'terminal')
   assert.equal(
@@ -77,7 +77,7 @@ test('外观和终端提供可用字体选项，并保留旧版本默认字体',
     TERMINAL_FONT_OPTIONS.map(option => option.value),
     ['jetbrains-mono', 'cascadia-code', 'consolas', 'hanyi']
   )
-  assert.equal(DEFAULT_SETTINGS.uiFont, 'inter')
+  assert.equal(DEFAULT_SETTINGS.uiFont, 'jetbrains-mono')
   assert.equal(DEFAULT_SETTINGS.terminalFont, 'jetbrains-mono')
   for (const option of UI_FONT_OPTIONS)
     assert.equal(fonts.uiFontFamily(option.value), option.fontFamily)
@@ -86,6 +86,24 @@ test('外观和终端提供可用字体选项，并保留旧版本默认字体',
       fonts.resolveTerminalFontFamily(option.value),
       option.fontFamily
     )
+})
+
+/** 校验未应用用户设置前的首屏字体与设置默认值一致，避免字体切换闪动。 */
+test('首屏 CSS 与默认界面字体使用相同的 JetBrains Mono 和汉仪回退链', () => {
+  const css = readFileSync(
+    new URL('../src/assets/styles/main.css', import.meta.url),
+    'utf8'
+  )
+  const family = css.match(/@theme\s*\{[\s\S]*?--font-sans:\s*([^;]+);/)?.[1]
+  assert.ok(family)
+  assert.equal(
+    family.replace(/['"\s]/g, ''),
+    fonts.uiFontFamily(DEFAULT_SETTINGS.uiFont).replace(/['"\s]/g, '')
+  )
+  assert.match(
+    fonts.uiFontFamily(DEFAULT_SETTINGS.uiFont),
+    /^"JetBrains Mono Variable", "Hanyi"/
+  )
 })
 
 test('汉仪字体保持原始 WOFF2，中文终端选项不使用非等宽英文', () => {
@@ -134,13 +152,32 @@ test('未知、损坏和原型属性名称不会流入 CSS 或形成空白选择
     {},
     3,
   ]) {
-    assert.equal(fonts.normalizeUiFont(value), 'inter')
+    assert.equal(fonts.normalizeUiFont(value), 'jetbrains-mono')
     assert.equal(fonts.normalizeTerminalFont(value), 'jetbrains-mono')
-    assert.equal(fonts.uiFontFamily(value), fonts.uiFontFamily('inter'))
+    assert.equal(
+      fonts.uiFontFamily(value),
+      fonts.uiFontFamily('jetbrains-mono')
+    )
     assert.equal(
       fonts.resolveTerminalFontFamily(value),
       fonts.resolveTerminalFontFamily('jetbrains-mono')
     )
+  }
+})
+
+/** 新默认仅补齐未设置的值，不迁移或覆盖用户已经保存的字体偏好。 */
+test('新安装采用 JetBrains Mono，已有有效字体选择保持不变', async t => {
+  const { api, storage } = await fixture(t)
+  assert.equal(api.loadSettings().uiFont, 'jetbrains-mono')
+  for (const uiFont of [
+    'inter',
+    'system',
+    'hanyi',
+    'cascadia-code',
+    'consolas',
+  ]) {
+    storage.set('miraihub.settings.v1', JSON.stringify({ uiFont }))
+    assert.equal(api.loadSettings().uiFont, uiFont)
   }
 })
 
@@ -150,7 +187,7 @@ test('旧设置补齐界面字体，新增字体可保存、重载、重置且�
     'miraihub.settings.v1',
     JSON.stringify({ terminalFont: 'consolas' })
   )
-  assert.equal(api.loadSettings().uiFont, 'inter')
+  assert.equal(api.loadSettings().uiFont, 'jetbrains-mono')
   assert.equal(api.loadSettings().terminalFont, 'consolas')
   for (const option of UI_FONT_OPTIONS) {
     api.saveSettings({
@@ -165,10 +202,10 @@ test('旧设置补齐界面字体，新增字体可保存、重载、重置且�
     'miraihub.settings.v1',
     JSON.stringify({ uiFont: 'unknown', terminalFont: 'constructor' })
   )
-  assert.equal(api.loadSettings().uiFont, 'inter')
+  assert.equal(api.loadSettings().uiFont, 'jetbrains-mono')
   assert.equal(api.loadSettings().terminalFont, 'jetbrains-mono')
   api.saveSettings(api.defaultSettings())
-  assert.equal(api.loadSettings().uiFont, 'inter')
+  assert.equal(api.loadSettings().uiFont, 'jetbrains-mono')
   assert.equal(api.loadSettings().terminalFont, 'jetbrains-mono')
 })
 

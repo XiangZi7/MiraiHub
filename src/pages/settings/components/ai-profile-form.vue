@@ -38,6 +38,7 @@ const pricingFields = ['input', 'output', 'cached'] as const
 function priceInput(value: number | null): string {
   return value as unknown as string
 }
+/** 单价输入原样写回草稿，保留输入过程中的数值格式。 */
 function setPrice(field: keyof AgentPricing, value: string): void {
   if (draft.value.pricing)
     draft.value.pricing[field] = value as unknown as number | null
@@ -52,26 +53,31 @@ function normalizePrice(field: keyof AgentPricing): void {
 <template>
   <fieldset
     :disabled="disabled"
-    class="grid min-w-0 gap-5 border-0 p-0"
+    class="ai-profile-form"
     :aria-label="t('模型服务配置')"
   >
-    <div class="text-txt-2 grid min-w-0 gap-2 text-xs">
-      <label for="ai-profile-name">{{ t('配置名称') }}</label>
-      <AppInput
-        id="ai-profile-name"
-        v-model="draft.name"
-        :placeholder="t('例如：Claude 官网、OpenAI 中转站')"
-        maxlength="80"
+    <legend class="profile-title">{{ t('模型服务配置') }}</legend>
+    <!-- 基础信息区：配置名称与接口格式在宽窗口并排展示。 -->
+    <div class="profile-basics">
+      <div class="text-txt-2 grid min-w-0 gap-2 text-xs">
+        <label for="ai-profile-name">{{ t('配置名称') }}</label>
+        <AppInput
+          id="ai-profile-name"
+          v-model="draft.name"
+          :placeholder="t('例如：Claude 官网、OpenAI 中转站')"
+          maxlength="80"
+        />
+      </div>
+      <!-- API 格式选择：在当前值和候选项中显示图标。 -->
+      <AppSelect
+        icon="lucide:braces"
+        v-model="draft.apiFormat"
+        :label="t('API 格式')"
+        :options="formats"
+        :disabled="disabled"
       />
     </div>
-    <!-- API 格式选择：在当前值和候选项中显示图标。 -->
-    <AppSelect
-      icon="lucide:braces"
-      v-model="draft.apiFormat"
-      :label="t('API 格式')"
-      :options="formats"
-      :disabled="disabled"
-    />
+    <!-- 启用状态区：明确配置是否参与 AI 协作。 -->
     <AppSwitch
       v-model="draft.enabled"
       :label="t('启用此配置')"
@@ -143,36 +149,123 @@ function normalizePrice(field: keyof AgentPricing): void {
       :label="t('保存时清除旧密钥')"
       :disabled="disabled"
     />
-    <AiCapacityFields
-      v-model="draft.limits"
-      :disabled="disabled"
-    />
-    <div
-      v-if="draft.pricing"
-      class="grid gap-3"
-    >
-      <p class="text-txt-2 text-xs">
-        {{ t('每百万 Token 单价（USD，留空不估算费用）') }}
-      </p>
-      <label
-        v-for="field in pricingFields"
-        :key="field"
-        class="text-txt-3 grid grid-cols-2 items-center gap-2 text-xs"
-        >{{
-          t(
-            { input: '输入单价', output: '输出单价', cached: '缓存读取单价' }[
-              field
-            ]
-          )
-        }}<AppInput
-          :model-value="priceInput(draft.pricing[field])"
-          type="number"
-          min="0"
-          max="1000000"
-          step="any"
-          @update:model-value="setPrice(field, $event)"
-          @change="normalizePrice(field)"
-      /></label>
-    </div>
+    <!-- 高级配置区：默认折叠容量和单价，所有草稿控件保持挂载。 -->
+    <details class="profile-advanced">
+      <summary class="profile-summary">{{ t('ai.settingsAdvanced') }}</summary>
+      <div class="profile-advanced-content">
+        <AiCapacityFields
+          v-model="draft.limits"
+          :disabled="disabled"
+        />
+        <div
+          v-if="draft.pricing"
+          class="profile-pricing"
+        >
+          <p class="text-txt-2 text-xs">
+            {{ t('每百万 Token 单价（USD，留空不估算费用）') }}
+          </p>
+          <label
+            v-for="field in pricingFields"
+            :key="field"
+            class="text-txt-3 grid grid-cols-2 items-center gap-2 text-xs"
+            >{{
+              t(
+                {
+                  input: '输入单价',
+                  output: '输出单价',
+                  cached: '缓存读取单价',
+                }[field]
+              )
+            }}<AppInput
+              :model-value="priceInput(draft.pricing[field])"
+              type="number"
+              min="0"
+              max="1000000"
+              step="any"
+              @update:model-value="setPrice(field, $event)"
+              @change="normalizePrice(field)"
+          /></label>
+        </div>
+      </div>
+    </details>
   </fieldset>
 </template>
+
+<style scoped>
+.ai-profile-form {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  padding: 18px;
+  background: color-mix(in oklch, var(--color-panel) 45%, transparent);
+}
+.profile-title {
+  float: left;
+  width: 100%;
+  color: var(--color-txt);
+  font-size: 13px;
+  font-weight: 600;
+}
+.profile-basics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+.profile-advanced {
+  min-width: 0;
+  border-top: 1px solid var(--color-line-soft);
+  padding-top: 4px;
+}
+.profile-summary {
+  cursor: pointer;
+  padding-block: 12px;
+  color: var(--color-txt-2);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 4px;
+  transition: color 180ms ease;
+}
+.profile-summary:hover {
+  color: var(--color-accent);
+}
+.profile-summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+.profile-advanced-content {
+  display: grid;
+  gap: 20px;
+  padding-top: 8px;
+}
+.profile-advanced-content :deep(.ai-capacity) {
+  border-top: 0;
+  padding-top: 0;
+}
+.profile-pricing {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--color-line-soft);
+  padding-top: 18px;
+}
+.ai-profile-form :deep(.text-txt-4) {
+  color: var(--color-txt-3);
+}
+@container settings (max-width: 680px) {
+  .profile-basics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container settings (max-width: 560px) {
+  .ai-profile-form {
+    padding: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-summary {
+    transition: none;
+  }
+}
+</style>

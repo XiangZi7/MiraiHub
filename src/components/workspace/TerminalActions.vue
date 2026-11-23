@@ -123,27 +123,57 @@ const items = computed(() => {
   return [
     ...aiItems,
     {
+      id: 'search',
+      label: t('搜索终端内容'),
+      icon: 'lucide:search',
+      shortcut: 'Ctrl+F',
+      disabled: !props.terminal,
+      separatorBefore: props.ai,
+    },
+    {
       id: 'copy',
       label: t('复制选中内容'),
       icon: 'lucide:copy',
       shortcut: 'Ctrl+Shift+C',
-      disabled: !state.hasSelection,
-      separatorBefore: props.ai,
+      disabled: !props.terminal || !state.hasSelection,
     },
     {
       id: 'paste',
       label: t('粘贴'),
       icon: 'lucide:clipboard-paste',
       shortcut: 'Ctrl+Shift+V',
-      disabled: props.status !== 'connected',
+      disabled: !props.terminal || props.status !== 'connected',
     },
-    { id: 'select-all', label: t('全选'), icon: 'lucide:text-select' },
+    {
+      id: 'select-all',
+      label: t('全选'),
+      icon: 'lucide:text-select',
+      disabled: !props.terminal,
+    },
     {
       id: 'clear',
       label: t('清除回滚内容'),
       icon: 'lucide:eraser',
+      disabled: !props.terminal,
       separatorBefore: true,
     },
+    ...(!props.local
+      ? [
+          {
+            id: 'recording',
+            label: state.recording ? t('停止录制') : t('开始录制'),
+            icon: state.recording ? 'lucide:square' : 'lucide:circle-dot',
+            checked: state.recording,
+            disabled: !props.terminal,
+            separatorBefore: true,
+          },
+          {
+            id: 'import-recording',
+            label: t('导入录制回放'),
+            icon: 'lucide:film',
+          },
+        ]
+      : []),
     {
       id: 'disconnect',
       label: props.local ? t('停止本地终端') : t('断开连接'),
@@ -338,10 +368,23 @@ watch(
   { immediate: true }
 )
 
+/** 将更多菜单路由到原有操作；搜索与回放不把焦点重新抢回终端。 */
 async function runAction(id: string): Promise<void> {
   const terminal = props.terminal
-  if (!terminal) return
   try {
+    if (id === 'import-recording' && !props.local) {
+      castInput.value?.click()
+      return
+    }
+    if (!terminal) return
+    if (id === 'search') {
+      await openSearch()
+      return
+    }
+    if (id === 'recording' && !props.local) {
+      toggleRecording()
+      return
+    }
     if (id === 'copy') {
       const text = terminal.getSelection()
       if (text) {
@@ -413,10 +456,14 @@ function insertCommand(command: string): void {
 </script>
 
 <template>
-  <div class="relative ml-auto flex shrink-0 items-center gap-1">
+  <div
+    class="terminal-actions relative ml-auto flex shrink-0 items-center gap-1"
+    role="group"
+    :aria-label="t('终端操作')"
+  >
     <div
       v-if="!local"
-      class="terminal-secondary-action"
+      class="terminal-command-action"
     >
       <TerminalCommandMenu
         :connected="status === 'connected' && Boolean(terminal)"
@@ -441,22 +488,6 @@ function insertCommand(command: string): void {
       @click="emit('close')"
     />
     <slot />
-    <IconButton
-      v-if="!local"
-      :icon="recording ? 'lucide:square' : 'lucide:circle-dot'"
-      :size="14"
-      :class="recording && 'text-danger'"
-      :title="recording ? t('停止录制') : t('开始录制')"
-      :disabled="!terminal"
-      @click="toggleRecording"
-    />
-    <IconButton
-      v-if="!local"
-      icon="lucide:film"
-      :size="14"
-      :title="t('导入录制回放')"
-      @click="castInput?.click()"
-    />
     <input
       ref="castInput"
       type="file"
@@ -496,15 +527,16 @@ function insertCommand(command: string): void {
     <IconButton
       icon="lucide:ellipsis"
       :size="14"
+      :class="recording && 'text-danger'"
       :title="t('更多')"
-      :disabled="!terminal"
+      :disabled="local && !terminal"
       aria-haspopup="menu"
       :aria-expanded="menuOpen"
       @click="openMenu"
     />
     <div
       v-if="searchOpen"
-      class="border-line panel-fade-in absolute top-full right-0 z-30 mt-2 flex w-84 items-center gap-1 rounded-lg border bg-[var(--color-canvas)] p-2 shadow-lg"
+      class="border-line panel-fade-in focus-within:border-violet/65 focus-within:ring-violet/20 absolute top-full right-0 z-30 mt-2 flex w-[min(21rem,calc(100cqw-16px))] flex-wrap items-center gap-1 rounded-lg border bg-[var(--color-canvas)] p-2 shadow-lg focus-within:ring-2"
       role="search"
       @keydown.esc.stop="closeSearch"
     >
@@ -514,7 +546,7 @@ function insertCommand(command: string): void {
         :aria-label="t('搜索终端内容')"
         :aria-invalid="state.invalidQuery"
         :placeholder="t('搜索终端内容…')"
-        class="text-txt aria-[invalid=true]:text-danger min-w-0 flex-1 bg-transparent text-xs outline-none"
+        class="text-txt aria-[invalid=true]:text-danger min-w-24 flex-1 bg-transparent text-xs outline-none"
         @keydown.enter.prevent="search($event.shiftKey ? -1 : 1)"
       />
       <button
@@ -571,9 +603,15 @@ function insertCommand(command: string): void {
 </template>
 
 <style scoped>
+/* 紧凑模式隐藏的次要动作仍可从更多菜单访问。 */
 @container terminal (max-width: 640px) {
   .terminal-secondary-action {
     display: none;
+  }
+}
+@container terminal (max-width: 400px) {
+  .terminal-actions {
+    gap: 2px;
   }
 }
 </style>

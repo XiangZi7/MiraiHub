@@ -31,6 +31,7 @@ const {
 defineExpose({ save })
 const deleting = ref(false)
 const managingPrompts = ref(false)
+/** 确认删除当前 AI 配置，关闭确认框后执行删除。 */
 function confirmDelete(): void {
   deleting.value = false
   void remove()
@@ -69,42 +70,45 @@ function confirmDelete(): void {
         </p>
         <fieldset
           :disabled="loading || busy"
-          class="grid min-w-0 gap-3 border-0 p-0"
+          class="ai-config-management"
           :aria-label="t('配置管理')"
         >
-          <!-- 已保存的配置选择：在当前值和候选项中显示图标。 -->
-          <AppSelect
-            icon="lucide:bot"
-            v-model="selectedId"
-            :label="t('已保存的配置')"
-            :options="options"
-            :disabled="loading || busy"
-            searchable
-          />
-          <div class="flex items-end gap-2">
-            <div class="min-w-0 flex-1">
-              <!-- 添加配置选择：在当前值和候选项中显示图标。 -->
-              <AppSelect
-                icon="lucide:circle-plus"
-                v-model="preset"
-                :label="t('添加配置')"
-                :options="
-                  AGENT_PROVIDER_PRESETS.map(option => ({
-                    ...option,
-                    label: translateLabel(option.label),
-                  }))
-                "
-                :disabled="loading || busy"
-              />
-            </div>
-            <AppButton
+          <legend class="section-title">{{ t('配置管理') }}</legend>
+          <div class="ai-config-grid">
+            <!-- 已保存的配置选择：在当前值和候选项中显示图标。 -->
+            <AppSelect
+              icon="lucide:bot"
+              v-model="selectedId"
+              :label="t('已保存的配置')"
+              :options="options"
               :disabled="loading || busy"
-              @click="add"
-              ><AppIcon
-                name="lucide:plus"
-                :size="13"
-              />{{ t('添加') }}</AppButton
-            >
+              searchable
+            />
+            <div class="flex items-end gap-2">
+              <div class="min-w-0 flex-1">
+                <!-- 添加配置选择：在当前值和候选项中显示图标。 -->
+                <AppSelect
+                  icon="lucide:circle-plus"
+                  v-model="preset"
+                  :label="t('添加配置')"
+                  :options="
+                    AGENT_PROVIDER_PRESETS.map(option => ({
+                      ...option,
+                      label: translateLabel(option.label),
+                    }))
+                  "
+                  :disabled="loading || busy"
+                />
+              </div>
+              <AppButton
+                :disabled="loading || busy"
+                @click="add"
+                ><AppIcon
+                  name="lucide:plus"
+                  :size="13"
+                />{{ t('添加') }}</AppButton
+              >
+            </div>
           </div>
           <p class="ai-field-help">
             {{
@@ -114,12 +118,18 @@ function confirmDelete(): void {
             }}
           </p>
         </fieldset>
+        <!-- 模型服务区：连接表单与按需展开的高级选项。 -->
         <AiProfileForm
           v-if="draft"
           :key="selectedId"
           :model-value="draft"
           :disabled="loading || busy || !IS_TAURI"
         />
+        <!-- 扩展工具区：MCP 独立于模型配置和固定安全规则。 -->
+        <div class="ai-extension-card">
+          <McpServersPanel />
+        </div>
+        <!-- 安全说明区：集中展示审批与数据外传边界。 -->
         <div class="security-rules">
           <h3>
             <AppIcon
@@ -134,6 +144,17 @@ function confirmDelete(): void {
             <li>{{ t('切换连接、关闭面板或停止任务会撤销待审批操作。') }}</li>
             <li>{{ t('聊天记录在本机加密保存，可从聊天记录菜单管理。') }}</li>
           </ul>
+          <p>
+            {{
+              t(
+                '你输入的消息及工具结果会发送给此模型服务。请确认服务可信，不要输入密码、密钥或不应外传的数据。只读放行不等于数据不会离开本机。'
+              )
+            }}
+          </p>
+        </div>
+        <!-- 提示词区：独立入口，不与安全规则混排。 -->
+        <div class="ai-prompt-card">
+          <h3 class="section-title">{{ t('管理提示词模板') }}</h3>
           <AppButton @click="managingPrompts = true">{{
             t('管理提示词模板')
           }}</AppButton>
@@ -142,14 +163,6 @@ function confirmDelete(): void {
               v-if="managingPrompts"
               @close="managingPrompts = false"
           /></Teleport>
-          <McpServersPanel />
-          <p>
-            {{
-              t(
-                '你输入的消息及工具结果会发送给此模型服务。请确认服务可信，不要输入密码、密钥或不应外传的数据。只读放行不等于数据不会离开本机。'
-              )
-            }}
-          </p>
         </div>
       </div>
     </div>
@@ -183,6 +196,7 @@ function confirmDelete(): void {
         <AppButton
           :disabled="busy || loading || !draft || !IS_TAURI"
           variant="ghost"
+          class="ai-delete-action"
           @click="deleting = true"
           >{{ t('删除当前配置') }}</AppButton
         >
@@ -234,7 +248,10 @@ function confirmDelete(): void {
   display: grid;
   gap: 18px;
   min-width: 0;
-  padding: 24px 20px 24px 26px;
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  padding: 24px;
   overflow-wrap: anywhere;
 }
 .ai-settings-heading {
@@ -260,14 +277,49 @@ function confirmDelete(): void {
 }
 .ai-field-help {
   font-size: 10px;
-  color: var(--color-txt-4);
+  color: var(--color-txt-3);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+.ai-config-management,
+.ai-extension-card,
+.ai-prompt-card,
 .security-rules {
+  min-width: 0;
   border: 1px solid var(--color-line);
-  border-radius: 8px;
-  padding: 14px;
+  border-radius: 12px;
+  padding: 18px;
+  background: color-mix(in oklch, var(--color-panel) 45%, transparent);
+}
+.ai-config-management {
+  display: grid;
+  gap: 12px;
+}
+.section-title {
+  color: var(--color-txt);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ai-config-management legend {
+  float: left;
+  width: 100%;
+}
+.ai-config-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.ai-prompt-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ai-delete-action {
+  margin-inline-start: auto;
+}
+.security-rules {
   font-size: 11px;
   line-height: 1.8;
   color: var(--color-txt-3);
@@ -318,7 +370,36 @@ function confirmDelete(): void {
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+@media (prefers-reduced-motion: no-preference) {
+  .ai-settings-content {
+    animation: ai-settings-enter 180ms ease-out;
+  }
+}
+@keyframes ai-settings-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@container settings (max-width: 680px) {
+  .ai-config-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @container settings (max-width: 560px) {
+  .ai-config-management,
+  .ai-extension-card,
+  .ai-prompt-card,
+  .security-rules {
+    padding: 14px;
+  }
+  .ai-delete-action {
+    margin-inline-start: 0;
+  }
   .ai-settings-content {
     padding: 16px 10px 20px 14px;
   }

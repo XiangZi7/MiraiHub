@@ -1,11 +1,13 @@
 /** Shared UI messages. Chinese source keys match the existing catalog convention. */
 export const en = {
+  'ai.settingsAdvanced': 'Advanced · Capacity & pricing',
   'agent.tokenContextDescription':
     'Estimated model context: {used} / {limit} tokens (configured window). Latest provider-reported input: {tokens} tokens. Text estimates use reported usage when available; image costs vary by provider.',
   'agent.modelWindow': 'Model context window (tokens)',
+  'ai.modelWindowPresets': 'Model context window presets',
   'agent.outputLimit': 'Maximum output per request (tokens)',
   'agent.modelBudgetHelp':
-    'Set these values to the limits supported by your provider and model. Defaults: 128,000 context / 8,192 output. Compaction reserves output space and extra headroom; increasing local storage does not increase model capacity.',
+    '1M sets 1,000,000 tokens. Use it only with a provider and model that support this window; enter the exact limit manually if different. Defaults: 128,000 context / 8,192 output. Compaction reserves output space and extra headroom. Local capacity is separate and does not increase model capacity.',
   'agent.truncated': 'Output limit reached',
   'agent.truncatedHelp':
     'The model reached its output limit. Available text is saved; incomplete tool calls were not executed. Send “continue” to resume, or increase the output limit in AI Agent settings.',
@@ -847,12 +849,14 @@ export const en = {
   放弃并继续: 'Discard and continue',
   提交并继续: 'Commit and continue',
   恢复改动: 'Restore changes',
-  '撤销刚才的放弃，恢复当时的页面和改动': 'Undo the discard and restore that page with its changes',
+  '撤销刚才的放弃，恢复当时的页面和改动':
+    'Undo the discard and restore that page with its changes',
   '已放弃未提交改动，可点击工具栏“恢复改动”撤销':
     'Uncommitted changes discarded. Click “Restore changes” in the toolbar to undo',
   '{value0} 个表数据标签有未提交的改动，关闭连接后将丢失。':
     '{value0} table data tabs have uncommitted changes that will be lost when this connection closes.',
-  请先提交或放弃表数据改动再切换数据库: 'Commit or discard table data changes before switching databases',
+  请先提交或放弃表数据改动再切换数据库:
+    'Commit or discard table data changes before switching databases',
   撤销删除: 'Undo deletion',
   标记删除: 'Mark for deletion',
   移除新增行: 'Remove new row',
@@ -876,7 +880,8 @@ export const en = {
   单元格值: 'Cell value',
   展开: 'Expand',
   折叠: 'Collapse',
-  '内容过长，只显示前 {value0} 行': 'Content too long, showing the first {value0} lines',
+  '内容过长，只显示前 {value0} 行':
+    'Content too long, showing the first {value0} lines',
   '只显示前 {value0} 字节': 'Showing the first {value0} bytes',
   应用: 'Apply',
   还原: 'Revert',
@@ -887,7 +892,8 @@ export const en = {
   紧凑: 'Compact',
   标准: 'Standard',
   宽松: 'Comfortable',
-  '{value0} 个单元格的字段不允许为 NULL，已跳过': 'Skipped {value0} cells whose columns do not allow NULL',
+  '{value0} 个单元格的字段不允许为 NULL，已跳过':
+    'Skipped {value0} cells whose columns do not allow NULL',
   表数据: 'Table data',
   '已选 {value0} 格': '{value0} cells selected',
   求和: 'Sum',
@@ -1601,12 +1607,14 @@ export const zh = {
   ...Object.fromEntries(
     Object.keys(en).map(key => [key, key.replaceAll('@', "{'@'}")])
   ),
+  'ai.settingsAdvanced': '高级设置 · 容量与费用',
   'agent.tokenContextDescription':
     '模型上下文估算：{used} / {limit} tokens（配置窗口）。最近服务上报输入：{tokens} tokens。有上报时按用量校准文本估算，图片消耗由模型服务决定。',
   'agent.modelWindow': '模型上下文窗口（tokens）',
+  'ai.modelWindowPresets': '模型上下文窗口快捷选项',
   'agent.outputLimit': '单次最大输出（tokens）',
   'agent.modelBudgetHelp':
-    '请按模型服务实际支持的容量填写。默认上下文 128000、输出 8192；压缩会预留输出空间和额外余量。增加本地存储容量不会扩大模型窗口。',
+    '1M 快捷值为 1000000 tokens，仅用于实际支持此窗口的模型；容量不同时可手动填写精确值。默认上下文 128000、输出 8192；压缩会预留输出空间和额外余量。本地容量独立计算，不会扩大模型窗口。',
   'agent.truncated': '输出达到上限',
   'agent.truncatedHelp':
     '模型输出已达上限，已保留可用正文，未执行不完整的工具调用。发送“继续”可续写，也可在 AI Agent 设置中调高输出上限。',

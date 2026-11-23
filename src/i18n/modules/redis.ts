@@ -134,6 +134,15 @@ export const en = {
   '立即删除整个键，内存异步释放；此操作无法撤销（Redis 4.0+）。':
     'Deletes the whole key immediately and frees memory asynchronously. This cannot be undone (Redis 4.0+).',
   // 服务器状态 / 慢日志 / 大 key / 发布订阅面板
+  '读取 Redis 状态失败': 'Failed to read Redis status',
+  暂无服务器状态: 'No server status yet',
+  '读取 Redis 慢日志失败': 'Failed to read Redis slow log',
+  暂无慢日志数据: 'No slow log data yet',
+  '发布订阅频道属于整个 Redis 实例，不按 DB 隔离。':
+    'Pub/Sub channels belong to the entire Redis instance and are not isolated by DB.',
+
+  '使用 SCAN + MEMORY USAGE 分批读取，大库请缩小匹配范围':
+    'Reads in batches with SCAN + MEMORY USAGE. Narrow the pattern for large databases.',
   '使用 SCAN + MEMORY USAGE，按批执行，不阻塞服务器':
     'Uses SCAN + MEMORY USAGE in batches without blocking the server',
   '元素/长度': 'Elements/length',
@@ -199,7 +208,8 @@ export const en = {
   运行时长: 'Uptime',
   键数: 'Keys',
   '阻塞 {count}': 'Blocked {count}',
-  '共 {total} 条，显示最近 {count} 条': '{total} entries, showing latest {count}',
+  '共 {total} 条，显示最近 {count} 条':
+    '{total} entries, showing latest {count}',
   命令: 'Command',
   '将执行 SLOWLOG RESET，清空服务器上的全部慢日志记录。':
     'This runs SLOWLOG RESET and clears all slow log entries on the server.',

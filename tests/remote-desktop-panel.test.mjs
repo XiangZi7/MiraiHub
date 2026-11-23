@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { createRenderer, h, markRaw, nextTick, reactive } from 'vue'
 import { dataModule, sourceLoader } from './helpers/source-module.mjs'
@@ -30,7 +31,7 @@ const nativeModule = dataModule(`
 `)
 const windowModule = dataModule(`
   export const IS_TAURI = false
-  export const windowState = { fullscreen: false, calls: [], read: null, change: null }
+  export const windowState = { fullscreen: false, calls: [], edits: [], read: null, change: null }
   export async function isWindowFullscreen() {
     return windowState.read ? await windowState.read() : windowState.fullscreen
   }
@@ -39,7 +40,7 @@ const windowModule = dataModule(`
     await windowState.change?.(enabled)
     windowState.fullscreen = enabled
   }
-  export function openConnectionWindow() {}
+  export function openConnectionWindow(...args) { windowState.edits.push(args) }
 `)
 const vueuseModule = dataModule(`
   import { onScopeDispose, shallowRef } from ${vue}
@@ -106,14 +107,27 @@ const load = sourceLoader(
     '@/components/ui/AppContextMenu.vue': dataModule(`
       import { h } from ${vue}
       export default {
-        props: ['open', 'items', 'label', 'trigger', 'x', 'y'],
+        props: ['open', 'items', 'label', 'trigger', 'x', 'y', 'appearance'],
         emits: ['select', 'close'],
         setup(props, { emit }) {
-          return () => props.open ? h('div', { role: 'menu', 'aria-label': props.label },
-            props.items.map(item => h('button', {
-              'data-option': item.id,
-              onClick: () => { emit('select', item.id); emit('close') },
-            }, item.label))) : null
+          // 保持共用菜单的真实契约：父项只展开子菜单，叶子先 select 再 close。
+          const itemButton = item => h('button', {
+            role: 'menuitem',
+            'data-option': item.id,
+            'aria-checked': item.checked,
+            'aria-haspopup': item.children?.length ? 'menu' : undefined,
+            disabled: item.disabled,
+            onClick: () => {
+              if (item.disabled || item.children?.length) return
+              emit('select', item.id)
+              emit('close')
+            },
+          }, item.label)
+          return () => props.open ? h('div', { role: 'menu', 'aria-label': props.label, 'data-appearance': props.appearance },
+            props.items.map(item => h('div', { class: 'menu-entry' }, [
+              itemButton(item),
+              item.children?.length ? h('div', { role: 'menu', 'aria-label': item.label }, item.children.map(itemButton)) : null,
+            ]))) : null
         },
       }
     `),
@@ -204,6 +218,7 @@ async function fixture(t, options = {}) {
   native.input = null
   windowState.fullscreen = options.initialFullscreen ?? false
   windowState.calls.length = 0
+  windowState.edits.length = 0
   windowState.read = null
   windowState.change = null
   elementSize.width.value = 800
@@ -702,17 +717,27 @@ test('RDP 全屏默认 fit，退出保留普通缩放，再进入保留用户全
     },
   })
   await ready()
+  const zoomText = () =>
+    view
+      .button('画面缩放')
+      .children.find(node => node.type === 'text')
+      ?.text.trim()
   assert.equal(view.canvas().style.width, '800px')
+  assert.equal(zoomText(), '100%')
   await toggleFullscreen(view)
   assert.equal(view.fullscreen(), true)
   assert.ok(view.canvas().props.class.includes('rdp-fit'))
-  await choose(view, '画面缩放', '150')
+  assert.equal(zoomText(), '适应窗口')
+  await choose(view, '画面缩放', 'zoom:150')
   assert.equal(view.canvas().style.width, '1200px')
+  assert.equal(zoomText(), '150%')
   await toggleFullscreen(view)
   assert.equal(view.fullscreen(), false)
   assert.equal(view.canvas().style.width, '800px')
+  assert.equal(zoomText(), '100%')
   await toggleFullscreen(view)
   assert.equal(view.canvas().style.width, '1200px')
+  assert.equal(zoomText(), '150%')
   await view.api.actionFor(connection.id, 'disconnect')
   await flush()
   assert.equal(view.fullscreen(), false)
@@ -780,6 +805,10 @@ test('RDP 自动 resize 复用待应用分辨率菜单，新远端帧确认后�
   button.props.onClick({ currentTarget: button })
   await flush()
   assert.equal(view.option('reconnect'), undefined)
+  assert.ok(view.option('1280 × 720'))
+  assert.equal(view.option('zoom:100'), undefined)
+  const menu = view.nodes().find(node => node.props.role === 'menu')
+  assert.equal(menu.props['data-appearance'], 'bubble')
 })
 
 /** 用模拟时钟测试真实全屏顶栏，不等待一秒真实时间，也不直接改组件状态。 */
@@ -856,7 +885,8 @@ test('RDP 下拉菜单期间顶栏保持可见，选择关闭后才开始一秒�
   await advanceToolbarTime(t, 5000)
   assert.equal(view.header().props['data-menu-open'], true)
   assert.equal(view.header().props['data-toolbar-visible'], true)
-  view.option('100').props.onClick()
+  assert.equal(view.option('1280 × 720'), undefined)
+  view.option('zoom:100').props.onClick()
   await flush()
   assert.equal(view.header().props['data-menu-open'], false)
   await advanceToolbarTime(t, 999)
@@ -899,6 +929,195 @@ test('RDP 键盘焦点在工具栏和按钮之间移动时不收起，离开到�
   view.header().props.onFocusout({ relatedTarget: view.canvas() })
   await advanceToolbarTime(t, 1000)
   assert.equal(view.header().props['data-toolbar-visible'], false)
+})
+
+/** 校验容器级布局契约，不用窗口断点代替分屏宽度，也不把源码检查称作像素验收。 */
+test('RDP 窄工具栏仅折叠次要入口，全屏顶栏居中限宽且保留顶边感应区', async t => {
+  const source = readFileSync(
+    new URL(
+      '../src/pages/servers/components/remote-desktop-panel.vue',
+      import.meta.url
+    ),
+    'utf8'
+  )
+  assert.match(source, /@container terminal \(max-width: 560px\)/)
+  assert.match(source, /\.rdp-toolbar-secondary\s*\{\s*display: none;/)
+  assert.match(source, /\.rdp-toolbar-more\s*\{\s*display: inline-flex;/)
+  assert.match(source, /width: min\(100%, 880px\);\s*margin-inline: auto;/)
+  assert.match(source, /\.rdp-toolbar-trigger\s*\{[^}]*inset: 0 0 auto;/)
+  const view = await fixture(t)
+  await ready()
+  for (const title of ['发送 Ctrl+Alt+Delete', '编辑连接配置'])
+    assert.ok(view.button(title).props.class.includes('rdp-toolbar-secondary'))
+  for (const title of ['全屏 / 退出', '断开连接'])
+    assert.ok(
+      !(view.button(title).props.class ?? '').includes('rdp-toolbar-secondary')
+    )
+  assert.equal(view.button('更多').props.class, 'rdp-toolbar-more')
+  const resolution = view.button('远端分辨率')
+  const zoom = view.button('画面缩放')
+  assert.equal(resolution.parent, zoom.parent)
+  assert.ok(resolution.parent.props.class.includes('rdp-toolbar-secondary'))
+  assert.deepEqual(
+    resolution.parent.children.filter(node => node.type === 'button'),
+    [resolution, zoom]
+  )
+})
+
+/** 点击真实父组件模板和菜单叶子，验证嵌套选项只应用原行为，不另开会被 close 覆盖的菜单。 */
+test('RDP 更多子菜单复用缩放和分辨率选择，父项不关闭菜单或重连', async t => {
+  const view = await fixture(t)
+  await ready()
+  const more = view.button('更多')
+  more.props.onClick({ currentTarget: more })
+  await flush()
+  assert.equal(more.props['aria-expanded'], true)
+  view.option('more-zoom').props.onClick()
+  await flush()
+  assert.ok(view.option('zoom:150'))
+  assert.equal(view.header().props['data-menu-open'], true)
+  view.option('zoom:150').props.onClick()
+  await flush()
+  assert.equal(view.canvas().style.width, '1200px')
+  assert.equal(view.header().props['data-menu-open'], false)
+  await choose(view, '更多', 'zoom:fill')
+  assert.ok(view.canvas().props.class.includes('h-full w-full'))
+  await choose(view, '更多', '1280 × 720')
+  await view.runFrame()
+  assert.ok(
+    native.inputs.some(call =>
+      call.events.some(
+        event =>
+          event.type === 'resize' &&
+          event.width === 1280 &&
+          event.height === 720
+      )
+    )
+  )
+  assert.equal(native.calls.length, 1)
+  assert.equal(view.header().props['data-menu-open'], false)
+})
+
+/** 更多中的安全组合键和编辑入口使用原方法、原目标，不触发其他连接动作。 */
+test('RDP 更多可发送安全组合键和编辑配置，连接阶段仍保留直接取消', async t => {
+  const view = await fixture(t)
+  assert.ok(view.button('取消'))
+  const more = view.button('更多')
+  more.props.onClick({ currentTarget: more })
+  await flush()
+  assert.equal(view.option('more-ctrl-alt-delete'), undefined)
+  assert.equal(view.option('more-resolution'), undefined)
+  view.option('more-edit').props.onClick()
+  await flush()
+  assert.deepEqual(windowState.edits, [['rdp', connection.id]])
+  await ready()
+  await choose(view, '更多', 'more-ctrl-alt-delete')
+  assert.ok(
+    native.inputs.some(call =>
+      call.events.some(event => event.type === 'ctrlAltDelete')
+    )
+  )
+  assert.equal(native.calls.length, 1)
+  assert.equal(view.header().props['data-menu-open'], false)
+})
+
+/** 窄工具栏不能将正在连接时的取消埋进更多，取消后旧菜单叶子也不能执行。 */
+test('RDP 更多展开期间仍可直接取消正在连接的会话', async t => {
+  const view = await fixture(t)
+  const more = view.button('更多')
+  more.props.onClick({ currentTarget: more })
+  await flush()
+  const oldEdit = view.option('more-edit')
+  const cancel = view.button('取消')
+  assert.ok(!(cancel.props.class ?? '').includes('rdp-toolbar-secondary'))
+  cancel.props.onClick()
+  await flush()
+  oldEdit.props.onClick()
+  await flush()
+  assert.equal(view.header().props['data-menu-open'], false)
+  assert.equal(native.stopped[0], native.calls[0].request.sessionId)
+  assert.deepEqual(windowState.edits, [])
+})
+
+/** 菜单实例锁定打开时的会话，旧叶子的 select 和 close 不接管新会话或新菜单。 */
+test('RDP 更多在重连、失活和切连接后拒绝旧菜单动作，旧 close 不覆盖新菜单', async t => {
+  const view = await fixture(t)
+  await ready()
+  const more = view.button('更多')
+  more.props.onClick({ currentTarget: more })
+  await flush()
+  const oldEdit = view.option('more-edit')
+  await view.api.actionFor(connection.id, 'reconnect')
+  await ready()
+  more.props.onClick({ currentTarget: more })
+  await flush()
+  oldEdit.props.onClick()
+  await flush()
+  assert.deepEqual(windowState.edits, [])
+  assert.equal(view.header().props['data-menu-open'], true)
+  const oldChord = view.option('more-ctrl-alt-delete')
+  view.update({ active: false })
+  await flush()
+  oldChord.props.onClick()
+  more.props.onClick({ currentTarget: more })
+  await flush()
+  assert.equal(view.header().props['data-menu-open'], false)
+  assert.ok(
+    !native.inputs.some(call =>
+      call.events.some(event => event.type === 'ctrlAltDelete')
+    )
+  )
+  view.update({ active: true })
+  await flush()
+  more.props.onClick({ currentTarget: more })
+  await flush()
+  const oldTargetEdit = view.option('more-edit')
+  view.update({
+    connection: { ...connection, id: 'other-rdp', host: 'other.invalid' },
+  })
+  await flush()
+  oldTargetEdit.props.onClick()
+  await flush()
+  assert.deepEqual(windowState.edits, [])
+  assert.equal(view.header().props['data-menu-open'], false)
+})
+
+/** 全屏更多子菜单和焦点同样保持顶栏，叶子选择后才重新开始完整的一秒缓冲。 */
+test('RDP 全屏更多的菜单和焦点保持顶栏，缩放选择关闭后恢复隐藏缓冲', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  view.header().props.onFocusin()
+  const more = view.button('更多')
+  more.focus()
+  more.props.onClick({ currentTarget: more })
+  await flush()
+  view.header().props.onFocusout({ relatedTarget: view.option('zoom:100') })
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  view.option('zoom:100').props.onClick()
+  await flush()
+  assert.equal(view.header().props['data-menu-open'], false)
+  assert.equal(document.activeElement, view.canvas())
+  await advanceToolbarTime(t, 999)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await advanceToolbarTime(t, 1)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+})
+
+/** 更多固定选项复用同一标签偏好，取消固定后不重连、不重置全屏缩放。 */
+test('RDP 全屏更多可固定和取消固定顶栏，保留原缩放与一秒缓冲', async t => {
+  const view = await fullscreenToolbarFixture(t)
+  await choose(view, '更多', 'zoom:150')
+  await choose(view, '更多', 'more-pin')
+  assert.equal(view.button('取消固定全屏工具栏').props['aria-pressed'], true)
+  await advanceToolbarTime(t, 5000)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await choose(view, '更多', 'more-pin')
+  assert.equal(view.canvas().style.width, '1200px')
+  await advanceToolbarTime(t, 999)
+  assert.equal(view.header().props['data-toolbar-visible'], true)
+  await advanceToolbarTime(t, 1)
+  assert.equal(view.header().props['data-toolbar-visible'], false)
+  assert.equal(native.calls.length, 1)
 })
 
 test('RDP 退出再进入全屏撤销旧隐藏任务，新一轮始终保留完整一秒', async t => {

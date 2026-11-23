@@ -5,7 +5,8 @@ interface FontOption extends SettingOption {
   fontFamily: string
 }
 
-export const DEFAULT_UI_FONT = 'inter'
+/** 新安装与缺失/无效设置默认使用截图中的英文等宽、汉仪中文组合。 */
+export const DEFAULT_UI_FONT = 'jetbrains-mono'
 export const DEFAULT_TERMINAL_FONT = 'jetbrains-mono'
 
 const SYSTEM_UI_FONT_FAMILY =
@@ -36,7 +37,7 @@ const MONOSPACED_FONT_OPTIONS: readonly FontOption[] = [
 /** 界面字体与终端字体分开保存，切换界面不会改变终端或代码编辑器。 */
 export const UI_FONT_OPTIONS: readonly FontOption[] = [
   {
-    value: DEFAULT_UI_FONT,
+    value: 'inter',
     label: 'Inter',
     fontFamily: `"Inter", ${SYSTEM_UI_FONT_FAMILY}`,
   },
