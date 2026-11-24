@@ -913,7 +913,9 @@ export default {
   'agent.sendGuidance': 'Send guidance',
   'agent.guidanceHint':
     'Send guidance (Enter / Ctrl+Enter); takes effect after the current step',
-  'files.downloadSelected': 'Download {count} selected files…',
+  'files.downloadSelected': 'Download {count} selected items…',
+  'files.downloadItems': 'Download selected files or folders',
+  'files.copyAcrossSsh': 'SSH copy to',
   'files.deleteSelected': 'Delete {count} selected items',
   'files.copyPaths': 'Copy selected paths',
   'files.downloadDirectory': 'Choose download folder',

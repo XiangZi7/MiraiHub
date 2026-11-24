@@ -18,6 +18,7 @@ export function useFileTransfers() {
   } = storeToRefs(store)
   const {
     upload,
+    copyRemote,
     download,
     pause,
     resume,
@@ -40,6 +41,7 @@ export function useFileTransfers() {
     markAllSeen,
     recordUploadError,
     upload,
+    copyRemote,
     download,
     pause,
     resume,

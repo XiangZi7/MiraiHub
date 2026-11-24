@@ -285,9 +285,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         id: 'download',
         label: t('files.downloadSelected', { count: state.menuFiles.length }),
         icon: 'lucide:download',
-        disabled:
-          state.processing ||
-          state.menuFiles.some(file => file.kind === 'directory'),
+        disabled: state.processing || !state.menuFiles.every(canDownload),
       },
       { id: 'copy-paths', label: t('files.copyPaths'), icon: 'lucide:copy' },
       ...common,
@@ -326,7 +324,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       id: 'download',
       label: t('下载到…'),
       icon: 'lucide:download',
-      disabled: directory,
+      disabled: state.processing || !canDownload(file),
     },
     {
       id: 'rename',
@@ -600,15 +598,15 @@ async function transferFiles(directory: string): Promise<void> {
   }
 }
 
-// 批量下载只选择一次本地目录，逐项交给现有传输队列并保留同名文件保护。
+/** 普通文件和目录均可下载，符号链接及设备不作为下载源。 */
+function canDownload(file: SshRemoteFile): boolean {
+  return file.kind === 'file' || file.kind === 'directory'
+}
+
+// 单个文件可另存为；文件夹或混合多选只选择一次本地父目录。
 async function downloadFiles(files: SshRemoteFile[]): Promise<void> {
-  if (
-    state.processing ||
-    !files.length ||
-    files.some(file => file.kind === 'directory')
-  )
-    return
-  if (files.length === 1) {
+  if (state.processing || !files.length || !files.every(canDownload)) return
+  if (files.length === 1 && files[0]!.kind === 'file') {
     await download(files[0]!)
     return
   }
@@ -616,6 +614,7 @@ async function downloadFiles(files: SshRemoteFile[]): Promise<void> {
   const connectionName = props.connectionName
   const destination = await openFileDialog({
     title: t('files.downloadDirectory'),
+    defaultPath: settings.defaultDownloadDirectory.trim() || undefined,
     directory: true,
     multiple: false,
   })
@@ -627,14 +626,14 @@ async function downloadFiles(files: SshRemoteFile[]): Promise<void> {
     return
   state.processing = true
   try {
-    const separator = destination.includes('\\') ? '\\' : '/'
     for (const file of files) {
       if (sessionId !== props.sessionId) break
       await transfers.download({
         sessionId,
         connectionName,
         remotePath: file.path,
-        localPath: `${destination.replace(/[\\/]$/, '')}${separator}${file.name}`,
+        localPath: destination,
+        intoDirectory: true,
         overwrite: false,
       })
     }
@@ -758,15 +757,37 @@ async function confirmDelete(): Promise<void> {
   await deleteFiles(files)
 }
 
-// 内部拖放只接受同连接当前目录，继续复用上传批次及冲突处理。
-function receivePaneDrop(event: Event): void {
+// 同栏上传和跨 SSH 复制共用投放入口，入队时固定两端会话与目标路径。
+async function receivePaneDrop(event: Event): Promise<void> {
   const detail = (event as CustomEvent<FilePaneDrop>).detail
+  const sessionId = props.sessionId
+  const directory = path.value
+  if (!sessionId || !directory || !detail.sessionId) return
+  if (detail.source === 'local') {
+    if (detail.sessionId === sessionId && detail.directory === directory)
+      await uploadPaths(detail.files.map(file => file.path))
+    return
+  }
+  if (detail.sessionId === sessionId || loading.value) return
   if (
-    detail.source === 'local' &&
-    detail.sessionId === props.sessionId &&
-    detail.directory === path.value
+    detail.directory !== directory &&
+    !visibleEntries.value.some(
+      entry => entry.kind === 'directory' && entry.path === detail.directory
+    )
   )
-    void uploadPaths(detail.files.map(file => file.path))
+    return
+  await Promise.all(
+    detail.files.map(file =>
+      transfers.copyRemote({
+        sourceSessionId: detail.sessionId,
+        sessionId,
+        source: file.path,
+        remotePath: `${detail.directory.replace(/\/$/, '')}/${file.name}`,
+        connectionName: props.connectionName,
+      })
+    )
+  )
+  if (props.sessionId === sessionId && path.value === directory) await refresh()
 }
 
 // 进入拖拽区域（含子元素）时累加计数并显示上传遮罩
@@ -835,7 +856,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         ref="dropZone"
         data-file-drop-target="remote"
         :data-file-session-id="sessionId"
-        :data-file-directory="connected ? path : ''"
+        :data-file-directory="connected && !loading ? path : ''"
         @mirai-file-drop="receivePaneDrop"
         class="file-pane flex min-h-0 min-w-0 flex-1 flex-col"
       >
@@ -906,10 +927,10 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
           <IconButton
             icon="lucide:download"
             :size="14"
-            :title="t('下载选中文件')"
+            :title="t('files.downloadItems')"
             :disabled="
               !selectedFiles.length ||
-              selectedFiles.some(file => file.kind === 'directory') ||
+              !selectedFiles.every(canDownload) ||
               state.processing
             "
             @click="downloadFiles(selectedFiles)"

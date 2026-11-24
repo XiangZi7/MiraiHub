@@ -13,8 +13,8 @@ use super::completion::{self, ShellSuggestion};
 use super::files::DirectoryListing;
 use super::manager::SessionManager;
 use super::models::{
-    CommandOutput, DownloadFileRequest, GenerateKeyRequest, PtyOptions, SessionInfo, SshConfig,
-    SshKeyInfo, UploadFileRequest,
+    CommandOutput, DownloadFileRequest, GenerateKeyRequest, PtyOptions, RemoteCopyRequest,
+    SessionInfo, SshConfig, SshKeyInfo, UploadFileRequest,
 };
 use super::stats::SystemStats;
 use super::transfers::TransferManager;
@@ -226,6 +226,19 @@ pub async fn ssh_copy_path(
 ) -> AppResult<()> {
     let session = manager.get(&session_id).await?;
     Ok(files::copy_path(&session, &source, &destination).await?)
+}
+
+/// 使用两个已连接的 SFTP 通道复制文件或目录。
+#[tauri::command]
+pub async fn ssh_copy_between_sessions(
+    app: AppHandle,
+    manager: State<'_, SessionManager>,
+    transfers: State<'_, TransferManager>,
+    request: RemoteCopyRequest,
+) -> AppResult<()> {
+    let source = manager.get(&request.source_session_id).await?;
+    let target = manager.get(&request.target_session_id).await?;
+    Ok(files::copy_between_sessions(&app, &source, &target, &transfers, &request).await?)
 }
 
 #[tauri::command]

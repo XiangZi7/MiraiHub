@@ -164,6 +164,9 @@ async function navigate(event: KeyboardEvent): Promise<void> {
         role="option"
         :aria-selected="selectedSet.has(row.file.path)"
         :data-file-index="row.index"
+        :data-remote-drop-directory="
+          !local && row.file.kind === 'directory' ? row.file.path : undefined
+        "
         :aria-posinset="row.index + 1"
         :aria-setsize="files.length"
         class="remote-file-columns grid w-full cursor-default grid-cols-[1fr_80px_130px] items-center gap-3 px-3 text-left text-xs"

@@ -20,6 +20,7 @@ export function useFilePaneDrag(options: {
   const preview = reactive({ visible: false, x: 0, y: 0, count: 0, name: '' })
   let gesture: {
     id: number
+    sessionId: string
     x: number
     y: number
     index: number
@@ -34,7 +35,8 @@ export function useFilePaneDrag(options: {
   function start(event: PointerEvent): boolean {
     if (event.button !== 0) return false
     suppressClick = false
-    if (!options.sessionId()) return false
+    const sessionId = options.sessionId()
+    if (!sessionId) return false
     const row = (event.target as Element)
       .closest<HTMLElement>('[data-file-drag-handle]')
       ?.closest<HTMLElement>('[data-file-index]')
@@ -55,6 +57,7 @@ export function useFilePaneDrag(options: {
         : options.files().filter(item => paths.includes(item.path))
     gesture = {
       id: event.pointerId,
+      sessionId,
       x: event.clientX,
       y: event.clientY,
       index,
@@ -72,16 +75,30 @@ export function useFilePaneDrag(options: {
     return true
   }
 
-  /** 按当前坐标匹配同会话的另一侧目录，或接收同侧路径的终端。 */
+  /** 命中其他 SSH 面板时可投到当前目录或子目录，本地栏和终端沿用会话匹配。 */
   function destinationAt(event: PointerEvent): HTMLElement | null {
-    const hit = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest<HTMLElement>('[data-file-drop-target]')
-    const sessionId = options.sessionId()
-    if (!sessionId || !hit || hit.dataset.fileSessionId !== sessionId)
+    const element = document.elementFromPoint(event.clientX, event.clientY)
+    const hit = element?.closest<HTMLElement>('[data-file-drop-target]')
+    const sessionId = gesture?.sessionId
+    if (
+      !sessionId ||
+      sessionId !== options.sessionId() ||
+      !hit?.dataset.fileSessionId
+    )
       return null
     const source = options.source()
     const targetKind = hit.dataset.fileDropTarget
+    if (hit.dataset.fileSessionId !== sessionId) {
+      if (
+        source !== 'remote' ||
+        targetKind !== 'remote' ||
+        !hit.dataset.fileDirectory
+      )
+        return null
+      return (
+        element?.closest<HTMLElement>('[data-remote-drop-directory]') ?? hit
+      )
+    }
     if (targetKind === 'terminal')
       return hit.dataset.fileTerminalSource === source ? hit : null
     return targetKind !== source && hit.dataset.fileDirectory ? hit : null
@@ -130,8 +147,11 @@ export function useFilePaneDrag(options: {
     const destination = moved ? destinationAt(event) : null
     const detail: FilePaneDrop = {
       source: options.source(),
-      sessionId: options.sessionId() ?? '',
-      directory: destination?.dataset.fileDirectory ?? '',
+      sessionId: current.sessionId,
+      directory:
+        destination?.dataset.remoteDropDirectory ??
+        destination?.dataset.fileDirectory ??
+        '',
       files: current.files.map(({ path, name, kind }) => ({
         path,
         name,
@@ -140,7 +160,9 @@ export function useFilePaneDrag(options: {
     }
     cancel()
     if (moved && destination)
-      destination.dispatchEvent(new CustomEvent('mirai-file-drop', { detail }))
+      destination.dispatchEvent(
+        new CustomEvent('mirai-file-drop', { detail, bubbles: true })
+      )
     else if (!moved && current.collapse) options.select(current.index)
     return true
   }

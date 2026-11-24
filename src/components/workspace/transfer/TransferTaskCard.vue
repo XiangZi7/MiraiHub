@@ -74,7 +74,7 @@ const settled = computed(() =>
 
 const displayPath = computed(() => {
   const path =
-    props.task.direction === 'upload' ? props.task.target : props.task.source
+    props.task.direction === 'download' ? props.task.source : props.task.target
   const normalized = path.replaceAll('\\', '/')
   const separator = normalized.lastIndexOf('/')
   if (separator === 0) return '/'
@@ -113,6 +113,7 @@ const statusIcon = computed(() => {
     case 'paused':
       return 'lucide:pause'
     case 'running':
+      if (props.task.direction === 'remote-copy') return 'lucide:arrow-right'
       return props.task.direction === 'upload'
         ? 'lucide:arrow-up'
         : 'lucide:arrow-down'

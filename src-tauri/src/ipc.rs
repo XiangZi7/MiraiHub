@@ -121,6 +121,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         ssh::commands::ssh_create_path,
         ssh::commands::ssh_rename_path,
         ssh::commands::ssh_copy_path,
+        ssh::commands::ssh_copy_between_sessions,
         ssh::commands::ssh_delete_path,
         ssh::commands::ssh_delete_tree,
         ssh::commands::ssh_chmod_path,

@@ -153,7 +153,7 @@ const status = computed<{ label: string; icon: string; busy: boolean }>(() => {
       ? { label: t('Queued'), icon: 'lucide:clock', busy: false }
       : { label: t('Paused'), icon: 'lucide:pause', busy: false }
   const directions = new Set(active.map(task => task.direction))
-  if (directions.size > 1)
+  if (directions.size > 1 || directions.has('remote-copy'))
     return {
       label: t('Transferring'),
       icon: 'lucide:loader-circle',

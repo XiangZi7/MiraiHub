@@ -27,11 +27,16 @@ const completedCount = computed(
   () => props.tasks.filter(task => task.status === 'completed').length
 )
 
-const directionIcon = computed(() =>
-  props.direction === 'upload' ? 'lucide:cloud-upload' : 'lucide:cloud-download'
-)
-const directionLabel = computed(() =>
-  props.direction === 'upload' ? t('上传到') : t('下载自')
+const directionInfo = computed(
+  () =>
+    ({
+      upload: { icon: 'lucide:cloud-upload', label: t('上传到') },
+      download: { icon: 'lucide:cloud-download', label: t('下载自') },
+      'remote-copy': {
+        icon: 'lucide:arrow-right-left',
+        label: t('files.copyAcrossSsh'),
+      },
+    })[props.direction]
 )
 </script>
 
@@ -39,12 +44,12 @@ const directionLabel = computed(() =>
   <section class="transfer-group">
     <div class="transfer-group-heading">
       <AppIcon
-        :name="directionIcon"
+        :name="directionInfo.icon"
         :size="12"
         class="transfer-group-icon"
       />
       <h3 class="transfer-group-title">
-        <span>{{ directionLabel }}</span>
+        <span>{{ directionInfo.label }}</span>
         {{ connectionName || t('Remote server') }}
       </h3>
       <span

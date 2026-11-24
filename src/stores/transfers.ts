@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/stores/settings'
 import type { SshTransferEvent, SshTransferStatus } from '@/types/ssh'
 import { IS_TAURI } from '@/utils/window'
 
-export type FileTransferDirection = 'upload' | 'download'
+export type FileTransferDirection = 'upload' | 'download' | 'remote-copy'
 
 export interface FileTransferTask {
   id: string
@@ -66,6 +66,7 @@ interface DownloadOptions {
   connectionName?: string
   remotePath: string
   localPath?: string
+  intoDirectory?: boolean
   overwrite?: boolean
   preserveMtime?: boolean
 }
@@ -163,10 +164,22 @@ export const useTransfersStore = defineStore('transfers', () => {
     return state.items.find(task => task.id === taskId)
   }
 
+  /** 合并原生传输事件；跨 SSH 的迟到进度不应重新激活暂停或已结束的任务。 */
   function applyEvent(event: SshTransferEvent): void {
     const task = findTask(event.taskId)
     if (!task) return
     if (Boolean(task.kind) && task.status === 'cancelled') return
+    if (
+      task.direction === 'remote-copy' &&
+      event.status === 'running' &&
+      task.status !== 'running'
+    ) {
+      if (task.status === 'completed' && event.totalBytes !== null) {
+        task.totalBytes = event.totalBytes
+        task.transferredBytes = event.totalBytes
+      }
+      return
+    }
 
     task.status = event.status
     if (event.transferredBytes !== null)
@@ -294,39 +307,79 @@ export const useTransfersStore = defineStore('transfers', () => {
     notifyFailed(task)
   }
 
-  async function upload(options: UploadOptions): Promise<boolean> {
-    await ensureListener()
-    const task = createTask({
-      direction: 'upload',
-      fileName: nameOf(options.localPath),
-      source: options.localPath,
-      target: options.remotePath,
-      connectionName: options.connectionName ?? '',
-    })
+  /** 上传本地文件时，使用同一写入队列安排通道和重试。 */
+  function upload(options: UploadOptions): Promise<boolean> {
+    return queueRemoteWrite(
+      {
+        direction: 'upload',
+        fileName: nameOf(options.localPath),
+        source: options.localPath,
+        target: options.remotePath,
+        connectionName: options.connectionName ?? '',
+      },
+      taskId =>
+        ssh.uploadFile({
+          sessionId: options.sessionId,
+          taskId,
+          localPath: options.localPath,
+          remotePath: options.remotePath,
+          overwrite: options.overwrite ?? false,
+          resume: true,
+          preserveMtime: options.preserveMtime ?? false,
+          bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
+          concurrency: Math.min(
+            32,
+            Math.max(
+              1,
+              Math.floor(settingNumber('folderUploadConcurrency', 12))
+            )
+          ),
+        })
+    )
+  }
 
+  /** 两端都使用拖放时的会话，远端路径不会作为本机文件打开。 */
+  function copyRemote(options: {
+    sourceSessionId: string
+    sessionId: string
+    source: string
+    remotePath: string
+    connectionName: string
+  }): Promise<boolean> {
+    return queueRemoteWrite(
+      {
+        direction: 'remote-copy',
+        fileName: options.source.split('/').at(-1) || options.source,
+        source: options.source,
+        target: options.remotePath,
+        connectionName: options.connectionName,
+      },
+      taskId =>
+        ssh.copyBetweenSessions({
+          taskId,
+          sourceSessionId: options.sourceSessionId,
+          targetSessionId: options.sessionId,
+          source: options.source,
+          destination: options.remotePath,
+          bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
+        })
+    )
+  }
+
+  /** 统一记录写入远端的任务状态，并使用原任务 ID 重试失败的操作。 */
+  async function queueRemoteWrite(
+    input: Parameters<typeof createTask>[0],
+    write: (taskId: string) => Promise<unknown>
+  ): Promise<boolean> {
+    await ensureListener()
+    const task = createTask(input)
     return new Promise<boolean>(resolve => {
       pendingJobs.push({
         taskId: task.id,
         cancel: () => resolve(false),
         run: async () => {
           try {
-            await ssh.uploadFile({
-              sessionId: options.sessionId,
-              taskId: task.id,
-              localPath: options.localPath,
-              remotePath: options.remotePath,
-              overwrite: options.overwrite ?? false,
-              resume: true,
-              preserveMtime: options.preserveMtime ?? false,
-              bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
-              concurrency: Math.min(
-                32,
-                Math.max(
-                  1,
-                  Math.floor(settingNumber('folderUploadConcurrency', 12))
-                )
-              ),
-            })
+            await write(task.id)
             if (findTask(task.id)?.status !== 'cancelled') {
               task.status = 'completed'
               task.transferredBytes = task.totalBytes
@@ -370,6 +423,7 @@ export const useTransfersStore = defineStore('transfers', () => {
               taskId: task.id,
               remotePath: options.remotePath,
               localPath: options.localPath ?? '',
+              intoDirectory: options.intoDirectory,
               overwrite: options.overwrite ?? false,
               resume: true,
               preserveMtime: options.preserveMtime ?? false,
@@ -598,6 +652,7 @@ export const useTransfersStore = defineStore('transfers', () => {
     markAllSeen,
     recordUploadError,
     upload,
+    copyRemote,
     download,
     exportFile,
     pause,

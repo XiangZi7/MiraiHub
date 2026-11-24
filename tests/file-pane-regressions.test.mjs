@@ -85,7 +85,7 @@ test('日期列按类型挂选择器，值按文本解析和拼回，保留小�
   assert.deepEqual(shiftMonth(2026, 12, 12), { year: 2027, month: 12 })
 })
 
-test('跨栏拖拽保留整组选择，只允许同会话的另一侧接收，取消后不传输', t => {
+test('多选拖放匹配本地栏、终端和跨 SSH 目录，取消和会话切换会撤销手势', t => {
   const previousDocument = globalThis.document
   const previousWindow = globalThis.window
   const pointerWindow = new EventTarget()
@@ -117,11 +117,13 @@ test('跨栏拖拽保留整组选择，只允许同会话的另一侧接收，�
     hasPointerCapture: () => false,
   })
   let drag
+  let source = 'local'
+  let session = 'session'
   const scope = effectScope()
   scope.run(() => {
     drag = useFilePaneDrag({
-      source: () => 'local',
-      sessionId: () => 'session',
+      source: () => source,
+      sessionId: () => session,
       files: () => files,
       selection: () => selection,
       container,
@@ -190,6 +192,34 @@ test('跨栏拖拽保留整组选择，只允许同会话的另一侧接收，�
   target.dataset.fileTerminalSource = 'remote'
   pointer('pointerup')
   assert.equal(received.length, 2)
+
+  source = 'remote'
+  target.dataset.fileDropTarget = 'remote'
+  target.dataset.fileDirectory = '/srv'
+  drag.start(event(0))
+  pointer('pointermove')
+  pointer('pointerup')
+  assert.equal(received.length, 2)
+
+  target.dataset.fileSessionId = 'other-session'
+  drag.start(event(0))
+  pointer('pointermove')
+  pointer('pointerup')
+  assert.equal(received[2].sessionId, 'session')
+  assert.equal(received[2].source, 'remote')
+  assert.equal(received[2].directory, '/srv')
+  assert.equal(received[2].files.length, 2)
+
+  target.dataset.remoteDropDirectory = '/srv/sub'
+  drag.start(event(0))
+  pointer('pointermove')
+  pointer('pointerup')
+  assert.equal(received[3].directory, '/srv/sub')
+  drag.start(event(0))
+  pointer('pointermove')
+  session = 'reconnected'
+  pointer('pointerup')
+  assert.equal(received.length, 4)
 })
 
 test('文件路径按终端类型引用，拒绝可能作为输入控制键的字符', () => {

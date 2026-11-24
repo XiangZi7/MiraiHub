@@ -34,6 +34,7 @@ const load = sourceLoader({
     const fixture = globalThis.transferFixture
     export const onTransfer = async handler => { fixture.listen(handler); return () => {} }
     export const uploadFile = options => fixture.api.uploadFile(options)
+    export const copyBetweenSessions = options => fixture.api.copyBetweenSessions(options)
     export const downloadFile = options => fixture.api.downloadFile(options)
     export const pathExists = (session, path) => fixture.api.pathExists(session, path)
     export const cancelTransfer = taskId => fixture.api.cancelTransfer(taskId)
@@ -148,6 +149,30 @@ test('上传目录成功聚合进度，完成与失败都在传输中心记录�
   store.clearSettled()
   assert.equal(store.unreadCount, 0)
   assert.equal(store.tasks.length, 0)
+})
+
+test('跨 SSH 复制分别绑定读写会话，并在传输中心记录源路径、目标路径及进度', async t => {
+  const { store } = fixture(t)
+  api.copyBetweenSessions = async request => {
+    assert.equal(request.sourceSessionId, 'source')
+    assert.equal(request.targetSessionId, 'target')
+    assert.equal(request.source, '/documents/project')
+    assert.equal(request.destination, '/backup/project')
+    onTransfer({
+      taskId: request.taskId, transferredBytes: 24, totalBytes: 32,
+      status: 'running', error: null, localPath: null,
+    })
+    assert.equal(store.activeTasks[0].transferredBytes, 24)
+  }
+  assert.equal(await store.copyRemote({
+    sourceSessionId: 'source', sessionId: 'target', source: '/documents/project',
+    remotePath: '/backup/project', connectionName: 'Server B',
+  }), true)
+  const [task] = store.completedTasks
+  assert.equal(task.direction, 'remote-copy')
+  assert.equal(task.totalBytes, 32)
+  assert.equal(task.localPath, '')
+  assert.equal(task.connectionName, 'Server B')
 })
 
 test('同名目录允许确认合并，沿用覆盖策略，失败也刷新已写入的目录', async t => {

@@ -210,6 +210,8 @@ pub struct DownloadFileRequest {
     pub task_id: String,
     pub remote_path: String,
     pub local_path: String,
+    #[serde(default)]
+    pub into_directory: bool,
     pub overwrite: bool,
     #[serde(default)]
     pub resume: bool,
@@ -221,6 +223,19 @@ pub struct DownloadFileRequest {
 
 fn default_transfer_buffer_size_kb() -> usize {
     128
+}
+
+/// 跨 SSH 复制使用拖放时的会话与路径，进度和控制复用传输中心。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteCopyRequest {
+    pub source_session_id: String,
+    pub target_session_id: String,
+    pub task_id: String,
+    pub source: String,
+    pub destination: String,
+    #[serde(default = "default_transfer_buffer_size_kb")]
+    pub buffer_size_kb: usize,
 }
 
 /// SSH 密钥算法。
