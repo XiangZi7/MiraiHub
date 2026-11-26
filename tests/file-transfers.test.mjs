@@ -163,6 +163,7 @@ test('跨 SSH 复制分别绑定读写会话，并在传输中心记录源路径
       status: 'running', error: null, localPath: null,
     })
     assert.equal(store.activeTasks[0].transferredBytes, 24)
+    return request.destination
   }
   assert.equal(await store.copyRemote({
     sourceSessionId: 'source', sessionId: 'target', source: '/documents/project',
@@ -173,6 +174,37 @@ test('跨 SSH 复制分别绑定读写会话，并在传输中心记录源路径
   assert.equal(task.totalBytes, 32)
   assert.equal(task.localPath, '')
   assert.equal(task.connectionName, 'Server B')
+})
+
+test('远端剪贴板跨面板保留多选，重复粘贴由原生端编号并记录实际文件名', async t => {
+  const { store } = fixture(t)
+  const { useRemoteFileClipboard } = await load('src/composables/useRemoteFileClipboard.ts')
+  const source = useRemoteFileClipboard()
+  const target = useRemoteFileClipboard()
+  const calls = []
+  api.copyBetweenSessions = async request => {
+    calls.push(request)
+    assert.equal(request.autoRename, true)
+    return request.destination.replace('note.txt', 'note1.txt')
+  }
+  const files = [
+    { path: '/src/note.txt', name: 'note.txt', kind: 'file' },
+    { path: '/src/assets', name: 'assets', kind: 'directory' },
+  ]
+  source.copy('source', files)
+  files[0].name = 'edited.txt'
+  files.length = 0
+  assert.equal(target.hasFiles.value, true)
+  await target.paste({ sessionId: 'source', connectionName: 'A', directory: '/src' })
+  await target.paste({ sessionId: 'target', connectionName: 'B', directory: '/' })
+  assert.deepEqual(
+    calls.map(r => [r.sourceSessionId, r.targetSessionId, r.destination]),
+    [
+      ['source', 'source', '/src/note.txt'], ['source', 'source', '/src/assets'],
+      ['source', 'target', '/note.txt'], ['source', 'target', '/assets'],
+    ]
+  )
+  assert.ok(store.completedTasks.some(task => task.target === '/note1.txt' && task.fileName === 'note1.txt'))
 })
 
 test('同名目录允许确认合并，沿用覆盖策略，失败也刷新已写入的目录', async t => {

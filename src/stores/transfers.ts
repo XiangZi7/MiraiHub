@@ -317,10 +317,10 @@ export const useTransfersStore = defineStore('transfers', () => {
         target: options.remotePath,
         connectionName: options.connectionName ?? '',
       },
-      taskId =>
+      task =>
         ssh.uploadFile({
           sessionId: options.sessionId,
-          taskId,
+          taskId: task.id,
           localPath: options.localPath,
           remotePath: options.remotePath,
           overwrite: options.overwrite ?? false,
@@ -338,13 +338,14 @@ export const useTransfersStore = defineStore('transfers', () => {
     )
   }
 
-  /** 两端都使用拖放时的会话，远端路径不会作为本机文件打开。 */
+  /** 固定两端会话，并让传输中心显示粘贴后实际取得的文件名。 */
   function copyRemote(options: {
     sourceSessionId: string
     sessionId: string
     source: string
     remotePath: string
     connectionName: string
+    autoRename?: boolean
   }): Promise<boolean> {
     return queueRemoteWrite(
       {
@@ -354,22 +355,26 @@ export const useTransfersStore = defineStore('transfers', () => {
         target: options.remotePath,
         connectionName: options.connectionName,
       },
-      taskId =>
-        ssh.copyBetweenSessions({
-          taskId,
+      async task => {
+        const destination = await ssh.copyBetweenSessions({
+          taskId: task.id,
           sourceSessionId: options.sourceSessionId,
           targetSessionId: options.sessionId,
           source: options.source,
           destination: options.remotePath,
+          autoRename: options.autoRename,
           bufferSizeKb: settingNumber('transferBufferSizeKb', 128),
         })
+        task.target = destination
+        task.fileName = destination.split('/').at(-1) || destination
+      }
     )
   }
 
   /** 统一记录写入远端的任务状态，并使用原任务 ID 重试失败的操作。 */
   async function queueRemoteWrite(
     input: Parameters<typeof createTask>[0],
-    write: (taskId: string) => Promise<unknown>
+    write: (task: FileTransferTask) => Promise<unknown>
   ): Promise<boolean> {
     await ensureListener()
     const task = createTask(input)
@@ -379,7 +384,7 @@ export const useTransfersStore = defineStore('transfers', () => {
         cancel: () => resolve(false),
         run: async () => {
           try {
-            await write(task.id)
+            await write(task)
             if (findTask(task.id)?.status !== 'cancelled') {
               task.status = 'completed'
               task.transferredBytes = task.totalBytes

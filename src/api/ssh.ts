@@ -298,17 +298,18 @@ export async function copyPath(
   await invoke('ssh_copy_path', { sessionId, source, destination })
 }
 
-/** 在两个已连接的 SSH 会话之间流式复制一个文件或目录。 */
+/** 在 SSH 会话内或跨会话复制文件或目录，返回实际写入的路径。 */
 export async function copyBetweenSessions(request: {
   sourceSessionId: string
   targetSessionId: string
   taskId: string
   source: string
   destination: string
+  autoRename?: boolean
   bufferSizeKb: number
-}): Promise<void> {
+}): Promise<string> {
   ensureTauri()
-  await invoke('ssh_copy_between_sessions', { request })
+  return invoke<string>('ssh_copy_between_sessions', { request })
 }
 
 export async function uploadFile(options: {

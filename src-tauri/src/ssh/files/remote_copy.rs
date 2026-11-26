@@ -1,9 +1,10 @@
 use super::{
     emit_transfer, is_missing, join_path, plan_remote_tree, sftp_error, transfer_buffer_size,
-    validate_tree_root, FileAttributes, OpenFlags, SftpSession, SshError, SshResult, SshSession,
-    TransferControl, TransferEvent, TransferManager,
+    validate_copy_destination, validate_tree_root, FileAttributes, OpenFlags, SftpSession,
+    SshError, SshResult, SshSession, TransferControl, TransferEvent, TransferManager,
 };
-use crate::ssh::models::RemoteCopyRequest;
+use crate::ssh::models::{RemoteCopyRequest, SshConfig};
+use crate::ssh::workspace_files::numbered_copy_name;
 use tauri::AppHandle;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -14,14 +15,21 @@ pub async fn copy_between_sessions(
     target: &SshSession,
     transfers: &TransferManager,
     request: &RemoteCopyRequest,
-) -> SshResult<()> {
-    if source.id() == target.id() {
-        return Err(SshError::InvalidInput("请选择另一个 SSH 会话".into()));
-    }
+) -> SshResult<String> {
     validate_tree_root(&request.source)?;
     validate_tree_root(&request.destination)?;
     let control = transfers.begin(&request.task_id, 0).await?;
     let result = async {
+        let report = |done, total| {
+            emit_transfer(app, TransferEvent::progress(&request.task_id, done, total));
+        };
+        if source.id() == target.id() {
+            let slot = control.wait_for(source.reserve_transfer_channel()).await?;
+            let sftp = source.open_transfer_sftp(slot).await?;
+            let result = copy_tree(&sftp, &sftp, request, true, &control, report).await;
+            let _ = sftp.close().await;
+            return result;
+        }
         let source_first = source.id() < target.id();
         let (first, second) = if source_first {
             (source, target)
@@ -36,16 +44,38 @@ pub async fn copy_between_sessions(
             second.open_transfer_sftp(second_slot)
         )?;
         let (reader, writer) = if source_first { (&a, &b) } else { (&b, &a) };
-        let result = copy_tree(reader, writer, request, &control, |done, total| {
-            emit_transfer(app, TransferEvent::progress(&request.task_id, done, total));
-        })
-        .await;
+        let same_host = same_endpoint(source.config(), target.config());
+        let result = copy_tree(reader, writer, request, same_host, &control, report).await;
         let _ = tokio::join!(a.close(), b.close());
         result
     }
     .await;
     transfers.finish(&request.task_id).await;
     result
+}
+
+/// 两个会话可能连接到同一远端账户；比较代理和跳板，避免误认为不同服务器共享目录。
+fn same_endpoint(left: &SshConfig, right: &SshConfig) -> bool {
+    let same_proxy = match (&left.proxy, &right.proxy) {
+        (Some(a), Some(b)) => {
+            a.kind == b.kind
+                && a.host.eq_ignore_ascii_case(&b.host)
+                && a.port == b.port
+                && a.username == b.username
+        }
+        (None, None) => true,
+        _ => false,
+    };
+    left.host.eq_ignore_ascii_case(&right.host)
+        && left.port == right.port
+        && left.username == right.username
+        && same_proxy
+        && left.jump_hosts.len() == right.jump_hosts.len()
+        && left
+            .jump_hosts
+            .iter()
+            .zip(&right.jump_hosts)
+            .all(|(a, b)| same_endpoint(a, b))
 }
 
 /// 使用 lstat 检查同名文件、目录和悬空链接，整项复制始终保留已有目标。
@@ -57,14 +87,52 @@ async fn require_absent(sftp: &SftpSession, path: &str) -> SshResult<()> {
     }
 }
 
+/// 将完整副本发布到首个可用目标，另一个粘贴在检查后抢占名称时继续编号。
+async fn publish_copy(
+    writer: &SftpSession,
+    temp: &str,
+    parent: &str,
+    name: &str,
+    directory: bool,
+    auto_rename: bool,
+    control: &TransferControl,
+) -> SshResult<String> {
+    for sequence in 0..=u32::MAX {
+        control.checkpoint().await?;
+        let candidate = numbered_copy_name(name.as_ref(), directory, sequence);
+        let path = join_path(parent, &candidate.to_string_lossy());
+        match require_absent(writer, &path).await {
+            Err(SshError::RemoteFileExists(_)) if auto_rename => continue,
+            other => other?,
+        }
+        // SFTP v3 的普通 RENAME 拒绝覆盖，不使用 posix-rename 扩展。
+        match writer.rename(temp, &path).await {
+            Ok(()) => return Ok(path),
+            Err(error) => {
+                if auto_rename
+                    && matches!(
+                        require_absent(writer, &path).await,
+                        Err(SshError::RemoteFileExists(_))
+                    )
+                {
+                    continue;
+                }
+                return Err(sftp_error(error));
+            }
+        }
+    }
+    Err(SshError::InvalidInput("没有可用的副本名称".into()))
+}
+
 /// 逐块中转到目标端的临时名称，整棵树完成后再改名，保留空目录和普通权限位。
 async fn copy_tree(
     reader: &SftpSession,
     writer: &SftpSession,
     request: &RemoteCopyRequest,
+    same_host: bool,
     control: &TransferControl,
     report: impl Fn(u64, u64),
-) -> SshResult<()> {
+) -> SshResult<String> {
     let (parent, name) = request
         .destination
         .rsplit_once('/')
@@ -72,7 +140,26 @@ async fn copy_tree(
     if name.is_empty() || matches!(name, "." | "..") || name.contains(['\\', '\0']) {
         return Err(SshError::InvalidInput("无效的目标文件名".into()));
     }
-    require_absent(writer, &request.destination).await?;
+    if !request.auto_rename {
+        require_absent(writer, &request.destination).await?;
+    }
+    if same_host
+        && reader
+            .symlink_metadata(&request.source)
+            .await
+            .map_err(sftp_error)?
+            .is_dir()
+    {
+        let source = reader
+            .canonicalize(&request.source)
+            .await
+            .map_err(sftp_error)?;
+        let parent = writer
+            .canonicalize(if parent.is_empty() { "/" } else { parent })
+            .await
+            .map_err(sftp_error)?;
+        validate_copy_destination(&source, &parent)?;
+    }
     let tree = plan_remote_tree(reader, &request.source, control).await?;
     let total = tree
         .iter()
@@ -153,13 +240,18 @@ async fn copy_tree(
             writer.set_metadata(path, attrs).await.map_err(sftp_error)?;
         }
         control.checkpoint().await?;
-        require_absent(writer, &request.destination).await?;
-        writer
-            .rename(&temp, &request.destination)
-            .await
-            .map_err(sftp_error)?;
+        let candidate = publish_copy(
+            writer,
+            &temp,
+            parent,
+            name,
+            tree[0].attrs.is_dir(),
+            request.auto_rename,
+            control,
+        )
+        .await?;
         report(total, total);
-        Ok(())
+        Ok(candidate)
     }
     .await;
     if result.is_err() {
@@ -187,9 +279,24 @@ mod tests {
     use super::*;
     use crate::ssh::files::{download_to_path, local_download_path};
     use crate::ssh::models::DownloadFileRequest;
+    use crate::ssh::session::tests::config_with;
     use std::{path::Path, process::Stdio};
     use tauri::test::{mock_builder, mock_context, noop_assets};
     use tokio::process::{Child, Command};
+
+    /// 只有账户与连接路线一致时才按同一服务器检查目标是否落在源目录内。
+    #[test]
+    fn distinguishes_duplicate_sessions_from_different_routes() {
+        let mut first = config_with("node", "user", 22);
+        let mut other = config_with("NODE", "user", 22);
+        assert!(same_endpoint(&first, &other));
+        other.username = "another-user".into();
+        assert!(!same_endpoint(&first, &other));
+        other.username = first.username.clone();
+        first.jump_hosts.push(config_with("gateway-a", "user", 22));
+        other.jump_hosts.push(config_with("gateway-b", "user", 22));
+        assert!(!same_endpoint(&first, &other));
+    }
 
     /// 用独立的 OpenSSH SFTP 子进程交换真实协议包，两端各以单独的临时目录为起点。
     async fn open_server(executable: &str, root: &Path) -> (Child, SftpSession) {
@@ -231,11 +338,12 @@ mod tests {
             source,
             destination,
             task_id: "copy".into(),
+            auto_rename: false,
             buffer_size_kb: 32,
         };
         let manager = TransferManager::new();
         let control = manager.begin("copy", 0).await.unwrap();
-        copy_tree(&reader, &writer, &copy, &control, |_, _| {})
+        copy_tree(&reader, &writer, &copy, false, &control, |_, _| {})
             .await
             .unwrap();
         let copied = second.path().join(folder);
@@ -251,7 +359,7 @@ mod tests {
         assert!(copied.join(".hidden").is_file());
         assert_eq!(control.progress(), (250_000, 250_000));
         assert!(matches!(
-            copy_tree(&reader, &writer, &copy, &control, |_, _| {}).await,
+            copy_tree(&reader, &writer, &copy, false, &control, |_, _| {}).await,
             Err(SshError::RemoteFileExists(_))
         ));
         let download = DownloadFileRequest {
@@ -286,7 +394,7 @@ mod tests {
         copy.source = join_path(&copy.source, "nested/data.bin");
         copy.destination = join_path(&writer.canonicalize(".").await.unwrap(), "single.bin");
         let control = manager.begin("single", 0).await.unwrap();
-        copy_tree(&reader, &writer, &copy, &control, |_, _| {})
+        copy_tree(&reader, &writer, &copy, false, &control, |_, _| {})
             .await
             .unwrap();
         assert_eq!(
@@ -298,14 +406,105 @@ mod tests {
         copy.destination = join_path(&writer.canonicalize(".").await.unwrap(), "conflict");
         let conflict = second.path().join("conflict");
         let control = manager.begin("conflict", 0).await.unwrap();
-        assert!(copy_tree(&reader, &writer, &copy, &control, |done, _| {
-            if done == 0 {
-                std::fs::write(&conflict, b"existing").unwrap();
-            }
-        })
-        .await
-        .is_err());
+        assert!(
+            copy_tree(&reader, &writer, &copy, false, &control, |done, _| {
+                if done == 0 {
+                    std::fs::write(&conflict, b"existing").unwrap();
+                }
+            })
+            .await
+            .is_err()
+        );
         assert_eq!(std::fs::read(conflict).unwrap(), b"existing");
         assert_eq!(std::fs::read_dir(second.path()).unwrap().count(), 3);
+    }
+
+    /// 在同一 SFTP 通道粘贴目录和跨端并发粘贴文件，验证重名、保留原件和子目录检查。
+    #[tokio::test]
+    #[ignore = "requires MIRAIHUB_TEST_SFTP_SERVER pointing to an OpenSSH sftp-server executable"]
+    async fn openssh_clipboard_paste() {
+        let executable = std::env::var("MIRAIHUB_TEST_SFTP_SERVER").unwrap();
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(first.path().join("folder.conf/child")).unwrap();
+        std::fs::write(first.path().join("folder.conf/note.txt"), b"copied").unwrap();
+        let (_a, source) = open_server(&executable, first.path()).await;
+        let (_b, target) = open_server(&executable, second.path()).await;
+        let root = source.canonicalize(".").await.unwrap();
+        let folder = join_path(&root, "folder.conf");
+        let mut copy = RemoteCopyRequest {
+            source_session_id: "a".into(),
+            target_session_id: "a".into(),
+            task_id: "paste".into(),
+            source: folder.clone(),
+            destination: folder.clone(),
+            auto_rename: true,
+            buffer_size_kb: 32,
+        };
+        let manager = TransferManager::new();
+        let control = manager.begin("folder", 0).await.unwrap();
+        assert_eq!(
+            copy_tree(&source, &source, &copy, true, &control, |_, _| {})
+                .await
+                .unwrap(),
+            format!("{folder}1")
+        );
+        assert!(first.path().join("folder.conf1/child").is_dir());
+        assert_eq!(
+            std::fs::read(first.path().join("folder.conf1/note.txt")).unwrap(),
+            b"copied"
+        );
+        copy.destination = join_path(&folder, "child/folder.conf");
+        assert!(matches!(
+            copy_tree(&source, &source, &copy, true, &control, |_, _| {}).await,
+            Err(SshError::InvalidInput(_))
+        ));
+        assert_eq!(
+            std::fs::read_dir(first.path().join("folder.conf/child"))
+                .unwrap()
+                .count(),
+            0
+        );
+
+        // 占用原名与第一个编号，两个同时发布的副本必须获得不同的最终名称。
+        for name in ["note.txt", "note1.txt"] {
+            std::fs::write(second.path().join(name), b"keep").unwrap();
+        }
+        let target_root = target.canonicalize(".").await.unwrap();
+        copy.source = join_path(&folder, "note.txt");
+        copy.destination = join_path(&target_root, "note.txt");
+        copy.target_session_id = "b".into();
+        let a = manager.begin("file-a", 0).await.unwrap();
+        let b = manager.begin("file-b", 0).await.unwrap();
+        let (a, b) = tokio::try_join!(
+            copy_tree(&source, &target, &copy, false, &a, |_, _| {}),
+            copy_tree(&source, &target, &copy, false, &b, |_, _| {}),
+        )
+        .unwrap();
+        let mut names = [a, b];
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                join_path(&target_root, "note2.txt"),
+                join_path(&target_root, "note3.txt")
+            ]
+        );
+        assert_eq!(
+            std::fs::read(second.path().join("note.txt")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(
+            std::fs::read(second.path().join("note1.txt")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(
+            std::fs::read(second.path().join("note2.txt")).unwrap(),
+            b"copied"
+        );
+        assert_eq!(
+            std::fs::read(second.path().join("note3.txt")).unwrap(),
+            b"copied"
+        );
     }
 }

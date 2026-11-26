@@ -1,7 +1,9 @@
-//! 双栏文件浏览与目录同步只读扫描，传输仍走原有队列。
+//! 双栏文件浏览、本地拖入复制与目录同步扫描。
+pub mod local_copy;
 use super::SessionManager;
 use crate::error::{AppError, AppResult};
 use serde::Serialize;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use tauri::{State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt;
@@ -29,6 +31,31 @@ pub struct SyncScan {
     remote_root: String,
     local: Vec<FileEntry>,
     remote: Vec<FileEntry>,
+}
+
+/// 本地拖入与远端粘贴共用的重名规则。目录和点文件在原名末尾编号。
+pub(crate) fn numbered_copy_name(name: &OsStr, directory: bool, index: u32) -> OsString {
+    if index == 0 {
+        return name.to_owned();
+    }
+    // 直接在文件名内寻找扩展名，远端 Unix 文件名中的反斜杠在 Windows 上也是普通字符。
+    let parts = if directory {
+        None
+    } else if let Some(text) = name.to_str() {
+        text.rsplit_once('.')
+            .filter(|(stem, _)| !stem.is_empty())
+            .map(|(stem, ext)| (OsStr::new(stem), OsStr::new(ext)))
+    } else {
+        let path = Path::new(name);
+        path.file_stem().zip(path.extension())
+    };
+    let mut result = parts.map_or(name, |(stem, _)| stem).to_owned();
+    result.push(index.to_string());
+    if let Some((_, extension)) = parts {
+        result.push(".");
+        result.push(extension);
+    }
+    result
 }
 
 /// Windows 规范化路径用于 IO，但展示时移除扩展路径前缀，UNC 路径仍保留服务器名。

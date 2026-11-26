@@ -4035,6 +4035,7 @@ dependencies = [
  "russh",
  "russh-sftp",
  "rust_decimal",
+ "rustix",
  "rustls",
  "rustls-native-certs",
  "serde",

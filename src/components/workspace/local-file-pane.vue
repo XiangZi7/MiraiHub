@@ -5,11 +5,13 @@ import {
   onMounted,
   reactive,
   toRefs,
+  useTemplateRef,
   watch,
 } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
 import {
+  copyLocalEntries,
   listLocalDirectory,
   openLocalFile,
   type LocalListing,
@@ -17,6 +19,7 @@ import {
 import { errorMessage } from '@/api/ssh'
 import { translateNativeMessage } from '@/i18n/native'
 import { useFileTransfers } from '@/composables/useFileTransfers'
+import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
 import { toast } from '@/composables/useToast'
 import { useSettings } from '@/composables/useSettings'
 import IconButton from '@/components/ui/IconButton.vue'
@@ -25,6 +28,7 @@ import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import RemoteFileList from '@/components/workspace/RemoteFileList.vue'
 import FileBrowserControls from '@/components/workspace/file-browser-controls.vue'
 import FileConflictDialog from '@/components/workspace/FileConflictDialog.vue'
+import FileDropOverlay from '@/components/workspace/file-drop-overlay.vue'
 import DirectorySyncDialog from '@/components/workspace/directory-sync-dialog.vue'
 import type { FilePaneDrop } from '@/components/workspace/useFilePaneDrag'
 import type { SshDirectoryListing, SshRemoteFile } from '@/types/ssh'
@@ -57,6 +61,11 @@ const state = reactive({
   conflictAlways: false,
 })
 const { listing, path, loading, syncing } = toRefs(state)
+const dropZone = useTemplateRef<HTMLElement>('dropZone')
+const { isDragging } = useNativeFileDrop(
+  computed(() => (state.listing && !state.loading ? dropZone.value : null)),
+  copyDroppedFiles
+)
 let generation = 0
 let disposed = false
 let pendingDownloads = Promise.resolve()
@@ -99,16 +108,22 @@ watch(visibleEntries, files => {
     state.selected = state.selection.at(-1) ?? ''
 })
 /** 浏览本地目录并丢弃过期响应，默认使用系统桌面。 */
-async function load(path = '', history = true): Promise<void> {
+async function load(
+  path = '',
+  history = true,
+  preserveView = false
+): Promise<void> {
   const token = ++generation
-  state.loading = true
+  state.loading = !preserveView
   try {
     const result = await listLocalDirectory(path)
     if (disposed || token !== generation) return
     state.listing = result
     state.path = result.path
-    state.filter = ''
-    selectFiles([], '')
+    if (!preserveView) {
+      state.filter = ''
+      selectFiles([], '')
+    }
     if (history && state.history[state.historyIndex] !== result.path) {
       state.history.splice(state.historyIndex + 1)
       state.history.push(result.path)
@@ -119,6 +134,38 @@ async function load(path = '', history = true): Promise<void> {
       toast.error({ title: t('读取本地目录失败'), description: String(error) })
   } finally {
     if (token === generation) state.loading = false
+  }
+}
+/** 拖放时固定目标目录；后台复制完成后只更新仍在浏览的列表。 */
+async function copyDroppedFiles(paths: string[]): Promise<void> {
+  const directory = state.listing?.path
+  if (!directory || state.loading) return
+  try {
+    const { copied, failed } = await copyLocalEntries(paths, directory)
+    if (disposed) return
+    if (failed.length) {
+      const first = failed[0]
+      toast.error({
+        title: t('已复制 {copied} 项，{failed} 项失败', {
+          copied: copied.length,
+          failed: failed.length,
+        }),
+        description: `${first.path} · ${translateNativeMessage(first.message)}`,
+      })
+    } else {
+      toast.success({
+        title: t('files.copiedCount', { count: copied.length }),
+        description: directory,
+      })
+    }
+    if (copied.length && state.path === directory && !state.loading)
+      await load(directory, false, true)
+  } catch (error) {
+    if (!disposed)
+      toast.error({
+        title: t('复制失败'),
+        description: translateNativeMessage(errorMessage(error)),
+      })
   }
 }
 /** 本地目录前进后退不重复写入历史。 */
@@ -261,7 +308,8 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <section
-    class="file-pane border-line flex min-h-0 min-w-0 flex-1 flex-col"
+    ref="dropZone"
+    class="file-pane border-line relative flex min-h-0 min-w-0 flex-1 flex-col"
     :class="{ 'border-r': transferMode }"
     :data-file-drop-target="transferMode ? 'local' : undefined"
     :data-file-session-id="sessionId"
@@ -371,6 +419,11 @@ onBeforeUnmount(() => {
         :title="state.filter ? t('没有匹配的文件') : t('这个目录是空的')"
       />
     </RemoteFileList>
+    <FileDropOverlay
+      :active="isDragging && !loading"
+      :directory="path"
+      local
+    />
     <div
       v-if="state.selection.length"
       class="border-line-soft text-txt-3 shrink-0 border-t px-3 py-1 text-[11px]"

@@ -23,7 +23,10 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [paths: string[], focus: string]
   open: [file: SshRemoteFile]
+  rename: [file: SshRemoteFile]
   contextmenu: [event: MouseEvent, file: SshRemoteFile]
+  backgroundMenu: [event: MouseEvent]
+  clipboardShortcut: [event: KeyboardEvent]
 }>()
 const rowHeight = 32
 const id = useId()
@@ -60,6 +63,12 @@ function cancelGestures(): void {
 const selectedIndex = computed(() =>
   props.files.findIndex(file => file.path === props.selected)
 )
+/** 行菜单已截断冒泡，剩余的空白处交给远端面板打开当前目录的菜单。 */
+function openBackgroundMenu(event: MouseEvent): void {
+  if (props.local) return
+  event.preventDefault()
+  emit('backgroundMenu', event)
+}
 const activeDescendant = computed(() =>
   list.value.some(row => row.index === selectedIndex.value)
     ? `${id}-${selectedIndex.value}`
@@ -82,8 +91,11 @@ watch(
   },
   { flush: 'post' }
 )
-// 键盘支持全选、取消选择和 Shift 连选，焦点移动后滚动到可见位置。
+// 键盘支持选择、打开和重命名，焦点移动后滚动到可见位置。
 async function navigate(event: KeyboardEvent): Promise<void> {
+  if (!props.local && (event.ctrlKey || event.metaKey))
+    emit('clipboardShortcut', event)
+  if (event.defaultPrevented) return
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
     event.preventDefault()
     emit(
@@ -99,6 +111,21 @@ async function navigate(event: KeyboardEvent): Promise<void> {
     return
   }
   if (!props.files.length) return
+  if (
+    event.key === 'F2' &&
+    !props.local &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.shiftKey &&
+    props.selection.length === 1
+  ) {
+    const file = props.files.find(file => file.path === props.selection[0])
+    if (!file) return
+    event.preventDefault()
+    if (!event.repeat) emit('rename', file)
+    return
+  }
   if (event.key === 'Enter' && selectedIndex.value >= 0) {
     event.preventDefault()
     emit('open', props.files[selectedIndex.value])
@@ -136,6 +163,11 @@ async function navigate(event: KeyboardEvent): Promise<void> {
   }
   await nextTick()
 }
+/** 右键菜单执行复制或粘贴后，将键盘焦点交还给文件列表。 */
+function focus(): void {
+  containerProps.ref.value?.focus({ preventScroll: true })
+}
+defineExpose({ focus })
 </script>
 
 <template>
@@ -148,6 +180,7 @@ async function navigate(event: KeyboardEvent): Promise<void> {
     :aria-activedescendant="activeDescendant"
     tabindex="0"
     @keydown="navigate"
+    @contextmenu="openBackgroundMenu"
     @pointerdown="handlePointerDown"
     @pointermove="pointerMove"
     @pointerup="stopDrag"

@@ -2,6 +2,9 @@
 export const en: Record<string, string> = {
   'Tab 补齐 · Enter 打开': 'Tab to complete · Enter to open',
   输入本地目录路径: 'Enter a local directory path',
+  松开即可复制: 'Drop to copy',
+  '已复制 {copied} 项，{failed} 项失败':
+    'Copied {copied} items, {failed} failed',
   修改权限: 'Change permissions',
   修改权限失败: 'Failed to change permissions',
   '已修改 {count} 个项目的权限': 'Changed permissions of {count} item(s)',

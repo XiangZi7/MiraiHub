@@ -25,11 +25,11 @@
       const skin = document.createElement('style')
       document.head.append(skin)
       let store
-      function fail() {
+      function fail(connectionName = 'Test server') {
         store.recordUploadError(
           {
             sessionId: 'fixture',
-            connectionName: 'Test server',
+            connectionName,
             localPath: 'C:/project',
             remotePath: '/uploads/project',
           },
@@ -65,7 +65,11 @@
                 ),
                 h(
                   'button',
-                  { class: 'btn', style: 'margin-left:12px', onClick: fail },
+                  {
+                    class: 'btn',
+                    style: 'margin-left:12px',
+                    onClick: () => fail(),
+                  },
                   '模拟上传失败'
                 ),
                 h(
@@ -108,7 +112,7 @@
         )
         assert(
           document.querySelector('.transfer-overview-label').textContent ===
-            'Failed',
+            i18n.global.t('Failed'),
           '失败任务不显示完成状态'
         )
         assert(
@@ -124,6 +128,59 @@
           getComputedStyle(document.querySelector('.transfer-footer'))
             .backgroundColor === 'rgba(0, 0, 0, 0)',
           '底部保持透明'
+        )
+        fail('Second server')
+        await nextTick()
+        const group = name =>
+          [...document.querySelectorAll('.transfer-group-heading')].find(
+            button => button.textContent.includes(name)
+          )
+        const content = button =>
+          document.getElementById(button.getAttribute('aria-controls'))
+        const first = () => group('Test server')
+        const second = () => group('Second server')
+        first().click()
+        await nextTick()
+        const collapsed = content(first())
+        await Promise.all(
+          collapsed.getAnimations().map(animation => animation.finished)
+        )
+        assert(
+          first().getAttribute('aria-expanded') === 'false' &&
+            collapsed.inert &&
+            collapsed.getBoundingClientRect().height < 1 &&
+            second().getAttribute('aria-expanded') === 'true' &&
+            content(second()).offsetHeight > 0,
+          '收起一组后，其他组仍独立展开'
+        )
+        const filter = label =>
+          [...document.querySelectorAll('.transfer-filter')].find(button =>
+            button.textContent.includes(label)
+          )
+        filter('进行中').click()
+        await nextTick()
+        assert(!first() && !second(), '切换筛选隐藏没有匹配任务的分组')
+        filter('全部').click()
+        await nextTick()
+        assert(
+          content(first()).inert && !content(second()).inert,
+          '切回全部保留各组开合状态'
+        )
+        document.querySelector('.transfer-close').click()
+        await nextTick()
+        document
+          .querySelector('[aria-label="文件传输"][aria-haspopup="dialog"]')
+          .click()
+        await nextTick()
+        assert(
+          content(first()).inert && !content(second()).inert,
+          '重新打开面板保留各组开合状态'
+        )
+        first().click()
+        await nextTick()
+        assert(
+          !content(first()).inert && !content(second()).inert,
+          '再次点击可展开任务组'
         )
       } catch (error) {
         state.results.push('FAIL · ' + error.message)

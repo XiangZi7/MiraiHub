@@ -18,13 +18,14 @@ import {
 import { openPath } from '@tauri-apps/plugin-opener'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
-import AppIcon from '@/components/ui/AppIcon.vue'
+import FileDropOverlay from '@/components/workspace/file-drop-overlay.vue'
 import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppSkeleton from '@/components/ui/AppSkeleton.vue'
 import IconButton from '@/components/ui/IconButton.vue'
 import * as ssh from '@/api/ssh'
 import { readFileContext } from '@/api/agent'
 import { useFileTransfers } from '@/composables/useFileTransfers'
+import { useRemoteFileClipboard } from '@/composables/useRemoteFileClipboard'
 import { useNativeFileDrop } from '@/composables/useNativeFileDrop'
 import { useRemoteEditor } from '@/composables/useRemoteEditor'
 import { useRemoteFiles } from '@/composables/useRemoteFiles'
@@ -45,6 +46,7 @@ import RemoteFileTransferDialog from '@/components/workspace/RemoteFileTransferD
 import AppDialog from '@/components/ui/AppDialog.vue'
 import LocalFilePane from '@/components/workspace/local-file-pane.vue'
 import { formatBytes } from '@/utils/format'
+import { isMacPlatform } from '@/utils/shortcut'
 
 const { t } = useI18n()
 
@@ -89,6 +91,9 @@ function toggleHidden(): void {
   saveSettings({ ...settings, showHiddenFiles: !settings.showHiddenFiles })
 }
 const transfers = useFileTransfers()
+const remoteClipboard = useRemoteFileClipboard()
+const fileList = useTemplateRef('fileList')
+const shortcutMod = isMacPlatform() ? '⌘' : 'Ctrl+'
 const editor = useRemoteEditor()
 const dropZone = useTemplateRef<HTMLElement>('dropZone')
 const browserDragging = shallowRef(false)
@@ -188,6 +193,7 @@ watch([() => props.sessionId, path], () => {
   state.selection = []
   state.menuOpen = false
   state.pendingDelete = []
+  state.renaming = null
 })
 const pathClip = useClipboard({ copiedDuring: 1600 })
 
@@ -246,8 +252,29 @@ async function createRemote(name: string): Promise<void> {
 
 const contextItems = computed<ContextMenuItem[]>(() => {
   const file = state.menuFile
-  if (!file) return []
+  const paste: ContextMenuItem = {
+    id: 'paste',
+    label: t('粘贴'),
+    icon: 'lucide:clipboard-paste',
+    shortcut: `${shortcutMod}V`,
+    disabled: !remoteClipboard.hasFiles.value || loading.value || !path.value,
+  }
+  const refreshItem = {
+    id: 'refresh',
+    label: t('刷新'),
+    icon: 'lucide:refresh-cw',
+  }
+  if (!file) return [paste, refreshItem]
   const common: ContextMenuItem[] = [
+    {
+      id: 'copy',
+      label: t('复制'),
+      icon: 'lucide:copy',
+      shortcut: `${shortcutMod}C`,
+      disabled: !state.menuFiles.every(canTransferFile),
+      separatorBefore: true,
+    },
+    paste,
     {
       id: 'move',
       label: t('files.moveTo'),
@@ -277,7 +304,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       label: t('files.invertSelection'),
       icon: 'lucide:replace',
     },
-    { id: 'refresh', label: t('刷新'), icon: 'lucide:refresh-cw' },
+    refreshItem,
   ]
   if (state.menuFiles.length > 1)
     return [
@@ -285,7 +312,7 @@ const contextItems = computed<ContextMenuItem[]>(() => {
         id: 'download',
         label: t('files.downloadSelected', { count: state.menuFiles.length }),
         icon: 'lucide:download',
-        disabled: state.processing || !state.menuFiles.every(canDownload),
+        disabled: state.processing || !state.menuFiles.every(canTransferFile),
       },
       { id: 'copy-paths', label: t('files.copyPaths'), icon: 'lucide:copy' },
       ...common,
@@ -324,12 +351,13 @@ const contextItems = computed<ContextMenuItem[]>(() => {
       id: 'download',
       label: t('下载到…'),
       icon: 'lucide:download',
-      disabled: state.processing || !canDownload(file),
+      disabled: state.processing || !canTransferFile(file),
     },
     {
       id: 'rename',
       label: t('重命名'),
       icon: 'lucide:pencil',
+      shortcut: 'F2',
       separatorBefore: true,
     },
     {
@@ -462,9 +490,11 @@ function selectFiles(paths: string[], focus: string): void {
 }
 
 // 在已选行上右键保留整个集合，在未选行上右键只操作该行。
-function openMenu(event: MouseEvent, file: SshRemoteFile): void {
-  if (!state.selection.includes(file.path)) state.selection = [file.path]
-  selected.value = file.path
+function openMenu(event: MouseEvent, file: SshRemoteFile | null = null): void {
+  if (!connected.value || loading.value) return
+  if (!file) state.selection = []
+  else if (!state.selection.includes(file.path)) state.selection = [file.path]
+  selected.value = file?.path ?? ''
   state.menuFile = file
   state.menuFiles = [...selectedFiles.value]
   state.menuX = event.clientX
@@ -475,7 +505,21 @@ function openMenu(event: MouseEvent, file: SshRemoteFile): void {
 // 根据菜单快照执行单项或批量操作，删除确认只出现一次。
 function runContextAction(action: string): void {
   const file = state.menuFile
+  if (action === 'paste') {
+    fileList.value?.focus()
+    void pasteFiles(file?.kind === 'directory' ? file.path : path.value)
+    return
+  }
+  if (action === 'refresh') {
+    void refresh()
+    return
+  }
   if (!file) return
+  if (action === 'copy') {
+    remoteClipboard.copy(props.sessionId, state.menuFiles)
+    fileList.value?.focus()
+    return
+  }
   if (action === 'move' || action === 'copy-to') {
     state.transfer = {
       mode: action === 'move' ? 'move' : 'copy',
@@ -507,10 +551,6 @@ function runContextAction(action: string): void {
     selectFiles(paths, paths[0] ?? '')
     return
   }
-  if (action === 'refresh') {
-    void refresh()
-    return
-  }
   if (action === 'open') void openRemote(file)
   else if (action === 'ask-agent') void askAgentFile(file)
   else if (action === 'external')
@@ -522,7 +562,7 @@ function runContextAction(action: string): void {
     )
   else if (action === 'download') void downloadFiles(state.menuFiles)
   else if (action === 'copy-paths') void copySelectedPaths(state.menuFiles)
-  else if (action === 'rename') state.renaming = file
+  else if (action === 'rename') openRename(file)
   else if (action === 'chmod') state.chmodTarget = file
   else if (action === 'delete') {
     // 目录会被递归删除，即使关闭了删除确认也必须二次确认
@@ -532,6 +572,49 @@ function runContextAction(action: string): void {
     )
       state.pendingDelete = [...state.menuFiles]
     else void deleteFiles(state.menuFiles)
+  }
+}
+
+/** 粘贴到右键选定的目录，异步完成时仅刷新发起操作的面板位置。 */
+async function pasteFiles(directory: string): Promise<void> {
+  const sessionId = props.sessionId
+  const current = path.value
+  if (
+    !sessionId ||
+    !directory ||
+    loading.value ||
+    !remoteClipboard.hasFiles.value
+  )
+    return
+  await remoteClipboard.paste({
+    sessionId,
+    connectionName: props.connectionName,
+    directory,
+  })
+  if (props.sessionId === sessionId && path.value === current && !loading.value)
+    await refresh()
+}
+
+/** 仅在文件列表聚焦时处理复制、粘贴快捷键，键盘粘贴使用当前目录。 */
+function handleClipboardShortcut(event: KeyboardEvent): void {
+  if (
+    !(event.ctrlKey || event.metaKey) ||
+    event.altKey ||
+    event.shiftKey ||
+    event.defaultPrevented
+  )
+    return
+  const key = event.key.toLowerCase()
+  if (
+    key === 'c' &&
+    selectedFiles.value.length &&
+    selectedFiles.value.every(canTransferFile)
+  ) {
+    event.preventDefault()
+    remoteClipboard.copy(props.sessionId, selectedFiles.value)
+  } else if (key === 'v' && remoteClipboard.hasFiles.value) {
+    event.preventDefault()
+    if (!event.repeat) void pasteFiles(path.value)
   }
 }
 
@@ -598,14 +681,14 @@ async function transferFiles(directory: string): Promise<void> {
   }
 }
 
-/** 普通文件和目录均可下载，符号链接及设备不作为下载源。 */
-function canDownload(file: SshRemoteFile): boolean {
+/** 文件和目录可通过传输队列下载或复制。 */
+function canTransferFile(file: SshRemoteFile): boolean {
   return file.kind === 'file' || file.kind === 'directory'
 }
 
 // 单个文件可另存为；文件夹或混合多选只选择一次本地父目录。
 async function downloadFiles(files: SshRemoteFile[]): Promise<void> {
-  if (state.processing || !files.length || !files.every(canDownload)) return
+  if (state.processing || !files.length || !files.every(canTransferFile)) return
   if (files.length === 1 && files[0]!.kind === 'file') {
     await download(files[0]!)
     return
@@ -677,13 +760,32 @@ async function askAgentFile(file: SshRemoteFile): Promise<void> {
   }
 }
 
+/** 右键菜单与 F2 共用同一个远端文件重命名弹窗。 */
+function openRename(file: SshRemoteFile): void {
+  if (connected.value && !loading.value) state.renaming = file
+}
+
+/** 关闭重命名弹窗后把键盘焦点交还给文件列表。 */
+function closeRename(): void {
+  state.renaming = null
+  fileList.value?.focus()
+}
+
+/** 提交重命名，并仅在原会话与目录仍打开时刷新列表。 */
 async function renameFile(name: string): Promise<void> {
   const file = state.renaming
-  state.renaming = null
+  const sessionId = props.sessionId
+  const directory = path.value
+  closeRename()
   if (!file || name === file.name) return
   try {
-    await ssh.renamePath(props.sessionId, file.path, remoteChildPath(name))
-    await refresh()
+    await ssh.renamePath(sessionId, file.path, remoteChildPath(name))
+    if (
+      props.sessionId === sessionId &&
+      path.value === directory &&
+      !loading.value
+    )
+      await refresh()
     toast.success(t('已重命名为“{value0}”', { value0: name }))
   } catch (renameError) {
     toast.error({
@@ -776,16 +878,14 @@ async function receivePaneDrop(event: Event): Promise<void> {
     )
   )
     return
-  await Promise.all(
-    detail.files.map(file =>
-      transfers.copyRemote({
-        sourceSessionId: detail.sessionId,
-        sessionId,
-        source: file.path,
-        remotePath: `${detail.directory.replace(/\/$/, '')}/${file.name}`,
-        connectionName: props.connectionName,
-      })
-    )
+  await remoteClipboard.copyInto(
+    detail,
+    {
+      sessionId,
+      connectionName: props.connectionName,
+      directory: detail.directory,
+    },
+    false
   )
   if (props.sessionId === sessionId && path.value === directory) await refresh()
 }
@@ -836,13 +936,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
 </script>
 
 <template>
-  <div
-    class="relative flex min-h-0 flex-1 flex-col"
-    @dragenter.prevent="handleDragEnter"
-    @dragover.prevent
-    @dragleave.prevent="handleDragLeave"
-    @drop.prevent="handleBrowserDrop"
-  >
+  <div class="relative flex min-h-0 flex-1 flex-col">
     <div class="flex min-h-0 flex-1">
       <LocalFilePane
         v-if="dualPane"
@@ -858,7 +952,11 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         :data-file-session-id="sessionId"
         :data-file-directory="connected && !loading ? path : ''"
         @mirai-file-drop="receivePaneDrop"
-        class="file-pane flex min-h-0 min-w-0 flex-1 flex-col"
+        @dragenter.prevent="handleDragEnter"
+        @dragover.prevent
+        @dragleave.prevent="handleDragLeave"
+        @drop.prevent="handleBrowserDrop"
+        class="file-pane relative flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div
           class="scroll-none border-line-soft flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto border-b px-2"
@@ -930,7 +1028,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
             :title="t('files.downloadItems')"
             :disabled="
               !selectedFiles.length ||
-              !selectedFiles.every(canDownload) ||
+              !selectedFiles.every(canTransferFile) ||
               state.processing
             "
             @click="downloadFiles(selectedFiles)"
@@ -965,13 +1063,17 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
         />
 
         <RemoteFileList
+          ref="fileList"
           :files="loading ? [] : visibleEntries"
           :drag-session-id="connected ? sessionId : undefined"
           :selected="selected"
           :selection="selection"
           @select="selectFiles"
           @open="openRemote"
+          @rename="openRename"
           @contextmenu="openMenu"
+          @background-menu="openMenu"
+          @clipboard-shortcut="handleClipboardShortcut"
         >
           <AppSkeleton
             v-if="loading"
@@ -996,6 +1098,10 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
             "
           />
         </RemoteFileList>
+        <FileDropOverlay
+          :active="dropActive && connected"
+          :directory="path || t('主目录')"
+        />
       </div>
     </div>
     <footer
@@ -1013,34 +1119,11 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       </span>
     </footer>
 
-    <Transition name="drop-overlay">
-      <div
-        v-if="dropActive && connected"
-        class="drop-overlay"
-        aria-live="polite"
-      >
-        <div
-          class="bg-violet/15 text-violet grid size-12 place-items-center rounded-xl"
-        >
-          <AppIcon
-            name="lucide:cloud-upload"
-            :size="24"
-          />
-        </div>
-        <p class="text-txt mt-3 text-[13px] font-semibold">
-          {{ t('松开即可上传') }}
-        </p>
-        <p class="text-txt-3 mt-1 text-[10.5px]">
-          {{ t('files.dropDestination', { path: path || t('主目录') }) }}
-        </p>
-      </div>
-    </Transition>
-
     <RemoteFileRenameDialog
       v-if="state.renaming"
       :name="state.renaming.name"
       @submit="renameFile"
-      @close="state.renaming = null"
+      @close="closeRename"
     />
     <RemoteFileChmodDialog
       v-if="state.chmodTarget"
@@ -1121,6 +1204,7 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
   />
   <AppContextMenu
     :open="state.menuOpen"
+    scrollable
     :x="state.menuX"
     :y="state.menuY"
     :items="contextItems"
@@ -1169,39 +1253,3 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
     @cancel="settleConflict('cancel')"
   />
 </template>
-
-<style scoped>
-.drop-overlay {
-  position: absolute;
-  inset: 8px;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  border: 1px dashed color-mix(in oklch, var(--color-violet) 72%, transparent);
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--color-panel) 89%, transparent);
-  box-shadow: inset 0 0 40px
-    color-mix(in oklch, var(--color-violet) 8%, transparent);
-  backdrop-filter: blur(12px);
-  pointer-events: none;
-}
-
-.drop-overlay-enter-active,
-.drop-overlay-leave-active {
-  transition: opacity 120ms ease;
-}
-
-.drop-overlay-enter-from,
-.drop-overlay-leave-to {
-  opacity: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .drop-overlay-enter-active,
-  .drop-overlay-leave-active {
-    transition: none;
-  }
-}
-</style>

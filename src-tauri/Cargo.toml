@@ -101,12 +101,17 @@ windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
     "Win32_System_DataExchange",
     "Win32_Graphics_Dwm",
     "Win32_UI_Controls",
 ] }
 # 通过 RtlGetVersion 读取真实系统 build，避免兼容模式影响版本判断。
 windows-version = "0.1"
+
+[target.'cfg(unix)'.dependencies]
+# 拖入目录时原子发布完整副本，同名条目（包括空目录）不会被覆盖。
+rustix = { version = "1", features = ["fs"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", features = ["apple-native"] }

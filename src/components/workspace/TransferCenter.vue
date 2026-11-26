@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, reactive, shallowRef, useTemplateRef, watch } from 'vue'
 import { useEventListener, useIntervalFn, useNow } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import {
@@ -46,6 +46,12 @@ const {
 } = useFileTransfers()
 
 const statusFilter = shallowRef<TransferFilter>('all')
+const collapsedGroups = reactive(new Set<string>())
+/** 按任务组记住开合状态，切换筛选或重新打开面板时仍可继续浏览。 */
+function toggleGroup(key: string): void {
+  if (collapsedGroups.has(key)) collapsedGroups.delete(key)
+  else collapsedGroups.add(key)
+}
 const triggerRoot = useTemplateRef<HTMLElement>('triggerRoot')
 const panelRoot = useTemplateRef<HTMLElement>('panelRoot')
 // 时钟只用于面板里的速率与剩余时间；面板关闭或没有活动任务时停掉，避免常驻每秒重算。
@@ -83,7 +89,7 @@ const groups = computed<TransferGroupView[]>(() => {
 
   for (const task of visibleTasks.value) {
     const connectionName = task.connectionName || t('Remote server')
-    const key = `${task.direction}:${connectionName}`
+    const key = `${task.direction}:${task.connectionName}`
     const existing = byConnection.get(key)
     if (existing) {
       existing.tasks.push(task)
@@ -285,6 +291,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               :direction="group.direction"
               :connection-name="group.connectionName"
               :tasks="group.tasks"
+              :expanded="!collapsedGroups.has(group.key)"
+              @toggle="toggleGroup(group.key)"
               @pause="pause"
               @resume="resume"
               @cancel="cancel"

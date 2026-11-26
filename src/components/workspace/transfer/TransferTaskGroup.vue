@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
+import AppCollapse from '@/components/ui/AppCollapse.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import type {
   FileTransferDirection,
@@ -10,14 +11,17 @@ import type {
 import TransferTaskCard from './TransferTaskCard.vue'
 
 const { t } = useI18n()
+const panelId = useId()
 
 const props = defineProps<{
   direction: FileTransferDirection
   connectionName: string
+  expanded: boolean
   tasks: readonly FileTransferTask[]
 }>()
 
 const emit = defineEmits<{
+  toggle: []
   pause: [taskId: string]
   resume: [taskId: string]
   cancel: [taskId: string]
@@ -42,38 +46,56 @@ const directionInfo = computed(
 
 <template>
   <section class="transfer-group">
-    <div class="transfer-group-heading">
-      <AppIcon
-        :name="directionInfo.icon"
-        :size="12"
-        class="transfer-group-icon"
-      />
-      <h3 class="transfer-group-title">
-        <span>{{ directionInfo.label }}</span>
-        {{ connectionName || t('Remote server') }}
-      </h3>
-      <span
-        class="transfer-group-meta"
-        :title="t('已完成 / 总数')"
+    <h3>
+      <button
+        type="button"
+        class="transfer-group-heading"
+        :aria-expanded="expanded"
+        :aria-controls="panelId"
+        @click="emit('toggle')"
       >
         <AppIcon
-          name="lucide:list-checks"
-          :size="10"
+          name="lucide:chevron-right"
+          :size="12"
+          class="transfer-group-chevron"
         />
-        {{ completedCount }}/{{ tasks.length }}
-      </span>
-    </div>
+        <AppIcon
+          :name="directionInfo.icon"
+          :size="12"
+          class="transfer-group-icon"
+        />
+        <span class="transfer-group-title">
+          <span>{{ directionInfo.label }}</span>
+          {{ connectionName || t('Remote server') }}
+        </span>
+        <span
+          class="transfer-group-meta"
+          :title="t('已完成 / 总数')"
+        >
+          <AppIcon
+            name="lucide:list-checks"
+            :size="10"
+          />
+          {{ completedCount }}/{{ tasks.length }}
+        </span>
+      </button>
+    </h3>
 
-    <div class="transfer-group-files">
-      <TransferTaskCard
-        v-for="task in tasks"
-        :key="task.id"
-        :task="task"
-        @pause="emit('pause', $event)"
-        @resume="emit('resume', $event)"
-        @cancel="emit('cancel', $event)"
-      />
-    </div>
+    <AppCollapse
+      :id="panelId"
+      :open="expanded"
+    >
+      <div class="transfer-group-files">
+        <TransferTaskCard
+          v-for="task in tasks"
+          :key="task.id"
+          :task="task"
+          @pause="emit('pause', $event)"
+          @resume="emit('resume', $event)"
+          @cancel="emit('cancel', $event)"
+        />
+      </div>
+    </AppCollapse>
   </section>
 </template>
 
@@ -84,10 +106,33 @@ const directionInfo = computed(
 
 .transfer-group-heading {
   display: flex;
-  height: 24px;
+  width: 100%;
+  min-height: 28px;
   align-items: center;
   gap: 6px;
   padding: 0 4px;
+  border-radius: 5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.transfer-group-heading:hover {
+  background: var(--color-hover);
+}
+
+.transfer-group-heading:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.transfer-group-chevron {
+  flex: none;
+  color: var(--color-txt-3);
+  transition: transform var(--motion-panel);
+}
+
+.transfer-group-heading[aria-expanded='true'] .transfer-group-chevron {
+  transform: rotate(90deg);
 }
 
 .transfer-group-icon {

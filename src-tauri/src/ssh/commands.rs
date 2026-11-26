@@ -228,14 +228,14 @@ pub async fn ssh_copy_path(
     Ok(files::copy_path(&session, &source, &destination).await?)
 }
 
-/// 使用两个已连接的 SFTP 通道复制文件或目录。
+/// 在已连接的 SSH 会话间或同一会话内复制，返回最终保存的远端路径。
 #[tauri::command]
 pub async fn ssh_copy_between_sessions(
     app: AppHandle,
     manager: State<'_, SessionManager>,
     transfers: State<'_, TransferManager>,
     request: RemoteCopyRequest,
-) -> AppResult<()> {
+) -> AppResult<String> {
     let source = manager.get(&request.source_session_id).await?;
     let target = manager.get(&request.target_session_id).await?;
     Ok(files::copy_between_sessions(&app, &source, &target, &transfers, &request).await?)

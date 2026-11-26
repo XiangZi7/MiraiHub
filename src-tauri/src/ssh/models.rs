@@ -225,7 +225,7 @@ fn default_transfer_buffer_size_kb() -> usize {
     128
 }
 
-/// 跨 SSH 复制使用拖放时的会话与路径，进度和控制复用传输中心。
+/// SSH 文件复制参数；粘贴可在目标已存在时为副本自动编号。
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteCopyRequest {
@@ -234,6 +234,8 @@ pub struct RemoteCopyRequest {
     pub task_id: String,
     pub source: String,
     pub destination: String,
+    #[serde(default)]
+    pub auto_rename: bool,
     #[serde(default = "default_transfer_buffer_size_kb")]
     pub buffer_size_kb: usize,
 }
