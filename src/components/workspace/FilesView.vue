@@ -37,7 +37,6 @@ import type { SshDirectoryListing, SshRemoteFile } from '@/types/ssh'
 import { copyText, scheduleClipboardClear } from '@/utils/clipboard'
 import FileConflictDialog from '@/components/workspace/FileConflictDialog.vue'
 import RemoteFileCreateDialog from '@/components/workspace/RemoteFileCreateDialog.vue'
-import RemoteFileRenameDialog from '@/components/workspace/RemoteFileRenameDialog.vue'
 import RemoteFileChmodDialog from '@/components/workspace/RemoteFileChmodDialog.vue'
 import RemoteFileList from '@/components/workspace/RemoteFileList.vue'
 import FileBrowserControls from '@/components/workspace/file-browser-controls.vue'
@@ -122,6 +121,7 @@ const state = reactive({
   // 属性面板所展示的文件快照
   properties: [] as SshRemoteFile[],
   renaming: null as SshRemoteFile | null,
+  renamePending: false,
   createMenuOpen: false,
   createMenuX: 0,
   createMenuY: 0,
@@ -202,6 +202,7 @@ watch(visibleEntries, files => {
     selected.value = ''
   const visible = new Set(files.map(file => file.path))
   state.selection = state.selection.filter(path => visible.has(path))
+  if (state.renaming && !visible.has(state.renaming.path)) state.renaming = null
 })
 
 watch(error, message => {
@@ -760,26 +761,31 @@ async function askAgentFile(file: SshRemoteFile): Promise<void> {
   }
 }
 
-/** 右键菜单与 F2 共用同一个远端文件重命名弹窗。 */
+/** 右键菜单与 F2 都在目标行打开名称输入框。 */
 function openRename(file: SshRemoteFile): void {
-  if (connected.value && !loading.value) state.renaming = file
+  if (connected.value && !loading.value && !state.renamePending)
+    state.renaming = file
 }
 
-/** 关闭重命名弹窗后把键盘焦点交还给文件列表。 */
-function closeRename(): void {
-  state.renaming = null
-  fileList.value?.focus()
-}
-
-/** 提交重命名，并仅在原会话与目录仍打开时刷新列表。 */
-async function renameFile(name: string): Promise<void> {
+/** 验证名称并保存，失败时保留输入，切换目录后只更新原操作结果。 */
+async function renameFile(draft: string): Promise<void> {
   const file = state.renaming
+  if (!file || loading.value || state.renamePending) return
+  const name = draft.trim()
+  if (draft === file.name || name === file.name) {
+    state.renaming = null
+    return
+  }
+  if (!name || name === '.' || name === '..' || /[\\/]/.test(name)) {
+    toast.warning(t('请输入不含斜杠的有效文件名'))
+    return
+  }
   const sessionId = props.sessionId
   const directory = path.value
-  closeRename()
-  if (!file || name === file.name) return
+  state.renamePending = true
   try {
     await ssh.renamePath(sessionId, file.path, remoteChildPath(name))
+    if (state.renaming === file) state.renaming = null
     if (
       props.sessionId === sessionId &&
       path.value === directory &&
@@ -792,6 +798,8 @@ async function renameFile(name: string): Promise<void> {
       title: t('重命名失败'),
       description: ssh.errorMessage(renameError),
     })
+  } finally {
+    state.renamePending = false
   }
 }
 
@@ -1068,9 +1076,13 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
           :drag-session-id="connected ? sessionId : undefined"
           :selected="selected"
           :selection="selection"
+          :renaming="state.renaming"
+          :rename-pending="state.renamePending"
           @select="selectFiles"
           @open="openRemote"
           @rename="openRename"
+          @commit-rename="renameFile"
+          @cancel-rename="state.renaming = null"
           @contextmenu="openMenu"
           @background-menu="openMenu"
           @clipboard-shortcut="handleClipboardShortcut"
@@ -1119,12 +1131,6 @@ defineExpose({ pickUploadFiles, pickUploadFolder })
       </span>
     </footer>
 
-    <RemoteFileRenameDialog
-      v-if="state.renaming"
-      :name="state.renaming.name"
-      @submit="renameFile"
-      @close="closeRename"
-    />
     <RemoteFileChmodDialog
       v-if="state.chmodTarget"
       :file="state.chmodTarget"

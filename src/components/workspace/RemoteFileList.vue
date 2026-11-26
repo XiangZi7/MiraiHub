@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
-import { computed, nextTick, toRef, useId, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  shallowRef,
+  toRef,
+  useId,
+  watch,
+  type VNode,
+} from 'vue'
 import { useVirtualList } from '@vueuse/core'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppInput from '@/components/ui/AppInput.vue'
 import { fileIcon } from '@/constants/files'
 import { formatBytes } from '@/utils/format'
 import { formatDateTime } from '@/utils/time'
@@ -19,17 +28,22 @@ const props = defineProps<{
   files: SshRemoteFile[]
   selected: string
   selection: string[]
+  renaming?: SshRemoteFile | null
+  renamePending?: boolean
 }>()
 const emit = defineEmits<{
   select: [paths: string[], focus: string]
   open: [file: SshRemoteFile]
   rename: [file: SshRemoteFile]
+  commitRename: [name: string]
+  cancelRename: []
   contextmenu: [event: MouseEvent, file: SshRemoteFile]
   backgroundMenu: [event: MouseEvent]
   clipboardShortcut: [event: KeyboardEvent]
 }>()
 const rowHeight = 32
 const id = useId()
+const renameDraft = shallowRef('')
 const { list, containerProps, wrapperProps, scrollTo } = useVirtualList(
   toRef(props, 'files'),
   { itemHeight: rowHeight, overscan: 6 }
@@ -91,6 +105,58 @@ watch(
   },
   { flush: 'post' }
 )
+
+// 在虚拟列表中先定位待编辑的行；编辑结束时只恢复仍在输入框内的焦点。
+watch(
+  () => props.renaming,
+  file => {
+    const container = containerProps.ref.value
+    if (!file) {
+      const active = container?.ownerDocument.activeElement
+      if (
+        active?.hasAttribute('data-rename-input') &&
+        container?.contains(active)
+      )
+        focus()
+      return
+    }
+    renameDraft.value = file.name
+    const index = props.files.findIndex(row => row.path === file.path)
+    if (
+      container &&
+      index >= 0 &&
+      (index * rowHeight < container.scrollTop ||
+        (index + 1) * rowHeight > container.scrollTop + container.clientHeight)
+    )
+      scrollTo(index)
+  }
+)
+
+/** 行内输入框渲染后聚焦并选中原名称。 */
+function focusRenameInput(vnode: VNode): void {
+  const input = vnode.el as HTMLInputElement
+  input.focus({ preventScroll: true })
+  input.select()
+}
+
+/** 回车和失焦共用保存入口。 */
+function commitRename(): void {
+  if (props.renaming && !props.renamePending)
+    emit('commitRename', renameDraft.value)
+}
+
+/** 输入法组字期间保留原生行为；Esc 只取消尚未提交的编辑。 */
+function handleRenameKey(event: KeyboardEvent): void {
+  if (event.isComposing) return
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    if (!event.repeat) commitRename()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    if (!props.renamePending) emit('cancelRename')
+  }
+}
+
 // 键盘支持选择、打开和重命名，焦点移动后滚动到可见位置。
 async function navigate(event: KeyboardEvent): Promise<void> {
   if (!props.local && (event.ctrlKey || event.metaKey))
@@ -163,7 +229,7 @@ async function navigate(event: KeyboardEvent): Promise<void> {
   }
   await nextTick()
 }
-/** 右键菜单执行复制或粘贴后，将键盘焦点交还给文件列表。 */
+/** 将键盘焦点交还给文件列表，保留当前滚动位置。 */
 function focus(): void {
   containerProps.ref.value?.focus({ preventScroll: true })
 }
@@ -226,9 +292,31 @@ defineExpose({ focus })
             :size="17"
             :class="row.meta.tone"
           />
-          <span class="text-txt truncate">{{ row.file.name }}</span>
+          <AppInput
+            v-if="renaming?.path === row.file.path"
+            v-model="renameDraft"
+            variant="cell"
+            class="rounded-md"
+            data-rename-input
+            :aria-label="t('新名称')"
+            :aria-busy="renamePending || undefined"
+            :readonly="renamePending"
+            autocomplete="off"
+            spellcheck="false"
+            @vue:mounted="focusRenameInput"
+            @keydown.stop="handleRenameKey"
+            @blur="commitRename"
+            @pointerdown.stop
+            @dblclick.stop
+            @contextmenu.stop
+          />
           <span
-            v-if="row.file.linkTarget"
+            v-else
+            class="text-txt truncate"
+            >{{ row.file.name }}</span
+          >
+          <span
+            v-if="row.file.linkTarget && renaming?.path !== row.file.path"
             class="text-txt-4 shrink-0 truncate text-[10.5px]"
             >→ {{ row.file.linkTarget }}</span
           >
