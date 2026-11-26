@@ -51,6 +51,14 @@ export interface DatabaseSession {
 
 export type DatabaseObjectKind = 'table' | 'view' | 'procedure' | 'function'
 
+export interface MysqlTableStats {
+  dataLength: number | null
+  indexLength: number | null
+  autoIncrement: string | null
+  engine: string | null
+  charset: string | null
+}
+
 export interface DatabaseObject {
   schema: string
   name: string
@@ -60,6 +68,7 @@ export interface DatabaseObject {
   comment: string | null
   createdAt: string | null
   updatedAt: string | null
+  mysqlStats?: MysqlTableStats
 }
 
 export interface DatabaseColumn {

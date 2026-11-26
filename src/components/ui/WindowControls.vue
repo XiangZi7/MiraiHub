@@ -11,6 +11,7 @@ import {
 } from '@/utils/window'
 
 const { t } = useI18n()
+const props = defineProps<{ closeAction?: () => void }>()
 
 // 订阅句柄不参与渲染，用普通变量即可；卸载时解除，避免热更新越挂越多
 let stopTracking: (() => void) | undefined
@@ -48,7 +49,7 @@ const buttons = computed(() => [
     icon: 'mirai:win-close',
     title: t('关闭'),
     danger: true,
-    run: closeWindow,
+    run: props.closeAction ?? closeWindow,
   },
 ])
 </script>
@@ -66,6 +67,7 @@ const buttons = computed(() => [
           : 'hover:bg-hover hover:text-txt',
       ]"
       :title="button.title"
+      :aria-label="button.title"
       @click="button.run()"
     >
       <AppIcon

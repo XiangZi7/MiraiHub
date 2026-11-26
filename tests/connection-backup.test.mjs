@@ -37,6 +37,56 @@ const defaults = { mode: 'skip', credentials: false, startupCommands: false }
 const archive = (...connections) =>
   createConnectionBackup(snapshot(...connections), true)
 
+const docker = (settings = {}) => ssh({
+  id: 'docker-1', kind: 'docker', name: 'Docker', host: '', port: 0, username: '',
+  settings: { protocol: 'unix', endpoint: '/var/run/docker.sock', transport: 'ssh', sshConnectionId: 'ssh-1', ...settings },
+})
+
+test('Docker copies keep the copied SSH tunnel even when the profile follows the engine in the file', () => {
+  const backup = archive(docker({ environment: 'production' }), ssh())
+  backup.groups.push({ id: 'g2', kind: 'docker', name: 'Engines', createdAt: 2 })
+  const parsed = parseConnectionBackup(backup)
+  assert.deepEqual(parsed.connections[0].settings, docker({ environment: 'production' }).settings)
+  let id = 0
+  const result = restorePlan(snapshot(ssh()), parsed, { ...defaults, mode: 'copy' }, () => 'copy-' + ++id)
+  assert.equal(result.next.connections[1].settings.sshConnectionId, result.next.connections[2].id)
+  assert.equal(result.changes[0].host, '/var/run/docker.sock')
+  assert.equal(result.next.groups.at(-1).kind, 'docker')
+  const external = restorePlan(snapshot(ssh()), archive(docker()), { ...defaults, mode: 'copy' }, () => 'engine-copy')
+  assert.equal(external.next.connections.at(-1).settings.sshConnectionId, 'ssh-1')
+})
+
+test('Docker backups accept direct protocols and discard unknown fields, and reject origins containing credentials', () => {
+  const original = docker({ transport: 'direct', protocol: 'https', endpoint: 'https://[::1]:2376', proxyUrl: 'http://proxy:8080', token: 'private' })
+  const settings = parseConnectionBackup(archive(original)).connections[0].settings
+  assert.deepEqual(settings, { transport: 'direct', protocol: 'https', endpoint: 'https://[::1]:2376', proxyUrl: 'http://proxy:8080' })
+  assert.equal(archive(original).connections[0].settings.token, undefined)
+  for (const change of [
+    { endpoint: 'https://user:password@engine:2376' },
+    { endpoint: 'https://engine:2376/api?key=secret' },
+    { proxyUrl: 'http://user:password@proxy:8080' },
+    { protocol: 'npipe', transport: 'ssh', endpoint: String.raw`\\.\pipe\docker_engine` },
+  ]) {
+    const changed = docker({ ...settings, ...change })
+    assert.throws(() => archive(changed))
+    const file = archive(original)
+    file.connections[0].settings = changed.settings
+    assert.throws(() => parseConnectionBackup(file))
+  }
+  const pipe = String.raw`\\.\pipe\docker_engine`
+  assert.equal(parseConnectionBackup(archive(docker({ transport: 'direct', protocol: 'npipe', endpoint: pipe }))).connections[0].settings.endpoint, pipe)
+})
+
+test('skip mode keeps Docker from attaching to an existing SSH ID that points to another host', () => {
+  const backup = parseConnectionBackup(archive(docker(), ssh()))
+  const conflict = restorePlan(snapshot(ssh({ host: 'other.example' })), backup, defaults, () => 'unused')
+  assert.deepEqual(conflict.changes.map(change => change.action), ['skip', 'skip'])
+  assert.equal(conflict.next.connections.length, 1)
+  const sameServer = restorePlan(snapshot(ssh({ name: 'Renamed SSH' })), backup, defaults, () => 'unused')
+  assert.deepEqual(sameServer.changes.map(change => change.action), ['add', 'skip'])
+  assert.equal(sameServer.next.connections[1].settings.sshConnectionId, 'ssh-1')
+})
+
 test('RDP backups preserve the connection and display settings without device credentials', () => {
   const display = { resolution: { width: 1920, height: 1080 }, scale: 'actual' }
   const desktop = ssh({

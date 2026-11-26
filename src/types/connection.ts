@@ -6,6 +6,7 @@
  */
 
 import type { SshAuthMethod, SshConfig, SshProxyConfig } from '@/types/ssh'
+import type { DockerConnectionSettings } from '@/types/docker'
 import type {
   DatabaseConfig,
   DatabaseConnectionConfig,
@@ -18,8 +19,8 @@ import type {
 import { settingNumber, settingsSnapshot } from '@/composables/useSettings'
 
 /** 已保存连接的协议，以及连接编辑窗口支持的表单类型。 */
-export type ConnectionKind = 'ssh' | 'local' | 'rdp' | DatabaseConnectionKind
-export type ConnectionFormKind = 'ssh' | 'local' | 'rdp' | 'database'
+export type ConnectionKind = 'ssh' | 'local' | 'rdp' | 'docker' | DatabaseConnectionKind
+export type ConnectionFormKind = 'ssh' | 'local' | 'rdp' | 'database' | 'docker'
 
 export type ConnectionTagColor =
   'red' | 'orange' | 'amber' | 'green' | 'cyan' | 'blue' | 'violet' | 'gray'
@@ -34,8 +35,8 @@ export interface ConnectionTagDefinition {
 export type LocalShellKind =
   'powershell' | 'cmd' | 'git-bash' | 'system' | 'bash' | 'zsh'
 
-/** 侧边栏分组按 SSH / 数据库两棵树隔离。 */
-export type ConnectionGroupKind = 'ssh' | 'database'
+/** 服务器、数据库和 Docker 在侧栏各自管理分组。 */
+export type ConnectionGroupKind = 'ssh' | 'database' | 'docker'
 export type ConnectionGroupDropPosition = 'before' | 'after'
 
 /** 未分组在同类实体分组中的插入位置；未设置时位于末尾。 */
@@ -168,6 +169,7 @@ export interface SavedConnection {
     | SshConnectionSettings
     | LocalConnectionSettings
     | DatabaseConnectionSettings
+    | DockerConnectionSettings
     | RdpConnectionSettings
 }
 
@@ -228,6 +230,16 @@ export function isLocalConnection(
   connection: SavedConnection
 ): connection is SavedConnection & { settings: LocalConnectionSettings } {
   return connection.kind === 'local'
+}
+
+/** 识别可交给 Docker Engine 的独立连接配置。 */
+export function isDockerConnection(
+  connection: SavedConnection
+): connection is SavedConnection & {
+  kind: 'docker'
+  settings: DockerConnectionSettings
+} {
+  return connection.kind === 'docker'
 }
 
 /** 从通用连接配置中取得远程桌面选项。 */
@@ -332,6 +344,7 @@ export function toDatabaseConnectionConfig(
 
 /** `user@host:port`，列表与标题栏展示用 */
 export function endpointOf(connection: SavedConnection): string {
+  if (isDockerConnection(connection)) return connection.settings.endpoint
   if (isLocalConnection(connection))
     return connection.settings.workingDirectory || '本机'
   // SQLite 的 host 就是文件路径
@@ -346,7 +359,9 @@ export function endpointOf(connection: SavedConnection): string {
   return `${connection.username ? `${connection.username}@` : ''}${host}:${connection.port}`
 }
 
+/** 按协议确定所属的侧栏和分组目录。 */
 export function groupKindOf(kind: ConnectionKind): ConnectionGroupKind {
+  if (kind === 'docker') return 'docker'
   return kind === 'mysql' ||
     kind === 'postgresql' ||
     kind === 'sqlite' ||

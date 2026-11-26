@@ -12,7 +12,10 @@ import type {
 export const NAV_ITEMS: NavItem<NavId>[] = [
   { id: 'servers', label: 'Servers', icon: 'lucide:server' },
   { id: 'databases', label: 'Databases', icon: 'lucide:database' },
+  { id: 'docker', label: 'Docker', icon: 'lucide:container' },
 ]
+
+export const NAV_GROUP_KIND = { servers: 'ssh', databases: 'database', docker: 'docker' } as const
 
 /** 机器详情面板的视图切换 */
 export const MACHINE_VIEWS: NavItem<MachineViewId>[] = [
@@ -67,6 +70,12 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         label: 'New Database Connection',
         icon: 'lucide:database',
         shortcut: 'Ctrl+Shift+D',
+      },
+      {
+        id: 'new-docker',
+        label: '新建 Docker 连接',
+        icon: 'lucide:container',
+        shortcut: '',
       },
       {
         id: 'new-terminal',
@@ -146,6 +155,7 @@ export const COMMAND_SHORTCUT_SETTINGS: Partial<Record<string, SettingKey>> = {
 export const COMMAND_TARGETS: Record<string, CommandTarget> = {
   'connect-server': { newConnection: 'ssh' },
   'new-database': { newConnection: 'database' },
+  'new-docker': { newConnection: 'docker' },
   'new-terminal': { newConnection: 'local' },
   'split-terminal': { nav: 'servers' },
   'open-files': { nav: 'servers', machineView: 'files' },

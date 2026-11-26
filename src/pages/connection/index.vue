@@ -8,6 +8,7 @@ import IconButton from '@/components/ui/IconButton.vue'
 import WindowFrame from '@/components/ui/WindowFrame.vue'
 import { closeWindow, IS_TAURI } from '@/utils/window'
 import DatabaseConnectionForm from '@/pages/connection/components/database-connection-form.vue'
+import DockerConnectionForm from '@/pages/connection/components/docker-connection-form.vue'
 import LocalConnectionForm from '@/pages/connection/components/local-connection-form.vue'
 import RdpConnectionForm from '@/pages/connection/components/rdp-connection-form.vue'
 import SshConnectionForm from '@/pages/connection/components/ssh-connection-form.vue'
@@ -26,6 +27,8 @@ const databaseKind = shallowRef<'mysql' | 'postgresql' | 'sqlite' | 'redis'>(
 )
 /** 根据连接类型与编辑状态显示对应的配置窗口标题。 */
 const title = computed(() => {
+  if (props.kind === 'docker')
+    return props.connectionId ? t('编辑 Docker 连接') : t('新建 Docker 连接')
   if (isRdp.value)
     return props.connectionId ? t('编辑远程桌面连接') : t('新建远程桌面连接')
   return props.connectionId
@@ -83,9 +86,16 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </header>
 
     <main class="relative z-10 flex min-h-0 flex-1 flex-col">
+      <!-- Docker 配置区：设置引擎端点、连接方式和 SSH 隧道。 -->
+      <DockerConnectionForm
+        v-if="kind === 'docker'"
+        :connection-id="connectionId"
+        :default-group="group"
+        @close="closeDialog"
+      />
       <!-- 配置区：本地终端表单编辑 Shell 与启动参数。 -->
       <LocalConnectionForm
-        v-if="isLocal"
+        v-else-if="isLocal"
         :connection-id="connectionId"
         :default-group="group"
         @close="closeDialog"

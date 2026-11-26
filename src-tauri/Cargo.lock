@@ -4022,6 +4022,8 @@ dependencies = [
  "chrono",
  "dirs 6.0.0",
  "futures-util",
+ "hyper",
+ "hyper-util",
  "ironrdp",
  "ironrdp-tokio",
  "keyring",

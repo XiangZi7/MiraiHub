@@ -20,10 +20,10 @@ globalThis.localStorage = {
   setItem: (key, value) => storage.set(key, value),
   removeItem: (key) => storage.delete(key),
 };
-const saved = ["a", "b", "db"].map((id) => ({
+const saved = ["a", "b", "db", "engine"].map((id) => ({
   id,
   name: id,
-  kind: id === "db" ? "mysql" : "ssh",
+  kind: id === "db" ? "mysql" : id === "engine" ? "docker" : "ssh",
   group: "",
   createdAt: 1,
   settings: {},
@@ -171,10 +171,31 @@ test("连接深链接、具名导航、前进后退与活动标签保持一致",
   }
 });
 
+test("Docker 路由使用独立连接并保留活动 SSH 终端", async () => {
+  const { router, workspace, dispose } = fixture();
+  try {
+    await router.push("/docker/db");
+    assert.equal(router.currentRoute.value.fullPath, "/docker");
+    await router.push("/servers/a");
+    workspace.setStatus("a", "connected", "session-a");
+    await router.push({ name: "docker" });
+    assert.equal(router.currentRoute.value.fullPath, "/docker");
+    await router.push("/docker/b");
+    assert.equal(router.currentRoute.value.fullPath, "/docker");
+    await router.push("/docker/engine");
+    assert.equal(router.currentRoute.value.fullPath, "/docker/engine");
+    assert.equal(router.currentRoute.value.meta.nav, "docker");
+    assert.deepEqual(workspace.tabs.map(tab => tab.id), ["a"]);
+    assert.equal(workspace.active.sessionId, "session-a");
+  } finally {
+    dispose();
+  }
+});
+
 test("无效连接、错误类型与未知地址不会打开错误标签或白屏", async () => {
   const { router, workspace, dispose } = fixture();
   try {
-    for (const path of ["/servers/missing", "/servers/db", "/databases/a"]) {
+    for (const path of ["/servers/missing", "/servers/engine", "/servers/db", "/databases/a"]) {
       await router.push(path);
       assert.deepEqual(workspace.tabs, []);
       assert.ok(
@@ -224,6 +245,30 @@ test("设置分类参与历史导航，非法分类和跨窗口路径返回当�
   }
 });
 
+test("原生 Docker 日志窗口保留打开时的连接和容器，容器名只用于展示", async () => {
+  const id = "ab".repeat(32);
+  const params = new URLSearchParams({
+    connectionId: "prod & staging",
+    containerId: id,
+    containerName: "worker+1",
+  });
+  const path = "/docker-logs?" + params;
+  const entry = resolveWindowEntry("?window=docker-logs&" + params, "", "docker-logs-instance");
+  assert.deepEqual(entry, { surface: "docker-logs", path });
+  assert.deepEqual(resolveWindowEntry("", "#" + path), entry);
+  assert.equal(resolveWindowEntry("?window=docker-logs&" + params, "", "main").surface, "workspace");
+  const { router, dispose } = fixture(entry.surface, entry.path);
+  try {
+    for (const target of [path, "/docker-logs?containerId=other", "/docker", "/settings/general"]) {
+      await router.push(target);
+      assert.equal(router.currentRoute.value.name, "docker-logs");
+      assert.deepEqual({ ...router.currentRoute.value.query }, Object.fromEntries(params));
+    }
+  } finally {
+    dispose();
+  }
+});
+
 test("远端编辑窗口不能通过路由切换打开设置或工作区", async () => {
   const { router, dispose } = fixture("remote-editor", "/remote-editor");
   try {
@@ -258,7 +303,7 @@ test("设置跨 store 实例同步，连接刷新保持数组引用，销毁时�
     connectionsApi.replace([...saved, { ...saved[0], id: "new" }]);
     await store.initialize();
     assert.equal(store.items, reference);
-    assert.equal(store.items.length, 4);
+    assert.equal(store.items.length, saved.length + 1);
     assert.equal(api.listeners.size, baseline + 2);
   } finally {
     disposePinia(first);

@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useConnectionsStore } from '@/stores/connections'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { connectionLocation } from '@/router'
+import { toast } from '@/composables/useToast'
 import type { NavId } from '@/types'
 import type { SavedConnection } from '@/types/connection'
 
@@ -31,6 +32,14 @@ export function useWorkspaceNavigation() {
     const failure = await router.push(connectionLocation(connection))
     if (!failure) void connections.touch(connection.id)
   }
+  /** 从服务器列表或终端直接打开这条 SSH 连接关联的 Docker。 */
+  async function openDockerForSsh(id: string): Promise<void> {
+    try {
+      await openConnection(await connections.dockerForSsh(id))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }
   async function selectTab(id: string): Promise<void> {
     const tab = workspace.tabs.find(item => item.id === id)
     if (tab) await router.push(connectionLocation(tab.connection))
@@ -48,6 +57,7 @@ export function useWorkspaceNavigation() {
     hasOpenSectionTabs,
     selectNav,
     openConnection,
+    openDockerForSsh,
     selectTab,
     followActiveTab,
   }

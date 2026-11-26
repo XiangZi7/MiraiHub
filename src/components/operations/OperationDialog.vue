@@ -148,8 +148,10 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 }
 .operation-window {
   position: static;
+  flex: 1;
   width: 100%;
   height: 100%;
+  min-height: 0;
   padding: 0;
   background: transparent;
   backdrop-filter: none;

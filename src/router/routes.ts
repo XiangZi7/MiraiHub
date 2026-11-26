@@ -29,6 +29,12 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/databases/index.vue'),
         meta: { nav: 'databases', title: '数据库' },
       },
+      {
+        path: 'docker/:connectionId?',
+        name: 'docker',
+        component: () => import('@/pages/docker/index.vue'),
+        meta: { nav: 'docker', title: 'Docker' },
+      },
     ],
   },
   {
@@ -50,6 +56,20 @@ export const routes: RouteRecordRaw[] = [
       group: typeof route.query.group === 'string' ? route.query.group : '',
     }),
     meta: { surface: 'connection', title: '连接配置' },
+  },
+  {
+    path: '/docker-logs',
+    name: 'docker-logs',
+    component: () => import('@/pages/docker/logs.vue'),
+    props: route => ({
+      connectionId:
+        typeof route.query.connectionId === 'string' ? route.query.connectionId : '',
+      containerId:
+        typeof route.query.containerId === 'string' ? route.query.containerId : '',
+      containerName:
+        typeof route.query.containerName === 'string' ? route.query.containerName : '',
+    }),
+    meta: { surface: 'docker-logs', title: '容器日志' },
   },
   {
     path: '/remote-editor',

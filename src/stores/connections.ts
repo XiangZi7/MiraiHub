@@ -20,7 +20,7 @@ export const useConnectionsStore = defineStore('connections', () => {
     // 全部已保存的连接
     items: [] as SavedConnection[],
     groups: [] as ConnectionGroup[],
-    // SSH 与数据库各自的未分组位置
+    // 各连接分类的未分组位置
     ungroupedPositions: {} as UngroupedPositions,
     tags: [] as ConnectionTagDefinition[],
     // 首次加载是否完成，避免加载途中把空列表当成"一条都没有"
@@ -152,13 +152,11 @@ export const useConnectionsStore = defineStore('connections', () => {
     sshConnections,
     databaseConnections,
 
-    /** 数据库使用独立分组，服务器侧栏同时列出终端和远程桌面连接。 */
+    /** 每种工作区使用独立分组。 */
     groupsFor: (kind: ConnectionKind | 'database') => {
-      const groupKind = kind === 'database' ? 'database' : 'ssh'
+      const groupKind = kind === 'database' ? kind : groupKindOf(kind)
       return groupBy(
-        groupKind === 'database'
-          ? databaseConnections.value
-          : state.items.filter(item => groupKindOf(item.kind) === 'ssh'),
+        state.items.filter(item => groupKindOf(item.kind) === groupKind),
         state.groups,
         groupKind
       )
@@ -167,6 +165,12 @@ export const useConnectionsStore = defineStore('connections', () => {
     find: (id: string) => state.items.find(item => item.id === id),
 
     refresh,
+
+    async dockerForSsh(id: string): Promise<SavedConnection> {
+      const linked = await store.dockerForSsh(id)
+      await refresh()
+      return linked
+    },
 
     async create(input: NewConnection): Promise<SavedConnection> {
       const created = await store.create(input)

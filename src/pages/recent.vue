@@ -50,6 +50,7 @@ const { filter, keyword, clearConfirmOpen } = toRefs(state)
 
 /** 连接类型 → 会话类型。数据库的三种协议在这里都归为 database */
 function kindOf(connection: SavedConnection): SessionKind {
+  if (connection.kind === 'docker') return 'docker'
   if (connection.kind === 'ssh') return 'ssh'
   return connection.kind === 'local' ? 'local' : 'database'
 }

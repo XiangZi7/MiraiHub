@@ -6,6 +6,8 @@ import {
   nextTick,
   reactive,
   shallowRef,
+  toRefs,
+  useId,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -100,9 +102,13 @@ const expanded = reactive(new Set<string>())
 const state = reactive({
   // 只展开最后一次请求且已加载成功的数据库，连续双击不重复切换。
   pendingSchema: '',
+  // 点击放大镜或使用快捷键时，在标题栏内展开筛选框。
+  searchOpen: false,
+  // 当前对象树的过滤词，收起输入框时一起清除。
+  search: '',
 })
+const { searchOpen, search } = toRefs(state)
 const selectedKey = shallowRef('')
-const search = shallowRef('')
 const context = reactive({
   open: false,
   x: 0,
@@ -128,7 +134,7 @@ function emptySchema(name: string): SchemaGroup {
 // 按库名、对象信息、已加载列名和查询名称筛选树节点，避免 SQL 正文造成无关库误匹配。
 const schemas = computed<SchemaGroup[]>(() => {
   if (props.ready === false) return []
-  const term = search.value.trim().toLocaleLowerCase()
+  const term = state.search.trim().toLocaleLowerCase()
   const groups = new Map<string, SchemaGroup>()
 
   for (const name of props.databaseNames) {
@@ -535,6 +541,9 @@ function showContext(
 }
 
 const treeRef = useTemplateRef<HTMLElement>('tree')
+const searchId = useId()
+const searchButton =
+  useTemplateRef<InstanceType<typeof IconButton>>('searchButton')
 const searchRef =
   useTemplateRef<InstanceType<typeof SearchField>>('searchField')
 /** 类型首字母跳转：短时间内连续输入的字符拼成前缀。 */
@@ -663,9 +672,19 @@ function schemaKeydown(event: KeyboardEvent, name: string): void {
   event.preventDefault()
 }
 
-/** 供快捷键聚焦对象树过滤框。 */
-function focusFilter(): void {
+/** 从工具栏或数据库快捷键展开对象搜索，并聚焦输入框。 */
+async function focusFilter(): Promise<void> {
+  state.searchOpen = true
+  await nextTick()
   searchRef.value?.focus()
+}
+
+/** 收起搜索时恢复完整对象树，并将键盘焦点还给放大镜。 */
+async function closeFilter(): Promise<void> {
+  state.search = ''
+  state.searchOpen = false
+  await nextTick()
+  searchButton.value?.$el.focus()
 }
 
 defineExpose({ focusFilter })
@@ -718,45 +737,59 @@ function handleContextAction(id: string): void {
     <div
       class="border-line-soft flex h-10 shrink-0 items-center gap-1 border-b px-2"
     >
-      <AppIcon
-        name="lucide:database"
-        :size="14"
-        class="text-pink ml-1"
-      />
-      <span
-        class="text-txt-2 min-w-0 flex-1 truncate px-1 text-xs"
-        :title="databaseName"
-      >
-        {{ databaseName }}
-      </span>
-      <IconButton
-        icon="lucide:square-terminal"
-        :size="13"
-        :title="t('在当前数据库中新建查询')"
-        @click.stop="emit('newQuery', activeDatabase || undefined)"
-      />
-      <IconButton
-        icon="lucide:plus"
-        :size="13"
-        :title="t('新建数据库')"
-        @click.stop="emit('createDatabase')"
-      />
-      <IconButton
-        icon="lucide:rotate-cw"
-        :size="13"
-        :title="t('刷新对象树')"
-        :disabled="loading || databasesLoading || preparingTransfer"
-        @click.stop="emit('refresh')"
-      />
-    </div>
-
-    <div class="border-line-soft shrink-0 border-b p-1.5">
       <SearchField
+        v-if="searchOpen"
+        :id="searchId"
         ref="searchField"
         v-model="search"
+        class="field-inline min-w-0 flex-1"
         icon="lucide:search"
         :placeholder="t('搜索查询、表、视图或存储过程')"
+        @keydown.esc.stop.prevent="closeFilter"
       />
+      <template v-else>
+        <AppIcon
+          name="lucide:database"
+          :size="14"
+          class="text-pink ml-1"
+        />
+        <span
+          class="text-txt-2 min-w-0 flex-1 truncate px-1 text-xs"
+          :title="databaseName"
+        >
+          {{ databaseName }}
+        </span>
+      </template>
+      <IconButton
+        ref="searchButton"
+        :icon="searchOpen ? 'lucide:x' : 'lucide:search'"
+        :size="13"
+        :title="searchOpen ? t('取消搜索') : t('搜索查询、表、视图或存储过程')"
+        :aria-expanded="searchOpen"
+        :aria-controls="searchOpen ? searchId : undefined"
+        @click.stop="searchOpen ? closeFilter() : focusFilter()"
+      />
+      <template v-if="!searchOpen">
+        <IconButton
+          icon="lucide:square-terminal"
+          :size="13"
+          :title="t('在当前数据库中新建查询')"
+          @click.stop="emit('newQuery', activeDatabase || undefined)"
+        />
+        <IconButton
+          icon="lucide:plus"
+          :size="13"
+          :title="t('新建数据库')"
+          @click.stop="emit('createDatabase')"
+        />
+        <IconButton
+          icon="lucide:rotate-cw"
+          :size="13"
+          :title="t('刷新对象树')"
+          :disabled="loading || databasesLoading || preparingTransfer"
+          @click.stop="emit('refresh')"
+        />
+      </template>
     </div>
 
     <div
@@ -867,6 +900,7 @@ function handleContextAction(id: string): void {
             :columns-by-object="columnsByObject"
             :inspecting-keys="inspectingKeys"
             :default-expanded="schema.name === activeDatabase"
+            @select-category="emit('selectSchema', schema.name)"
             @select="selectObject"
             @open="emit('open', $event)"
             @rename="emit('renameObject', $event)"

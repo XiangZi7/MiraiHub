@@ -1,5 +1,5 @@
 /** 侧栏主视图 id */
-export type NavId = 'servers' | 'databases'
+export type NavId = 'servers' | 'databases' | 'docker'
 
 /** 机器详情面板的视图 id */
 export type MachineViewId = 'files' | 'agent'
@@ -50,13 +50,13 @@ export interface CommandTarget {
   /** 是否把焦点交给标题栏搜索框 */
   focusSearch?: boolean
   /** 若指定，打开连接配置窗口并预选该类型 */
-  newConnection?: 'ssh' | 'local' | 'database'
+  newConnection?: 'ssh' | 'local' | 'database' | 'docker'
 }
 
 /** SSH 密钥相关类型见 `@/types/ssh` —— 那边与 Rust 侧的模型一一对应 */
 
 /** 会话类型 */
-export type SessionKind = 'ssh' | 'local' | 'database' | 'sftp'
+export type SessionKind = 'ssh' | 'local' | 'database' | 'sftp' | 'docker'
 
 /**
  * 最近会话记录。

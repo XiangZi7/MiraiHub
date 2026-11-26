@@ -51,6 +51,7 @@ const props = withDefaults(
   { active: true }
 )
 const emit = defineEmits<{
+  openDocker: []
   status: [status: SshSessionStatus, sessionId: string]
 }>()
 const layout = useWorkspaceLayoutStore()
@@ -138,14 +139,6 @@ function toggleFiles(): void {
     machineOpen.value = false
   else {
     machineView.value = 'files'
-    machineOpen.value = true
-  }
-}
-function toggleAgent(): void {
-  if (machineOpen.value && machineView.value === 'agent')
-    machineOpen.value = false
-  else {
-    machineView.value = 'agent'
     machineOpen.value = true
   }
 }
@@ -367,20 +360,19 @@ defineExpose({
                 @click="broadcast = !broadcast"
               />
               <IconButton
+                v-if="connection?.kind === 'ssh'"
+                icon="lucide:container"
+                :size="14"
+                :title="t('打开 Docker')"
+                @click="emit('openDocker')"
+              />
+              <IconButton
                 icon="lucide:folder-open"
                 :size="14"
                 :title="t('远端文件')"
                 :class="machineOpen && machineView === 'files' && 'text-accent'"
                 :aria-pressed="machineOpen && machineView === 'files'"
                 @click="toggleFiles"
-              />
-              <IconButton
-                icon="lucide:bot"
-                :size="14"
-                :title="t('AI Agent 分屏')"
-                :class="machineOpen && machineView === 'agent' && 'text-accent'"
-                :aria-pressed="machineOpen && machineView === 'agent'"
-                @click="toggleAgent"
               />
             </template>
           </TerminalPanel>

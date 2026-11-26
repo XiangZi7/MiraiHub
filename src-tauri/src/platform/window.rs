@@ -197,7 +197,7 @@ pub fn open_connection_window(
     // kind 只允许固定值：它会拼进 URL，不校验的话
     // 前端传来的任意字符串都能注入 query 参数
     let kind = match kind {
-        Some(kind @ ("local" | "database" | "rdp")) => kind,
+        Some(kind @ ("local" | "database" | "rdp" | "docker")) => kind,
         _ => "ssh",
     };
     let height = if kind == "rdp" { 560.0 } else { 640.0 };
@@ -392,7 +392,7 @@ pub(super) fn to_app_error(err: tauri::Error) -> AppError {
 /// 原样拼进 query 轻则把名字截断，重则多塞出一个参数。
 /// 只保留 `A-Z a-z 0-9 - _ . ~`，其余一律按 UTF-8 字节转义 ——
 /// 与前端 `encodeURIComponent` 的行为一致。
-fn percent_encode_component(value: &str) -> String {
+pub(super) fn percent_encode_component(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
 
     for byte in value.as_bytes() {

@@ -1,5 +1,7 @@
 import { i18n } from '@/i18n'
-import { isRdpConnection } from '@/types/connection'
+import { isDockerConnection, isRdpConnection } from '@/types/connection'
+import type { DockerConnectionSettings } from '@/types/docker'
+import { dockerSettingsProblem } from '@/utils/docker-connection'
 import { validRdpResolution } from '@/utils/rdp-display'
 import type {
   ConnectionGroup,
@@ -81,12 +83,41 @@ function choice<T extends string>(
     throw new Error(i18n.global.t('{value0} 不受支持', { value0: name }))
   return value as T
 }
+/** 导入及导出只保留 Docker 公开配置；SSH 认证信息由关联的连接单独管理。 */
+function dockerSettings(s: Record<string, unknown>): DockerConnectionSettings {
+  const settings: DockerConnectionSettings = {
+    protocol: choice(
+      s.protocol,
+      ['unix', 'npipe', 'http', 'https'],
+      i18n.global.t('协议')
+    ),
+    transport: choice(s.transport, ['direct', 'ssh'], i18n.global.t('连接方式')),
+    endpoint: string(s.endpoint, i18n.global.t('Docker 引擎地址')),
+  }
+  if (settings.transport === 'ssh')
+    settings.sshConnectionId = string(
+      s.sshConnectionId,
+      i18n.global.t('SSH 隧道'),
+      200
+    )
+  if (s.proxyUrl !== undefined)
+    settings.proxyUrl = string(s.proxyUrl, i18n.global.t('HTTP(S) 代理地址'))
+  if (s.environment !== undefined)
+    settings.environment = choice(
+      s.environment,
+      ['development', 'testing', 'production'] as const,
+      i18n.global.t('环境')
+    )
+  const problem = dockerSettingsProblem(settings)
+  if (problem) throw new Error(i18n.global.t(problem))
+  return settings
+}
 function connection(value: unknown): SavedConnection {
   const v = object(value),
     s = object(v.settings)
   const kind = choice(
     v.kind,
-    ['ssh', 'mysql', 'postgresql', 'sqlite', 'redis', 'local', 'rdp'],
+    ['ssh', 'mysql', 'postgresql', 'sqlite', 'redis', 'local', 'rdp', 'docker'],
     i18n.global.t('连接类型')
   )
   const common = {
@@ -97,7 +128,7 @@ function connection(value: unknown): SavedConnection {
     port: number(
       v.port,
       i18n.global.t('端口'),
-      kind === 'local' ? 0 : 1,
+      kind === 'local' || kind === 'docker' ? 0 : 1,
       65535
     ),
     username: string(v.username, i18n.global.t('用户名'), 256),
@@ -110,8 +141,11 @@ function connection(value: unknown): SavedConnection {
     createdAt: number(v.createdAt, i18n.global.t('创建时间')),
     lastUsedAt: 0,
   }
-  if (!common.id || !common.name || (kind !== 'local' && !common.host))
+  const needsHost = kind !== 'local' && kind !== 'docker'
+  if (!common.id || !common.name || (needsHost && !common.host))
     throw new Error(i18n.global.t('连接 ID、名称和主机不能为空'))
+  if (kind === 'docker')
+    return { ...common, host: '', port: 0, username: '', settings: dockerSettings(s) }
   if (kind === 'rdp') {
     const settings: import('@/types/connection').RdpConnectionSettings = {}
     if (s.resolution !== undefined) {
@@ -240,7 +274,7 @@ export function parseConnectionBackup(value: unknown): ConnectionBackup {
     return {
       id: string(g.id, i18n.global.t('分组 ID'), 200),
       name: string(g.name, i18n.global.t('分组名'), 200),
-      kind: choice(g.kind, ['ssh', 'database'], i18n.global.t('分组类型')),
+      kind: choice(g.kind, ['ssh', 'database', 'docker'], i18n.global.t('分组类型')),
       createdAt: number(g.createdAt, i18n.global.t('分组时间')),
     }
   })
@@ -267,6 +301,8 @@ function sanitized(
   options: Pick<RestoreOptions, 'credentials' | 'startupCommands'>
 ): SavedConnection {
   const c = clone(source)
+  if (c.kind === 'docker')
+    return { ...c, host: '', port: 0, username: '', settings: dockerSettings(object(c.settings)) }
   if (isRdpConnection(c)) {
     // 凭据只对本机有效，跨设备备份只保存显示与连接配置。
     delete c.settings.rdpCredential
@@ -312,6 +348,24 @@ export function restorePlan(
   newId: () => string
 ) {
   const next: ConnectionSnapshot = clone(current)
+  const copiedSshIds = new Map<string, string>()
+  const copiedTunnelSettings: DockerConnectionSettings[] = []
+  // 跳过冲突时保留本机 SSH。若同一 ID 已指向另一台服务器，关联的 Docker 也须跳过。
+  const conflictingSshIds = new Set<string>()
+  if (options.mode === 'skip') {
+    const currentById = new Map(current.connections.map(c => [c.id, c]))
+    for (const source of backup.connections) {
+      if (source.kind !== 'ssh') continue
+      const existing = currentById.get(source.id)
+      if (
+        existing &&
+        (existing.kind !== 'ssh' ||
+          existing.host !== source.host ||
+          existing.port !== source.port ||
+          existing.username !== source.username)
+      ) conflictingSshIds.add(source.id)
+    }
+  }
   const changes: {
     name: string
     host: string
@@ -321,15 +375,18 @@ export function restorePlan(
   for (const source of backup.connections) {
     const c = sanitized(source, options)
     const index = next.connections.findIndex(item => item.id === c.id)
-    const action =
-      index < 0 || options.mode === 'copy'
-        ? 'add'
-        : options.mode === 'update'
-          ? 'update'
-          : 'skip'
+    const tunnelConflict =
+      isDockerConnection(c) &&
+      c.settings.transport === 'ssh' &&
+      conflictingSshIds.has(c.settings.sshConnectionId!)
+    let action: 'add' | 'update' | 'skip' = 'skip'
+    if (!tunnelConflict) {
+      if (index < 0 || options.mode === 'copy') action = 'add'
+      else if (options.mode === 'update') action = 'update'
+    }
     changes.push({
       name: c.name,
-      host: `${c.host}:${c.port}`,
+      host: isDockerConnection(c) ? c.settings.endpoint : `${c.host}:${c.port}`,
       kind: c.kind,
       action,
     })
@@ -386,9 +443,17 @@ export function restorePlan(
         c.id = newId()
         if (next.connections.some(item => item.id === c.id))
           throw new Error(i18n.global.t('无法生成唯一连接 ID'))
+        if (c.kind === 'ssh') copiedSshIds.set(source.id, c.id)
       }
+      if (isDockerConnection(c) && c.settings.transport === 'ssh')
+        copiedTunnelSettings.push(c.settings)
       next.connections.push(c)
     }
+  }
+  // 备份中的 Docker 配置可先于 SSH 连接出现，全部分配新 ID 后再绑定副本。
+  for (const settings of copiedTunnelSettings) {
+    const newSshId = copiedSshIds.get(settings.sshConnectionId!)
+    if (newSshId) settings.sshConnectionId = newSshId
   }
   for (const g of backup.groups)
     if (

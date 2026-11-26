@@ -1,4 +1,5 @@
 import { en as features } from './features'
+import { en as dockerWorkspace } from './docker-workspace'
 import { en as parameterized } from './parameterized'
 import { en as native } from './native'
 import { en as redis } from './redis'
@@ -238,6 +239,7 @@ export default {
   暂不更新: 'Not now',
   查看发行说明: 'View release notes',
   ...features,
+  ...dockerWorkspace,
   ...parameterized,
   ...native,
   ...redis,

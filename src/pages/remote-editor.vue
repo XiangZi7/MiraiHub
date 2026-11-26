@@ -12,7 +12,7 @@ import {
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import RemoteTextEditor from '@/components/operations/RemoteTextEditor.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import WindowControls from '@/components/ui/WindowControls.vue'
+import DocumentWindowFrame from '@/components/ui/DocumentWindowFrame.vue'
 import * as api from '@/api/operations'
 import type { RemoteEditRequest } from '@/composables/useRemoteEditor'
 import { toast } from '@/composables/useToast'
@@ -109,32 +109,14 @@ onBeforeUnmount(() => {
 })
 </script>
 <template>
-  <main
-    class="remote-editor-window"
+  <DocumentWindowFrame
+    :title="fileName"
+    :meta="target ? dirPath + ' · ' + target.connectionName : undefined"
     :aria-busy="closing"
+    :dirty="dirty"
   >
-    <header
-      class="remote-editor-titlebar"
-      data-tauri-drag-region
-    >
-      <div
-        class="remote-editor-heading"
-        data-tauri-drag-region
-      >
-        <span class="remote-editor-filename">{{ fileName }}</span>
-        <span
-          v-if="target"
-          class="remote-editor-meta"
-        >
-          {{ dirPath }} · {{ target.connectionName }}
-        </span>
-        <span
-          v-if="dirty"
-          class="remote-editor-dot"
-          :title="t('未保存')"
-        />
-      </div>
-      <!-- 编辑器标题栏：保存沿用当前文档的冲突和关闭保护。 -->
+    <template #actions>
+      <!-- 保存沿用当前文档的冲突和关闭保护。 -->
       <AppButton
         v-if="target"
         size="sm"
@@ -144,9 +126,7 @@ onBeforeUnmount(() => {
       >
         {{ t('保存') }}
       </AppButton>
-      <!-- 编辑器标题栏：原生窗口控制组件。 -->
-      <WindowControls />
-    </header>
+    </template>
     <!-- 编辑器主体：CodeMirror 文档、行号与状态栏。 -->
     <RemoteTextEditor
       v-if="target"
@@ -170,60 +150,9 @@ onBeforeUnmount(() => {
         {{ t('关闭窗口') }}
       </AppButton>
     </div>
-  </main>
+  </DocumentWindowFrame>
 </template>
 <style scoped>
-.remote-editor-window {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  border: 1px solid var(--color-line-strong);
-  background: var(--color-window);
-}
-.remote-editor-window :deep(.operation-window) {
-  flex: 1;
-  min-height: 0;
-}
-.remote-editor-titlebar {
-  display: flex;
-  align-items: center;
-  flex: none;
-  gap: 8px;
-  height: 36px;
-  padding-left: 14px;
-  border-bottom: 1px solid var(--color-line-soft);
-  user-select: none;
-}
-.remote-editor-heading {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.remote-editor-filename {
-  color: var(--color-txt);
-  font-size: 13px;
-  font-weight: 600;
-}
-.remote-editor-meta {
-  overflow: hidden;
-  color: var(--color-txt-3);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-overflow: ellipsis;
-}
-.remote-editor-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: var(--color-accent);
-}
 .window-loading {
   display: flex;
   flex: 1;

@@ -55,6 +55,24 @@ pub async fn open_settings_window(
     window::open_settings_window(&app)
 }
 
+/// 在主窗口为选中的 Docker 容器打开独立日志窗口。
+#[tauri::command]
+pub async fn open_docker_logs_window(
+    window: WebviewWindow,
+    preferences: tauri::State<'_, WindowPreferences>,
+    connection_id: String,
+    container_id: String,
+    container_name: Option<String>,
+) -> AppResult<()> {
+    let _opening = preferences.opening.lock().await;
+    super::docker_logs::open(
+        &window,
+        &connection_id,
+        &container_id,
+        container_name.as_deref(),
+    )
+}
+
 /// Child windows are revealed only after their first usable frame is ready.
 #[tauri::command]
 pub async fn window_ready(window: WebviewWindow, material: String, light: bool) -> AppResult<()> {
@@ -63,6 +81,7 @@ pub async fn window_ready(window: WebviewWindow, material: String, light: bool) 
         && label != "connection"
         && label != super::column_tags::WINDOW
         && !label.starts_with(super::remote_editor::PREFIX)
+        && !label.starts_with(super::docker_logs::PREFIX)
     {
         return Err(crate::error::AppError::invalid_input("不是子窗口"));
     }

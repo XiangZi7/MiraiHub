@@ -34,6 +34,9 @@ argon2 = "0.5"
 # The updater shares this reqwest instance. Disabling defaults also disables
 # Windows/macOS proxy discovery unless system-proxy is explicitly restored.
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls-no-provider", "system-proxy"] }
+# 在 SSH 通道上发起 HTTP/1 请求；二者也是 reqwest 已使用的依赖。
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 # 异步运行时。Tauri 内部已用 tokio，这里显式声明是因为 ssh 模块直接用了

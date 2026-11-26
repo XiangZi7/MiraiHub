@@ -106,6 +106,7 @@ registerWorkspaceController('databases', {
         @status="
           (status, sessionId) => handleSshStatus(tab.id, status, sessionId)
         "
+        @show-overview="workspace.open(tab.connection)"
       />
     </Teleport>
     <Teleport

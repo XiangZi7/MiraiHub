@@ -1,4 +1,5 @@
 import type { ConnectionGroupView, SavedConnection } from '@/types/connection'
+import { isDockerConnection } from '@/types/connection'
 
 export const CONNECTION_SORT_OPTIONS = [
   { value: 'name-asc', label: '名称 A → Z' },
@@ -22,7 +23,10 @@ export function connectionList(
       if (difference) return difference
     }
     if (sort === 'host') {
-      const difference = compareText(a.host, b.host) || a.port - b.port
+      const difference = compareText(
+        isDockerConnection(a) ? a.settings.endpoint : a.host,
+        isDockerConnection(b) ? b.settings.endpoint : b.host
+      ) || a.port - b.port
       if (difference) return difference
     }
     return compareText(a.name, b.name) * (sort === 'name-desc' ? -1 : 1)
@@ -36,7 +40,7 @@ export function connectionList(
             // 未分组桶的 "Ungrouped" 只是内部名，界面上并不显示。
             group.loose ? '' : group.name,
             item.name,
-            item.host,
+            isDockerConnection(item) ? item.settings.endpoint : item.host,
             item.port,
             item.username,
             item.description,

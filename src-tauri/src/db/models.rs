@@ -120,6 +120,17 @@ pub enum DatabaseObjectKind {
     Function,
 }
 
+/// MySQL 表清单直接读取的存储信息；自增计数保留原始整数文本。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MysqlTableStats {
+    pub data_length: Option<i64>,
+    pub index_length: Option<i64>,
+    pub auto_increment: Option<String>,
+    pub engine: Option<String>,
+    pub charset: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseObject {
@@ -133,6 +144,8 @@ pub struct DatabaseObject {
     pub comment: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mysql_stats: Option<MysqlTableStats>,
 }
 
 #[derive(Debug, Clone, Serialize)]

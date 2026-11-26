@@ -8,6 +8,7 @@ export const SESSION_KIND_META: Record<
   ssh: { label: 'SSH', icon: 'lucide:square-terminal', tone: 'text-accent' },
   local: { label: 'LOCAL', icon: 'lucide:terminal', tone: 'text-violet' },
   database: { label: 'DB', icon: 'lucide:database', tone: 'text-pink' },
+  docker: { label: 'Docker', icon: 'lucide:container', tone: 'text-blue' },
   sftp: { label: 'SFTP', icon: 'mirai:folder', tone: 'text-blue' },
 }
 
@@ -17,6 +18,7 @@ export const RECENT_FILTERS: RecentFilter[] = [
   { id: 'ssh', label: 'SSH' },
   { id: 'local', label: 'Local' },
   { id: 'database', label: 'Database' },
+  { id: 'docker', label: 'Docker' },
 ]
 
 /** 时间分组的边界，单位毫秒。从近到远匹配，命中即归入该组 */

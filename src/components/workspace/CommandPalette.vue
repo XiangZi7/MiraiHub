@@ -159,6 +159,16 @@ const connectionEntries = computed<PaletteEntry[]>(() =>
     }))
 )
 
+const dockerEntries = computed<PaletteEntry[]>(() =>
+  connections.items.filter(item => item.kind === 'docker').map(item => ({
+    key: `docker:${item.id}`,
+    label: item.name,
+    icon: 'lucide:container',
+    hint: 'Docker',
+    exec: () => emit('openConnection', item.id),
+  }))
+)
+
 /** SSH 主机：选择后复用侧栏的打开连接逻辑 */
 const sshEntries = computed<PaletteEntry[]>(() =>
   connections.sshConnections
@@ -298,6 +308,7 @@ const filteredGroups = computed<PaletteGroup[]>(() => {
     const all = [
       ...actionEntries.value,
       ...globalEntries.value.flatMap(group => group.items),
+      ...dockerEntries.value,
       ...sshEntries.value,
       ...snippetEntries.value,
     ]
@@ -317,6 +328,7 @@ const filteredGroups = computed<PaletteGroup[]>(() => {
       for (const group of globalEntries.value)
         push(group.id, group.label, rank(group.items))
       push('ssh-hosts', t('SSH 主机'), rank(sshEntries.value, 6))
+      push('docker-connections', t('Docker 连接'), rank(dockerEntries.value, 6))
       push('db-connections', t('切换连接'), rank(connectionEntries.value, 6))
       push('snippets', t('命令片段'), rank(snippetEntries.value, 6))
       // 普通模式也顺带搜表，少打一个前缀

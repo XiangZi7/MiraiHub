@@ -154,6 +154,19 @@ export function openConnectionWindow(
   )
 }
 
+/** 打开或聚焦所选容器的原生日志窗口，窗口内按连接 ID 读取配置。 */
+export function openDockerLogsWindow(
+  connectionId: string,
+  containerId: string,
+  containerName?: string
+): Promise<void> {
+  return invoke<void>('open_docker_logs_window', {
+    connectionId,
+    containerId,
+    containerName,
+  })
+}
+
 /** 请求 Rust 创建原生设置子窗口；浏览器开发态降级为可缩放 popup。 */
 export function openSettingsWindow(): void {
   if (!IS_TAURI) {

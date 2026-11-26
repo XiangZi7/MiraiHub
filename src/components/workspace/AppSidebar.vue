@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, reactive, shallowRef, toRaw, toRef } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import AppConfirmDialog from '@/components/ui/AppConfirmDialog.vue'
 import AppContextMenu from '@/components/ui/AppContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -11,7 +11,7 @@ import { useConnections } from '@/composables/useConnections'
 import { useSettings } from '@/composables/useSettings'
 import { toast } from '@/composables/useToast'
 import { useWorkspaceTabs } from '@/composables/useWorkspaceTabs'
-import { NAV_ITEMS } from '@/constants/workspace'
+import { NAV_ITEMS, NAV_GROUP_KIND } from '@/constants/workspace'
 import { SERVER_CONNECTION_ICONS } from '@/constants/connection'
 import type {
   ConnectionGroupDropPosition,
@@ -36,6 +36,7 @@ const { settings } = useSettings()
 // 当前选中项来自路由；导航由 RouterLink 提交。
 const props = defineProps<{ active: NavId }>()
 const active = toRef(props, 'active')
+const route = useRoute()
 const addMenuTrigger = shallowRef<HTMLElement | null>(null)
 const width = defineModel<number>('width', { required: true })
 const collapsed = defineModel<boolean>('collapsed', { default: false })
@@ -44,6 +45,7 @@ const emit = defineEmits<{
   resetLayout: []
   /** 请求打开某条连接 */
   open: [connection: SavedConnection]
+  openDocker: [sshId: string]
   /** 在数据库连接的默认数据库中新建查询 */
   newDatabaseQuery: [connection: SavedConnection]
   /** SQL 导入完成，请求对应数据库工作区刷新对象树 */
@@ -89,6 +91,11 @@ const addMenuItems = computed<ContextMenuItem[]>(() => [
     separatorBefore: true,
   },
   {
+    id: 'docker',
+    label: t('新建 Docker 连接'),
+    icon: 'lucide:container',
+  },
+  {
     id: 'openssh-config',
     label: t('从 ~/.ssh/config 导入'),
     icon: 'lucide:file-input',
@@ -96,25 +103,14 @@ const addMenuItems = computed<ContextMenuItem[]>(() => [
   },
 ])
 
-/**
- * 项目树跟随主视图切换。
- *
- * 侧栏上半区选的是"看哪一类连接"，下半区就该只列这一类 ——
- * 停在 Databases 却看到一堆 SSH 服务器，点下去还跳回终端，是自相矛盾的。
- * SSH Keys / Recent 不是连接列表，此时沿用 servers 的树，
- * 让用户从密钥页直接点服务器打开终端。
- */
-const projectGroups = computed(() =>
-  groupsFor(active.value === 'databases' ? 'database' : 'ssh')
-)
+const currentGroupKind = computed(() => NAV_GROUP_KIND[active.value])
+const projectGroups = computed(() => groupsFor(currentGroupKind.value))
 
-/** 分组标题：Databases 视图下叫 Connections 更贴切 */
 const groupsLabel = computed(() =>
-  active.value === 'databases' ? t('Databases') : t('Projects')
+  t({ servers: 'Projects', databases: 'Databases', docker: 'Docker 连接' }[active.value])
 )
-
-const currentGroupKind = computed(() =>
-  active.value === 'databases' ? ('database' as const) : ('ssh' as const)
+const selectedConnectionId = computed(() =>
+  active.value === 'docker' ? String(route.params.connectionId ?? '') : activeId.value
 )
 
 /** 已打开且连上的连接 id，用来给节点点亮绿点 */
@@ -136,7 +132,7 @@ const transferSessionId = computed(() => {
 /** 新建连接时带上当前视图对应的类型，省一次手动切换；从分组菜单进来还预选该分组 */
 function addConnection(group?: string): void {
   openConnectionWindow(
-    active.value === 'databases' ? 'database' : 'ssh',
+    currentGroupKind.value,
     undefined,
     group
   )
@@ -151,7 +147,7 @@ function openAddMenu(event: MouseEvent): void {
   addMenuTrigger.value = event.currentTarget as HTMLElement
   const rect = addMenuTrigger.value.getBoundingClientRect()
   state.addMenuX = rect.left
-  state.addMenuY = rect.top - 188
+  state.addMenuY = rect.top - 220
   state.addMenuOpen = true
 }
 
@@ -409,11 +405,12 @@ async function confirmRemoval(): Promise<void> {
           :label="groupsLabel"
           :groups="projectGroups"
           :loaded="loaded"
-          :active-id="activeId"
+          :active-id="selectedConnectionId"
           :connected-ids="connectedIds"
           :open-ids="openIds"
           :show-address="settings.showConnectionAddress"
           @open="emit('open', $event)"
+          @open-docker="emit('openDocker', $event)"
           @add-connection="addConnection"
           @create-group="handleCreateGroup"
           @rename-group="handleRenameGroup"

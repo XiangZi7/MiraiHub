@@ -21,7 +21,7 @@ const workspace = useWorkspaceStore()
 const openTabs = workspace.tabs
 const { activeId, active: activeTab } = storeToRefs(workspace)
 const layout = useWorkspaceLayoutStore()
-const { activeNav } = useWorkspaceNavigation()
+const { activeNav, openDockerForSsh } = useWorkspaceNavigation()
 const tabSplit = injectWorkspaceTabSplit()
 /** 按当前分屏或活动标签判断会话是否可见，切换标签时保留已挂载的终端。 */
 function visible(id: string): boolean {
@@ -142,6 +142,7 @@ registerWorkspaceController('servers', { action })
         :config="tab.config"
         :title="tab.title"
         :terminal-type="tab.terminalType"
+        @open-docker="openDockerForSsh(tab.id)"
         :startup-command="tab.startupCommand"
         @status="
           (status, sessionId) => handleSessionStatus(tab.id, status, sessionId)

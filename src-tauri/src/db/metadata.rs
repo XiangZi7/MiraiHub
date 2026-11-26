@@ -15,7 +15,7 @@ use super::manager::DatabasePool;
 use super::models::{
     DatabaseColumn, DatabaseForeignKey, DatabaseIndex, DatabaseIndexPart, DatabaseObject,
     DatabaseObjectKind, DatabaseReferencingKey, DatabaseRoutineDetail, DatabaseRoutineParameter,
-    DatabaseTableDetail,
+    DatabaseTableDetail, MysqlTableStats,
 };
 use super::sql;
 use super::sqlite_meta;
@@ -145,11 +145,16 @@ pub async fn list_objects(pool: &DatabasePool) -> DatabaseResult<Vec<DatabaseObj
     }
 }
 
+/// 在同一次目录查询中读取表列表及其存储统计，避免逐表加载设计器详情。
 async fn list_mysql_objects(pool: &MySqlPool) -> DatabaseResult<Vec<DatabaseObject>> {
     let table_rows = sqlx::query(&format!(
         r#"
         SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE,
                CAST(TABLE_ROWS AS SIGNED) AS ROW_ESTIMATE,
+               CAST(DATA_LENGTH AS SIGNED) AS DATA_BYTES,
+               CAST(INDEX_LENGTH AS SIGNED) AS INDEX_BYTES,
+               CAST(AUTO_INCREMENT AS CHAR) AS NEXT_ID, ENGINE,
+               SUBSTRING_INDEX(TABLE_COLLATION, '_', 1) AS TABLE_CHARSET,
                NULLIF(TABLE_COMMENT, '') AS TABLE_COMMENT,
                CAST(CREATE_TIME AS CHAR) AS CREATED_AT,
                CAST(UPDATE_TIME AS CHAR) AS UPDATED_AT
@@ -167,15 +172,27 @@ async fn list_mysql_objects(pool: &MySqlPool) -> DatabaseResult<Vec<DatabaseObje
         .into_iter()
         .map(|row| {
             let table_type = mysql_metadata_text(&row, "TABLE_TYPE")?;
+            let kind = mysql_object_kind(&table_type);
             Ok(DatabaseObject {
                 schema: mysql_metadata_text(&row, "TABLE_SCHEMA")?,
                 name: mysql_metadata_text(&row, "TABLE_NAME")?,
-                kind: mysql_object_kind(&table_type),
+                kind,
                 identity: String::new(),
                 row_estimate: row.try_get("ROW_ESTIMATE").unwrap_or(None),
                 comment: mysql_optional_metadata_text(&row, "TABLE_COMMENT")?,
                 created_at: mysql_optional_metadata_text(&row, "CREATED_AT")?,
                 updated_at: mysql_optional_metadata_text(&row, "UPDATED_AT")?,
+                mysql_stats: if kind == DatabaseObjectKind::Table {
+                    Some(MysqlTableStats {
+                        data_length: row.try_get("DATA_BYTES").map_err(DatabaseError::Query)?,
+                        index_length: row.try_get("INDEX_BYTES").map_err(DatabaseError::Query)?,
+                        auto_increment: mysql_optional_metadata_text(&row, "NEXT_ID")?,
+                        engine: mysql_optional_metadata_text(&row, "ENGINE")?,
+                        charset: mysql_optional_metadata_text(&row, "TABLE_CHARSET")?,
+                    })
+                } else {
+                    None
+                },
             })
         })
         .collect::<DatabaseResult<Vec<_>>>()?;
@@ -211,6 +228,7 @@ async fn list_mysql_objects(pool: &MySqlPool) -> DatabaseResult<Vec<DatabaseObje
             comment: mysql_optional_metadata_text(&row, "ROUTINE_COMMENT")?,
             created_at: mysql_optional_metadata_text(&row, "CREATED_AT")?,
             updated_at: mysql_optional_metadata_text(&row, "UPDATED_AT")?,
+            mysql_stats: None,
         });
     }
 
@@ -263,6 +281,7 @@ async fn list_postgresql_objects(pool: &PgPool) -> DatabaseResult<Vec<DatabaseOb
                 comment: row.try_get("table_comment").unwrap_or(None),
                 created_at: None,
                 updated_at: None,
+                mysql_stats: None,
             })
         })
         .collect::<DatabaseResult<Vec<_>>>()?;
@@ -306,6 +325,7 @@ async fn list_postgresql_objects(pool: &PgPool) -> DatabaseResult<Vec<DatabaseOb
             comment: row.try_get("routine_comment").unwrap_or(None),
             created_at: None,
             updated_at: None,
+            mysql_stats: None,
         });
     }
 

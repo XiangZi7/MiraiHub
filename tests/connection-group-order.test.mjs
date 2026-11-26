@@ -22,7 +22,8 @@ const pointerEvents = dataModule(`
 const load = sourceLoader({
   '@/types/connection': dataModule(`
     export const groupKindOf = kind =>
-      kind === 'mysql' || kind === 'postgresql' ? 'database' : 'ssh'
+      kind === 'docker' ? 'docker' : kind === 'mysql' || kind === 'postgresql' ? 'database' : 'ssh'
+    export const isDockerConnection = item => item.kind === 'docker'
   `),
   '@/composables/useSettings': dataModule(`
     export const settingsSnapshot = () => ({ saveSessionHistory: true })
@@ -73,6 +74,25 @@ async function fixture(t) {
   )
   return openStore(t)
 }
+
+test('SSH shortcut reuses the linked Docker profile and leaves credentials on SSH', async t => {
+  const store = await fixture(t)
+  await store.update('ssh', { username: 'admin', settings: { auth: { password: 'fixture-only' } } })
+  const [first, repeated] = await Promise.all([store.dockerForSsh('ssh'), store.dockerForSsh('ssh')])
+  assert.equal(first.id, repeated.id)
+  assert.deepEqual(first.settings, { protocol: 'unix', endpoint: '/var/run/docker.sock', transport: 'ssh', sshConnectionId: 'ssh' })
+  assert.equal(first.username, '')
+  assert.equal(JSON.stringify(first).includes('fixture-only'), false)
+  assert.deepEqual(store.groupsFor('docker').flatMap(group => group.items.map(item => item.id)), [first.id])
+  assert.ok(store.groupsFor('ssh').every(group => group.items.every(item => item.kind !== 'docker')))
+  await store.update(first.id, { name: 'Rootless Docker', settings: { ...first.settings, endpoint: '/run/user/1000/docker.sock' } })
+  assert.equal((await store.dockerForSsh('ssh')).name, 'Rootless Docker')
+  const second = await connections.create({ ...(await connections.get('ssh')), name: 'ssh' })
+  assert.notEqual((await store.dockerForSsh(second.id)).id, first.id)
+  await assert.rejects(store.dockerForSsh('local'))
+  await store.remove('ssh')
+  await assert.rejects(store.dockerForSsh('ssh'))
+})
 
 test('group reorder persists independently for SSH and database lists', async () => {
   storage.clear()

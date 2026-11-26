@@ -49,6 +49,8 @@ const load = sourceLoader(
   [
     'src/components/workspace/DatabaseView.vue',
     'src/components/workspace/database/DatabaseTabWorkspace.vue',
+    'src/components/workspace/database/DatabaseTableOverview.vue',
+    'src/components/ui/AppDataTable.vue',
     'src/components/ui/IconButton.vue',
   ]
 )

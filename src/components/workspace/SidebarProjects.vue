@@ -10,6 +10,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppCollapse from '@/components/ui/AppCollapse.vue'
 import type {
   ConnectionGroupDropPosition,
+  ConnectionGroupKind,
   ConnectionGroupView,
   SavedConnection,
 } from '@/types/connection'
@@ -32,7 +33,7 @@ const { t } = useI18n()
 const props = withDefaults(
   defineProps<{
     label: string
-    kind?: 'ssh' | 'database'
+    kind?: ConnectionGroupKind
     groups: readonly ConnectionGroupView[]
     loaded: boolean
     activeId?: string
@@ -45,6 +46,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   open: [connection: SavedConnection]
+  openDocker: [sshId: string]
   addConnection: [group?: string]
   createGroup: [name: string]
   renameGroup: [groupId: string, name: string]
@@ -162,6 +164,9 @@ const contextItems = computed<ContextMenuItem[]>(() => {
             },
           ]
         : []),
+      ...(connection.kind === 'ssh'
+        ? [{ id: 'open-docker', label: t('打开 Docker'), icon: 'lucide:container' }]
+        : []),
       ...(database
         ? [
             {
@@ -230,9 +235,8 @@ const contextItems = computed<ContextMenuItem[]>(() => {
   const items: ContextMenuItem[] = [
     {
       id: 'add-connection',
-      label:
-        group.kind === 'database' ? t('新建数据库连接') : t('新建 SSH 连接'),
-      icon: group.kind === 'database' ? 'lucide:database' : 'lucide:server',
+      label: t({ database: '新建数据库连接', ssh: '新建 SSH 连接', docker: '新建 Docker 连接' }[group.kind]),
+      icon: { database: 'lucide:database', ssh: 'lucide:server', docker: 'lucide:container' }[group.kind],
     },
     { id: 'create-group', label: t('新建分组'), icon: 'lucide:folder-plus' },
     {
@@ -280,6 +284,7 @@ function toggleGroup(groupId: string): void {
 /** 按连接协议选择 Windows、终端或 SSH 服务器图标。 */
 function serverIcon(connection: SavedConnection): string {
   const kind = connection.kind
+  if (kind === 'docker') return 'lucide:container'
   return kind === 'rdp' || kind === 'local'
     ? SERVER_CONNECTION_ICONS[kind]
     : SERVER_CONNECTION_ICONS.ssh
@@ -381,6 +386,7 @@ function runContextAction(action: string): void {
   const connection = state.menuConnection
   if (connection) {
     if (action === 'open') emit('open', connection)
+    else if (action === 'open-docker' && connection.kind === 'ssh') emit('openDocker', connection.id)
     else if (action === 'new-database-query')
       emit('newDatabaseQuery', connection)
     else if (action === 'edit') emit('edit', connection)
@@ -527,6 +533,7 @@ function runContextAction(action: string): void {
               <AppIcon
                 v-else
                 :name="serverIcon(node)"
+                :style="node.kind === 'docker' ? { color: connectionTagColorCss(node.tagColor) } : undefined"
                 :size="14"
                 class="shrink-0"
                 :class="props.activeId === node.id ? 'text-accent' : 'text-txt-3'"
@@ -539,7 +546,7 @@ function runContextAction(action: string): void {
                   v-if="node.kind === 'local' || showAddress"
                   class="text-txt-4 mt-0.5 block truncate font-mono text-[9.5px]"
                 >
-                  {{ node.kind === 'local' ? endpointOf(node) : node.host }}
+                  {{ node.kind === 'local' || node.kind === 'docker' ? endpointOf(node) : node.host }}
                 </span>
               </span>
               <span

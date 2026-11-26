@@ -43,6 +43,7 @@ pub async fn list_objects(pool: &SqlitePool) -> DatabaseResult<Vec<DatabaseObjec
                 comment: None,
                 created_at: None,
                 updated_at: None,
+                mysql_stats: None,
             })
         })
         .collect()

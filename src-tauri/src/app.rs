@@ -87,6 +87,7 @@ fn register_state(builder: Builder<Wry>) -> Builder<Wry> {
         .manage(agent::mcp::Pool::default())
         .manage(ssh::editor::EditorManager::default())
         .manage(platform::remote_editor::RemoteEditorWindows::default())
+        .manage(crate::docker::follow::LogWindows::default())
         .manage(platform::column_tags::ColumnTagsWindow::default())
         .manage(ssh::tunnels::TunnelManager::default())
         .manage(ssh::batch::BatchManager::default())
@@ -119,6 +120,13 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             .minimize_to_tray();
         let main_for_close = main.clone();
         main.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                for (label, window) in main_for_close.app_handle().webview_windows() {
+                    if label.starts_with(platform::docker_logs::PREFIX) {
+                        let _ = window.destroy();
+                    }
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if minimize_to_tray.load(Ordering::Relaxed) {
                     api.prevent_close();

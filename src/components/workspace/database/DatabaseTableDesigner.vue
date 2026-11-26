@@ -127,6 +127,7 @@ const baseline = ref(tableDesignerSnapshot(draft))
 // 基线版本：每次重新记录基线时递增，结构未变（快照相同）时也能刷新基线字段。
 const baselineVersion = ref(0)
 const activePanel = ref<DesignerPanel>('columns')
+const fieldPropertiesHost = useTemplateRef<HTMLElement>('fieldPropertiesHost')
 const creating = ref(false)
 const applying = ref(false)
 const referencedColumns = reactive<Record<string, string[]>>({})
@@ -1765,6 +1766,7 @@ function applyAiComments(): void {
           v-show="activePanel === 'columns'"
           ref="fieldsEditor"
           class="panel-fade-in"
+          :properties-host="fieldPropertiesHost"
           :baseline="editing ? baselineColumns : undefined"
           :model-value="draft.columns"
           @update:model-value="updateColumns"
@@ -2272,24 +2274,38 @@ function applyAiComments(): void {
       </template>
     </AppDialog>
 
-    <!-- 底栏只在出错时说话；没问题就安静地报个数 -->
+    <!-- 字段属性、校验、结构统计与连接状态共用一行，属性区可单独横向滚动。 -->
     <footer
-      class="border-line-soft bg-panel/70 flex min-h-7.5 flex-none items-center gap-2.5 border-t px-3 backdrop-blur-[14px]"
+      class="border-line-soft bg-panel/70 scroll-thin flex min-h-7.5 min-w-0 flex-none items-center gap-2.5 overflow-x-auto border-t px-2.5 whitespace-nowrap"
     >
+      <fieldset
+        v-show="activePanel === 'columns'"
+        ref="fieldPropertiesHost"
+        class="scroll-thin m-0 flex min-w-28 flex-1 items-center gap-3 overflow-x-auto border-0 py-1 pr-2 text-[10px] empty:hidden"
+        :disabled="editorDisabled"
+        :aria-label="t('字段属性')"
+      />
       <div
         v-if="!validation.valid || alterResult.error"
-        class="text-danger flex max-w-[60%] min-w-0 items-center gap-1.25 overflow-hidden text-[9.5px] text-ellipsis whitespace-nowrap"
-        :title="validation.errors.join('\n')"
+        class="text-danger flex min-w-6 max-w-[28%] items-center gap-1 truncate text-[10px]"
+        :title="validation.errors.join('\n') || alterResult.error"
       >
         <AppIcon
           name="lucide:circle-alert"
           :size="12"
-        />{{ validation.errors[0] || alterResult.error
-        }}<span v-if="validation.errors.length > 1">{{
-          t('database.moreErrors', { count: validation.errors.length - 1 })
-        }}</span>
+          class="shrink-0"
+        />
+        <span class="truncate">
+          {{ validation.errors[0] || alterResult.error }}
+        </span>
+        <span
+          v-if="validation.errors.length > 1"
+          class="shrink-0"
+        >
+          {{ t('database.moreErrors', { count: validation.errors.length - 1 }) }}
+        </span>
       </div>
-      <span class="text-txt-4 ml-auto text-[9.5px]"
+      <span class="text-txt-3 ml-auto shrink-0 text-[10px] tabular-nums"
         >{{
           t('database.tableCounts', {
             columns: draft.columns.length,
@@ -2298,6 +2314,12 @@ function applyAiComments(): void {
           })
         }}
       </span>
+      <div
+        v-if="$slots.status"
+        class="border-line-soft shrink-0 border-l pl-2.5"
+      >
+        <slot name="status" />
+      </div>
     </footer>
   </div>
 </template>

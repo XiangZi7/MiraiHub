@@ -1,4 +1,5 @@
 //! Native, non-modal editor windows. Targets stay in Rust, never in URLs or storage.
+use super::{file_window, window::to_app_error};
 use crate::{
     error::{AppError, AppResult},
     ssh::{
@@ -9,7 +10,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Mutex};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 pub const PREFIX: &str = "remote-editor-";
 pub const CLOSE_EVENT: &str = "remote-editor-close-requested";
@@ -149,9 +150,6 @@ fn title(target: &EditorTarget, dirty: bool) -> String {
         connection
     )
 }
-fn native_error(error: tauri::Error) -> AppError {
-    AppError::internal(error.to_string())
-}
 
 #[tauri::command]
 pub async fn open_remote_editor_window(
@@ -165,11 +163,7 @@ pub async fn open_remote_editor_window(
     validate_target(&request)?;
     let _opening = windows.opening.lock().await;
     if let Some(label) = windows.existing(&request) {
-        if let Some(editor) = app.get_webview_window(&label) {
-            if editor.is_visible().map_err(native_error)? {
-                editor.unminimize().map_err(native_error)?;
-                editor.set_focus().map_err(native_error)?;
-            }
+        if file_window::focus_existing(&app, &label)? {
             return Ok(());
         }
         windows.remove(&label);
@@ -182,35 +176,20 @@ pub async fn open_remote_editor_window(
     }
     let label = format!("{PREFIX}{}", random_id());
     windows.register(label.clone(), request.clone());
-    // Use the app's transparent title bar: the native caption paints an opaque strip over Acrylic.
-    // No parent relationship: closing/hiding main must not destroy unsaved drafts.
-    let result = WebviewWindowBuilder::new(
+    // No owner: SSH drafts can outlive the main window.
+    let editor = match file_window::create(
         &app,
         &label,
-        WebviewUrl::App("index.html?window=remote-editor".into()),
-    )
-    .title(title(&request, false))
-    .inner_size(1040.0, 720.0)
-    .min_inner_size(640.0, 420.0)
-    .decorations(false)
-    .resizable(true)
-    .minimizable(true)
-    .maximizable(true)
-    .transparent(!cfg!(target_os = "linux"))
-    .background_color(tauri::webview::Color(0, 0, 0, 0))
-    .theme(Some(tauri::Theme::Dark))
-    .shadow(!cfg!(windows))
-    .visible(false)
-    .center()
-    .build();
-    let editor = match result {
+        "index.html?window=remote-editor",
+        &title(&request, false),
+        None,
+    ) {
         Ok(editor) => editor,
         Err(error) => {
             windows.remove(&label);
-            return Err(native_error(error));
+            return Err(error);
         }
     };
-    super::window::enable_window_shadow(&editor);
     let app_events = app.clone();
     let editor_events = editor.clone();
     let label_events = label.clone();
@@ -258,7 +237,7 @@ pub async fn remote_editor_status(
     let target = windows.update(window.label(), dirty, busy)?;
     window
         .set_title(&title(&target, dirty))
-        .map_err(native_error)
+        .map_err(to_app_error)
 }
 #[tauri::command]
 pub async fn remote_editor_finish(
@@ -271,14 +250,14 @@ pub async fn remote_editor_finish(
     #[cfg(windows)]
     let _ = window.hide();
     // Called only after the UI's save/discard flow; ordinary OS close requests cannot bypass it.
-    window.destroy().map_err(native_error)
+    window.destroy().map_err(to_app_error)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use tauri::Listener;
+    use tauri::{Listener, WebviewUrl, WebviewWindowBuilder};
 
     // Tauri links this manifest into app binaries; native window tests need it too.
     #[cfg(target_os = "windows")]

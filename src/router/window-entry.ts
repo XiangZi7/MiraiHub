@@ -6,6 +6,7 @@ export type WindowSurface =
   | 'settings'
   | 'connection'
   | 'remote-editor'
+  | 'docker-logs'
   | 'splash'
   | 'column-tags'
 export interface WindowEntry {
@@ -24,7 +25,15 @@ const NATIVE_SURFACES: readonly WindowSurface[] = [
 const REQUESTABLE_SURFACES: readonly WindowSurface[] = [
   ...NATIVE_SURFACES,
   'remote-editor',
+  'docker-logs',
 ]
+
+/** 动态原生窗口的标签带有目标标识，路由只需识别窗口类型。 */
+function nativeSurface(label: string): WindowSurface {
+  if (label.startsWith('docker-logs-')) return 'docker-logs'
+  if (label.startsWith('remote-editor-')) return 'remote-editor'
+  return surfaceOf(NATIVE_SURFACES, label) ?? 'workspace'
+}
 
 function surfaceOf(
   candidates: readonly WindowSurface[],
@@ -33,8 +42,9 @@ function surfaceOf(
   return candidates.find(surface => surface === value)
 }
 
+/** 校验可保存并在下一次启动时恢复的工作区分类。 */
 export function isWorkspaceNav(value: unknown): value is NavId {
-  return ['servers', 'databases'].includes(String(value))
+  return ['servers', 'databases', 'docker'].includes(String(value))
 }
 
 /** 校验原生连接窗口和前端路由共同支持的表单类型。 */
@@ -45,7 +55,7 @@ export function isConnectionFormKind(
     value === 'ssh' ||
     value === 'local' ||
     value === 'rdp' ||
-    value === 'database'
+    value === 'database' || value === 'docker'
   )
 }
 
@@ -59,10 +69,19 @@ export function resolveWindowEntry(
   const path = hash.replace(/^#/, '').split('?')[0]
   const requested = query.get('window') ?? path.split('/')[1]
   const surface: WindowSurface = nativeLabel
-    ? nativeLabel.startsWith('remote-editor-')
-      ? 'remote-editor'
-      : (surfaceOf(NATIVE_SURFACES, nativeLabel) ?? 'workspace')
+    ? nativeSurface(nativeLabel)
     : (surfaceOf(REQUESTABLE_SURFACES, requested ?? '') ?? 'workspace')
+  if (surface === 'docker-logs') {
+    const target = new URLSearchParams()
+    const source = nativeLabel || query.has('window')
+      ? query
+      : new URLSearchParams(hash.slice(hash.indexOf('?') + 1))
+    for (const key of ['connectionId', 'containerId', 'containerName']) {
+      const value = source.get(key)
+      if (value) target.set(key, value)
+    }
+    return { surface, path: target.size ? `/docker-logs?${target}` : '/docker-logs' }
+  }
   if (surface === 'connection') {
     const type = query.get('type')
     const kind = isConnectionFormKind(type) ? type : 'ssh'

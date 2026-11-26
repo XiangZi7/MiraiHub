@@ -32,6 +32,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  selectCategory: []
   select: [object: DatabaseObject]
   open: [object: DatabaseObject]
   context: [event: MouseEvent, object: DatabaseObject]
@@ -114,6 +115,12 @@ function categoryKeydown(event: KeyboardEvent): void {
   event.preventDefault()
 }
 
+/** 打开或收起分类时通知目录，表分类可同时切回库内表清单。 */
+function toggleCategory(): void {
+  state.expanded = !state.expanded
+  emit('selectCategory')
+}
+
 watch(
   () => props.defaultExpanded,
   expanded => {
@@ -133,7 +140,7 @@ watch(
     :aria-busy="loading"
     :data-tree-key="`category:${schema}:${kind}`"
     :data-tree-label="label"
-    @click="state.expanded = !state.expanded"
+    @click="toggleCategory"
     @keydown="categoryKeydown"
     @contextmenu.prevent.stop="emit('categoryContext', $event, schema, kind)"
   >

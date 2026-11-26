@@ -2,6 +2,8 @@
 
 pub mod column_tags;
 pub mod commands;
+pub mod docker_logs;
+mod file_window;
 pub mod locale;
 pub mod skins;
 pub mod secure_storage;

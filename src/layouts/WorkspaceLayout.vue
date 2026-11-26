@@ -53,7 +53,7 @@ import {
 } from '@/stores/workspace-layout'
 import { toast } from '@/composables/useToast'
 import { useWindowAgentContextBridge } from '@/composables/useAgentContextBus'
-import { COMMAND_TARGETS } from '@/constants/workspace'
+import { COMMAND_TARGETS, NAV_GROUP_KIND } from '@/constants/workspace'
 import type { CommandItem } from '@/types'
 import { isDatabaseConnection, type SavedConnection } from '@/types/connection'
 import { formatShortcut, matchesShortcut } from '@/utils/shortcut'
@@ -86,6 +86,7 @@ const {
   hasOpenSectionTabs,
   selectNav,
   openConnection,
+  openDockerForSsh,
   selectTab,
   followActiveTab,
 } = useWorkspaceNavigation()
@@ -187,7 +188,7 @@ function handleTitleBarDblClick(event: MouseEvent): void {
     toggleMaximizeWindow()
 }
 function addConnection(): void {
-  openConnectionWindow(activeNav.value === 'databases' ? 'database' : 'ssh')
+  openConnectionWindow(NAV_GROUP_KIND[activeNav.value])
 }
 /** 释放连接及其内容，并把焦点交给仍打开的标签，兼容已隐藏总览的连接。 */
 function closeTabs(ids: string[]): void {
@@ -428,6 +429,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           v-model:width="sidebarWidth"
           v-model:collapsed="sidebarCollapsed"
           @open="openConnection"
+          @open-docker="openDockerForSsh"
           @new-database-query="newDatabaseQuery"
           @database-imported="refreshImportedDatabase"
           @reset-layout="resetLayout"

@@ -205,9 +205,9 @@ export function useDatabaseColumnWidths(scope: Ref<string>) {
 
   function keyboardResize(name: string, event: KeyboardEvent): void {
     const step = event.shiftKey ? 32 : 8
-    const current = widthOf(name)
     const grip = event.currentTarget as HTMLElement | null
     const table = grip?.closest('table')
+    const current = grip?.closest('th')?.getBoundingClientRect().width || widthOf(name)
     let next = current
 
     if (event.key === 'ArrowLeft') next = current - step

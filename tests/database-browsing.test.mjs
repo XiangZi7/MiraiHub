@@ -42,10 +42,13 @@ const load = sourceLoader(
         }, item.label))) : null }
     `),
     '@/components/ui/SearchField.vue': dataModule(`
-      import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
-      export default {props:['modelValue'],emits:['update:modelValue'],setup:(props,{emit})=>()=>h('input',{
-        'data-tree-search':true,value:props.modelValue,onInput:value=>emit('update:modelValue',value)
-      })}
+      import { h, shallowRef } from ${JSON.stringify(import.meta.resolve('vue'))}
+      export default { props:['modelValue'], emits:['update:modelValue'], setup(props, {emit, expose}) {
+        const input = shallowRef()
+        expose({ focus: () => input.value.focus() })
+        return () => h('input', {ref:input, 'data-tree-search':true, value:props.modelValue,
+          onInput:value=>emit('update:modelValue',value)})
+      }}
     `),
     '@/components/workspace/database/DatabaseTableView.vue': dataModule(`
       import { h } from ${JSON.stringify(import.meta.resolve('vue'))}
@@ -92,6 +95,7 @@ const load = sourceLoader(
     'src/components/workspace/database/DatabaseObjectCategory.vue',
     'src/components/workspace/database/DatabaseTreeCollapse.vue',
     'src/components/workspace/database/DatabaseTableOverview.vue',
+    'src/components/ui/AppDataTable.vue',
     'src/components/workspace/database/DatabaseConnectingSkeleton.vue',
     'src/components/workspace/database/DatabaseConnectionState.vue',
     'src/components/workspace/database/DatabaseStatusBar.vue',
@@ -109,7 +113,17 @@ const { provideDatabaseWorkspaceTabs } = await load(
 )
 
 const node = (type, text = '') =>
-  markRaw({ type, text, style: {}, props: {}, children: [], parent: null })
+  markRaw({
+    type,
+    text,
+    style: {},
+    props: {},
+    children: [],
+    parent: null,
+    focus() {
+      this.focused = true
+    },
+  })
 const body = node('body')
 const renderer = createRenderer({
   querySelector: selector => (selector === 'body' ? body : null),
@@ -144,6 +158,19 @@ const textOf = el =>
   (el.type === '#comment' ? '' : el.text) + el.children.map(textOf).join('')
 const flush = async () => {
   for (let i = 0; i < 25; i++) await nextTick()
+}
+/** 从收起的工具栏打开对象搜索，返回已获得焦点的输入框。 */
+async function openTreeSearch(tree) {
+  const trigger = all(tree).find(
+    el => el.props.title === '搜索查询、表、视图或存储过程'
+  )
+  assert.equal(trigger.props['aria-expanded'], false)
+  assert.ok(!all(tree).some(el => el.props['data-tree-search']))
+  trigger.props.onClick({ stopPropagation() {} })
+  await flush()
+  const field = all(tree).find(el => el.props['data-tree-search'])
+  assert.ok(field.focused)
+  return field
 }
 const deferred = () => {
   let resolve, reject
@@ -630,9 +657,8 @@ test('两个数据库连接分别缓存表和搜索状态，反复切换不会�
   for (let index = 0; index < 2; index++) {
     openTables[index].props.onDblclick()
     await flush()
-    all(view.tree(index))
-      .find(el => el.props['data-tree-search'])
-      .props.onInput(index === 0 ? 'alpha' : 'beta')
+    const field = await openTreeSearch(view.tree(index))
+    field.props.onInput(index === 0 ? 'alpha' : 'beta')
   }
   await flush()
   const trees = [view.tree(0), view.tree(1)]
@@ -878,6 +904,7 @@ test('对象树按库名、对象名和查询名称搜索，不匹配已保存�
   await view.select('ttminis')
   await view.select('freeclip')
   const requests = mock.calls.length
+  const field = await openTreeSearch(view.tree())
   for (const [term, expected] of [
     [' FR ', ['freeclip', 'freeclip-test']],
     [' TeSt222 ', ['ttminis']],
@@ -886,9 +913,7 @@ test('对象树按库名、对象名和查询名称搜索，不匹配已保存�
     ['from', []],
     [' ', databaseNames],
   ]) {
-    all(view.tree())
-      .find(el => el.props['data-tree-search'])
-      .props.onInput(term)
+    field.props.onInput(term)
     await flush()
     const names = all(view.tree())
       .filter(el => el.props['aria-level'] === '1')
@@ -897,6 +922,24 @@ test('对象树按库名、对象名和查询名称搜索，不匹配已保存�
     if (!expected.length)
       assert.match(textOf(view.tree()), /没有可显示的数据库对象/)
   }
+  field.props.onInput('users')
+  await flush()
+  field.props.onKeydown({
+    key: 'Escape',
+    stopPropagation() {},
+    preventDefault() {},
+  })
+  await flush()
+  assert.deepEqual(
+    all(view.tree())
+      .filter(el => el.props['aria-level'] === '1')
+      .map(el => el.props['data-tree-label']),
+    databaseNames
+  )
+  assert.ok(
+    all(view.tree()).find(el => el.props.title === '搜索查询、表、视图或存储过程')
+      .focused
+  )
   assert.equal(
     mock.calls.length,
     requests,
@@ -962,9 +1005,8 @@ test('切换数据库连接保留目录、搜索和查询结果，仅手动刷�
     .find(el => el.type === 'button')
     .props.onClick()
   await flush()
-  all(view.tree())
-    .find(el => el.props['data-tree-search'])
-    .props.onInput('alpha')
+  const filter = await openTreeSearch(view.tree())
+  filter.props.onInput('alpha')
   await flush()
   const tree = view.tree()
   const requests = mock.calls.length
@@ -997,6 +1039,10 @@ test('切换数据库连接保留目录、搜索和查询结果，仅手动刷�
   )
   // 显式刷新仍获取最新目录，并清理服务器上已经移除的库。
   all(view.tree())
+    .find(el => el.props.title === '取消搜索')
+    .props.onClick({ stopPropagation() {} })
+  await flush()
+  all(view.tree())
     .find(el => el.props.title === '刷新对象树')
     .props.onClick({ stopPropagation() {} })
   await flush()
@@ -1013,10 +1059,6 @@ test('切换数据库连接保留目录、搜索和查询结果，仅手动刷�
     ),
     false
   )
-  all(view.tree())
-    .find(el => el.props['data-tree-search'])
-    .props.onInput('')
-  await flush()
   const beta = all(view.tree()).find(
     el => el.props['aria-expanded'] !== undefined && textOf(el) === 'beta'
   )
@@ -1029,6 +1071,93 @@ test('切换数据库连接保留目录、搜索和查询结果，仅手动刷�
   assert.match(textOf(query), /SELECT keep_this_draft/)
   assert.equal(mock.calls.filter(([name]) => name === 'connect').length, 1)
   assert.equal(mock.calls.filter(([name]) => name === 'disconnect').length, 0)
+})
+
+test('表清单显示存储统计并从所选库创建查询、表或打开字段', async t => {
+  const view = await fixture(t, {
+    handlers: {
+      listObjects: async () => [
+        {
+          ...object('alpha', 'app_events'),
+          rowEstimate: 90,
+          comment: 'Operational logs',
+          mysqlStats: {
+            dataLength: 16384,
+            indexLength: 0,
+            autoIncrement: '9007199254740993',
+            engine: 'InnoDB',
+            charset: 'utf8mb4',
+          },
+        },
+        { ...object('alpha', 'users'), rowEstimate: 2 },
+      ],
+    },
+  })
+  await view.select('alpha')
+  const button = label =>
+    all(view.root).find(el => el.type === 'button' && textOf(el).trim() === label)
+  const overviewRows = () =>
+    all(view.overview()).filter(el => el.type === 'tr' && el.props.onDblclick)
+  const overviewColumns = all(view.overview()).filter(el => el.type === 'col')
+  assert.equal(overviewColumns[0].props.style.width, 'max(8rem, 40cqw)')
+  assert.equal(overviewColumns[1].props.style.width, 'clamp(12rem, 22cqw, 32rem)')
+  assert.match(view.overview().props.class, /overflow-auto/)
+  const cells = all(overviewRows()[0]).filter(el => el.type === 'td')
+  assert.deepEqual(cells.slice(3, 8).map(textOf), [
+    '16.0 KB', '0 B', '9007199254740993', 'InnoDB', 'utf8mb4',
+  ])
+  const filter = all(view.root).find(el => el.props.title === '按表名或备注筛选')
+  assert.equal(filter.props['aria-expanded'], false)
+  await filter.props.onClick()
+  const input = all(view.root).find(
+    el => el.type === 'input' && el.props.placeholder === '按表名或备注筛选'
+  )
+  assert.equal(input.focused, true)
+  input.props.onInput('LOGS')
+  await flush()
+  assert.equal(overviewRows().length, 1)
+  assert.match(textOf(overviewRows()[0]), /app_events/)
+  await filter.props.onClick()
+  assert.equal(overviewRows().length, 2)
+  assert.equal(button('字段').props.disabled, true)
+  button('预估行数').props.onClick()
+  await flush()
+  assert.match(textOf(overviewRows()[0]), /users/)
+  overviewRows()[0].props.onClick()
+  await flush()
+  button('字段').props.onClick()
+  await flush()
+  const tableTab = view.mainTabs().activeId()
+  assert.match(view.mainTabs().tabs()[0].label, /users @alpha/)
+  const tableCategory = all(view.tree()).find(
+    el => el.props['data-tree-key'] === 'category:alpha:table'
+  )
+  tableCategory.props.onClick()
+  await flush()
+  assert.ok(view.overview())
+  button('新建表').props.onClick()
+  await flush()
+  assert.match(view.mainTabs().tabs().at(-1).label, /新建表 @alpha/)
+  await view.select('alpha')
+  button('新建查询').props.onClick()
+  await flush()
+  assert.ok(all(view.root).find(el => el.props['data-query-db'] === 'alpha'))
+  assert.ok(view.mainTabs().tabs().some(tab => tab.id === tableTab))
+})
+
+test('从 PostgreSQL schema 表清单新建查询时仍以所在数据库为目标', async t => {
+  const view = await fixture(t, {
+    kind: 'postgresql',
+    database: 'warehouse',
+    handlers: { listObjects: async () => [object('reporting', 'events')] },
+  })
+  await view.select('reporting')
+  all(view.root)
+    .find(el => el.type === 'button' && textOf(el).trim() === '新建查询')
+    .props.onClick()
+  await flush()
+  assert.ok(all(view.root).some(el => el.props['data-query-db'] === 'warehouse'))
+  assert.equal(mock.calls.some(([name]) => name === 'useDatabase'), false)
 })
 
 test('加载目录期间切换连接不会重复请求，原请求完成后正常显示结果', async t => {
@@ -1050,9 +1179,7 @@ test('加载目录期间切换连接不会重复请求，原请求完成后正�
   pending.resolve(['beta'])
   await flush()
   const names = all(view.tree())
-    .filter(
-      el => el.type === 'button' && el.props['aria-expanded'] !== undefined
-    )
+    .filter(el => el.props['aria-level'] === '1')
     .map(textOf)
   assert.deepEqual(names, ['beta'])
 })

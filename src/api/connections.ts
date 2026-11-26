@@ -21,12 +21,14 @@ import type {
   UngroupedPositions,
 } from '@/types/connection'
 import type { ConnectionTagColor } from '@/types/connection'
-import { groupKindOf } from '@/types/connection'
+import { groupKindOf, isDockerConnection } from '@/types/connection'
+import { DOCKER_UNIX_SOCKET } from '@/utils/docker-connection'
 
 const STORAGE_KEY = 'miraihub.connections.v1'
 const GROUP_STORAGE_KEY = 'miraihub.connection-groups.v1'
 const UNGROUPED_POSITION_STORAGE_KEY = 'miraihub.ungrouped-positions.v1'
 const TAG_STORAGE_KEY = 'miraihub.connection-tags.v1'
+const GROUP_KINDS = ['ssh', 'database', 'docker'] as const
 
 /** 通知同一页面内的其他订阅者数据变了 */
 const CHANGE_EVENT = 'miraihub:connections-changed'
@@ -114,7 +116,7 @@ function readGroups(): ConnectionGroup[] {
         group !== null &&
         typeof group.id === 'string' &&
         typeof group.name === 'string' &&
-        (group.kind === 'ssh' || group.kind === 'database') &&
+        GROUP_KINDS.some(kind => kind === group.kind) &&
         typeof group.createdAt === 'number'
     )
   } catch (error) {
@@ -131,7 +133,7 @@ function readUngroupedPositions(): UngroupedPositions {
       return {}
 
     const positions: UngroupedPositions = {}
-    for (const kind of ['ssh', 'database'] as const) {
+    for (const kind of GROUP_KINDS) {
       const position = (parsed as Record<string, unknown>)[kind]
       if (
         typeof position === 'number' &&
@@ -342,6 +344,43 @@ export async function create(input: NewConnection): Promise<SavedConnection> {
   return connection
 }
 
+/** 打开 SSH 对应的 Docker，优先复用默认套接字，其次复用已配置的其他端点。 */
+export async function dockerForSsh(sshId: string): Promise<SavedConnection> {
+  async function findOrCreate(): Promise<SavedConnection> {
+    const items = readAll()
+    const ssh = items.find(item => item.id === sshId && item.kind === 'ssh')
+    if (!ssh) throw new Error(i18n.global.t('SSH 连接已不存在'))
+    const linked = items.filter(isDockerConnection).filter(item =>
+      item.settings.transport === 'ssh' && item.settings.sshConnectionId === sshId
+    )
+    const existing = linked.find(item =>
+      item.settings.protocol === 'unix' && item.settings.endpoint === DOCKER_UNIX_SOCKET
+    ) ?? linked[0]
+    if (existing) return existing
+    return create({
+      name: ssh.name,
+      kind: 'docker',
+      host: '',
+      port: 0,
+      username: '',
+      group: '',
+      description: '',
+      tags: [],
+      tagColor: ssh.tagColor,
+      settings: {
+        protocol: 'unix',
+        endpoint: DOCKER_UNIX_SOCKET,
+        transport: 'ssh',
+        sshConnectionId: sshId,
+      },
+    })
+  }
+  // 多个工作区窗口同时使用快捷入口时，只保存一份关联配置。
+  return globalThis.navigator?.locks
+    ? navigator.locks.request('miraihub:docker-for-ssh', findOrCreate)
+    : findOrCreate()
+}
+
 /** 更新部分字段。id 不存在时静默忽略 —— 并发下另一端可能刚删掉它 */
 export async function update(
   id: string,
@@ -417,7 +456,7 @@ export async function reorderGroup(
   const groups = readGroups()
   const kind =
     groups.find(group => group.id === id)?.kind ??
-    (['ssh', 'database'] as const).find(kind => id === `ungrouped-${kind}`)
+    GROUP_KINDS.find(kind => id === `ungrouped-${kind}`)
   if (!kind) return
 
   const positions = readUngroupedPositions()

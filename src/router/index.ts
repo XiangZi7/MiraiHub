@@ -20,6 +20,8 @@ export function createAppRouter(
   history: RouterHistory = createWebHashHistory()
 ) {
   const router = createRouter({ history, routes })
+  const logWindow =
+    entry.surface === 'docker-logs' ? router.resolve(entry.path) : undefined
   const fallback = (): string => {
     if (entry.surface !== 'workspace') return entry.path
     try {
@@ -34,6 +36,15 @@ export function createAppRouter(
   }
 
   router.beforeEach(to => {
+    // 日志子窗口始终对应打开时的容器，刷新和历史导航都回到同一目标。
+    if (
+      logWindow &&
+      (to.name !== logWindow.name ||
+        ['connectionId', 'containerId', 'containerName'].some(
+          key => to.query[key] !== logWindow.query[key]
+        ))
+    )
+      return { name: 'docker-logs', query: logWindow.query, replace: true }
     if (
       to.name === 'not-found' ||
       to.path === '/' ||
@@ -62,6 +73,13 @@ export function createAppRouter(
     const workspace = useWorkspaceStore(pinia)
     await connections.initialize()
     workspace.restore(connections.items)
+    // Docker 工作区通过独立的配置 ID 定位容器列表。
+    if (to.name === 'docker') {
+      const id = to.params.connectionId
+      if (typeof id === 'string' && id && connections.find(id)?.kind !== 'docker')
+        return { path: '/docker', replace: true }
+      return
+    }
     if (to.name !== 'servers' && to.name !== 'databases') return
     const matches = (connection: { kind: string }) =>
       to.name === 'databases'
@@ -110,6 +128,8 @@ export function createAppRouter(
 }
 
 export function connectionLocation(connection: { id: string; kind: string }) {
+  if (connection.kind === 'docker')
+    return { name: 'docker', params: { connectionId: connection.id } }
   return {
     name:
       connection.kind === 'mysql' ||

@@ -301,14 +301,14 @@ onMounted(async () => {
 
 <template>
   <section
-    class="scroll-thin min-h-0 overflow-auto p-4"
+    class="bg-panel scroll-thin min-h-0 flex-1 overflow-auto p-4"
     :aria-label="t('表选项')"
   >
-    <div class="border-line-soft bg-panel mb-3 max-w-195 rounded-lg border p-3.5">
-      <h3 class="text-txt-2 mb-3 text-[11px] font-semibold">{{ t('自增设置') }}</h3>
+    <div class="card border-line mb-3 max-w-195 p-3.5">
+      <h3 class="text-txt mb-3 text-[11px] font-semibold">{{ t('自增设置') }}</h3>
       <dl class="mb-3.5 flex flex-wrap gap-x-8 gap-y-3">
         <div class="grid gap-1.25">
-          <dt class="text-txt-4 text-[10px]">{{ t('自增字段') }}</dt>
+          <dt class="text-txt-2 text-[10px]">{{ t('自增字段') }}</dt>
           <dd class="text-txt font-mono text-[12px] wrap-anywhere">
             {{
               incrementColumns.map(column => column.name).join(', ') || t('无')
@@ -319,7 +319,7 @@ onMounted(async () => {
           v-if="editing"
           class="grid gap-1.25"
         >
-          <dt class="text-txt-4 text-[10px]">{{ t('当前自增计数器') }}</dt>
+          <dt class="text-txt-2 text-[10px]">{{ t('当前自增计数器') }}</dt>
           <dd
             class="text-txt font-mono text-[12px] wrap-anywhere"
             data-testid="current-auto-increment"
@@ -344,19 +344,19 @@ onMounted(async () => {
       </label>
       <p
         v-if="incrementColumns.length !== 1"
-        class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]"
+        class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]"
       >
         {{ t('设置自增值需要且只能有一个自增字段') }}
       </p>
       <p
         v-else-if="serialColumn"
-        class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]"
+        class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]"
       >
         {{ t('serial 序列请在查询中使用 ALTER SEQUENCE 修改') }}
       </p>
       <p
         v-else
-        class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]"
+        class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]"
       >
         {{
           databaseKind === 'mysql'
@@ -371,12 +371,12 @@ onMounted(async () => {
     </div>
     <div
       v-if="databaseKind === 'mysql'"
-      class="border-line-soft bg-panel mb-3 max-w-195 rounded-lg border p-3.5"
+      class="card border-line mb-3 max-w-195 p-3.5"
     >
-      <h3 class="text-txt-2 mb-3 text-[11px] font-semibold">{{ t('存储与字符集') }}</h3>
+      <h3 class="text-txt mb-3 text-[11px] font-semibold">{{ t('存储与字符集') }}</h3>
       <p
         v-if="catalogError"
-        class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]"
+        class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]"
       >
         {{ t('未能读取服务器可选项，可手动输入受支持的值。') }}
       </p>
@@ -444,7 +444,7 @@ onMounted(async () => {
           :options="rowFormatOptions"
         />
       </div>
-      <p class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]">
+      <p class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]">
         {{
           t(
             '字符集与排序规则设置表的默认值，不转换已有字段；修改引擎或行格式可能重建表。'
@@ -454,9 +454,9 @@ onMounted(async () => {
     </div>
     <div
       v-if="databaseKind === 'mysql'"
-      class="border-line-soft bg-panel mb-3 max-w-195 rounded-lg border p-3.5"
+      class="card border-line mb-3 max-w-195 p-3.5"
     >
-      <h3 class="text-txt-2 mb-3 text-[11px] font-semibold">{{ t('分区') }}</h3>
+      <h3 class="text-txt mb-3 text-[11px] font-semibold">{{ t('分区') }}</h3>
       <template v-if="editing">
         <div
           v-if="current?.partition?.method"
@@ -468,7 +468,7 @@ onMounted(async () => {
             }})
           </p>
           <table class="text-txt-2 w-full max-w-130 text-left text-[10.5px]">
-            <thead class="text-txt-4">
+            <thead class="text-txt-2">
               <tr>
                 <th class="py-1 font-normal">{{ t('分区名') }}</th>
                 <th class="py-1 font-normal">{{ t('分区值') }}</th>
@@ -490,13 +490,13 @@ onMounted(async () => {
         </div>
         <p
           v-else-if="!partitionSupport.reason"
-          class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]"
+          class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]"
         >
           {{ t('当前表未分区') }}
         </p>
         <p
           v-if="partitionSupport.reason"
-          class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]"
+          class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]"
         >
           {{ partitionSupport.reason }}
         </p>
@@ -552,7 +552,7 @@ onMounted(async () => {
               v-if="change.action === 'add' || change.action === 'reorganize'"
               class="grid gap-1.5"
             >
-              <span class="text-txt-4 text-[10px]">{{
+              <span class="text-txt-2 text-[10px]">{{
                 change.action === 'add' ? t('新增的分区') : t('重组为以下分区')
               }}</span>
               <div
@@ -609,7 +609,7 @@ onMounted(async () => {
             />
             {{ t('添加分区操作') }}
           </button>
-          <p class="text-txt-4 text-[10px] leading-[1.7]">
+          <p class="text-txt-2 text-[10px] leading-[1.7]">
             {{
               t(
                 '每项操作生成一条独立的 ALTER TABLE 语句；MySQL 分区操作不支持事务，失败前已执行的语句不会回滚。删除或清空分区会丢弃其中的数据。'
@@ -700,13 +700,13 @@ onMounted(async () => {
             {{ t('添加分区') }}
           </button>
         </div>
-        <p class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]">
+        <p class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]">
           {{ t('分区表达式涉及的字段必须包含在主键和所有唯一索引中，且分区表不支持外键。') }}
         </p>
       </div>
     </div>
-    <div class="border-line-soft bg-panel mb-3 max-w-195 rounded-lg border p-3.5">
-      <h3 class="text-txt-2 mb-3 text-[11px] font-semibold">{{ t('表备注') }}</h3>
+    <div class="card border-line mb-3 max-w-195 p-3.5">
+      <h3 class="text-txt mb-3 text-[11px] font-semibold">{{ t('表备注') }}</h3>
       <AppInput
         v-model="comment"
         size="sm"
@@ -714,8 +714,15 @@ onMounted(async () => {
         :placeholder="t('可选，用于说明表的用途')"
       />
     </div>
-    <p class="text-txt-4 mt-2.5 text-[10px] leading-[1.7]">
+    <p class="text-txt-2 mt-2.5 text-[10px] leading-[1.7]">
       {{ t('修改后可在 SQL 预览中检查，点击保存修改后生效。') }}
     </p>
   </section>
 </template>
+
+<style scoped>
+/* 卡片采用皮肤的实色表面，让表单控件原有的面板底色在明暗模式下都清晰可见。 */
+.card {
+  background-color: oklch(from var(--color-card) l c h / 1);
+}
+</style>

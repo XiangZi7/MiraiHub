@@ -26,6 +26,8 @@ const { t } = useI18n()
 const props = defineProps<{
   modelValue: TableDesignerColumn[]
   databaseKind: DatabaseKind
+  /** 当前设计器底栏中的字段属性容器，每个设计标签使用自己的容器。 */
+  propertiesHost: HTMLElement | null
   /** 编辑模式下当前表已有的非标准类型（如 ENUM），合并进类型下拉框。 */
   extraTypes?: readonly string[]
   editing?: boolean
@@ -87,9 +89,7 @@ const typeOptions = computed(() => {
 
 const primaryOrder = computed(() => {
   const columns = primaryKeyColumns(props.modelValue)
-  return columns.length > 1
-    ? new Map(columns.map((column, index) => [column.id, index + 1]))
-    : new Map<string, number>()
+  return new Map(columns.map((column, index) => [column.id, index + 1]))
 })
 
 const collations = shallowRef<{ name: string; charset: string }[]>([])
@@ -730,20 +730,34 @@ defineExpose({ add: () => void addColumn() })
               </div>
             </td>
             <td :class="changedCell(column, 'primaryKey')">
-              <div class="flex items-center justify-center gap-0.5">
-                <AppCheckbox
-                  :model-value="column.primaryKey"
-                  :label="t('主键')"
-                  hide-label
-                  @update:model-value="togglePrimaryKey(column, $event)"
-                />
-                <span
-                  v-if="primaryOrder.get(column.id)"
-                  class="text-accent font-mono text-[9px] tabular-nums"
-                  :title="t('复合主键中的顺序')"
-                  >{{ primaryOrder.get(column.id) }}</span
-                >
-              </div>
+              <button
+                type="button"
+                class="text-amber hover:bg-hover focus-visible:outline-accent flex h-6 w-full cursor-pointer items-center justify-center gap-1 rounded px-1 focus-visible:outline-2 focus-visible:-outline-offset-2"
+                :aria-label="
+                  t('字段“{value0}”的主键', {
+                    value0: column.name || t('未命名字段'),
+                  })
+                "
+                :aria-pressed="column.primaryKey"
+                :title="
+                  column.primaryKey
+                    ? t('主键顺序：{value0}', {
+                        value0: primaryOrder.get(column.id),
+                      })
+                    : t('设为主键')
+                "
+                @click="togglePrimaryKey(column, !column.primaryKey)"
+              >
+                <template v-if="column.primaryKey">
+                  <AppIcon
+                    name="lucide:key-round"
+                    :size="12"
+                  />
+                  <span class="font-mono text-[10px] tabular-nums">{{
+                    primaryOrder.get(column.id)
+                  }}</span>
+                </template>
+              </button>
             </td>
             <td :class="changedCell(column, 'unique')">
               <div class="flex justify-center">
@@ -852,9 +866,9 @@ defineExpose({ add: () => void addColumn() })
       </table>
     </div>
 
-    <div
-      v-if="activeColumn"
-      class="border-line-soft bg-card/60 scroll-thin flex min-w-0 shrink-0 items-center gap-4 overflow-x-auto border-t px-3 py-2 text-[10px] whitespace-nowrap"
+    <Teleport
+      v-if="activeColumn && propertiesHost"
+      :to="propertiesHost"
     >
       <p
         class="text-txt-2 flex shrink-0 items-center gap-1.5 font-mono text-[10.5px]"
@@ -1042,7 +1056,7 @@ defineExpose({ add: () => void addColumn() })
           />
         </div>
       </div>
-    </div>
+    </Teleport>
 
     <Teleport to="body">
       <div

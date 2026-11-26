@@ -538,6 +538,17 @@ impl SshSession {
         self.handle.lock().await.is_closed()
     }
 
+    /// 用 OpenSSH streamlocal 通道访问服务器上的 Unix Socket。
+    pub async fn forward_socket(&self, path: &str) -> SshResult<russh::ChannelStream<Msg>> {
+        let channel = self
+            .handle
+            .lock()
+            .await
+            .channel_open_direct_streamlocal(path)
+            .await?;
+        Ok(channel.into_stream())
+    }
+
     pub async fn forward_stream(
         &self,
         host: &str,

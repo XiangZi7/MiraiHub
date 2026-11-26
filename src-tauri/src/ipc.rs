@@ -10,20 +10,27 @@
 use tauri::ipc::Invoke;
 use tauri::Wry;
 
-use crate::{agent, db, local_terminal, platform, redis_db, ssh};
+use crate::{agent, db, docker, local_terminal, platform, redis_db, ssh};
 
 /// 构造全部命令的分发闭包，交给 `tauri::Builder::invoke_handler`。
 ///
 /// 返回 `impl Fn` 而不是在 `app.rs` 里直接展开宏：
 /// 这样命令清单与应用装配彻底分离，两边各自演进互不干扰。
 pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![
+    let dispatch: fn(Invoke<Wry>) -> bool = tauri::generate_handler![
         crate::updater::updater_environment,
         crate::updater::updater_check_source,
         crate::updater::updater_can_install,
         crate::updater::updater_restart,
         crate::backup::connection_backup_write,
         crate::backup::connection_backup_read,
+        docker::docker_test,
+        docker::docker_containers,
+        docker::docker_container_action,
+        docker::docker_container_logs,
+        docker::follow::docker_logs_follow,
+        docker::follow::docker_logs_follow_stop,
+        docker::follow::docker_logs_follow_ack,
         ssh::config_transfer::ssh_config_backup_preview,
         ssh::config_transfer::ssh_config_backup_import,
         ssh::config_transfer::ssh_config_backup_write,
@@ -81,6 +88,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         platform::remote_editor::remote_editor_finish,
         platform::commands::open_connection_window,
         platform::commands::open_settings_window,
+        platform::commands::open_docker_logs_window,
         platform::column_tags::open_column_tags_window,
         platform::column_tags::column_tags_target,
         platform::column_tags::column_tags_submit,
@@ -214,5 +222,18 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         local_terminal::local_terminal_write,
         local_terminal::local_terminal_resize,
         local_terminal::local_terminal_close,
-    ]
+    ];
+    move |invoke: Invoke<Wry>| {
+        if invoke
+            .message
+            .webview()
+            .label()
+            .starts_with(platform::docker_logs::PREFIX)
+            && !platform::docker_logs::allows(invoke.message.command())
+        {
+            invoke.resolver.reject("此日志窗口只支持读取容器日志");
+            return true;
+        }
+        dispatch(invoke)
+    }
 }

@@ -151,6 +151,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   status: [status: SshSessionStatus, sessionId: string]
+  showOverview: []
 }>()
 
 const databaseContainer = useTemplateRef<HTMLElement>('databaseContainer')
@@ -461,8 +462,17 @@ watch(sessionId, () => {
   state.queryResults = {}
 })
 
+/** 从对象树切回所选库的表清单，保留已经打开的查询、表和设计草稿。 */
 function selectSchema(name: string): void {
-  if (state.transferMode || state.preparingTransfer) return
+  if (
+    state.transferMode ||
+    state.preparingTransfer ||
+    queryLoading.value ||
+    state.preparingQuery
+  )
+    return
+  queryState.activeId = ''
+  emit('showOverview')
   if (databaseKind.value === 'mysql') void changeDatabase(name)
   else state.overviewSchema = name
 }
@@ -744,12 +754,13 @@ function refreshForConnection(connectionId: string): void {
   if (props.connection?.id === connectionId) void refreshAll()
 }
 
+/** 工作区快捷入口指定的是连接上的数据库，可直接作为新查询的目标。 */
 async function newQueryForConnection(
   connectionId: string,
   targetDatabase: string
 ): Promise<void> {
   if (props.connection?.id !== connectionId) return
-  await newQueryForSchema(targetDatabase || undefined)
+  await newQueryForDatabase(targetDatabase || undefined)
 }
 
 defineExpose({
@@ -958,14 +969,20 @@ function createObjectQuery(object: DatabaseObject): void {
   else openQuery(`SELECT *\nFROM ${name}\nLIMIT 100;`)
 }
 
-async function newQueryForSchema(schema?: string): Promise<void> {
+/** 对象树节点在 PostgreSQL 下是 schema，新查询应继续使用当前数据库。 */
+function newQueryForSchema(schema?: string): Promise<void> {
+  return newQueryForDatabase(databaseKind.value === 'mysql' ? schema : undefined)
+}
+
+/** 在指定数据库建立空白查询；MySQL 先复用现有切库与元数据缓存流程。 */
+async function newQueryForDatabase(target?: string): Promise<void> {
   if (
-    schema &&
+    target &&
     databaseKind.value === 'mysql' &&
-    schema !== session.value?.database
+    target !== session.value?.database
   )
-    await changeDatabase(schema)
-  addQueryTab('', schema || session.value?.database || configuredDatabase)
+    await changeDatabase(target)
+  addQueryTab('', target || session.value?.database || configuredDatabase)
 }
 
 async function openSavedQuery(query: SavedDatabaseQuery): Promise<void> {
@@ -2099,7 +2116,7 @@ registerDatabaseCommandSource(
           :ready="connected && !databasesLoading"
           :active-database="overviewSchema"
           :current-database="session?.database"
-          :database-names="databaseKind === 'mysql' ? databases : []"
+          :database-names="databaseKind === 'postgresql' ? [] : databases"
           :objects="objects"
           :saved-queries="savedQueries"
           :selected-saved-query-id="selectedSavedQueryId"
@@ -2207,16 +2224,15 @@ registerDatabaseCommandSource(
             :workspace-host-id="workspaceHostId"
           >
             <template #empty>
-              <div
-                class="border-line-soft flex min-h-10 min-w-0 shrink-0 items-center justify-end border-b px-2.5 py-1"
-              >
-                <DatabaseActions />
-              </div>
               <DatabaseTableOverview
                 :objects="overviewObjects"
-                :selected="Boolean(overviewSchema)"
+                :schema="overviewSchema"
+                :database-kind="databaseKind"
+                :read-only="session?.readOnly"
                 :loading="objectsLoading"
                 :error="objectsError"
+                @new-query="newQueryForSchema(overviewSchema)"
+                @new-table="openTableDesigner(overviewSchema)"
                 @open="openObject"
                 @inspect="inspectObject"
                 @ask-agent="askAgentStructure"
@@ -2229,7 +2245,11 @@ registerDatabaseCommandSource(
                 @test-data="state.testDataObject = $event"
                 @document-object="openDatabaseDoc"
                 @refresh="refreshAll"
-              />
+              >
+                <template #connection-actions>
+                  <DatabaseActions />
+                </template>
+              </DatabaseTableOverview>
               <DatabaseStatus />
             </template>
             <template #default="{ tab }">
@@ -2339,13 +2359,18 @@ registerDatabaseCommandSource(
                 <template #toolbar>
                   <DatabaseActions :tab="tab" />
                 </template>
+                <template #status>
+                  <DatabaseStatus
+                    :tab="tab"
+                    embedded
+                  />
+                </template>
               </DatabaseTableDesigner>
               <DatabaseStatus
                 v-if="
-                  tab.kind === 'table-designer' ||
-                  (tab.kind === 'object' &&
-                    tab.object.kind !== 'table' &&
-                    tab.object.kind !== 'view')
+                  tab.kind === 'object' &&
+                  tab.object.kind !== 'table' &&
+                  tab.object.kind !== 'view'
                 "
                 :tab="tab"
               />

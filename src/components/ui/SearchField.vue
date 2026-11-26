@@ -36,6 +36,7 @@ defineExpose({ focus })
       ref="inputRef"
       v-model="model"
       type="text"
+      :aria-label="placeholder"
       :placeholder="placeholder"
     />
     <span
