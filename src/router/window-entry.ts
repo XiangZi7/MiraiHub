@@ -7,6 +7,7 @@ export type WindowSurface =
   | 'connection'
   | 'remote-editor'
   | 'docker-logs'
+  | 'docker-details'
   | 'splash'
   | 'column-tags'
 export interface WindowEntry {
@@ -26,11 +27,13 @@ const REQUESTABLE_SURFACES: readonly WindowSurface[] = [
   ...NATIVE_SURFACES,
   'remote-editor',
   'docker-logs',
+  'docker-details',
 ]
 
 /** 动态原生窗口的标签带有目标标识，路由只需识别窗口类型。 */
 function nativeSurface(label: string): WindowSurface {
   if (label.startsWith('docker-logs-')) return 'docker-logs'
+  if (label.startsWith('docker-details-')) return 'docker-details'
   if (label.startsWith('remote-editor-')) return 'remote-editor'
   return surfaceOf(NATIVE_SURFACES, label) ?? 'workspace'
 }
@@ -71,7 +74,7 @@ export function resolveWindowEntry(
   const surface: WindowSurface = nativeLabel
     ? nativeSurface(nativeLabel)
     : (surfaceOf(REQUESTABLE_SURFACES, requested ?? '') ?? 'workspace')
-  if (surface === 'docker-logs') {
+  if (surface === 'docker-logs' || surface === 'docker-details') {
     const target = new URLSearchParams()
     const source = nativeLabel || query.has('window')
       ? query
@@ -80,7 +83,7 @@ export function resolveWindowEntry(
       const value = source.get(key)
       if (value) target.set(key, value)
     }
-    return { surface, path: target.size ? `/docker-logs?${target}` : '/docker-logs' }
+    return { surface, path: target.size ? `/${surface}?${target}` : `/${surface}` }
   }
   if (surface === 'connection') {
     const type = query.get('type')

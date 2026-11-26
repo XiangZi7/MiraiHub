@@ -122,7 +122,7 @@ fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         main.on_window_event(move |event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 for (label, window) in main_for_close.app_handle().webview_windows() {
-                    if label.starts_with(platform::docker_logs::PREFIX) {
+                    if platform::docker_window::Kind::from_label(&label).is_some() {
                         let _ = window.destroy();
                     }
                 }

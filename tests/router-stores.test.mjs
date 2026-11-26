@@ -245,29 +245,31 @@ test("设置分类参与历史导航，非法分类和跨窗口路径返回当�
   }
 });
 
-test("原生 Docker 日志窗口保留打开时的连接和容器，容器名只用于展示", async () => {
-  const id = "ab".repeat(32);
-  const params = new URLSearchParams({
-    connectionId: "prod & staging",
-    containerId: id,
-    containerName: "worker+1",
-  });
-  const path = "/docker-logs?" + params;
-  const entry = resolveWindowEntry("?window=docker-logs&" + params, "", "docker-logs-instance");
-  assert.deepEqual(entry, { surface: "docker-logs", path });
-  assert.deepEqual(resolveWindowEntry("", "#" + path), entry);
-  assert.equal(resolveWindowEntry("?window=docker-logs&" + params, "", "main").surface, "workspace");
-  const { router, dispose } = fixture(entry.surface, entry.path);
-  try {
-    for (const target of [path, "/docker-logs?containerId=other", "/docker", "/settings/general"]) {
-      await router.push(target);
-      assert.equal(router.currentRoute.value.name, "docker-logs");
-      assert.deepEqual({ ...router.currentRoute.value.query }, Object.fromEntries(params));
+for (const surface of ["docker-logs", "docker-details"]) {
+  test(`原生 ${surface} 窗口只显示打开时的视图、连接和容器`, async () => {
+    const id = "ab".repeat(32);
+    const params = new URLSearchParams({
+      connectionId: "prod & staging",
+      containerId: id,
+      containerName: "worker+1",
+    });
+    const path = "/" + surface + "?" + params;
+    const entry = resolveWindowEntry("?window=" + surface + "&" + params, "", surface + "-instance");
+    assert.deepEqual(entry, { surface, path });
+    assert.deepEqual(resolveWindowEntry("", "#" + path), entry);
+    assert.equal(resolveWindowEntry("?window=" + surface + "&" + params, "", "main").surface, "workspace");
+    const { router, dispose } = fixture(entry.surface, entry.path);
+    try {
+      for (const target of [path, "/docker-logs?containerId=other", "/docker-details?containerId=other", "/docker", "/settings/general"]) {
+        await router.push(target);
+        assert.equal(router.currentRoute.value.name, surface);
+        assert.deepEqual({ ...router.currentRoute.value.query }, Object.fromEntries(params));
+      }
+    } finally {
+      dispose();
     }
-  } finally {
-    dispose();
-  }
-});
+  });
+}
 
 test("远端编辑窗口不能通过路由切换打开设置或工作区", async () => {
   const { router, dispose } = fixture("remote-editor", "/remote-editor");

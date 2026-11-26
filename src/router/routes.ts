@@ -1,4 +1,4 @@
-import type { RouteRecordRaw } from 'vue-router'
+import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router'
 import type { NavId } from '@/types'
 import type { WindowSurface } from '@/router/window-entry'
 
@@ -7,6 +7,15 @@ declare module 'vue-router' {
     surface?: WindowSurface
     nav?: NavId
     title?: string
+  }
+}
+
+/** 提取原生容器窗口固定的目标，忽略不受支持的参数。 */
+function containerWindowProps({ query }: RouteLocationNormalized) {
+  return {
+    connectionId: typeof query.connectionId === 'string' ? query.connectionId : '',
+    containerId: typeof query.containerId === 'string' ? query.containerId : '',
+    containerName: typeof query.containerName === 'string' ? query.containerName : '',
   }
 }
 
@@ -61,15 +70,15 @@ export const routes: RouteRecordRaw[] = [
     path: '/docker-logs',
     name: 'docker-logs',
     component: () => import('@/pages/docker/logs.vue'),
-    props: route => ({
-      connectionId:
-        typeof route.query.connectionId === 'string' ? route.query.connectionId : '',
-      containerId:
-        typeof route.query.containerId === 'string' ? route.query.containerId : '',
-      containerName:
-        typeof route.query.containerName === 'string' ? route.query.containerName : '',
-    }),
+    props: containerWindowProps,
     meta: { surface: 'docker-logs', title: '容器日志' },
+  },
+  {
+    path: '/docker-details',
+    name: 'docker-details',
+    component: () => import('@/pages/docker/details.vue'),
+    props: containerWindowProps,
+    meta: { surface: 'docker-details', title: '容器详情' },
   },
   {
     path: '/remote-editor',

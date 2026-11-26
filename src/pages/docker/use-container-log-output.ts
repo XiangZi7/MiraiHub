@@ -35,12 +35,19 @@ export function useContainerLogOutput() {
   const viewport = useTemplateRef<HTMLElement>('logViewport')
   const content = shallowRef('')
   const truncated = shallowRef(false)
+  let raw = ''
+  let rawTruncated = false
+  let include = ''
+  let exclude = ''
+  let partial = ''
+  let partialIncluded = false
+  let partialExcluded = false
+  let shownPartialLength = 0
   let following = true
   let programmedTop = -1
   let readingTop: number | undefined
   let revision = 0
   let pending = ''
-  let pendingTrimmed = false
   let timer: ReturnType<typeof setTimeout> | undefined
 
   /** 实际滚动才改变跟随状态，程序绘制后的定位不会覆盖用户选择。 */
@@ -52,10 +59,50 @@ export function useContainerLogOutput() {
     following = view.scrollHeight - view.scrollTop - view.clientHeight <= 24
   }
 
-  /** 快照替换旧文本，后续流片段追加。DOM 绘制后滚动到末尾或恢复原来的阅读位置。 */
-  function render(text: string, replace: boolean, dropped = false): void {
+  /** 按行匹配原文；未到换行的片段在收到后续文本后再判断一次。 */
+  function matches(line: string, first: boolean): boolean {
+    const lower = line.toLowerCase()
+    return (
+      (!include || (first && partialIncluded) || lower.includes(include)) &&
+      !(exclude && ((first && partialExcluded) || lower.includes(exclude)))
+    )
+  }
+
+  /** 匹配行独立保留，后续大量排除行不会挤掉已经找到的结果。 */
+  function filtered(text: string, replace: boolean): string {
+    const previous = replace
+      ? ''
+      : content.value.slice(
+          0,
+          Math.max(0, content.value.length - shownPartialLength)
+        )
+    const batch = (replace ? '' : partial) + text
+    const lines = batch.split('\n')
+    partial = lines.pop() ?? ''
+    if (replace) partialIncluded = partialExcluded = false
+    const complete = lines.filter((line, index) => matches(line, index === 0))
+    if (lines.length) partialIncluded = partialExcluded = false
+    const ending = partial && matches(partial, true) ? partial : ''
+    shownPartialLength = Math.min(ending.length, MAX_CHARACTERS)
+    if (partial.length > MAX_CHARACTERS) {
+      const lower = partial.toLowerCase()
+      partialIncluded ||= Boolean(include && lower.includes(include))
+      partialExcluded ||= Boolean(exclude && lower.includes(exclude))
+      partial = partial.slice(tailStart(partial))
+    }
+    return (
+      previous + (complete.length ? complete.join('\n') + '\n' : '') + ending
+    )
+  }
+
+  /** 快照替换原文，后续片段追加；原文和可见匹配分别限长，DOM 绘制后恢复阅读位置。 */
+  function render(text: string, replace: boolean): void {
+    const source = replace ? text : raw + text
+    const rawCut = tailStart(source)
+    raw = source.slice(rawCut)
+    rawTruncated = rawCut > 0 || (!replace && rawTruncated)
     const previous = content.value
-    const combined = replace ? text : previous + text
+    const combined = include || exclude ? filtered(text, replace) : source
     const cut = tailStart(combined)
     const next = combined.slice(cut)
     const view = viewport.value
@@ -74,7 +121,7 @@ export function useContainerLogOutput() {
       )
     }
     content.value = next
-    truncated.value = dropped || cut > 0 || (!replace && truncated.value)
+    truncated.value = cut > 0 || (!replace && truncated.value)
     const current = ++revision
     void nextTick(() => {
       const view = viewport.value
@@ -93,9 +140,8 @@ export function useContainerLogOutput() {
   function flush(): void {
     clearTimeout(timer)
     timer = undefined
-    if (pending) render(pending, pendingTrimmed, pendingTrimmed)
+    if (pending) render(pending, false)
     pending = ''
-    pendingTrimmed = false
   }
 
   /** 每一条新流都从自己的历史开头替换快照，其余输出每 40ms 至多绘制一次。 */
@@ -106,13 +152,19 @@ export function useContainerLogOutput() {
       return
     }
     pending += text
-    if (pending.length > MAX_CHARACTERS) {
-      pending = pending.slice(-MAX_CHARACTERS)
-      if (pending.charCodeAt(0) >= 0xdc00 && pending.charCodeAt(0) <= 0xdfff)
-        pending = pending.slice(1)
-      pendingTrimmed = true
-    }
+    if (pending.length >= MAX_CHARACTERS) return flush()
     timer ??= setTimeout(flush, 40)
+  }
+
+  /** 重新筛选缓冲的原始日志，清空条件后可恢复；跨越缓存的时间段由调用方重新请求。 */
+  function setFilter(contains: string, omits: string): void {
+    flush()
+    include = contains.trim().toLowerCase()
+    exclude = omits.trim().toLowerCase()
+    const wasTrimmed = rawTruncated
+    render(raw, true)
+    rawTruncated = wasTrimmed
+    truncated.value ||= wasTrimmed
   }
 
   /** 释放旧容器的批量渲染与定位回调，新页面从末尾开始阅读。 */
@@ -120,7 +172,11 @@ export function useContainerLogOutput() {
     clearTimeout(timer)
     timer = undefined
     pending = ''
-    pendingTrimmed = false
+    raw = ''
+    partial = ''
+    partialIncluded = partialExcluded = false
+    shownPartialLength = 0
+    rawTruncated = false
     ++revision
     following = true
     programmedTop = -1
@@ -128,5 +184,5 @@ export function useContainerLogOutput() {
     content.value = ''
     truncated.value = false
   }
-  return { content, truncated, write, flush, clear, onScroll }
+  return { content, truncated, write, flush, clear, onScroll, setFilter }
 }

@@ -2,11 +2,11 @@
 
 pub mod column_tags;
 pub mod commands;
-pub mod docker_logs;
+pub(crate) mod docker_window;
 mod file_window;
 pub mod locale;
-pub mod skins;
 pub mod secure_storage;
+pub mod skins;
 pub mod window;
 
 pub mod remote_editor;

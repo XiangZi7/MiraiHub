@@ -26,11 +26,118 @@ fn negotiates_numeric_versions_within_the_supported_range() {
     assert!(api_version(br#"{"ApiVersion":"1.44/other"}"#).is_err());
 }
 
+#[test]
+fn maps_only_compose_labels_and_keeps_unlabelled_containers() {
+    let base = serde_json::json!({
+        "Id": ID, "Names": ["/project-api-1"], "Image": "sample",
+        "State": "running", "Status": "Up"
+    });
+    let mut labelled = base.clone();
+    labelled["Labels"] = serde_json::json!({
+        "com.docker.compose.project": "demo",
+        "com.docker.compose.service": "api",
+        "unrelated": "not shown"
+    });
+    let mut no_labels = base.clone();
+    no_labels["Labels"] = serde_json::Value::Null;
+    let mut empty = base.clone();
+    empty["Labels"] = serde_json::json!({"com.docker.compose.project": " "});
+    let data = serde_json::to_vec(&[labelled, base, no_labels, empty]).unwrap();
+    let items = serde_json::to_value(containers(&data).unwrap()).unwrap();
+    assert_eq!(items[0]["composeProject"], "demo");
+    assert_eq!(items[0]["composeService"], "api");
+    assert!(!items.to_string().contains("unrelated"));
+    for item in &items.as_array().unwrap()[1..] {
+        assert!(item.get("composeProject").is_none());
+        assert!(item.get("composeService").is_none());
+    }
+}
+
 fn frame(kind: u8, payload: &[u8]) -> Vec<u8> {
     let mut bytes = vec![kind, 0, 0, 0];
     bytes.extend((payload.len() as u32).to_be_bytes());
     bytes.extend(payload);
     bytes
+}
+
+#[tokio::test]
+async fn inspect_preserves_stopped_and_unmetered_containers_and_uses_the_same_target_for_stats() {
+    use serde_json::json;
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let endpoint = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let base = format!("/v1.53/containers/{ID}");
+        for (status, stats_status) in [
+            ("exited", None),
+            ("running", Some("403 Forbidden")),
+            ("running", Some("200 OK")),
+        ] {
+            respond(
+                listener.accept().await.unwrap().0,
+                "GET /version",
+                "200 OK",
+                VERSION,
+            )
+            .await;
+            let data = json!({
+                "Id":ID,"Name":"/web","Config":{"Image":"test","ExposedPorts":{"53/udp":{}},"Env":["PRIVATE=secret"]},
+                "State":{"Status":status,"ExitCode":137,"OOMKilled":true,"Health":{"Status":"unhealthy","FailingStreak":2,"Log":[
+                    {"Start":"2026-01-01T00:00:01Z","End":"2026-01-01T00:00:02Z","ExitCode":1,"Output":"probe failed"}
+                ]}, "StartedAt":"0001-01-01T00:00:00Z"},
+                "HostConfig":{"PortBindings":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]}},
+                "NetworkSettings":{"Ports":{"80/tcp":null}},
+                "Mounts":[{"Type":"bind","Source":"/tmp/test","Destination":"/data","RW":false}]
+            }).to_string();
+            respond(
+                listener.accept().await.unwrap().0,
+                &format!("GET {base}/json"),
+                "200 OK",
+                data.as_bytes(),
+            )
+            .await;
+            if let Some(http) = stats_status {
+                let body = json!({
+                    "precpu_stats":{"system_cpu_usage":300,"cpu_usage":{"total_usage":100}},
+                    "cpu_stats":{"online_cpus":4,"system_cpu_usage":700,"cpu_usage":{"total_usage":150}},
+                    "memory_stats":{"usage":1000,"limit":2000,"stats":{"inactive_file":100}}
+                }).to_string();
+                respond(
+                    listener.accept().await.unwrap().0,
+                    &format!("GET {base}/stats?stream=false"),
+                    http,
+                    body.as_bytes(),
+                )
+                .await;
+            }
+        }
+    });
+    let manager = SessionManager::new();
+    for attempt in 0..3 {
+        let result = details::read(
+            target(Protocol::Http, format!("http://{endpoint}")),
+            &manager,
+            ID,
+        )
+        .await
+        .unwrap();
+        let dto = serde_json::to_value(result).unwrap();
+        assert_eq!(dto["name"], "web");
+        assert_eq!(dto["health"]["log"][0]["output"], "probe failed");
+        assert_eq!(dto["mounts"][0]["type"], "bind");
+        assert_eq!(dto["mounts"][0]["writable"], false);
+        assert_eq!(dto["ports"][0]["containerPort"], "53/udp");
+        assert_eq!(dto["ports"][1]["hostPort"], "8080");
+        assert!(dto["startedAt"].is_null() && !dto.to_string().contains("PRIVATE"));
+        match attempt {
+            0 => assert!(dto["exitCode"] == 137 && dto["stats"].is_null()),
+            1 => assert!(dto["exitCode"].is_null() && dto["stats"].is_null()),
+            _ => assert_eq!(
+                dto["stats"],
+                json!({"cpuPercent":50.0,"memoryBytes":900,"memoryLimitBytes":2000})
+            ),
+        }
+    }
+    server.await.unwrap();
 }
 
 #[test]
@@ -316,6 +423,7 @@ async fn follow_delivers_text_before_eof_and_continues_on_the_same_connection() 
         ID,
         &output,
         &ack,
+        follow::LogQuery::default(),
     )
     .await
     .unwrap();
@@ -362,12 +470,21 @@ async fn cancelling_an_idle_follow_disconnects_http_and_ssh_even_before_the_head
         remote.transport = Access::Ssh;
         let output = tauri::ipc::Channel::new(|_| panic!("idle engine returned data"));
         let ack = Notify::new();
-        with_log_tunnel(
+        with_window_tunnel(
             remote,
             &sessions,
             Some(config.clone()),
             async { cancelled.await.unwrap() },
-            |remote| follow::read_stream(remote, &sessions, ID, &output, &ack),
+            |remote| {
+                follow::read_stream(
+                    remote,
+                    &sessions,
+                    ID,
+                    &output,
+                    &ack,
+                    follow::LogQuery::default(),
+                )
+            },
         )
         .await
         .unwrap();

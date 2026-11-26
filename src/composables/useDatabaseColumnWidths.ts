@@ -76,8 +76,8 @@ function measureColumnContent(
   widest = context.measureText(header.textContent?.trim() ?? '').width
   context.font = `${bodyStyle.fontWeight} ${bodyStyle.fontSize} ${bodyStyle.fontFamily}`
   for (const row of table.querySelectorAll('tbody tr')) {
-    const cell = row.children[index]
-    if (!cell) continue
+    const cell = row.children[index] as HTMLTableCellElement | undefined
+    if (!cell || cell.colSpan > 1) continue
     widest = Math.max(
       widest,
       context.measureText(cell.textContent?.trim() ?? '').width

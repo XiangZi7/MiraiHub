@@ -96,8 +96,11 @@ const minWidth = computed(
         </th>
       </tr>
     </thead>
-    <tbody>
-      <slot />
-    </tbody>
+    <!-- 分组列表可提供多个语义化行组，普通列表继续使用默认表体。 -->
+    <slot name="body">
+      <tbody>
+        <slot />
+      </tbody>
+    </slot>
   </table>
 </template>

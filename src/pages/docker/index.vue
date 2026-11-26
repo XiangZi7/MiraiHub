@@ -10,12 +10,17 @@ import AppEmptyState from '@/components/ui/AppEmptyState.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import IconButton from '@/components/ui/IconButton.vue'
+import ContainerStatusChip from '@/pages/docker/components/container-status-chip.vue'
 import { toast } from '@/composables/useToast'
 import { useConnectionsStore } from '@/stores/connections'
 import { endpointOf, isDockerConnection } from '@/types/connection'
 import type { DockerContainer, DockerContainerAction } from '@/types/docker'
 import { dockerTargetFingerprint } from '@/utils/docker-target'
-import { openConnectionWindow, openDockerLogsWindow } from '@/utils/window'
+import {
+  openConnectionWindow,
+  openDockerDetailsWindow,
+  openDockerLogsWindow,
+} from '@/utils/window'
 
 const actions = [
   {
@@ -42,22 +47,15 @@ const actions = [
 ] as const
 
 const { t, locale } = useI18n()
-const columns = computed(
-  () =>
-    [
-      { name: 'name', label: t('名称'), width: 'max(7rem, 18cqw)' },
-      { name: 'image', label: t('镜像'), width: 'max(7rem, 20cqw)' },
-      { name: 'status', label: t('状态'), width: 'max(6rem, 14cqw)' },
-      { name: 'ports', label: t('端口'), width: 'max(6rem, 20cqw)' },
-      {
-        name: 'actions',
-        label: t('操作'),
-        width: 'var(--docker-actions-width)',
-        sortable: false,
-      },
-    ] as const
-)
-type ColumnName = (typeof columns.value)[number]['name']
+// 固定操作区后，再按剩余空间分配数据列。分组和平铺沿用同一组列宽存储键。
+const dataColumns = [
+  { name: 'name', label: '名称', minRem: 5.5, grouped: 0.21, flat: 0.25 },
+  { name: 'composeService', label: '服务', minRem: 4, grouped: 0.15, flat: 0 },
+  { name: 'image', label: '镜像', minRem: 5.5, grouped: 0.21, flat: 0.25 },
+  { name: 'status', label: '状态', minRem: 5, grouped: 0.19, flat: 0.22 },
+  { name: 'ports', label: '端口', minRem: 5.5, grouped: 0.24, flat: 0.28 },
+] as const
+type ColumnName = (typeof dataColumns)[number]['name'] | 'actions'
 const route = useRoute()
 const router = useRouter()
 const connections = useConnectionsStore()
@@ -89,31 +87,103 @@ const state = reactive({
   loading: false,
   // 区分读取错误和已成功读取的空列表。
   failed: false,
+  // 包含 Compose 项目的端点默认按项目展开，可随时切回平铺。
+  groupProjects: true,
+  // 只显示不健康、重启中、已退出或失效的容器。
+  issuesOnly: false,
+  // 折叠状态仅属于当前端点；空字符串代表独立容器组。
+  collapsedProjects: new Set<string>(),
   // 首次打开按引擎返回的顺序展示，点击表头后按所选列排序。
   sortBy: undefined as Exclude<ColumnName, 'actions'> | undefined,
   descending: false,
   // 按连接与容器加锁，切换连接再返回也能避免重复提交。
   pending: new Map<string, DockerContainerAction>(),
 })
-const { containers, loading, failed, sortBy, descending } = toRefs(state)
+const {
+  containers,
+  loading,
+  failed,
+  sortBy,
+  descending,
+  groupProjects,
+  issuesOnly,
+  collapsedProjects,
+} = toRefs(state)
 const collator = computed(
   () => new Intl.Collator(locale.value, { numeric: true, sensitivity: 'base' })
 )
+const hasProjects = computed(() =>
+  state.containers.some(container => container.composeProject)
+)
+const grouped = computed(() => state.groupProjects && hasProjects.value)
+const columns = computed(() => [
+  ...dataColumns
+    .filter(column => grouped.value || column.name !== 'composeService')
+    .map(column => ({
+      name: column.name,
+      label: t(column.label),
+      width: `max(${column.minRem}rem, calc((100cqw - var(--docker-actions-width) - 2px) * ${grouped.value ? column.grouped : column.flat}))`,
+    })),
+  {
+    name: 'actions' as const,
+    label: t('操作'),
+    width: 'var(--docker-actions-width)',
+    sortable: false,
+  },
+])
+
+/** Docker 的清单在 Status 末尾返回括号形式的健康结果，不健康和退出均应可筛选。 */
+function needsAttention(container: DockerContainer): boolean {
+  return (
+    ['exited', 'dead', 'restarting'].includes(container.state) ||
+    /\(unhealthy\)/i.test(container.status)
+  )
+}
+
 const rows = computed(() => {
-  const items = state.containers.map(container => ({
+  const containers = state.issuesOnly
+    ? state.containers.filter(needsAttention)
+    : state.containers
+  const items = containers.map(container => ({
     container,
     activeAction: state.pending.get(`${profile.value?.id}/${container.id}`),
   }))
   const key = state.sortBy
-  if (!key) return items
+  if (!key || (key === 'composeService' && !grouped.value)) return items
   const value = (row: DockerContainer) =>
-    key === 'status' ? row.status || row.state : row[key]
+    key === 'status' ? row.status || row.state : (row[key] ?? '')
   return items.sort(
     (a, b) =>
       (state.descending ? -1 : 1) *
       collator.value.compare(value(a.container), value(b.container))
   )
 })
+
+/** 用官方项目标签划分行组；分组顺序独立于表头排序，独立容器总在项目之后。 */
+const groups = computed(() => {
+  if (!grouped.value) return [{ project: '', rows: rows.value }]
+  const byProject = new Map<string, typeof rows.value>()
+  for (const row of rows.value) {
+    const project = row.container.composeProject ?? ''
+    const members = byProject.get(project)
+    if (members) members.push(row)
+    else byProject.set(project, [row])
+  }
+  return Array.from(byProject, ([project, rows]) => ({ project, rows })).sort(
+    (a, b) => {
+      if (!a.project) return 1
+      if (!b.project) return -1
+      return collator.value.compare(a.project, b.project)
+    }
+  )
+})
+
+/** 只改变所选项目的可见性，保留容器操作与引擎返回的行。 */
+function toggleProject(project: string): void {
+  if (state.collapsedProjects.has(project))
+    state.collapsedProjects.delete(project)
+  else state.collapsedProjects.add(project)
+}
 
 /** 首次点击列名以升序排列，再次点击同列反向。 */
 function sortContainers(name: ColumnName): void {
@@ -198,15 +268,21 @@ async function runAction(
   }
 }
 
-/** 打开所选连接和容器的日志窗口，保留列表位置。 */
-async function openLogs(container: DockerContainer): Promise<void> {
+/** 在现有原生窗口框架中打开对应容器的日志或详情，列表保持当前位置。 */
+async function openContainer(
+  container: DockerContainer,
+  view: 'logs' | 'details'
+): Promise<void> {
   const selected = profile.value
   if (!selected) return
   try {
-    await openDockerLogsWindow(selected.id, container.id, container.name)
+    const openWindow =
+      view === 'logs' ? openDockerLogsWindow : openDockerDetailsWindow
+    await openWindow(selected.id, container.id, container.name)
   } catch (error) {
     toast.error({
-      title: t('无法打开容器日志窗口'),
+      title:
+        view === 'logs' ? t('无法打开容器日志窗口') : t('无法打开容器详情窗口'),
       description: errorMessage(error),
     })
   }
@@ -216,6 +292,7 @@ watch(
   scope,
   () => {
     state.containers = []
+    state.collapsedProjects.clear()
     void refresh()
   },
   { immediate: true }
@@ -234,17 +311,73 @@ onScopeDispose(() => {
     >
       <!-- 容器工具栏显示当前连接，连接选择器与左侧列表保持同步。 -->
       <header
-        class="border-line-soft flex shrink-0 items-center gap-2 border-b px-3 py-2"
+        class="border-line-soft flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2"
       >
         <!-- 工作区图标与标题。 -->
-        <AppIcon
-          name="lucide:container"
-          :size="16"
-          class="text-txt-3"
-        />
-        <h2 class="text-txt-2 mr-auto text-xs font-medium">
-          {{ t('Docker 容器') }}
-        </h2>
+        <div class="mr-auto flex shrink-0 items-center gap-2">
+          <span
+            class="bg-accent/10 text-accent grid size-7 place-items-center rounded-md"
+          >
+            <AppIcon
+              name="lucide:container"
+              :size="15"
+            />
+          </span>
+          <h2 class="text-txt text-[13px] font-semibold">
+            {{ t('Docker 容器') }}
+          </h2>
+          <span
+            v-if="containers.length"
+            class="bg-hover text-txt-2 rounded-full px-2 text-[11px] leading-5 tabular-nums"
+          >
+            {{
+              issuesOnly
+                ? rows.length + ' / ' + containers.length
+                : containers.length
+            }}
+          </span>
+        </div>
+        <!-- 项目分组与状态筛选均作用于当前列表，切换时不重新请求引擎。 -->
+        <div
+          v-if="profile"
+          role="group"
+          :aria-label="t('容器视图')"
+          class="bg-panel border-line-soft flex shrink-0 items-center gap-0.5 rounded-lg border p-0.5"
+        >
+          <AppButton
+            v-if="hasProjects"
+            variant="ghost"
+            size="sm"
+            class="aria-pressed:bg-accent/15 aria-pressed:text-accent shrink-0 gap-1.5 focus-visible:z-10"
+            :title="t('按 Compose 项目分组')"
+            :aria-label="t('按 Compose 项目分组')"
+            :aria-pressed="groupProjects"
+            @click="groupProjects = !groupProjects"
+          >
+            <AppIcon
+              name="lucide:layers"
+              :size="14"
+            />
+            <span class="hidden @2xl:inline">{{
+              t('按 Compose 项目分组')
+            }}</span>
+          </AppButton>
+          <AppButton
+            variant="ghost"
+            size="sm"
+            class="aria-pressed:bg-accent/15 aria-pressed:text-accent shrink-0 gap-1.5 focus-visible:z-10"
+            :title="t('仅看异常或已退出')"
+            :aria-label="t('仅看异常或已退出')"
+            :aria-pressed="issuesOnly"
+            @click="issuesOnly = !issuesOnly"
+          >
+            <AppIcon
+              name="lucide:list-filter"
+              :size="14"
+            />
+            <span class="hidden @2xl:inline">{{ t('仅看异常或已退出') }}</span>
+          </AppButton>
+        </div>
         <!-- 连接选择器只展示独立保存的 Docker 配置。 -->
         <AppSelect
           v-if="profileOptions.length"
@@ -324,96 +457,213 @@ onScopeDispose(() => {
           :title="t('此主机上没有 Docker 容器')"
           class="m-auto"
         />
+        <!-- 当前端点有容器但全部通过健康筛选时，提供快捷的复位操作。 -->
+        <AppEmptyState
+          v-else-if="!rows.length"
+          icon="lucide:list-filter"
+          :title="t('没有异常或已退出的容器')"
+          class="m-auto"
+        >
+          <AppButton
+            size="sm"
+            @click="issuesOnly = false"
+            >{{ t('显示全部容器') }}</AppButton
+          >
+        </AppEmptyState>
+        <!-- 沿用数据库表格的统一列宽、排序及表头，一个项目对应一个可独立折叠的行组。 -->
         <AppDataTable
           v-else
           :columns="columns"
           width-scope="docker:containers"
           :sort-by="sortBy"
           :descending="descending"
-          class="[--docker-actions-width:8.5rem] @3xl:[--docker-actions-width:16.5rem]"
+          class="docker-container-list [--docker-actions-width:9rem] @3xl:[--docker-actions-width:20.5rem]"
           @sort="sortContainers"
         >
-          <tr
-            v-for="{ container, activeAction } in rows"
-            :key="container.id"
-            class="border-line-soft even:bg-panel/40 hover:bg-hover/60 focus-within:bg-hover/60 border-b"
-          >
-            <th
-              scope="row"
-              class="text-txt border-line-soft border-r px-3 py-2 text-left font-mono font-medium wrap-anywhere"
+          <template #body>
+            <tbody
+              v-for="group in groups"
+              :key="group.project"
             >
-              {{ container.name }}
-            </th>
-            <td
-              class="border-line-soft border-r px-3 py-2 font-mono wrap-anywhere"
-            >
-              {{ container.image }}
-            </td>
-            <td class="border-line-soft border-r px-3 py-2 wrap-anywhere">
-              {{ container.status || container.state }}
-            </td>
-            <td
-              class="border-line-soft border-r px-3 py-2 font-mono wrap-anywhere"
-            >
-              {{ container.ports || '—' }}
-            </td>
-            <td class="px-2 py-1">
-              <!-- 行内操作组根据容器状态启用按钮，执行中的容器独立显示进度。 -->
-              <div
-                class="scroll-thin flex items-center gap-0.5 overflow-x-auto"
+              <tr
+                v-if="grouped"
+                class="bg-panel border-line-soft border-b"
               >
-                <AppButton
-                  v-for="action in actions"
-                  :key="action.id"
-                  variant="ghost"
-                  size="sm"
-                  class="h-7 min-w-7 shrink-0 gap-1 px-1.5 whitespace-nowrap"
-                  :disabled="
-                    loading ||
-                    Boolean(activeAction) ||
-                    !supportsAction(container, action.id)
-                  "
-                  :title="t(action.title, { name: container.name })"
-                  :aria-label="t(action.title, { name: container.name })"
-                  @click="runAction(container, action)"
+                <th
+                  :colspan="columns.length"
+                  scope="rowgroup"
+                  class="text-txt-2 text-left font-medium"
                 >
-                  <!-- 状态图标标识启停、重启以及等待引擎结果。 -->
-                  <AppIcon
-                    :name="
-                      activeAction === action.id
-                        ? 'lucide:loader-circle'
-                        : action.icon
-                    "
-                    :size="13"
-                    :class="
-                      activeAction === action.id && 'motion-safe:animate-spin'
-                    "
-                  />
-                  <span class="hidden @3xl:inline">{{ t(action.label) }}</span>
-                </AppButton>
-                <!-- 日志按钮打开独立窗口，可与容器列表同时查看。 -->
-                <AppButton
-                  variant="ghost"
-                  size="sm"
-                  class="h-7 min-w-7 shrink-0 gap-1 px-1.5 whitespace-nowrap"
-                  :title="t('查看容器“{name}”的日志', { name: container.name })"
-                  :aria-label="
-                    t('查看容器“{name}”的日志', { name: container.name })
-                  "
-                  @click="openLogs(container)"
+                  <!-- 展开按钮同时标注项目名称和当前筛选结果数，支持键盘切换。 -->
+                  <AppButton
+                    variant="bare"
+                    class="hover:bg-hover focus-visible:outline-accent flex w-full items-center gap-2 px-3 py-2 text-left focus-visible:-outline-offset-2"
+                    :aria-expanded="!collapsedProjects.has(group.project)"
+                    @click="toggleProject(group.project)"
+                  >
+                    <AppIcon
+                      :name="
+                        collapsedProjects.has(group.project)
+                          ? 'lucide:chevron-right'
+                          : 'lucide:chevron-down'
+                      "
+                      :size="12"
+                    />
+                    <AppIcon
+                      :name="
+                        group.project ? 'lucide:layers' : 'lucide:container'
+                      "
+                      :size="14"
+                    />
+                    <span class="truncate">{{
+                      group.project || t('独立容器')
+                    }}</span>
+                    <span
+                      class="bg-card text-txt-2 border-line-soft rounded-full border px-1.5 text-[10px] leading-4 tabular-nums"
+                      >{{ group.rows.length }}</span
+                    >
+                  </AppButton>
+                </th>
+              </tr>
+              <template
+                v-if="!grouped || !collapsedProjects.has(group.project)"
+              >
+                <tr
+                  v-for="{ container, activeAction } in group.rows"
+                  :key="container.id"
+                  class="border-line-soft even:bg-panel/40 hover:bg-hover/60 focus-within:bg-hover/60 border-b"
+                  @dblclick="openContainer(container, 'details')"
                 >
-                  <!-- 容器日志入口图标。 -->
-                  <AppIcon
-                    name="lucide:scroll-text"
-                    :size="13"
-                  />
-                  <span class="hidden @3xl:inline">{{ t('日志') }}</span>
-                </AppButton>
-              </div>
-            </td>
-          </tr>
+                  <th
+                    scope="row"
+                    class="text-txt border-line-soft border-r px-3 py-2 text-left font-mono font-medium wrap-anywhere"
+                  >
+                    {{ container.name }}
+                  </th>
+                  <td
+                    v-if="grouped"
+                    class="border-line-soft border-r px-3 py-2 font-mono wrap-anywhere"
+                  >
+                    {{
+                      (container.composeProject && container.composeService) ||
+                      '—'
+                    }}
+                  </td>
+                  <td
+                    class="border-line-soft border-r px-3 py-2 font-mono wrap-anywhere"
+                  >
+                    {{ container.image }}
+                  </td>
+                  <td class="border-line-soft border-r px-3 py-2 wrap-anywhere">
+                    <ContainerStatusChip
+                      :state="container.state"
+                      :label="container.status || container.state"
+                    />
+                  </td>
+                  <td
+                    class="border-line-soft border-r px-3 py-2 font-mono wrap-anywhere"
+                  >
+                    {{ container.ports || '—' }}
+                  </td>
+                  <td
+                    class="px-1 py-1"
+                    @dblclick.stop
+                  >
+                    <!-- 行内操作组根据容器状态启用按钮，执行中的容器独立显示进度。 -->
+                    <div
+                      class="@container/row-actions flex flex-wrap items-center gap-0.5"
+                    >
+                      <AppButton
+                        v-for="action in actions"
+                        :key="action.id"
+                        variant="ghost"
+                          class="h-7 min-w-6 shrink-0 gap-1 px-1 py-1 text-[11px] whitespace-nowrap"
+                        :class="
+                          action.id === 'stop' &&
+                          'enabled:hover:text-danger enabled:hover:bg-danger/10'
+                        "
+                        :disabled="
+                          loading ||
+                          Boolean(activeAction) ||
+                          !supportsAction(container, action.id)
+                        "
+                        :title="t(action.title, { name: container.name })"
+                        :aria-label="t(action.title, { name: container.name })"
+                        @click="runAction(container, action)"
+                      >
+                        <!-- 状态图标标识启停、重启以及等待引擎结果。 -->
+                        <AppIcon
+                          :name="
+                            activeAction === action.id
+                              ? 'lucide:loader-circle'
+                              : action.icon
+                          "
+                          :size="13"
+                          :class="
+                            activeAction === action.id &&
+                            'motion-safe:animate-spin'
+                          "
+                        />
+                        <span class="hidden @[19rem]/row-actions:inline">{{
+                          t(action.label)
+                        }}</span>
+                      </AppButton>
+                      <!-- 详情入口与双击容器行一致，窄窗口保留可访问的图标按钮。 -->
+                      <AppButton
+                        variant="ghost"
+                          class="h-7 min-w-6 shrink-0 gap-1 px-1 py-1 text-[11px] whitespace-nowrap"
+                        :title="
+                          t('查看容器“{name}”的详情', { name: container.name })
+                        "
+                        :aria-label="
+                          t('查看容器“{name}”的详情', { name: container.name })
+                        "
+                        @click="openContainer(container, 'details')"
+                      >
+                        <AppIcon
+                          name="lucide:info"
+                          :size="13"
+                        />
+                        <span class="hidden @[19rem]/row-actions:inline">{{
+                          t('详情')
+                        }}</span>
+                      </AppButton>
+                      <!-- 日志按钮打开独立窗口，可与容器列表同时查看。 -->
+                      <AppButton
+                        variant="ghost"
+                          class="h-7 min-w-6 shrink-0 gap-1 px-1 py-1 text-[11px] whitespace-nowrap"
+                        :title="
+                          t('查看容器“{name}”的日志', { name: container.name })
+                        "
+                        :aria-label="
+                          t('查看容器“{name}”的日志', { name: container.name })
+                        "
+                        @click="openContainer(container, 'logs')"
+                      >
+                        <!-- 容器日志入口图标。 -->
+                        <AppIcon
+                          name="lucide:scroll-text"
+                          :size="13"
+                        />
+                        <span class="hidden @[19rem]/row-actions:inline">{{
+                          t('日志')
+                        }}</span>
+                      </AppButton>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </template>
         </AppDataTable>
       </div>
     </section>
   </main>
 </template>
+
+<style scoped>
+/* 末列拖动柄仍保留完整命中宽度；抵住右边界时不撑开列表滚动区。 */
+.docker-container-list :deep(thead th:last-child .column-resize-handle) {
+  right: 0;
+}
+</style>

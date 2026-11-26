@@ -27,6 +27,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         docker::docker_test,
         docker::docker_containers,
         docker::docker_container_action,
+        docker::details::docker_container_details,
         docker::docker_container_logs,
         docker::follow::docker_logs_follow,
         docker::follow::docker_logs_follow_stop,
@@ -89,6 +90,7 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         platform::commands::open_connection_window,
         platform::commands::open_settings_window,
         platform::commands::open_docker_logs_window,
+        platform::commands::open_docker_details_window,
         platform::column_tags::open_column_tags_window,
         platform::column_tags::column_tags_target,
         platform::column_tags::column_tags_submit,
@@ -224,14 +226,10 @@ pub fn handler() -> impl Fn(Invoke<Wry>) -> bool + Send + Sync + 'static {
         local_terminal::local_terminal_close,
     ];
     move |invoke: Invoke<Wry>| {
-        if invoke
-            .message
-            .webview()
-            .label()
-            .starts_with(platform::docker_logs::PREFIX)
-            && !platform::docker_logs::allows(invoke.message.command())
+        if platform::docker_window::Kind::from_label(invoke.message.webview().label())
+            .is_some_and(|kind| !kind.allows(invoke.message.command()))
         {
-            invoke.resolver.reject("此日志窗口只支持读取容器日志");
+            invoke.resolver.reject("此窗口只支持读取对应容器的数据");
             return true;
         }
         dispatch(invoke)

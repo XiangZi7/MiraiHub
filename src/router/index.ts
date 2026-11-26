@@ -20,8 +20,10 @@ export function createAppRouter(
   history: RouterHistory = createWebHashHistory()
 ) {
   const router = createRouter({ history, routes })
-  const logWindow =
-    entry.surface === 'docker-logs' ? router.resolve(entry.path) : undefined
+  const containerWindow =
+    entry.surface === 'docker-logs' || entry.surface === 'docker-details'
+      ? router.resolve(entry.path)
+      : undefined
   const fallback = (): string => {
     if (entry.surface !== 'workspace') return entry.path
     try {
@@ -36,15 +38,15 @@ export function createAppRouter(
   }
 
   router.beforeEach(to => {
-    // 日志子窗口始终对应打开时的容器，刷新和历史导航都回到同一目标。
+    // Docker 子窗口始终对应打开时的连接和容器。
     if (
-      logWindow &&
-      (to.name !== logWindow.name ||
+      containerWindow &&
+      (to.name !== containerWindow.name ||
         ['connectionId', 'containerId', 'containerName'].some(
-          key => to.query[key] !== logWindow.query[key]
+          key => to.query[key] !== containerWindow.query[key]
         ))
     )
-      return { name: 'docker-logs', query: logWindow.query, replace: true }
+      return { path: containerWindow.path, query: containerWindow.query, replace: true }
     if (
       to.name === 'not-found' ||
       to.path === '/' ||

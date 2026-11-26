@@ -10,6 +10,7 @@ const boundary = dataModule(`
   export const listContainers = (...args) => mocks.list(...args);
   export const containerAction = (...args) => mocks.action(...args);
   export const openDockerLogsWindow = (...args) => mocks.openLogs(...args);
+  export const openDockerDetailsWindow = (...args) => mocks.openDetails(...args);
   export const openConnectionWindow = () => {};
   export const toast = { success: message => mocks.messages.push(message), error: error => mocks.messages.push(error) };
   export const errorMessage = error => error.message;
@@ -18,6 +19,10 @@ const boundary = dataModule(`
 const select = dataModule(`
   import { h } from ${JSON.stringify(import.meta.resolve('vue'))};
   export default { props:['options'], setup: props => () => h('select', { options: props.options }) };
+`)
+const emptyState = dataModule(`
+  import { h } from ${JSON.stringify(import.meta.resolve('vue'))};
+  export default { props:['title'], setup: (props, { slots }) => () => h('section', {title:props.title}, slots.default?.()) };
 `)
 const page = 'src/pages/docker/index.vue'
 const load = sourceLoader(
@@ -34,6 +39,7 @@ const load = sourceLoader(
       ].map(key => [key, boundary])
     ),
     '@/components/ui/AppSelect.vue': select,
+    '@/components/ui/AppEmptyState.vue': emptyState,
     '@/composables/useSettings': dataModule(
       'export const settingNumber = () => 0, settingsSnapshot = {};'
     ),
@@ -126,6 +132,7 @@ async function mount(t, overrides = {}) {
       settings.endpoint === 'alpha' ? [first, second] : [other],
     action: async () => {},
     openLogs: async () => {},
+    openDetails: async () => {},
     ...overrides,
   })
   const root = node('root')
@@ -253,6 +260,58 @@ test('the shared sortable and resizable table opens a dedicated logs window for 
     title: '无法打开容器日志窗口',
     description: 'window unavailable',
   })
+})
+
+test('Compose projects collapse independently, filter by container health, and preserve flat sorting and details targets', async t => {
+  const containers = [
+    { ...container('z', 'zeta', 'running'), composeProject: 'website', composeService: 'api', status: 'Up 2h (unhealthy)' },
+    { ...container('a', 'alpha', 'running'), composeProject: 'website', composeService: 'web', status: 'Up 1d (healthy)' },
+    { ...container('r', 'app-1', 'restarting'), composeProject: 'app', composeService: 'api' },
+    { ...container('s', 'renamed', 'exited'), composeProject: 'app', composeService: 'worker' },
+    container('x', 'app-api-2', 'running'),
+    container('d', 'orphan', 'dead'),
+  ]
+  const details = []
+  const { button, elements, switchTo } = await mount(t, {
+    openDetails: (...args) => details.push(args),
+    list: settings => settings.endpoint === 'alpha' ? containers : [other],
+  })
+  const bodies = () => elements().filter(el => el.type === 'tbody')
+  const names = el => walk(el).filter(el => el.props.scope === 'row').map(el => el.text)
+  const groups = () => bodies().map(body => names(body))
+  const projectButton = body => walk(body).find(el => el.props['aria-expanded'] !== undefined)
+  assert.deepEqual(groups(), [['app-1', 'renamed'], ['zeta', 'alpha'], ['app-api-2', 'orphan']])
+  assert.ok(elements().some(el => el.props['data-column'] === 'composeService'))
+  assert.equal(projectButton(bodies()[1]).props['aria-expanded'], true)
+  projectButton(bodies()[1]).props.onClick()
+  await flush()
+  assert.deepEqual(groups(), [['app-1', 'renamed'], [], ['app-api-2', 'orphan']])
+  assert.equal(projectButton(bodies()[1]).props['aria-expanded'], false)
+  await button('仅看异常或已退出').onClick()
+  projectButton(bodies()[1]).props.onClick()
+  await flush()
+  assert.deepEqual(groups(), [['app-1', 'renamed'], ['zeta'], ['orphan']])
+  assert.equal(button('仅看异常或已退出')['aria-pressed'], true)
+  await button('按 Compose 项目分组').onClick()
+  await flush()
+  assert.equal(bodies().length, 1)
+  assert.equal(elements().find(el => el.props['data-column'] === 'composeService'), undefined)
+  assert.deepEqual(groups(), [['zeta', 'app-1', 'renamed', 'orphan']])
+  const sortName = elements().find(el => el.props['data-column'] === 'name')
+  walk(sortName).find(el => el.type === 'button').props.onClick()
+  await flush()
+  assert.deepEqual(groups(), [['app-1', 'orphan', 'renamed', 'zeta']])
+  await button('查看容器“renamed”的详情').onClick()
+  const row = elements().find(el => el.type === 'tr' && names(el)[0] === 'orphan')
+  await row.props.onDblclick()
+  assert.deepEqual(details, [['alpha', 's', 'renamed'], ['alpha', 'd', 'orphan']])
+  await switchTo('beta')
+  const empty = elements().find(el => el.props.title === '没有异常或已退出的容器')
+  assert.ok(empty)
+  walk(empty).find(el => el.type === 'button').props.onClick()
+  await flush()
+  assert.deepEqual(groups(), [[other.name]])
+  assert.equal(button('按 Compose 项目分组'), undefined)
 })
 
 test('changing SSH proxy, jump selection or a referenced jump host invalidates the previous Docker target', async t => {

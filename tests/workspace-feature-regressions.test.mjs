@@ -405,11 +405,16 @@ async function mountLogWindow(t, snapshot = '') {
     export const mock = {}
     export const useConnectionsStore = () => mock.connections
     export const containerLogs = (...args) => mock.logs(...args)
-    export const followContainerLogs = (...args) => mock.follow(...args)
+    export const streamContainerLogs = (...args) => mock.follow(...args)
     export const errorMessage = error => error.message
     export const translateNativeMessage = String
     export const IS_TAURI = true, closeWindow = () => { mock.closed = true }, toggleMaximizeWindow = () => {}
     export const minimizeWindow = () => {}, isMaximized = { value: false }, trackMaximized = () => () => {}
+  `)
+  const filterInput = dataModule(`
+    import { h } from ${vue}
+    export default { props: ['modelValue'], emits: ['update:modelValue'], setup: (props, { emit }) =>
+      () => h('input', { value: props.modelValue, onInput: value => emit('update:modelValue', value) }) }
   `)
   const logLoad = sourceLoader({
     '@/api/docker': boundary,
@@ -417,7 +422,9 @@ async function mountLogWindow(t, snapshot = '') {
     '@/stores/connections': boundary,
     '@/i18n/native': boundary,
     '@/utils/window': boundary,
-  }, [path, 'src/components/ui/AppButton.vue', 'src/components/ui/AppSwitch.vue', 'src/components/ui/IconButton.vue', 'src/components/ui/DocumentWindowFrame.vue', 'src/components/ui/WindowControls.vue'])
+    '@/components/ui/AppInput.vue': filterInput,
+    '@/components/ui/AppDatePicker.vue': filterInput,
+  }, [path, 'src/pages/docker/components/log-filters.vue', 'src/components/ui/AppButton.vue', 'src/components/ui/AppSwitch.vue', 'src/components/ui/IconButton.vue', 'src/components/ui/DocumentWindowFrame.vue', 'src/components/ui/WindowControls.vue'])
   const { default: LogPage } = await logLoad(path)
   const { mock } = await import(boundary)
   const id = 'a'.repeat(64)
@@ -559,6 +566,72 @@ test('Docker live output starts at the bottom, follows reader intent, bounds his
   displayed.value = false
   await flush()
   assert.ok(streams[4].stopped)
+})
+
+test('Docker log filters restore raw history, validate local dates, search older ranges and retain matching live fragments', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const history = 'Error one\nERROR GET /healthz\nnormal\n'
+  const { calls, nodes, namedButton, mock, contains, flush } = await mountLogWindow(t, history)
+  const streams = []
+  mock.follow = (_settings, _id, _connection, text, query) => {
+    const job = { text, query, stopped: false }
+    const done = new Promise(resolve => { job.resolve = resolve })
+    streams.push(job)
+    return { done, stop: async () => { job.stopped = true; job.resolve() } }
+  }
+  const pre = () => nodes().find(el => el.type === 'pre')?.text
+  const input = (label, value) => nodes().find(el => el.props['aria-label'] === label).props.onInput(value)
+  const apply = async () => { nodes().find(el => el.type === 'form').props.onSubmit({ preventDefault() {} }); await flush() }
+  namedButton('筛选日志').onClick()
+  await flush()
+  input('包含关键词', 'error')
+  input('排除关键词', '/healthz')
+  await apply()
+  assert.equal(pre(), 'Error one\n')
+  assert.equal(calls.length, 1)
+  input('排除关键词', 'error')
+  await apply()
+  assert.ok(contains('没有符合筛选条件的日志'))
+  namedButton('清除筛选').onClick()
+  await flush()
+  assert.equal(pre(), history)
+  input('开始时间', '2025-02-30 08:00:00')
+  await apply()
+  assert.ok(contains('请输入有效的日期'))
+  input('开始时间', '2025-02-28 08:00:00')
+  input('结束时间', '2025-02-27 09:30:00')
+  await apply()
+  assert.ok(contains('日志开始时间必须早于结束时间'))
+  assert.equal(streams.length, 0)
+  input('结束时间', '2025-02-28 09:30:00')
+  input('包含关键词', 'ERROR')
+  input('排除关键词', '/healthz')
+  await apply()
+  assert.equal(pre(), undefined)
+  const bounds = { since: new Date(2025, 1, 28, 8).getTime() / 1000, until: new Date(2025, 1, 28, 9, 30).getTime() / 1000 }
+  assert.deepEqual(streams[0].query, { ...bounds, follow: false })
+  streams[0].text('Error: earlier in the range\n')
+  streams[0].text('OK /healthz\n'.repeat(15000))
+  streams[0].text('err')
+  streams[0].text('or split\nError GET /heal')
+  streams[0].text('thz\n')
+  streams[0].resolve()
+  await flush()
+  assert.equal(pre(), 'Error: earlier in the range\nerror split\n')
+  nodes().find(el => el.props.role === 'switch').props['onUpdate:modelValue'](true)
+  await flush()
+  assert.deepEqual(streams[1].query, { ...bounds, follow: true })
+  input('结束时间', '')
+  await apply()
+  assert.ok(streams[1].stopped)
+  assert.deepEqual(streams[2].query, { since: bounds.since, until: undefined, follow: true })
+  streams[1].text('Error stale\n')
+  streams[2].text('Error GET /healthz\n')
+  assert.equal(pre(), undefined)
+  streams[2].text('new error\n')
+  t.mock.timers.tick(50)
+  await flush()
+  assert.equal(pre(), 'new error\n')
 })
 
 test('database content is shown in main tabs with connection-specific identity and working close/add/activation', async t => {

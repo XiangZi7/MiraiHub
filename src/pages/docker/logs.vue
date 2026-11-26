@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onScopeDispose, reactive, watch } from 'vue'
+import { computed, onScopeDispose, reactive, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEventListener } from '@vueuse/core'
-import { containerLogs, followContainerLogs } from '@/api/docker'
+import { containerLogs, streamContainerLogs } from '@/api/docker'
 import { errorMessage } from '@/api/ssh'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -11,8 +11,10 @@ import IconButton from '@/components/ui/IconButton.vue'
 import DocumentWindowFrame from '@/components/ui/DocumentWindowFrame.vue'
 import { translateNativeMessage } from '@/i18n/native'
 import { useConnectionsStore } from '@/stores/connections'
+import LogFilters from '@/pages/docker/components/log-filters.vue'
 import { useContainerLogOutput } from '@/pages/docker/use-container-log-output'
 import { isDockerConnection } from '@/types/connection'
+import type { DockerLogFilter } from '@/types/docker'
 import { dockerTargetFingerprint } from '@/utils/docker-target'
 import { closeWindow, IS_TAURI } from '@/utils/window'
 
@@ -43,18 +45,27 @@ const title = computed(() =>
 )
 const output = useContainerLogOutput()
 const { content, truncated } = output
+const filterBarId = useId()
+const filters = reactive<DockerLogFilter>({ include: '', exclude: '' })
+const hasRange = computed(
+  () => filters.since !== undefined || filters.until !== undefined
+)
+const filtered = computed(() =>
+  Boolean(filters.include || filters.exclude || hasRange.value)
+)
 const state = reactive({
   // 连接被编辑或删除后，当前窗口保持锁定以免误读不同主机的日志。
   changed: false,
   loading: false,
   error: '',
+  filterOpen: false,
   mode: 'snapshot' as 'snapshot' | 'live' | 'paused' | 'ended',
 })
 const meta = computed(() =>
   [
     profile.value?.name,
     validIds.value ? props.containerId.slice(0, 12) : '',
-    state.mode === 'snapshot'
+    state.mode === 'snapshot' && !hasRange.value
       ? t('最近 200 行')
       : state.mode === 'ended'
         ? t('日志流已结束')
@@ -66,7 +77,7 @@ const meta = computed(() =>
 )
 let openedTarget = ''
 let generation = 0
-let stream: ReturnType<typeof followContainerLogs> | undefined
+let stream: ReturnType<typeof streamContainerLogs> | undefined
 let stopping = Promise.resolve()
 let retryLive = false
 
@@ -93,7 +104,7 @@ watch(target, current => {
   if (openedTarget && current !== openedTarget) targetChanged()
 })
 
-/** 首次读取快照；实时模式只开一次自带 200 行历史的流，第一段替换旧快照。 */
+/** 无时段时读取最近 200 行；时段历史和实时输出均分块传输，并可中途取消。 */
 async function read(live: boolean): Promise<void> {
   if (state.changed || !validIds.value) return
   cancelRead()
@@ -115,7 +126,7 @@ async function read(live: boolean): Promise<void> {
     const selected = profile.value
     if (!selected) throw new Error(t('找不到此日志窗口使用的 Docker 连接'))
     openedTarget = target.value
-    if (!live) {
+    if (!live && !hasRange.value) {
       const text = await containerLogs(
         selected.settings,
         props.containerId,
@@ -126,7 +137,7 @@ async function read(live: boolean): Promise<void> {
       return
     }
     let received = false
-    stream = followContainerLogs(
+    stream = streamContainerLogs(
       selected.settings,
       props.containerId,
       selected.id,
@@ -135,13 +146,14 @@ async function read(live: boolean): Promise<void> {
           return
         output.write(text, !received)
         received = true
-      }
+      },
+      { follow: live, since: filters.since, until: filters.until }
     )
-    state.loading = false
+    state.loading = !live
     await stream.done
     if (current !== generation) return
     if (!received) output.write('', true)
-    state.mode = 'ended'
+    state.mode = live ? 'ended' : 'snapshot'
   } catch (error) {
     if (current !== generation) return
     state.error = translateNativeMessage(errorMessage(error))
@@ -152,6 +164,24 @@ async function read(live: boolean): Promise<void> {
       stream = undefined
       state.loading = false
     }
+  }
+}
+
+/** 本地重筛缓存；涉及时间段时重新扫描引擎历史，收起筛选栏也保留生效条件。 */
+function applyFilters(next: DockerLogFilter): void {
+  const rangeChanged =
+    next.since !== filters.since || next.until !== filters.until
+  const wordsChanged =
+    next.include !== filters.include || next.exclude !== filters.exclude
+  if (!rangeChanged && !wordsChanged) return
+  const live = state.mode === 'live'
+  Object.assign(filters, next)
+  if (rangeChanged || hasRange.value) {
+    output.clear()
+    output.setFilter(next.include, next.exclude)
+    void read(live)
+  } else {
+    output.setFilter(next.include, next.exclude)
   }
 }
 
@@ -194,7 +224,9 @@ function close(): void {
 }
 
 useEventListener('keydown', event => {
-  if (event.key === 'Escape') close()
+  if (event.key !== 'Escape' || event.defaultPrevented) return
+  if (state.filterOpen) state.filterOpen = false
+  else close()
 })
 </script>
 
@@ -205,6 +237,20 @@ useEventListener('keydown', event => {
     :close-action="close"
   >
     <template #actions>
+      <!-- 日志筛选入口：已生效的筛选在收起工具栏后仍有提示。 -->
+      <IconButton
+        :icon="filtered ? 'lucide:list-filter-plus' : 'lucide:list-filter'"
+        :title="filtered ? t('筛选日志（已启用）') : t('筛选日志')"
+        :aria-expanded="state.filterOpen"
+        :aria-controls="state.filterOpen ? filterBarId : undefined"
+        class="focus-visible:ring-violet focus-visible:ring-2 focus-visible:outline-none"
+        :class="
+          (state.filterOpen || filtered) &&
+          'bg-violet/12 text-violet hover:bg-violet/20 hover:text-violet'
+        "
+        :disabled="state.changed || !validIds"
+        @click="state.filterOpen = !state.filterOpen"
+      />
       <!-- 实时开关从当前容器接收新增输出；关闭后保留已读日志。 -->
       <AppSwitch
         :label="t('实时日志')"
@@ -240,6 +286,13 @@ useEventListener('keydown', event => {
         }}
       </p>
       <template v-else>
+        <!-- 当前容器的筛选栏在日期和关键词一起提交后更新结果。 -->
+        <LogFilters
+          v-if="state.filterOpen"
+          :id="filterBarId"
+          :filters="filters"
+          @apply="applyFilters"
+        />
         <div
           v-if="state.error"
           class="border-danger/25 bg-danger/8 text-txt-2 flex shrink-0 items-center gap-3 border-b px-3 py-2 text-xs"
@@ -277,7 +330,13 @@ useEventListener('keydown', event => {
           v-else-if="!state.error"
           class="text-txt-3 m-auto text-xs"
         >
-          {{ state.mode === 'live' ? t('等待容器日志…') : t('该容器暂无日志') }}
+          {{
+            filtered
+              ? t('没有符合筛选条件的日志')
+              : state.mode === 'live'
+                ? t('等待容器日志…')
+                : t('该容器暂无日志')
+          }}
         </p>
       </template>
     </section>

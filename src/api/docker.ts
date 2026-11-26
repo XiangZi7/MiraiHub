@@ -7,6 +7,7 @@ import type {
   DockerConnectionSettings,
   DockerContainer,
   DockerContainerAction,
+  DockerContainerDetails,
 } from '@/types/docker'
 
 /** 从 Docker 配置找到保存的 SSH 凭据及跳板引用。 */
@@ -84,7 +85,8 @@ export function containerAction(
   )
 }
 
-async function logArgs(
+/** 子窗口使用自己的目标身份和 SSH 配置，由原生端管理临时会话。 */
+async function windowArgs(
   settings: DockerConnectionSettings,
   id: string,
   connectionId: string
@@ -101,6 +103,18 @@ async function logArgs(
   }
 }
 
+/** 读取当前详情窗口绑定的容器、健康检查以及运行资源。 */
+export async function containerDetails(
+  settings: DockerConnectionSettings,
+  id: string,
+  connectionId: string
+) {
+  return invoke<DockerContainerDetails>(
+    'docker_container_details',
+    await windowArgs(settings, id, connectionId)
+  )
+}
+
 /** 读取指定容器最近 200 行带时间戳的标准输出和错误输出。 */
 export async function containerLogs(
   settings: DockerConnectionSettings,
@@ -109,16 +123,17 @@ export async function containerLogs(
 ) {
   return invoke<string>(
     'docker_container_logs',
-    await logArgs(settings, id, connectionId)
+    await windowArgs(settings, id, connectionId)
   )
 }
 
-/** 订阅同一容器的历史和新增文本；停止时等原生端关闭流及临时 SSH 隧道。 */
-export function followContainerLogs(
+/** 按时段分块读取容器输出，可选择继续接收新增日志；停止时释放流和临时 SSH 隧道。 */
+export function streamContainerLogs(
   settings: DockerConnectionSettings,
   id: string,
   connectionId: string,
-  onText: (text: string) => void
+  onText: (text: string) => void,
+  query: { since?: number; until?: number; follow: boolean }
 ) {
   const subscriptionId = crypto.randomUUID()
   let registered = false
@@ -149,12 +164,13 @@ export function followContainerLogs(
     })
   }
   const done = (async () => {
-    const args = await logArgs(settings, id, connectionId)
+    const args = await windowArgs(settings, id, connectionId)
     if (stopped) return
     try {
       const output = new Channel(receive)
       await invoke<void>('docker_logs_follow', {
         ...args,
+        query,
         subscriptionId,
         output,
       })

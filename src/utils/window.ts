@@ -167,6 +167,15 @@ export function openDockerLogsWindow(
   })
 }
 
+/** 打开或聚焦容器详情，沿用与日志相同的原生文件窗口。 */
+export function openDockerDetailsWindow(
+  connectionId: string,
+  containerId: string,
+  containerName?: string
+): Promise<void> {
+  return invoke<void>('open_docker_details_window', { connectionId, containerId, containerName })
+}
+
 /** 请求 Rust 创建原生设置子窗口；浏览器开发态降级为可缩放 popup。 */
 export function openSettingsWindow(): void {
   if (!IS_TAURI) {

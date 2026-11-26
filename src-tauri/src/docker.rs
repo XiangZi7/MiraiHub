@@ -1,4 +1,5 @@
-//! Docker Engine API：仅暴露容器清单、状态操作和有限日志。
+//! Docker Engine API：容器清单、只读详情、状态操作和日志。
+pub mod details;
 pub mod follow;
 mod log_stream;
 #[cfg(test)]
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::{AppError, AppResult};
+use crate::platform::docker_window::Kind;
 use crate::ssh::SessionManager;
 use transport::Engine;
 pub use transport::Target;
@@ -84,9 +86,20 @@ struct Summary {
     state: String,
     status: String,
     ports: Option<Vec<Port>>,
+    labels: Option<ComposeLabels>,
+}
+
+/// 仅向列表传递 Compose 的标准分组标签，其他容器标签无需跨 IPC 复制。
+#[derive(Default, Deserialize)]
+struct ComposeLabels {
+    #[serde(rename = "com.docker.compose.project")]
+    project: Option<String>,
+    #[serde(rename = "com.docker.compose.service")]
+    service: Option<String>,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Container {
     id: String,
     name: String,
@@ -94,6 +107,10 @@ pub struct Container {
     state: String,
     status: String,
     ports: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compose_project: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compose_service: Option<String>,
 }
 
 /// 操作只接受列表返回的完整不可变容器 ID，不允许以名称指向同名的新容器。
@@ -125,6 +142,7 @@ fn containers(data: &[u8]) -> AppResult<Vec<Container>> {
                 .map(port_label)
                 .collect::<Vec<_>>()
                 .join(", ");
+            let labels = item.labels.unwrap_or_default();
             Ok(Container {
                 id: item.id,
                 name,
@@ -132,6 +150,8 @@ fn containers(data: &[u8]) -> AppResult<Vec<Container>> {
                 state: item.state,
                 status: item.status,
                 ports,
+                compose_project: labels.project.filter(|label| !label.trim().is_empty()),
+                compose_service: labels.service.filter(|label| !label.trim().is_empty()),
             })
         })
         .collect()
@@ -217,11 +237,20 @@ pub async fn docker_container_logs(
     connection_id: String,
     ssh_config: Option<crate::ssh::models::SshConfig>,
 ) -> AppResult<String> {
-    validate_log_window(&window, &connection_id, &id, &target, ssh_config.as_ref())?;
+    validate_window(
+        Kind::Logs,
+        &window,
+        &connection_id,
+        &id,
+        &target,
+        ssh_config.as_ref(),
+    )?;
     read_window_logs(target, &manager, &id, ssh_config).await
 }
 
-fn validate_log_window(
+/// 验证子窗口类型与绑定的容器；SSH 只能使用本次调用由原生端创建的隧道。
+fn validate_window(
+    kind: Kind,
     window: &tauri::WebviewWindow,
     connection_id: &str,
     id: &str,
@@ -229,13 +258,13 @@ fn validate_log_window(
     ssh_config: Option<&crate::ssh::models::SshConfig>,
 ) -> AppResult<()> {
     use tauri::Manager;
-    if crate::platform::docker_logs::label(connection_id, id)? != window.label() {
-        return Err(AppError::invalid_input("日志窗口与所选连接或容器不匹配"));
+    if kind.label(connection_id, id)? != window.label() {
+        return Err(AppError::invalid_input("Docker 窗口与所选连接或容器不匹配"));
     }
     if target.ssh_session_id.is_some()
         || (target.transport == transport::Access::Ssh) != ssh_config.is_some()
     {
-        return Err(AppError::invalid_input("日志窗口的 SSH 隧道配置无效"));
+        return Err(AppError::invalid_input("Docker 窗口的 SSH 隧道配置无效"));
     }
     crate::ssh::prompt::install(window.app_handle());
     Ok(())
@@ -248,7 +277,7 @@ async fn read_window_logs(
     id: &str,
     ssh_config: Option<crate::ssh::models::SshConfig>,
 ) -> AppResult<String> {
-    with_log_tunnel(
+    with_window_tunnel(
         target,
         manager,
         ssh_config,
@@ -258,23 +287,22 @@ async fn read_window_logs(
     .await
 }
 
-/// 快照和订阅共用同一个临时隧道。取消覆盖 SSH 握手、HTTP 响应头及等待正文的时间。
-async fn with_log_tunnel<T, F>(
+/// 子窗口在一次调用内共用同一个临时隧道。取消覆盖 SSH 握手、响应头和正文。
+async fn with_window_tunnel<T, F>(
     mut target: Target,
     manager: &SessionManager,
     ssh_config: Option<crate::ssh::models::SshConfig>,
-    cancelled: impl std::future::Future<Output = ()>,
+    cancelled: impl std::future::Future<Output = T>,
     read: impl FnOnce(Target) -> F,
 ) -> AppResult<T>
 where
-    T: Default,
     F: std::future::Future<Output = AppResult<T>>,
 {
     tokio::pin!(cancelled);
     let temporary = match ssh_config {
         Some(config) => tokio::select! {
             biased;
-            _ = &mut cancelled => return Ok(T::default()),
+            value = &mut cancelled => return Ok(value),
             id = manager.connect(config) => Some(id?),
         },
         None => None,
@@ -282,7 +310,7 @@ where
     target.ssh_session_id.clone_from(&temporary);
     let result = tokio::select! {
         biased;
-        _ = &mut cancelled => Ok(T::default()),
+        value = &mut cancelled => Ok(value),
         result = read(target) => result,
     };
     if let Some(session) = temporary {

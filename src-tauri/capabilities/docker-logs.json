@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "docker-logs",
-  "description": "Docker container log windows: title bar, resizing, event subscriptions and interface zoom",
-  "windows": ["docker-logs-*"],
+  "description": "Read-only Docker container windows: title bar, resizing, event subscriptions and interface zoom",
+  "windows": ["docker-logs-*", "docker-details-*"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
