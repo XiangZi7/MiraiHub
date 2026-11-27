@@ -1,8 +1,8 @@
-# MiraiHub
+# <img src="public/logo-app-icon.png" width="32" height="32" alt="" /> MiraiHub
 
-[Download desktop app](https://github.com/XiangZi7/MiraiHub/releases/latest) · [Features](#features) · [简体中文](README.md)
+[Download desktop app](https://github.com/XiangZi7/MiraiHub/releases/latest) · [Features](#features) · [Screenshots](#screenshots) · [简体中文](README.md)
 
-## Download & install
+## 📦 Download & install
 
 | OS | Download |
 | --- | --- |
@@ -12,20 +12,57 @@
 
 [Installation and updates](docs/RELEASING.md#工作流与下载) · [WebView2 for Windows ZIP](https://developer.microsoft.com/microsoft-edge/webview2/)
 
-## Features
+<a name="features"></a>
 
-| Feature | Includes | Screenshots |
-| --- | --- | --- |
-| 🖥️ [SSH terminal](docs/ssh-operations.md) | Jump hosts, port forwarding, split panes, command and path completion, search, recording and playback | [SSH terminal](docs/images/feature-ssh-dark.png) |
-| ⌨️ Local terminal | Local shells, terminal search and file browser | [Workspace](docs/images/feature-file-copy.png) |
-| 🪟 Windows Remote Desktop | RDP full screen, resolution controls and two-way text and file clipboard | <a href="docs/images/feature-rdp.png"><img src="docs/images/feature-rdp.png" width="180" alt="Windows Remote Desktop connection settings" /></a> |
-| 📂 [File management](docs/ssh-operations.md#文件上传与下载) | Dual-pane SFTP, upload and download, folder sync, inline remote renaming, local drag-and-drop and cross-SSH copying | <a href="docs/images/feature-file-copy.png"><img src="docs/images/feature-file-copy.png" width="180" alt="Local file copy" /></a><br />[Dual-pane SFTP](docs/images/feature-files-light.png) |
-| 🐳 Docker | Start, stop and restart containers, group by Compose project, inspect health and usage, filter logs | <a href="docs/images/feature-docker.png"><img src="docs/images/feature-docker.png" width="180" alt="Docker container management demo" /></a><br />[Container logs](docs/images/feature-docker-logs.png) |
-| 📈 [Server monitoring](docs/ssh-operations.md) | CPU, memory, disk and network | [Monitoring](docs/images/feature-monitor-light.png) |
-| 🗄️ [Databases](docs/database.md) | MySQL, MariaDB, TiDB, PostgreSQL and SQLite with SQL, data editing, table design and ER diagrams | [Database](docs/images/feature-database-dark.png) · [Table design](docs/images/feature-designer-light.png) · [ER diagram](docs/images/feature-er-light.png) |
-| 🔑 [Redis](docs/redis.md) | Key editor, command panel, server status, slow log, big-key scans and Pub/Sub | [Key editor](docs/images/feature-redis-dark.png) |
-| 🤖 [AI Agent](docs/ai-agent.md) | Terminal and database assistance, SQL generation and rewrites, custom models | [AI panel](docs/images/feature-ai-dark.png) |
-| 🎨 [Appearance](docs/theme-skins.md) | Light and dark themes, skins, interface and terminal fonts, [interface languages](docs/languages.md) | [Appearance settings](docs/images/showcase-appearance-en.png) |
+## 🧰 Features
+
+| Feature | Includes |
+| --- | --- |
+| 🖥️ [SSH terminal](docs/ssh-operations.md) | Jump hosts, port forwarding, split panes, command and path completion, search, recording and playback |
+| ⌨️ Local terminal | Local shells, terminal search and file browser |
+| 🪟 Windows Remote Desktop | RDP full screen, resolution controls and two-way text and file clipboard |
+| 📂 [File management](docs/ssh-operations.md#文件上传与下载) | Dual-pane SFTP, upload and download, folder sync, inline remote renaming, local drag-and-drop and cross-SSH copying |
+| 🐳 Docker | Start, stop and restart containers, group by Compose project, inspect health and usage, filter logs |
+| 📈 [Server monitoring](docs/ssh-operations.md) | CPU, memory, disk and network |
+| 🗄️ [Databases](docs/database.md) | MySQL, MariaDB, TiDB, PostgreSQL and SQLite with SQL, data editing, table design and ER diagrams |
+| 🔑 [Redis](docs/redis.md) | Key editor, command panel, server status, slow log, big-key scans and Pub/Sub |
+| 🤖 [AI Agent](docs/ai-agent.md) | Terminal and database assistance, SQL generation and rewrites, custom models |
+| 🎨 [Appearance](docs/theme-skins.md) | Light and dark themes, skins, interface and terminal fonts, [interface languages](docs/languages.md) |
+
+<a name="screenshots"></a>
+
+## 🖼️ Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="50%" valign="top"><strong>SSH terminal and remote files</strong><br /><a href="docs/images/feature-ssh-dark.png"><img src="docs/images/feature-ssh-dark.png" width="100%" alt="SSH terminal and remote files" /></a></td>
+    <td align="center" width="50%" valign="top"><strong>Local and remote file panes</strong><br /><a href="docs/images/feature-files-light.png"><img src="docs/images/feature-files-light.png" width="100%" alt="Local and remote file panes" /></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top"><strong>Docker container management</strong><br /><a href="docs/images/feature-docker.png"><img src="docs/images/feature-docker.png" width="100%" alt="Docker container management" /></a></td>
+    <td align="center" width="50%" valign="top"><strong>Docker container logs</strong><br /><a href="docs/images/feature-docker-logs.png"><img src="docs/images/feature-docker-logs.png" width="100%" alt="Docker container logs" /></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top"><strong>Local terminal and file copy</strong><br /><a href="docs/images/feature-file-copy.png"><img src="docs/images/feature-file-copy.png" width="100%" alt="Local terminal and file copy" /></a></td>
+    <td align="center" width="50%" valign="top"><strong>Windows Remote Desktop connection settings</strong><br /><a href="docs/images/feature-rdp.png"><img src="docs/images/feature-rdp.png" width="100%" alt="Windows Remote Desktop connection settings" /></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top"><strong>Database · Dark</strong><br /><a href="docs/images/feature-database-dark.png"><img src="docs/images/feature-database-dark.png" width="100%" alt="Database · Dark" /></a></td>
+    <td align="center" width="50%" valign="top"><strong>Database · Light</strong><br /><a href="docs/images/feature-database-light.png"><img src="docs/images/feature-database-light.png" width="100%" alt="Database · Light" /></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top"><strong>Table designer</strong><br /><a href="docs/images/feature-designer-light.png"><img src="docs/images/feature-designer-light.png" width="100%" alt="Table designer" /></a></td>
+    <td align="center" width="50%" valign="top"><strong>ER diagram</strong><br /><a href="docs/images/feature-er-light.png"><img src="docs/images/feature-er-light.png" width="100%" alt="ER diagram" /></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top"><strong>Redis key editor</strong><br /><a href="docs/images/feature-redis-dark.png"><img src="docs/images/feature-redis-dark.png" width="100%" alt="Redis key editor" /></a></td>
+    <td align="center" width="50%" valign="top"><strong>AI Agent</strong><br /><a href="docs/images/feature-ai-dark.png"><img src="docs/images/feature-ai-dark.png" width="100%" alt="AI Agent" /></a></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%" valign="top"><strong>Server monitoring</strong><br /><a href="docs/images/feature-monitor-light.png"><img src="docs/images/feature-monitor-light.png" width="100%" alt="Server monitoring" /></a></td>
+    <td align="center" width="50%" valign="top"><strong>Appearance settings</strong><br /><a href="docs/images/showcase-appearance-en.png"><img src="docs/images/showcase-appearance-en.png" width="100%" alt="Appearance settings" /></a></td>
+  </tr>
+</table>
 
 [Development and releases](docs/RELEASING.md) · [Report an issue](https://github.com/XiangZi7/MiraiHub/issues)
 
